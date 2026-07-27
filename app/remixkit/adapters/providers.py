@@ -14,6 +14,7 @@ state of a hackathon build.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from remixkit.domain.models import Modality
@@ -114,30 +115,91 @@ def mock_media_available() -> bool:
     return mock_media.ffmpeg_available()
 
 
-def live_providers() -> dict[Modality, Any]:
-    """GMI Cloud primary, ElevenLabs for audio — BUILD-SPEC §2's multi-provider story.
+def _keyed(name: str) -> bool:
+    """Is this credential actually set, as opposed to present-but-placeholder?
 
-    Each import is guarded independently; whatever is installed and keyed is what the
-    kit can fan out across. A modality with no provider is skipped at build time with a
-    warning rather than failing the run.
+    Terraform seeds every SSM parameter with a `PLACEHOLDER …` string so the parameter
+    exists before anyone has a key for it, and `bootstrap.load_secrets` skips those — so
+    the usual failure is not a missing variable but an empty one.
+
+    This matters because the GMI providers construct happily with no credential at all.
+    Without this check a keyless deployment reports a *live* generator and then fails at
+    generate time with a provider auth error, which is strictly worse than reporting
+    `mock`: the console claims something it cannot do. Checking here turns that into a
+    provider that is simply absent, which is a state the rest of the code handles.
+    """
+    value = os.environ.get(name, "").strip()
+    return bool(value) and not value.startswith("PLACEHOLDER")
+
+
+def live_providers() -> dict[Modality, Any]:
+    """Whatever is installed *and* actually keyed — BUILD-SPEC §2's multi-provider story.
+
+    Each provider is guarded independently; a modality with nobody to serve it is
+    skipped at build time with a warning rather than failing the run. Order is
+    preference: the first provider to claim a modality keeps it.
+
+    GMI Cloud is still first by intent. Google (Veo for video, Imagen for image) is the
+    fallback that makes this work on credentials the project already has — it
+    authenticates with Vertex ADC via `GCP_PROJECT`/`GCP_LOCATION`, so there is no
+    additional key to obtain. `bootstrap._PROVIDER_KEYS` has always listed
+    `GOOGLE_API_KEY`; this is the code that finally reads it.
     """
     providers: dict[Modality, Any] = {}
 
-    try:
-        from genblaze_gmicloud import GMICloudImageProvider, GMICloudVideoProvider
+    if _keyed("GMI_API_KEY"):
+        try:
+            from genblaze_gmicloud import GMICloudImageProvider, GMICloudVideoProvider
 
-        providers[Modality.VIDEO] = GMICloudVideoProvider()
-        providers[Modality.IMAGE] = GMICloudImageProvider()
-    except Exception as exc:
-        log.warning("GMI Cloud providers unavailable (%s) — video/image shots will be skipped", exc)
+            providers[Modality.VIDEO] = GMICloudVideoProvider()
+            providers[Modality.IMAGE] = GMICloudImageProvider()
+        except Exception as exc:
+            log.warning("GMI Cloud unavailable (%s)", exc)
+    else:
+        log.info("GMI_API_KEY is not set — skipping GMI Cloud")
 
-    try:
-        from genblaze_elevenlabs import ElevenLabsProvider
+    google_project = os.environ.get("GCP_PROJECT", "").strip()
+    if _keyed("GOOGLE_API_KEY") or google_project:
+        try:
+            from genblaze_google import ImagenProvider, VeoProvider
 
-        providers[Modality.AUDIO] = ElevenLabsProvider()
-    except Exception as exc:
-        log.warning("ElevenLabs unavailable (%s) — audio shots will be skipped", exc)
+            # api_key=None makes the provider take the Vertex path and resolve
+            # Application Default Credentials, which is the only Google auth that still
+            # works — express-mode keys were withdrawn (see content/bin/vertex.py).
+            kwargs: dict[str, Any] = {
+                "api_key": os.environ.get("GOOGLE_API_KEY") or None,
+                "location": os.environ.get("GCP_LOCATION", "us-central1").strip() or "us-central1",
+            }
+            if google_project:
+                kwargs["project"] = google_project
 
+            providers.setdefault(Modality.VIDEO, VeoProvider(**kwargs))
+            providers.setdefault(Modality.IMAGE, ImagenProvider(**kwargs))
+        except Exception as exc:
+            log.warning("Google (Veo/Imagen) unavailable (%s)", exc)
+    else:
+        log.info("neither GOOGLE_API_KEY nor GCP_PROJECT is set — skipping Google")
+
+    if _keyed("ELEVENLABS_API_KEY"):
+        try:
+            # `ElevenLabsTTSProvider`, not `ElevenLabsProvider` — the latter has never
+            # existed in genblaze-elevenlabs, so this import raised ImportError on every
+            # run and the bare `except` below swallowed it. Audio was therefore skipped
+            # even when a key was present, and nothing said so above debug level. The
+            # package splits speech from sound effects; the kit brief wants speech.
+            from genblaze_elevenlabs import ElevenLabsTTSProvider
+
+            providers[Modality.AUDIO] = ElevenLabsTTSProvider()
+        except Exception as exc:
+            log.warning("ElevenLabs unavailable (%s) — audio shots will be skipped", exc)
+    else:
+        log.info("ELEVENLABS_API_KEY is not set — audio shots will be skipped")
+
+    if not providers:
+        log.warning(
+            "generator_backend=genblaze but no provider is credentialed — every shot "
+            "will be skipped. Set GMI_API_KEY, or GCP_PROJECT for Vertex."
+        )
     return providers
 
 

@@ -85,6 +85,18 @@ variable "mail_from_name" {
   default = "Respect the Funk"
 }
 
+variable "gcp_project" {
+  type        = string
+  default     = ""
+  description = "Vertex project for the Google video/image fallback. Empty disables it."
+}
+
+variable "gcp_location" {
+  type        = string
+  default     = "us-central1"
+  description = "Vertex region for the Google fallback."
+}
+
 variable "require_auth" {
   type        = bool
   default     = false
@@ -230,16 +242,22 @@ resource "aws_lambda_function" "this" {
   # arrive from SSM via bootstrap.load_secrets — they are deliberately absent below.
   environment {
     variables = {
-      RK_ENV                  = var.env
-      RK_STORAGE_BACKEND      = var.storage_backend
-      RK_GENERATOR_BACKEND    = var.generator_backend
-      RK_QUEUE_BACKEND        = var.queue_backend
-      RK_AUTH_BACKEND         = var.auth_backend
-      RK_REQUIRE_AUTH         = tostring(var.require_auth)
-      RK_MAIL_BACKEND         = var.mail_backend
-      RK_MAIL_FROM            = var.mail_from
-      RK_MAIL_FROM_NAME       = var.mail_from_name
-      RK_ALLOWED_EMAILS       = join(",", var.allowed_emails)
+      RK_ENV               = var.env
+      RK_STORAGE_BACKEND   = var.storage_backend
+      RK_GENERATOR_BACKEND = var.generator_backend
+      RK_QUEUE_BACKEND     = var.queue_backend
+      RK_AUTH_BACKEND      = var.auth_backend
+      RK_REQUIRE_AUTH      = tostring(var.require_auth)
+      RK_MAIL_BACKEND      = var.mail_backend
+      RK_MAIL_FROM         = var.mail_from
+      RK_MAIL_FROM_NAME    = var.mail_from_name
+      RK_ALLOWED_EMAILS    = join(",", var.allowed_emails)
+      # Vertex project/location for the Google (Veo/Imagen) provider fallback. These
+      # are not secrets. NOTE: they are not sufficient on their own — Lambda has no
+      # Application Default Credentials, so the Google path stays inert here until a
+      # service-account key is added. See app/README "Which provider actually runs".
+      GCP_PROJECT             = var.gcp_project
+      GCP_LOCATION            = var.gcp_location
       RK_SQS_QUEUE_URL        = var.queue_url
       RK_B2_BUCKET            = var.b2_bucket
       RK_B2_REGION            = var.b2_region

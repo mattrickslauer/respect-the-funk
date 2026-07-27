@@ -95,6 +95,17 @@ variable "mail_from" {
   default = "rtp@agfarms.dev"
 }
 
+variable "gcp_project" {
+  type        = string
+  default     = ""
+  description = "Vertex project for the Google (Veo/Imagen) fallback. Inert until a service-account credential is in SSM."
+}
+
+variable "gcp_location" {
+  type    = string
+  default = "us-central1"
+}
+
 variable "allowed_emails" {
   type = list(string)
   # This is the user table. There is no sign-up: an address either appears here or it is

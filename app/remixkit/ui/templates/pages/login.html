@@ -1,0 +1,26 @@
+{# Sign in.
+
+   Two steps in one card, swapped in place by htmx: the address form posts and is
+   replaced by the code form. No page navigation between them, so the address the user
+   typed cannot be lost to a back button, and the "we sent it to X" line is rendered
+   from what the server actually accepted rather than from what was typed. #}
+{% extends "_layout.html" %}
+{% block title %}Sign in — RemixKit{% endblock %}
+
+{% block content %}
+<section class="auth-card panel">
+  <p class="eyebrow">RemixKit</p>
+  <h1>Sign in</h1>
+  <p class="lede">
+    Enter the email on the label's allowlist. We send a six-digit code — there is no
+    password to remember, reset, or leak.
+  </p>
+
+  <div id="auth-step">{% include "components/_email_form.html" %}</div>
+
+  <p class="small hint">
+    Access is by allowlist, not registration. If your address is refused and it should
+    not be, it needs adding to <code>RK_ALLOWED_EMAILS</code>.
+  </p>
+</section>
+{% endblock %}

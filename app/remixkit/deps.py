@@ -5,26 +5,31 @@ change one. Nothing else imports a concrete adapter: services take ports, routes
 services. So "run on a laptop with no credentials" and "run on Lambda + SQS + Batch
 against B2 and GMI Cloud" differ by four environment variables and nothing else.
 
-Adding auth later is the same shape: build a provider in `auth/`, return it from
-`_build_auth`, done. No route changes, because routes already depend on
-`current_principal` rather than assuming who is calling.
+Auth followed exactly that shape: `auth/otp.py` plus a branch in `_build_auth`. No route
+changed, because routes already depend on `current_principal` rather than assuming who
+is calling.
 """
 
 from __future__ import annotations
 
 import logging
+import secrets
 from functools import lru_cache
 from typing import Annotated, Any
 
 from fastapi import Depends, Header, Request
 
 from remixkit.adapters.generator_genblaze import GenblazeGenerator
+from remixkit.adapters.mailer_console import ConsoleMailer
 from remixkit.adapters.queue_inline import InlineQueue
 from remixkit.adapters.repo_documents import DocumentRepo
 from remixkit.adapters.storage_local import LocalStorage
 from remixkit.auth.anonymous import AnonymousAuth
-from remixkit.auth.provider import AuthProvider, Principal
+from remixkit.auth.otp import OtpAuth
+from remixkit.auth.provider import AuthError, AuthProvider, Principal
 from remixkit.domain.models import Modality
+from remixkit.ports.mailer import Mailer
+from remixkit.services.accounts import AccountService
 from remixkit.services.artists import ArtistService
 from remixkit.services.delivery import DeliveryService
 from remixkit.services.identities import IdentityService
@@ -42,10 +47,30 @@ class Container:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-        self.auth: AuthProvider = _build_auth(settings)
         self.storage = _build_storage(settings)
         self.repo = DocumentRepo(self.storage, prefix=settings.key_prefix)
         self.queue = _build_queue(settings)
+        self.mailer: Mailer = _build_mailer(settings)
+
+        # Accounts is built before auth because the OTP provider reads sessions through
+        # it — one object owns the signing key, so a token minted at sign-in and a token
+        # verified on the next request cannot disagree about the secret.
+        self.accounts = AccountService(
+            self.repo,
+            self.mailer,
+            tenant_id=settings.default_tenant_id,
+            allowlist=settings.allowlist,
+            session_secret=_session_secret(settings),
+            session_ttl_s=settings.session_ttl_s,
+            otp_length=settings.otp_length,
+            otp_ttl_s=settings.otp_ttl_s,
+            otp_max_attempts=settings.otp_max_attempts,
+            otp_resend_interval_s=settings.otp_resend_interval_s,
+            # Only a dev process with no mailer ever shows a code back to its caller.
+            reveal_codes=settings.env == "dev",
+            app_name=settings.app_name,
+        )
+        self.auth: AuthProvider = _build_auth(settings, self.accounts)
         self.generator = GenblazeGenerator(
             self.storage,
             backend=settings.generator_backend,
@@ -98,6 +123,21 @@ class Container:
             warnings.append("Storage is ephemeral (/tmp) — data will not survive a restart.")
         if self.settings.auth_backend == "none":
             warnings.append("No authentication — every caller is the default tenant.")
+        elif not self.settings.allowlist:
+            warnings.append("Auth is on but RK_ALLOWED_EMAILS is empty — nobody can sign in.")
+        if self.settings.auth_backend != "none" and not self.settings.session_secret:
+            warnings.append(
+                "RK_SESSION_SECRET is unset — sessions are signed with a per-process key "
+                "and everyone is signed out on restart."
+            )
+        if self.settings.mail_backend == "console":
+            if self.settings.auth_backend != "none" and self.settings.env != "dev":
+                warnings.append(
+                    "Auth is on but mail is NOT configured — codes go to the server log "
+                    "only, so nobody outside the log can sign in."
+                )
+            else:
+                warnings.append("Mail is not configured — sign-in codes go to the server log.")
         if self.settings.queue_backend == "sqs" and not (
             self.settings.batch_job_queue and self.settings.batch_job_definition
         ):
@@ -113,18 +153,60 @@ class Container:
             "storage": getattr(self.storage, "name", "unknown"),
             "generator": self.generator.name,
             "queue": self.queue.name,
+            "mail": self.mailer.name,
             "warnings": warnings,
         }
 
 
 # ---------------------------------------------------------------- adapter builders
-def _build_auth(settings: Settings) -> AuthProvider:
+def _session_secret(settings: Settings) -> str:
+    """The configured secret, or a fresh random one per process.
+
+    Falling back to random rather than to a constant is the point: a hardcoded default
+    signing key that nobody remembers to override is a forged-session bug waiting in
+    every deployment that copied the example config. A random one is merely annoying —
+    sessions do not survive a restart, and on Lambda they do not survive between
+    instances, which is loud enough that it gets configured before anyone relies on it.
+    `require_auth` turns that annoyance into a refusal to start.
+    """
+    if settings.session_secret:
+        return settings.session_secret
+    if settings.require_auth:
+        raise RuntimeError(
+            "RK_REQUIRE_AUTH is set but RK_SESSION_SECRET is empty. Refusing to sign "
+            "sessions with a key that changes on every restart."
+        )
+    return secrets.token_urlsafe(32)
+
+
+def _build_auth(settings: Settings, accounts: AccountService) -> AuthProvider:
     if settings.require_auth and settings.auth_backend == "none":
         raise RuntimeError(
             "RK_REQUIRE_AUTH is set but RK_AUTH_BACKEND=none. Refusing to start an "
             "unauthenticated deployment that believes it is authenticated."
         )
+    if settings.auth_backend == "otp":
+        if not settings.allowlist:
+            # An empty allowlist is not "open" — it is a console nobody can enter. Say
+            # so at startup rather than after someone types their address and waits.
+            log.warning("auth_backend=otp with an empty RK_ALLOWED_EMAILS — nobody can sign in")
+        return OtpAuth(accounts, cookie_name=settings.session_cookie)
     return AnonymousAuth(settings.default_tenant_id, settings.default_tenant_name)
+
+
+def _build_mailer(settings: Settings) -> Mailer:
+    if settings.mail_backend == "zeptomail":
+        from remixkit.adapters.mailer_zepto import ZeptoMailer
+
+        return ZeptoMailer(
+            token=settings.zeptomail_token,
+            sender=settings.mail_from,
+            sender_name=settings.mail_from_name,
+            host=settings.smtp_host,
+            port=settings.smtp_port,
+            user=settings.smtp_user,
+        )
+    return ConsoleMailer()
 
 
 def _build_storage(settings: Settings):
@@ -176,6 +258,31 @@ async def current_principal(
     )
 
 
+async def optional_principal(
+    request: Request,
+    authorization: Annotated[str | None, Header()] = None,
+) -> Principal | None:
+    """`current_principal` that returns None instead of raising.
+
+    Exactly two routes want this — the login page (which must render for someone with no
+    session, but should bounce someone who already has one straight to the roster) and
+    the layout's account menu. Everything else wants the strict version, so this is a
+    separate dependency rather than a flag: a handler cannot opt out of auth by
+    accident, only by naming the lenient one.
+    """
+    container = get_container()
+    try:
+        return await container.auth.authenticate(
+            authorization=authorization, cookies=dict(request.cookies)
+        )
+    except AuthError:
+        return None
+
+
+def get_accounts() -> AccountService:
+    return get_container().accounts
+
+
 def get_artists() -> ArtistService:
     return get_container().artists
 
@@ -201,6 +308,8 @@ def get_delivery() -> DeliveryService:
 
 
 CurrentPrincipal = Annotated[Principal, Depends(current_principal)]
+MaybePrincipal = Annotated[Principal | None, Depends(optional_principal)]
+Accounts = Annotated[AccountService, Depends(get_accounts)]
 Artists = Annotated[ArtistService, Depends(get_artists)]
 Identities = Annotated[IdentityService, Depends(get_identities)]
 Songs = Annotated[SongService, Depends(get_songs)]

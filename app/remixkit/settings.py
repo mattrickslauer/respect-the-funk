@@ -7,7 +7,8 @@ is additive rather than a rewrite:
     storage_backend    local  → b2
     generator_backend  mock   → genblaze
     queue_backend      inline → sqs
-    auth_backend       none   → (oidc, when it exists)
+    auth_backend       none   → otp
+    mail_backend       console → zeptomail
 
 `RK_` prefixes everything so these never collide with the provider keys Genblaze reads
 directly from the environment (`GMI_API_KEY`, `B2_KEY_ID`, …).
@@ -37,11 +38,57 @@ class Settings(BaseSettings):
     storage_backend: Literal["local", "b2"] = "local"
     generator_backend: Literal["mock", "genblaze"] = "mock"
     queue_backend: Literal["inline", "sqs"] = "inline"
-    auth_backend: Literal["none"] = "none"
+    auth_backend: Literal["none", "otp"] = "none"
+    mail_backend: Literal["console", "zeptomail"] = "console"
 
     # A deployment that declares itself authenticated must not be served by
     # AnonymousAuth. Startup fails loudly rather than quietly admitting everyone.
     require_auth: bool = False
+
+    # ---- auth: email OTP -------------------------------------------------------
+    # Who may sign in, comma-separated. This IS the user table — an allowlist rather
+    # than open registration, because the console administers a real label's roster and
+    # "anyone with an email address" is not the intended population. Growing past a
+    # handful of people is the signal to make accounts self-registering behind an
+    # invite, not to keep extending this string.
+    allowed_emails: str = ""
+
+    # Signs session tokens and hashes OTP codes. Empty is the laptop default: a random
+    # per-process secret is generated, which logs everyone out on restart — correct for
+    # dev, and `require_auth` refuses to let it happen in a deployment.
+    session_secret: str = ""
+    session_ttl_s: int = 7 * 24 * 3600
+    session_cookie: str = "rk_session"
+    # Cookies are Secure everywhere except dev, where there is no TLS on localhost.
+    session_cookie_secure: bool = True
+
+    otp_length: int = 6
+    otp_ttl_s: int = 600
+    # Five guesses against a six-digit code over ten minutes. Past this the challenge is
+    # destroyed and the user must request a new one — which is also the rate limit on
+    # brute force, since each new challenge is a new code.
+    otp_max_attempts: int = 5
+    # Floor between two code requests for the same address, so the sign-in form cannot
+    # be used to mailbomb someone on the allowlist.
+    otp_resend_interval_s: int = 30
+
+    # ---- mail ------------------------------------------------------------------
+    # ZeptoMail's SMTP password and its "send mail token" are the same secret.
+    zeptomail_token: str = ""
+    mail_from: str = "rtp@agfarms.dev"
+    mail_from_name: str = "Respect the Funk"
+    smtp_host: str = "smtp.zeptomail.com"
+    smtp_port: int = 465
+    smtp_user: str = "emailapikey"
+
+    @property
+    def allowlist(self) -> frozenset[str]:
+        """The allowlist, normalised. Comma-separated rather than a JSON list because
+        this arrives as one SSM parameter and one `.env` line, and both are edited by
+        hand."""
+        return frozenset(
+            part.strip().lower() for part in self.allowed_emails.split(",") if part.strip()
+        )
 
     # ---- storage ---------------------------------------------------------------
     local_storage_dir: Path = Path(".remixkit-data")

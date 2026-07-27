@@ -18,10 +18,13 @@ from remixkit.api.schemas import (
     IdentityIn,
     KitIn,
     MeasurementIn,
+    RequestCodeIn,
     SongIn,
     UploadUrlIn,
+    VerifyCodeIn,
 )
 from remixkit.deps import (
+    Accounts,
     Artists,
     CurrentPrincipal,
     Delivery,
@@ -33,6 +36,54 @@ from remixkit.deps import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
+
+
+# ---------------------------------------------------------------- auth
+# The only routes here that do not take a `CurrentPrincipal` — necessarily, since their
+# whole job is to produce one. Everything else in this file is unreachable without the
+# token these two hand out (when `RK_AUTH_BACKEND=otp`).
+@router.post("/auth/request-code", tags=["auth"])
+def request_code(body: RequestCodeIn, accounts: Accounts):
+    """Email a sign-in code to an allowlisted address."""
+    sent = accounts.request_code(body.email)
+    payload = {
+        "email": sent.email,
+        "expires_at": sent.expires_at,
+        "delivered": sent.delivered,
+    }
+    if sent.dev_code:
+        # Only ever set by a dev process with no mailer configured — see
+        # `services.accounts.CodeSent.dev_code` for why both conditions are required.
+        payload["dev_code"] = sent.dev_code
+    return payload
+
+
+@router.post("/auth/verify-code", tags=["auth"])
+def verify_code(body: VerifyCodeIn, accounts: Accounts):
+    """Exchange a code for a bearer token. Send it as `Authorization: Bearer <token>`."""
+    account, token = accounts.verify_code(body.email, body.code)
+    return {
+        "token": token,
+        "token_type": "bearer",
+        "expires_in": get_container().settings.session_ttl_s,
+        "account": account,
+    }
+
+
+@router.get("/auth/me", tags=["auth"])
+def whoami(principal: CurrentPrincipal):
+    """The caller, as the rest of the API sees them.
+
+    Useful beyond debugging: it is the cheapest way for a script to check whether its
+    token is still good before starting a long job.
+    """
+    return {
+        "tenant_id": principal.tenant_id,
+        "subject": principal.subject,
+        "display_name": principal.display_name,
+        "scopes": sorted(principal.scopes),
+        "authenticated": principal.authenticated,
+    }
 
 
 # ---------------------------------------------------------------- artists

@@ -107,6 +107,11 @@ module "api" {
   generator_backend = var.generator_backend
   queue_backend     = var.queue_backend
 
+  auth_backend   = var.auth_backend
+  mail_backend   = var.mail_backend
+  mail_from      = var.mail_from
+  allowed_emails = var.allowed_emails
+
   batch_job_queue      = module.worker.job_queue_arn
   batch_job_definition = module.worker.job_definition_arn
 

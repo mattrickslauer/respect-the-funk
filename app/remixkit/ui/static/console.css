@@ -149,3 +149,15 @@ input::placeholder,textarea::placeholder{color:#5d5872}
 .kit-summary:hover{border-color:var(--gold-dim)}
 .kit-summary-name{color:var(--ink);font-family:var(--display);font-size:14.5px}
 .kit-summary-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* ---- sign in ----
+   The one page a signed-out person sees, so it carries the same tokens as the rest of
+   the console rather than looking like a different product bolted on the front. */
+.auth-card{max-width:430px;margin:76px auto;padding:34px 32px 28px}
+.auth-card h1{font-size:27px;margin:0 0 12px}
+.auth-card .lede{margin-bottom:22px}
+.auth-card .hint{margin-top:20px;padding-top:16px;border-top:1px solid var(--rule-2)}
+.auth-card .form-inline{margin-top:12px}
+/* Wide tracking so a six-digit code reads as six discrete digits, not a number. */
+.otp-input{font-family:var(--display);font-size:23px;letter-spacing:0.34em;text-align:center}
+.whoami{color:var(--ink-3);border-left:1px solid var(--rule-2);padding-left:22px}

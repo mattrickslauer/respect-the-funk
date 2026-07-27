@@ -1,0 +1,46 @@
+{# Step two: enter the code.
+
+   Renders standalone and is addressable, like every other component here — the
+   request-code route returns just this, and the verify route returns it again with
+   `message` set when the code was wrong. One definition, two call sites.
+
+   `dev_code` is populated only when the mailer reported the message was NOT delivered,
+   which is the console-fallback path. Showing it is the difference between a laptop
+   checkout being completable and being a dead end; it is impossible to reach with a
+   mailer configured, because a delivered send returns no code to show. #}
+
+{% if not delivered %}
+<div class="notice notice-error">
+  <p><strong>Mail is not configured</strong> — nothing was sent to {{ email }}.</p>
+  {% if dev_code %}<p class="small">Development code: <code>{{ dev_code }}</code></p>{% endif %}
+</div>
+{% else %}
+<p class="small">Code sent to <strong>{{ email }}</strong>. It expires in ten minutes.</p>
+{% endif %}
+
+{% if message %}<div class="notice notice-error"><p>{{ message }}</p></div>{% endif %}
+
+<form class="form"
+      hx-post="/ui/auth/verify-code"
+      hx-target="#auth-step"
+      hx-swap="innerHTML">
+  <input type="hidden" name="email" value="{{ email }}">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label>Six-digit code
+    {# inputmode + one-time-code so phones open a number pad and iOS/Android offer to
+       autofill the code straight out of the message. #}
+    <input type="text" name="code" required autofocus inputmode="numeric"
+           autocomplete="one-time-code" pattern="[0-9 -]{6,8}" maxlength="8"
+           placeholder="000000" class="otp-input">
+  </label>
+  <button class="btn btn-primary" type="submit">Sign in</button>
+</form>
+
+<form class="form-inline"
+      hx-post="/ui/auth/request-code"
+      hx-target="#auth-step"
+      hx-swap="innerHTML">
+  <input type="hidden" name="email" value="{{ email }}">
+  <input type="hidden" name="next" value="{{ next }}">
+  <button class="btn btn-quiet" type="submit">Send a new code</button>
+</form>

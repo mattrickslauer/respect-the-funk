@@ -37,7 +37,7 @@ variable "b2_region" {
 }
 variable "tenant_id" { type = string }
 
-# The three backend axes, surfaced as variables rather than hard-coded.
+# The backend axes, surfaced as variables rather than hard-coded.
 #
 # They default to the production trio. They exist as knobs because a deployment can be
 # legitimately live before its credentials are: with B2 keys still unset, `b2` makes the
@@ -59,6 +59,38 @@ variable "queue_backend" {
   type    = string
   default = "sqs"
 }
+
+# Auth defaults to `none` — the same shape this deployment has always had, so applying
+# this change alone does not lock anyone out of a running console. Turning it on is
+# deliberate: set `auth_backend = "otp"`, populate ZEPTOMAIL_TOKEN and SESSION_SECRET in
+# SSM, and list the people who may sign in. Doing it in the other order would put a
+# login page in front of a console whose signing key is a per-process random value.
+variable "auth_backend" {
+  type    = string
+  default = "none"
+}
+
+variable "mail_backend" {
+  type    = string
+  default = "console"
+}
+
+variable "mail_from" {
+  type    = string
+  default = "rtp@agfarms.dev"
+}
+
+variable "mail_from_name" {
+  type    = string
+  default = "Respect the Funk"
+}
+
+variable "allowed_emails" {
+  type        = list(string)
+  default     = []
+  description = "Addresses permitted to sign in. Empty means nobody can — see deps.describe()."
+}
+
 variable "tags" {
   type    = map(string)
   default = {}
@@ -177,13 +209,21 @@ resource "aws_lambda_function" "this" {
   memory_size   = var.memory_mb
   timeout       = var.timeout_seconds
 
+  # RK_ALLOWED_EMAILS is not a secret, so it lives here rather than in SSM: an operator
+  # adding a colleague should be editing a tfvars line under review, not running
+  # put-parameter by hand. RK_ZEPTOMAIL_TOKEN and RK_SESSION_SECRET *are* secrets, and
+  # arrive from SSM via bootstrap.load_secrets — they are deliberately absent below.
   environment {
     variables = {
       RK_ENV                  = var.env
       RK_STORAGE_BACKEND      = var.storage_backend
       RK_GENERATOR_BACKEND    = var.generator_backend
       RK_QUEUE_BACKEND        = var.queue_backend
-      RK_AUTH_BACKEND         = "none" # deliberate: there is no auth yet
+      RK_AUTH_BACKEND         = var.auth_backend
+      RK_MAIL_BACKEND         = var.mail_backend
+      RK_MAIL_FROM            = var.mail_from
+      RK_MAIL_FROM_NAME       = var.mail_from_name
+      RK_ALLOWED_EMAILS       = join(",", var.allowed_emails)
       RK_SQS_QUEUE_URL        = var.queue_url
       RK_B2_BUCKET            = var.b2_bucket
       RK_B2_REGION            = var.b2_region
@@ -202,9 +242,13 @@ resource "aws_lambda_function" "this" {
 
 resource "aws_lambda_function_url" "this" {
   function_name = aws_lambda_function.this.function_name
-  # NONE because the application has no authentication today — that is the current
-  # instruction, recorded here rather than left implicit. When auth lands this becomes
-  # the second gate (AWS_IAM, or an authorizer), and `remixkit/auth/` becomes the first.
+  # NONE means "no *AWS* gate on this URL" — it does not mean the console is open. The
+  # application is the gate: with RK_AUTH_BACKEND=otp every route raises AuthError
+  # without a session, and this URL serves a login page rather than a roster.
+  #
+  # It stays NONE because AWS_IAM would require every browser request to be SigV4-signed,
+  # which a browser cannot do. Moving the gate out here at all means an authorizer, and
+  # that is only worth building if the app's own session stops being sufficient.
   authorization_type = "NONE"
 
   cors {

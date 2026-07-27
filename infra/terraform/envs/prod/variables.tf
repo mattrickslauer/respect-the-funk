@@ -52,3 +52,38 @@ variable "queue_backend" {
   type    = string
   default = "sqs"
 }
+
+# Sign-in. Off by default so applying this alone changes nothing about a live console.
+# To turn it on, in this order:
+#
+#   1. aws ssm put-parameter --name /remixkit/prod/SESSION_SECRET  --type SecureString \
+#        --value "$(python -c 'import secrets;print(secrets.token_urlsafe(32))')" --overwrite
+#   2. aws ssm put-parameter --name /remixkit/prod/ZEPTOMAIL_TOKEN --type SecureString \
+#        --value "…" --overwrite
+#   3. set auth_backend = "otp", mail_backend = "zeptomail", and allowed_emails here.
+#
+# Secrets first: a console that turns on auth before it can sign or send is one nobody
+# can enter, including whoever needs to fix it.
+variable "auth_backend" {
+  type    = string
+  default = "none"
+}
+
+variable "mail_backend" {
+  type    = string
+  default = "console"
+}
+
+variable "mail_from" {
+  type = string
+  # A verified ZeptoMail sender on a domain with SPF/DKIM already published. A sign-in
+  # code from an unverified domain is silently spam-filed, which is indistinguishable
+  # from a broken login.
+  default = "rtp@agfarms.dev"
+}
+
+variable "allowed_emails" {
+  type        = list(string)
+  default     = []
+  description = "Addresses permitted to sign in. This is the user table."
+}

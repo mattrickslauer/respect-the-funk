@@ -98,6 +98,54 @@ class LikenessConsent(BaseModel):
         return not self.granted
 
 
+class Account(Base):
+    """A person who may sign in to this tenant's console.
+
+    The email is the identity — there is no password to store, reset, or leak. `id` is
+    derived from the address rather than random (see `services.accounts.account_id`) so
+    that "look up the account for this email" is a `get`, not a scan of the collection.
+
+    `scopes` is populated but not yet enforced: no service calls `Principal.can()` today.
+    It is written now because the alternative is backfilling authorisation onto accounts
+    that already exist, and because an operator reading the YAML should be able to see
+    what a person is allowed to do.
+    """
+
+    id: str
+    email: str
+    display_name: str | None = None
+    scopes: list[str] = Field(default_factory=list)
+    last_login_at: datetime | None = None
+
+    @field_validator("email")
+    @classmethod
+    def _normalise(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class OtpChallenge(Base):
+    """One outstanding sign-in code. Short-lived, hashed, attempt-limited.
+
+    Stored rather than held in memory because request-and-verify are two requests that,
+    on Lambda, land on two different instances — an in-memory map works perfectly on a
+    laptop and fails only in production, which is the worst place to learn it.
+
+    `code_hash` is an HMAC of the code under the session secret, never the code itself.
+    The window is small and the code is six digits, so this is not a meaningful barrier
+    to an attacker who already has the bucket; it is here so that a code sitting in
+    object storage, in a log, or in a backup is not directly replayable.
+    """
+
+    id: str
+    email: str
+    code_hash: str
+    expires_at: datetime
+    attempts: int = 0
+
+    def is_expired(self, *, now: datetime | None = None) -> bool:
+        return (now or utcnow()) > self.expires_at
+
+
 class Artist(Base):
     """A roster member. First-class, not a string on a song (PRODUCT.md gap #1)."""
 

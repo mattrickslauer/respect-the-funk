@@ -1,0 +1,23 @@
+{# Step one: which address.
+
+   A component rather than markup inlined in the page, for the same reason as every
+   other fragment here — it has two call sites. The login page renders it, and the
+   request-code route renders it *back* when the address was refused, carrying the
+   message and the address the user typed.
+
+   That second call site is the whole point. Swapping in a bare error notice would leave
+   the card with no form in it, so a typo'd address would cost a page reload. #}
+
+{% if message %}<div class="notice notice-error" role="alert"><p>{{ message }}</p></div>{% endif %}
+
+<form class="form"
+      hx-post="/ui/auth/request-code"
+      hx-target="#auth-step"
+      hx-swap="innerHTML">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label>Email
+    <input type="email" name="email" value="{{ email }}" required autofocus
+           autocomplete="email" placeholder="you@agfarms.dev">
+  </label>
+  <button class="btn btn-primary" type="submit">Email me a code</button>
+</form>

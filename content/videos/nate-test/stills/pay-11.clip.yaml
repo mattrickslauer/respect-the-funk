@@ -1,0 +1,36 @@
+schema: rtf.clip/v1
+id: pay-11
+media: pay-11.png
+title: pay-11
+logline: 'A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and a
+  street in the background, captured in a photographic, high-resolution, vertical format '
+rights:
+  source: ai
+  owner: anthony
+  people_release: true
+  minors_in_frame: false
+  notes: Synthetic. Generated for edit 'nate-test'. Disclose as AI.
+subjects:
+- nate-hook
+role:
+  primary: b_roll
+  can_lead: false
+  can_follow: true
+provenance:
+  provider: gemini
+  model: gemini-2.5-flash-image
+  prompt: 'A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+    a street in the background, captured in a photographic, high-resolution, vertical format with realistic
+    lighting and palette, mimicking a casual phone camera aesthetic. Each image depicts the same grassy
+    park verge, trees, stone wall, and distant street, maintaining a photographic, vertical aspect, focusing
+    on pigeons as the central figures while varying their actions and environment. A group of common city
+    pigeons on a lush green grassy verge, near trees, a stone wall, and a street in the background, captured
+    in a photographic, high-resolution, vertical format. The grassy verge is entirely covered by a swirling,
+    dynamic mass of hundreds of pigeons, creating a living carpet of feathers and motion, with some taking
+    flight in a dense cloud. Photorealistic press-photograph realism with strong directional light and
+    rich saturated colour. Faces clearly lit, sharply in focus and unobscured. Natural unretouched skin
+    with fine texture — but YOUNG skin: smooth, unlined, no wrinkles and no age lines. No beauty smoothing,
+    no HDR glow, no plastic airbrushing. Natural depth of field, slightly imperfect handheld framing.
+    Vertical 9:16.'
+  sha256: 22ce55bfa20e2d0b996543f480a9a6f199082df14c67c75da43a1ea623777c3b
+  cache_key: .cache/22ce55bfa20e2d0b996543f480a9a6f199082df14c67c75da43a1ea623777c3b.png

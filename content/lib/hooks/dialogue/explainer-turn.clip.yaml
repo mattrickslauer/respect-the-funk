@@ -1,0 +1,93 @@
+schema: rtf.clip/v1
+id: explainer-turn
+media: explainer-turn.mp4
+title: a turn mid-sentence, which cuts hard
+logline: Like, have you ever gotten to the checkout page when you're buying something
+source_meta:
+  duration_ms: 4500
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: SuperCarlinBrothers
+  notes: third-party source, proof-of-concept hook library. Identifiable people may
+    appear and have not consented; check before publishing or before holding a likeness
+    invariant in a payoff.
+  people_release: false
+  minors_in_frame: unknown
+provenance:
+  query: here's the thing nobody talks about explained
+  url: https://www.youtube.com/watch?v=QdpP3NgQm6U
+  video_id: QdpP3NgQm6U
+  video_title: Defending More WILD Harry Potter Theories | Theories From A Hat
+  channel: SuperCarlinBrothers
+  section_start_s: 1226.722
+  caption_score: 5.09
+  chosen_because: It's a universally relatable question that sets up a common experience,
+    allowing for a creative visual payoff in an inverted world.
+  gap_after_s: 2.956
+  line_db: -18.9
+  tail_db: -19.8
+  tail_quieter_db: 0.9
+audio:
+  has_speech: true
+  quote: Like, have you ever gotten to the checkout page when you're buying something
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 1362
+  shot: static
+  framing: medium
+  frame: the speaker delivers the line
+  means: the promise is made
+- t_in: 1362
+  t_out: 4500
+  shot: static
+  framing: medium
+  frame: the line lands and nobody says anything
+  means: the pause the drop cuts off
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 1362
+  kind: beat_change
+  note: the line ends; the pre-roll swell starts after this
+- t: 4500
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 1500
+hook_recommended:
+  t_in: 0
+  t_out: 4500
+  pre_roll_bars: 1
+features:
+  energy: 0.162
+  luma: 0.407
+  contrast: 1.0
+  warmth: 0.542
+  saturation: 0.285
+  detail: 0.376
+  intensity_raw: 0.386
+axes:
+  light:
+    v: 0.407
+    pole: mid
+  motion:
+    v: 0.162
+    pole: still
+  temp:
+    v: 0.542
+    pole: mid
+  scale:
+    v: 0.376
+    pole: wide

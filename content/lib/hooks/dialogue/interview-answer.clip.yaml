@@ -1,0 +1,94 @@
+schema: rtf.clip/v1
+id: interview-answer
+media: interview-answer.mp4
+title: question and a face reacting — two shots in one clip
+logline: Are you smart?
+source_meta:
+  duration_ms: 4500
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: EmanRTM
+  notes: third-party source, proof-of-concept hook library. Identifiable people may
+    appear and have not consented; check before publishing or before holding a likeness
+    invariant in a payoff.
+  people_release: false
+  minors_in_frame: unknown
+provenance:
+  query: street interview funniest answer question
+  url: https://www.youtube.com/watch?v=0JuWx3qSHuY
+  video_id: 0JuWx3qSHuY
+  video_title: Funniest Street Interview Moments Ever
+  channel: EmanRTM
+  section_start_s: 260.64
+  caption_score: 5.48
+  chosen_because: This direct question immediately engages the viewer and sets up
+    a clear promise for a visual payoff demonstrating intelligence or lack thereof
+    in an inverted wo
+  gap_after_s: 2.011
+  line_db: -17.1
+  tail_db: -16.1
+  tail_quieter_db: -1.0
+audio:
+  has_speech: true
+  quote: Are you smart?
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 1669
+  shot: static
+  framing: medium
+  frame: the speaker delivers the line
+  means: the promise is made
+- t_in: 1669
+  t_out: 4500
+  shot: static
+  framing: medium
+  frame: the line lands and nobody says anything
+  means: the pause the drop cuts off
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 1669
+  kind: beat_change
+  note: the line ends; the pre-roll swell starts after this
+- t: 4500
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 1669
+hook_recommended:
+  t_in: 0
+  t_out: 4500
+  pre_roll_bars: 1
+features:
+  energy: 0.306
+  luma: 0.587
+  contrast: 1.0
+  warmth: 0.506
+  saturation: 0.073
+  detail: 0.345
+  intensity_raw: 0.404
+axes:
+  light:
+    v: 0.587
+    pole: mid
+  motion:
+    v: 0.306
+    pole: still
+  temp:
+    v: 0.506
+    pole: mid
+  scale:
+    v: 0.345
+    pole: wide

@@ -1,0 +1,36 @@
+schema: rtf.character/v1
+id: cosima
+name: Cosima
+# How this character is referred to when labelling reference photos for the image
+# model. Was hardcoded as man-or-baby off `consent.minor`, which only worked
+# because the project had exactly one cast.
+role_in_frame: "the baby"
+role: "The payoff — the thing in the bag"
+
+# Rewritten from the reference photographs. The earlier version said "around one year
+# old" with "soft dark curly hair" — both wrong, and both were pushing generations
+# toward a generic older toddler.
+prompt_description: >
+  A very young baby, 7 months old — not a toddler. Round full-cheeked face, small soft
+  features, fair warm skin, very large round dark eyes, fine DARK BROWN hair standing up in a
+  wispy tuft — her hair is dark brown in every light, never light or blonde. Head large relative to her body, no teeth showing.
+
+reference_frames:
+  - cosima-face-front.jpg
+  - cosima-face-left.jpg
+  - cosima-face-right.jpg
+  - cosima-front.jpg
+
+wardrobe_default: >
+  dark green corduroy overalls with round metal buttons over a cream waffle longsleeve,
+  and a small amber bead necklace
+wardrobe_california: "sun hat and light cotton romper — same face, hair tuft and necklace"
+
+negative_prompt: >
+  toddler, one year old, older child, walking, standing unaided, defined jaw, thin face,
+  blonde, light brown hair, washed-out hair, blue eyes, thick curly hair, crying, doll-like, airbrushed skin
+
+consent:
+  people_release: true
+  minor: true
+  guardian_consent_required: true    # gates any public post — see CLIP-SPEC rule 3

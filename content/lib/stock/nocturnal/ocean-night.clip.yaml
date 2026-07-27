@@ -1,0 +1,60 @@
+schema: rtf.clip/v1
+id: ocean-night
+media: ocean-night.mp4
+title: organic motion against all the machine motion
+logline: organic motion against all the machine motion
+source_meta:
+  duration_ms: 4000
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Calmed By Nature
+  notes: third-party source, proof-of-concept library
+provenance:
+  query: ocean waves at night moonlight slow motion
+  url: https://www.youtube.com/watch?v=eHYRRky3kEw
+  video_id: eHYRRky3kEw
+  video_title: Super Moon & Ocean Waves Relaxation
+  channel: Calmed By Nature
+  section_start_s: 45.375
+  section_dur_s: 4.0
+features:
+  energy: 0.101
+  luma: 0.105
+  contrast: 0.567
+  warmth: 0.466
+  saturation: 0.037
+  detail: 0.115
+  intensity_raw: 0.183
+axes:
+  light:
+    v: 0.105
+    pole: dark
+  motion:
+    v: 0.101
+    pole: still
+  temp:
+    v: 0.466
+    pole: mid
+  scale:
+    v: 0.115
+    pole: wide
+role:
+  primary: b_roll
+  can_lead: true
+  can_follow: true
+  min_useful_ms: 400
+cut_points:
+- t: 0
+  kind: in
+- t: 4000
+  kind: hard_cut
+screen:
+  overlay_ratio: 0.01571
+  axis_align: 0.653
+  motion: 7.595
+  verdict: clean
+  usable: true

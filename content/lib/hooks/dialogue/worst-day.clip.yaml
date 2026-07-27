@@ -1,0 +1,94 @@
+schema: rtf.clip/v1
+id: worst-day
+media: worst-day.mp4
+title: superlative setup; the payoff has somewhere to go
+logline: Bitches even do yelling at me like you're the worst best friend ever
+source_meta:
+  duration_ms: 4500
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Tana Mongeau
+  notes: third-party source, proof-of-concept hook library. Identifiable people may
+    appear and have not consented; check before publishing or before holding a likeness
+    invariant in a payoff.
+  people_release: false
+  minors_in_frame: unknown
+provenance:
+  query: the worst day of my life storytime
+  url: https://www.youtube.com/watch?v=6n7BLLknK5Q
+  video_id: 6n7BLLknK5Q
+  video_title: confronting the woman who caused THE WORST night of my life.. STORYTIME
+  channel: Tana Mongeau
+  section_start_s: 1734.84
+  caption_score: 5.21
+  chosen_because: The line is a dramatic accusation that immediately creates curiosity
+    about the nature of the relationship and lends itself well to an 'inverted world'
+    visual pa
+  gap_after_s: 4.347
+  line_db: -16.1
+  tail_db: -15.1
+  tail_quieter_db: -1.0
+audio:
+  has_speech: true
+  quote: Bitches even do yelling at me like you're the worst best friend ever
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 1362
+  shot: static
+  framing: medium
+  frame: the speaker delivers the line
+  means: the promise is made
+- t_in: 1362
+  t_out: 4500
+  shot: static
+  framing: medium
+  frame: the line lands and nobody says anything
+  means: the pause the drop cuts off
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 1362
+  kind: beat_change
+  note: the line ends; the pre-roll swell starts after this
+- t: 4500
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 1500
+hook_recommended:
+  t_in: 0
+  t_out: 4500
+  pre_roll_bars: 1
+features:
+  energy: 1.0
+  luma: 0.415
+  contrast: 1.0
+  warmth: 0.532
+  saturation: 0.077
+  detail: 0.25
+  intensity_raw: 0.703
+axes:
+  light:
+    v: 0.415
+    pole: mid
+  motion:
+    v: 1.0
+    pole: kinetic
+  temp:
+    v: 0.532
+    pole: mid
+  scale:
+    v: 0.25
+    pole: wide

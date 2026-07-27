@@ -1,0 +1,116 @@
+schema: rtf.clip/v1
+id: nate-hook
+media: nate-hook.mp4
+title: a line to camera, then a whip-pan onto what he was talking about
+logline: he calls something the craziest crew ever, then whips the camera down off his face
+  onto a grassy verge seething with city pigeons — the pigeons are the crew
+source_meta:
+  duration_ms: 7200
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: unknown
+  owner: unknown
+  notes: >-
+    Supplied by hand as lib/stock/nate-hook.mov; no provenance travelled with the file, so
+    the source is recorded as unknown rather than guessed. One identifiable person speaks
+    to camera for the first 2.5s. Renderable — render_edit reports rights, it does not gate
+    on them — but NOT publishable until somebody confirms where this came from and whether
+    the speaker agreed to it. The payoff deliberately holds the park and the pigeons
+    invariant and not his face, so nothing downstream depends on that answer.
+  people_release: unknown
+  minors_in_frame: 'no'
+provenance:
+  local_source: ../../stock/nate-hook.mov
+  source_meta_in: {duration_ms: 13182, width: 720, height: 1280, fps: 29.97}
+  cut: '0 -> 7200ms, exactly 15 beats at 125 BPM and exactly 216 frames at 30fps'
+  transform: >-
+    The original is 10-bit HLG/Dolby Vision (bt2020nc / arib-std-b67) carrying a -90
+    rotation. Passing that straight into the renderer greys the whole hook out, because
+    vnorm() scales and crops but does not tone-map. So it is tone-mapped once here —
+    zscale linear -> hable -> bt709 — and baked to 1080x1920 SDR h264, which is what every
+    other clip in the library already is.
+  chosen_because: >-
+    "the craziest crew ever" names a thing without showing it, and the clip then shows it.
+    That is the whole promise-payoff shape already present in found footage: the line, the
+    turn, the reveal. The drop takes the pan mid-move and the carousel escalates the crew
+    it revealed.
+audio:
+  has_speech: true
+  quote: Yo, this has to be the craziest crew ever.
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+  measured: >-
+    Speech runs 300 -> 2550ms on a 250Hz-highpassed RMS envelope; everything after 2550ms
+    sits at the -32 to -34dB ambient floor. A vision pass also reported an "Oh my God"
+    around 10s of the original — there is no such transient in the envelope, so it is not
+    in the descriptor.
+beats:
+- t_in: 0
+  t_out: 2550
+  shot: handheld
+  framing: medium
+  frame: a man in a white tank top and a blue-and-yellow silk scarf talks straight into a
+    phone held at arm's length, trees and a flat overcast sky behind him
+  means: the promise is made — he names a crew and does not show it
+- t_in: 2550
+  t_out: 3400
+  shot: whip_pan
+  framing: medium
+  frame: the camera whips down and off him toward the ground, everything smeared
+  means: the turn — the line is over and he is swinging the phone at the thing he named
+- t_in: 3400
+  t_out: 7200
+  shot: pan
+  framing: wide
+  frame: a grassy verge crawling with pigeons, a low kerb, a stone city wall and traffic
+    behind it
+  means: the crew is revealed, and the drop cuts the pan off while it is still moving
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 2550
+  kind: beat_change
+  note: the line ends; the 2-bar swell starts 810ms after this
+- t: 3400
+  kind: reveal
+  note: the pan lands on the pigeons — the hook does its own revealing (FORMAT-SPEC's
+    "no second reveal")
+- t: 7200
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 3400
+hook_recommended:
+  t_in: 0
+  t_out: 7200
+  pre_roll_bars: 2
+features:
+  energy: 1.0
+  luma: 0.606
+  contrast: 0.801
+  warmth: 0.644
+  saturation: 0.198
+  detail: 0.069
+  intensity_raw: 0.66
+axes:
+  light:
+    v: 0.606
+    pole: bright
+  motion:
+    v: 1.0
+    pole: kinetic
+  temp:
+    v: 0.644
+    pole: warm
+  scale:
+    v: 0.069
+    pole: wide

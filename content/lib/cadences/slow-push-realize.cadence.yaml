@@ -1,0 +1,54 @@
+schema: rtf.cadence/v1
+id: slow-push-realize
+title: "One move, no cuts, line on the last beat"
+inspired_by: >
+  Jaws' dolly zoom, and every Hitchcock push-in onto a face that has just understood
+  something. Spielberg's rule: do not cut to the realisation, travel to it.
+
+# The only cadence with no internal cut at all. Everything is one continuous camera move,
+# which means it cannot be assembled in the edit — it has to be shot or generated as a
+# single take. That is a real constraint and the reason it is not the default.
+#
+# It is also the cadence most likely to survive being watched twice, because the second
+# time through you are watching the background instead of the face.
+#
+#    13                9                        4          0
+#    ├────────────────┤─────────────────────────┤──────────┤
+#    wide             push                      THE LINE   DROP
+
+hook_beats: 13
+
+slots:
+  - role: wide
+    at: 13
+    what: "Static wide. The subject is small and the room is doing the talking."
+    why: >
+      Four beats of stillness so the move, when it starts, is legible AS a move. Starting
+      on the push wastes it — the viewer has nothing to measure it against.
+
+  - role: push
+    at: 9
+    what: "The move begins and does not stop until the cut. Slow, continuous, no easing."
+    why: >
+      Five beats of travel. It must be slow enough that no single frame feels like it is
+      moving and yet the framing is unrecognisable by the end. If the viewer notices the
+      push, it is too fast.
+
+  - role: line
+    at: 4
+    what: "The phrase, quiet, arriving while the camera is still moving."
+    why: >
+      The one cadence where the line does not get its own static frame. It is spoken
+      into motion, which makes it sound involuntary rather than delivered — and the push
+      continuing through it is what stops the video from resolving early.
+
+  - role: cut
+    at: 0
+    what: "The hard cut, at the end of the move. The push never arrives; the drop interrupts it."
+
+requires:
+  speech: true
+  reveal: true
+  single_take: true             # no internal cut points are legal in this cadence
+  min_line_words: 3
+  max_line_words: 14

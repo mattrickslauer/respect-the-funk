@@ -1,0 +1,147 @@
+schema: rtf.format/v1
+id: promise-payoff
+title: "Promise → drop → payoff carousel"
+version: 1
+
+# ---------------------------------------------------------------------------
+# THE GEOMETRY
+#
+# One clip makes a promise. The drop cuts it off. A carousel pays it back.
+#
+#   ┌──────── hook ────────┐│┌──────────── carousel ────────────┐
+#   one line, one image     ││ n pictures, one per beat, one axis
+#   stated deadpan, held    ││ of the world flipped in each
+#                           ││
+#                          drop
+#
+# The load-bearing claim is congruence in the geometric sense: the payoff is the hook
+# under a reflection. The FIGURE is preserved exactly — same faces, same wardrobe, same
+# props, same relationship — and the GROUND is inverted along declared axes. Cold to hot.
+# Indoors to landscape. Nobody to somebody. Change the figure and it stops being a
+# payoff and becomes a different video; leave the ground alone and there was no joke.
+#
+# Everything below is the machinery for holding that still while the song underneath it
+# changes. See FORMAT-SPEC.md for the reasoning; content/edits/california-test is the
+# worked example.
+# ---------------------------------------------------------------------------
+
+premise: >
+  A single camera-original clip states a want in one spoken line and one legible image,
+  and is cut off mid-breath by a music drop. Everything after the drop is a beat-locked
+  carousel of stills showing that want already granted — the same people in an inverted
+  world. The comedy, or the ache, is the distance between the last frame before the cut
+  and the first frame after it.
+
+slots:
+
+  hook:
+    what: >
+      The promise. One clip, one line, one image. It must be legible with the sound off
+      in its first 600ms and it must end on a declared hard cut — the drop lands there
+      and nothing in the edit is allowed to move it.
+    count: 1
+    requires_can_lead: true       # clip.role.can_lead — an opener, per CLIP-SPEC
+    requires_speech: true         # clip.audio.quote — the "one line". No line, no promise.
+    must_end_on: hard_cut         # the t_out must be a cut_point of this kind
+    max_ms: 9000                  # past ~9s a vertical feed has already decided about you
+    audio: source                 # the line survives under the bed; it IS the setup
+
+  carousel:
+    what: >
+      The payoff. One still per beat, hard cut, no dissolves. Each picture is a single
+      readable idea — a viewer gets 480ms and will not parse two. The last picture is the
+      end card and holds longer, because the eye needs somewhere to rest while the ear
+      catches up.
+    min_items: 12                 # under ~12 the eye reads "slideshow", not "sequence"
+    max_axis_run: 2               # ≤2 consecutive pictures may lead on the same axis
+    # Every picture declares an `intensity` 1–5: how loud, how large, how far past what a
+    # viewer would have guessed. This is the closest thing to a machine-checkable "wow".
+    escalation:
+      require: true
+      peak_within_last: 0.34      # the biggest picture lands in the final third
+      min_lift: 0.5               # last third must out-average the first by this much
+    hold: beats                   # every duration is a beat count, never a millisecond
+
+beat_grid:
+  origin: hook.t_out              # the drop is beat 0; positions are absolute on the grid
+  quantize: strict                # durations are DIFFERENCES between grid positions, so
+                                  # rounding never accumulates — cut #22 is still on the beat
+
+# ---------------------------------------------------------------------------
+# Defaults. A song file or an instance may override any of these; nothing here is a
+# constant, and everything here is a considered starting point rather than a shrug.
+# ---------------------------------------------------------------------------
+defaults:
+
+  output:
+    width: 1080
+    height: 1920
+    fps: 30
+    aspect: "9:16"
+
+  tuning:                         # ← the per-song surface. See FORMAT-SPEC §Tuning.
+    speech_lufs: -16              # phone audio is ~-34 LUFS and vanishes the instant a
+                                  # mastered track arrives; normalize or lose the line
+    pre_drop_gain: 0.0            # silence before the cut, by construction
+    pre_roll:
+      bars: 2                     # bring in the track's REAL run-up this far ahead
+      curve: quadratic            # a linear ramp reads as already-loud halfway through,
+                                  # because loudness is not linear in amplitude
+      from_gain: 0.0
+      to_gain: 1.0
+    # carousel_beats: <int>       # set per song — the contract the item list must satisfy
+
+  carousel:
+    source: stills              # relative to the video's own folder
+    look: sunbleached             # see render_edit.LOOKS
+    flash_frames: 1               # one white frame on each cut: the title-sequence snap
+    end_card_beats: 2             # the last picture holds double
+    # A single repeated push reads as a slideshow however well it cuts. The list cycles
+    # over the items; no two adjacent positions may resolve to the same move.
+    animate: [push_in, pan_r, snap, pull_out, pan_l, push_in, tilt_d, snap, pan_r, pull_out]
+
+# ---------------------------------------------------------------------------
+# Prompt doctrine — the part of every generation prompt that is about craft rather than
+# about this particular video. Instances add `characters_block` and `identity`; the
+# character files supply the faces.
+# ---------------------------------------------------------------------------
+prompt:
+  # "warm golden sun, slight lens flare" pushed everything toward glossy stock
+  # photography. Realism comes from naming the imperfections, not the beauty.
+  #
+  # Nothing here may name a place, a palette or a period — that is the instance's job,
+  # and an instance that needs different light overrides this whole string rather than
+  # fighting it. (california-test does exactly that; its light really is Californian.)
+  shared_suffix: >
+    Photorealistic press-photograph realism with strong directional light and rich
+    saturated colour. Faces clearly lit, sharply in focus and unobscured. Natural
+    unretouched skin with fine texture — but YOUNG skin: smooth, unlined, no wrinkles and
+    no age lines. No beauty smoothing, no HDR glow, no plastic airbrushing. Natural depth
+    of field, slightly imperfect handheld framing. Vertical 9:16.
+
+  obscured_suffix: >
+    Photorealistic handheld phone photograph, vertical 9:16. The subject is DELIBERATELY
+    HARD TO READ: mostly hidden behind the object in front of it, badly out of focus, cut
+    off by the frame edge, and lit only by spill. No face is legible. A viewer should not
+    be able to tell what they are looking at. Natural unretouched texture, no HDR glow,
+    no beauty smoothing.
+
+# ---------------------------------------------------------------------------
+# What this format is NOT, so instances don't drift into a different one:
+#   • not a montage — the carousel has a declared axis structure, not vibes
+#   • not a lyric video — no text on the stills unless an item asks for a title
+#   • not a story — the carousel has no chronology; any two pictures may swap
+#   • not a reveal — the hook already revealed. The carousel is consequence, not twist.
+# ---------------------------------------------------------------------------
+
+  # For beats whose `subjects` list is EMPTY. The default suffix is face doctrine —
+  # "faces clearly lit, sharply in focus and unobscured" — which is an instruction to put
+  # faces in the picture. Applied to an empty room it duly invented strangers crouching
+  # behind the props. Three beats in this format can have no people in them (a tableau, a
+  # snap onto an object, an empty-lane graphic shot) and all three need this instead.
+  still_life_suffix: >
+    Photorealistic press-photograph realism, vertical 9:16, flat-on and symmetrical.
+    THE ROOM IS COMPLETELY EMPTY OF PEOPLE. No person, no face, no hand, no limb, no
+    silhouette and no reflection of anyone appears anywhere in the frame — this is a
+    photograph of objects in an empty room and nothing else. Natural unretouched texture,
+    natural depth of field, no HDR glow, no beauty smoothing.

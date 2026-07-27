@@ -1,0 +1,84 @@
+schema: rtf.brief/v1
+id: nocturnal
+song: losing-sleep
+title: "Nocturnal — starting library for Losing Sleep"
+
+# ---------------------------------------------------------------------------
+# A BRIEF IS A SEARCH, NOT A PLAYLIST.
+#
+# Each source names what the picture has to *do*, and a query that tends to find it.
+# `fetch_library.py` resolves the query, downloads a bounded window, and picks the best
+# continuous shot inside it — so the brief survives a dead video, a re-upload, or a
+# different top result. Pin `url:` on a source when you want exactly one clip forever.
+#
+# The set is chosen for congruence with the track: "Losing Sleep" is 125 BPM, nocturnal,
+# four-on-the-floor. Every source below is night, motion, or both. A library that mixes
+# noon picnics into this is not a broader library, it is a weaker one.
+# ---------------------------------------------------------------------------
+
+capture:
+  window_s: 150           # seconds of source to consider, taken 25% in — see section_for()
+  target_ms: 4000         # preferred shot length
+  min_ms: 1200            # a shot under this cannot carry even one 480ms beat with air
+  max_ms: 10000
+
+sources:
+  - id: neon-drive
+    query: "neon city night drive pov 4k"
+    wants: "forward motion through light — the spine of the whole library"
+
+  - id: rain-window
+    query: "rain on window at night city lights bokeh 4k"
+    wants: "stillness with texture; the breath between kinetic shots"
+
+  - id: club-crowd
+    query: "slow motion crowd dancing club strobe lights"
+    wants: "bodies on the beat — the drop's most literal payoff"
+
+  - id: empty-highway
+    query: "empty highway at night timelapse headlights long exposure"
+    wants: "scale and repetition; reads instantly at 480ms"
+
+  - id: skyline-drone
+    query: "drone shot city skyline at night 4k aerial"
+    wants: "the wide that makes the closes feel close"
+
+  - id: walking-alone
+    query: "person walking alone at night street lamp slow motion"
+    wants: "a human figure — the library's only recurring 'character'"
+
+  - id: subway-pass
+    query: "subway train passing platform at night"
+    wants: "a hard horizontal wipe that can hide a cut"
+
+  - id: convenience-store
+    query: "convenience store at night aesthetic fluorescent"
+    wants: "sickly green light — the palette's cold pole"
+
+  - id: ocean-night
+    query: "ocean waves at night moonlight slow motion"
+    wants: "organic motion against all the machine motion"
+
+  - id: ceiling-fan
+    query: "ceiling fan spinning dark bedroom"
+    wants: "the literal insomnia shot; the title, said once"
+
+  - id: night-market
+    query: "night market street food stall steam neon"
+    wants: "density and warmth — the palette's hot pole"
+
+  - id: skate-night
+    query: "skateboarding at night city slow motion"
+    wants: "kinetic human motion with a built-in impact"
+
+  - id: neon-sign
+    query: "neon sign flickering close up night"
+    wants: "a close, an insert, a punctuation mark"
+
+  - id: hand-window
+    query: "hand out car window driving sunset slow motion"
+    wants: "the one dusk shot; earns its place by not being night"
+
+  - id: fireworks
+    query: "fireworks slow motion night sky close up"
+    wants: "the peak — highest intensity in the library, spend it late"

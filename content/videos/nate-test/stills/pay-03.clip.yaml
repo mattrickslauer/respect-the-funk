@@ -1,0 +1,35 @@
+schema: rtf.clip/v1
+id: pay-03
+media: pay-03.png
+title: pay-03
+logline: 'A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and a
+  street in the background, captured in a photographic, high-resolution, vertical format '
+rights:
+  source: ai
+  owner: anthony
+  people_release: true
+  minors_in_frame: false
+  notes: Synthetic. Generated for edit 'nate-test'. Disclose as AI.
+subjects:
+- nate-hook
+role:
+  primary: b_roll
+  can_lead: false
+  can_follow: true
+provenance:
+  provider: gemini
+  model: gemini-2.5-flash-image
+  prompt: 'A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+    a street in the background, captured in a photographic, high-resolution, vertical format with realistic
+    lighting and palette, mimicking a casual phone camera aesthetic. Each image depicts the same grassy
+    park verge, trees, stone wall, and distant street, maintaining a photographic, vertical aspect, focusing
+    on pigeons as the central figures while varying their actions and environment. A group of common city
+    pigeons on a lush green grassy verge, near trees, a stone wall, and a street in the background, captured
+    in a photographic, high-resolution, vertical format. One pigeon is caught mid-air, wings blurred with
+    motion, taking off with surprising agility, others watching. Photorealistic press-photograph realism
+    with strong directional light and rich saturated colour. Faces clearly lit, sharply in focus and unobscured.
+    Natural unretouched skin with fine texture — but YOUNG skin: smooth, unlined, no wrinkles and no age
+    lines. No beauty smoothing, no HDR glow, no plastic airbrushing. Natural depth of field, slightly
+    imperfect handheld framing. Vertical 9:16.'
+  sha256: 7f970b432e6ef4fcec65c0bc5902031e420ce882d0fefe2cc86600b1b79e2d7a
+  cache_key: .cache/7f970b432e6ef4fcec65c0bc5902031e420ce882d0fefe2cc86600b1b79e2d7a.png

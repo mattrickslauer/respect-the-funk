@@ -1,0 +1,94 @@
+schema: rtf.clip/v1
+id: unpopular
+media: unpopular.mp4
+title: a claim the payoff can literalise
+logline: What is your opinion on the current state of R&B?
+source_meta:
+  duration_ms: 5079
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Camryn Suzanne
+  notes: third-party source, proof-of-concept hook library. Identifiable people may
+    appear and have not consented; check before publishing or before holding a likeness
+    invariant in a payoff.
+  people_release: false
+  minors_in_frame: unknown
+provenance:
+  query: unpopular opinion video essay commentary
+  url: https://www.youtube.com/watch?v=vIFvojc3M8k
+  video_id: vIFvojc3M8k
+  video_title: Your unpopular music opinions are…..kinda right???
+  channel: Camryn Suzanne
+  section_start_s: 2099.36
+  caption_score: 2.69
+  chosen_because: This line is a direct question that sets up an expectation for a
+    visual answer or interpretation, similar to the 'Have you ever been bowling?'
+    example.
+  gap_after_s: 0.0
+  line_db: -22.8
+  tail_db: -26.4
+  tail_quieter_db: 3.6
+audio:
+  has_speech: true
+  quote: What is your opinion on the current state of R&B?
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 2479
+  shot: static
+  framing: medium
+  frame: the speaker delivers the line
+  means: the promise is made
+- t_in: 2479
+  t_out: 5079
+  shot: static
+  framing: medium
+  frame: the line lands and nobody says anything
+  means: the pause the drop cuts off
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 2479
+  kind: beat_change
+  note: the line ends; the pre-roll swell starts after this
+- t: 5079
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 2479
+hook_recommended:
+  t_in: 0
+  t_out: 5079
+  pre_roll_bars: 1
+features:
+  energy: 0.199
+  luma: 0.169
+  contrast: 1.0
+  warmth: 0.595
+  saturation: 0.11
+  detail: 0.212
+  intensity_raw: 0.343
+axes:
+  light:
+    v: 0.169
+    pole: dark
+  motion:
+    v: 0.199
+    pole: still
+  temp:
+    v: 0.595
+    pole: mid
+  scale:
+    v: 0.212
+    pole: wide

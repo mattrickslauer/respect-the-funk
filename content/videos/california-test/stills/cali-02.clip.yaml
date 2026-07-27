@@ -1,0 +1,38 @@
+schema: rtf.clip/v1
+id: cali-02
+media: cali-02.png
+title: cali-02
+logline: A YOUNG man of 25 with a boyish, youthful face — smooth unlined skin, full cheeks, no wrinkles
+  and no hollowing. Narrow face, olive-toned skin, messy dark brown wavy hair to the ja
+rights:
+  source: ai
+  owner: anthony
+  people_release: true
+  minors_in_frame: true
+  notes: Synthetic. Generated for edit 'california-test'. Disclose as AI.
+subjects:
+- anthony
+- cosima
+role:
+  primary: b_roll
+  can_lead: false
+  can_follow: true
+provenance:
+  provider: gemini
+  model: gemini-2.5-flash-image
+  prompt: 'A YOUNG man of 25 with a boyish, youthful face — smooth unlined skin, full cheeks, no wrinkles
+    and no hollowing. Narrow face, olive-toned skin, messy dark brown wavy hair to the jaw, thick dark
+    brows, and a soft patchy young man''s beard kept short. and A very young baby, 7 months old — not
+    a toddler. Round full-cheeked face, small soft features, fair warm skin, very large round dark eyes,
+    fine DARK BROWN hair standing up in a wispy tuft — her hair is dark brown in every light, never light
+    or blonde. Head large relative to her body, no teeth showing. The man and the baby must be exactly
+    the two people in the reference photographs. Match their faces precisely, and match their AGES: he
+    is 25 years old, she is 7 months old. Do not age them, idealise them, slim them or symmetrise them.
+    The two of them in a stopped convertible on Sunset Boulevard at dusk, him turned to camera in the
+    driver''s seat, face lit by the neon of a huge billboard, her beside him. Photorealistic press-photograph
+    realism with strong directional California light and rich saturated colour. Faces clearly lit, sharply
+    in focus and unobscured. Natural unretouched skin with fine texture — but YOUNG skin: smooth, unlined,
+    no wrinkles and no age lines. No beauty smoothing, no HDR glow, no plastic airbrushing. Natural depth
+    of field, slightly imperfect handheld framing. Vertical 9:16.'
+  sha256: 169a3acf6618e206219c1ba82939542b726c651a6d99e89b73a3a5a896865eec
+  cache_key: .cache/169a3acf6618e206219c1ba82939542b726c651a6d99e89b73a3a5a896865eec.png

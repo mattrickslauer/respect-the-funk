@@ -1,0 +1,37 @@
+schema: rtf.character/v1
+id: anthony
+name: Anthony
+# How this character is referred to when labelling reference photos for the image
+# model. Was hardcoded as man-or-baby off `consent.minor`, which only worked
+# because the project had exactly one cast.
+role_in_frame: "the man"
+role: "The one who announces the plan"
+
+# Written from the front/left/right reference photographs, not from memory. Concrete
+# structural features only — face shape, brow, nose line, hairline. Vibe adjectives
+# ("handsome", "rugged") actively cause drift because the model averages toward a type.
+prompt_description: >
+  A YOUNG man of 25 with a boyish, youthful face — smooth unlined skin, full cheeks, no
+  wrinkles and no hollowing. Narrow face, olive-toned skin, messy dark brown wavy hair to
+  the jaw, thick dark brows, and a soft patchy young man's beard kept short.
+
+reference_frames:                 # face crops carry the identity; 3 lighting setups
+  - anthony-face-front.jpg        # green door, soft indoor
+  - anthony-face-front2.jpg       # grey-blue wall, flat daylight
+  - anthony-face-front3.jpg       # warm interior, window light
+  - anthony-face-left.jpg
+  - anthony-face-right.jpg
+  - anthony-front.jpg             # one full frame for build, hair volume, wardrobe
+
+wardrobe_default: "dark olive waffle-knit longsleeve over a pink crew collar, khaki chinos"
+wardrobe_california: "light linen shirt or plain tee, sunglasses, shorts — same hair and beard"
+
+negative_prompt: >
+  middle-aged, forty years old, thirty-five, wrinkles, crow's feet, forehead lines,
+  nasolabial folds, sunken cheeks, hollow eyes, jowls, weathered skin, grey hair,
+  receding hairline, thick full beard, clean-shaven, short hair, straight hair, blonde,
+  blue eyes, glasses, hat, square jaw, model-handsome, airbrushed, symmetrical face
+
+consent:
+  people_release: true
+  minor: false

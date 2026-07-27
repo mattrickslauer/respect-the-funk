@@ -1,0 +1,93 @@
+schema: rtf.clip/v1
+id: ever-wondered
+media: ever-wondered.mp4
+title: a question that opens a door
+logline: let me see if I can refresh your memory on where that melody comes from
+source_meta:
+  duration_ms: 7080
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Sideways
+  notes: third-party source, proof-of-concept hook library. Identifiable people may
+    appear and have not consented; check before publishing or before holding a likeness
+    invariant in a payoff.
+  people_release: false
+  minors_in_frame: unknown
+provenance:
+  query: have you ever wondered video essay talking to camera
+  url: https://www.youtube.com/watch?v=Q7YCTJxfcA4
+  video_id: Q7YCTJxfcA4
+  video_title: Why the Soundtrack to Shrek is Actually Genius
+  channel: Sideways
+  section_start_s: 691.07
+  caption_score: 2.63
+  chosen_because: This line makes a clear promise to reveal the origin of a melody,
+    which can be visually paid off.
+  gap_after_s: 10.43
+  line_db: -18.1
+  tail_db: -14.6
+  tail_quieter_db: -3.5
+audio:
+  has_speech: true
+  quote: let me see if I can refresh your memory on where that melody comes from
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 4480
+  shot: static
+  framing: medium
+  frame: the speaker delivers the line
+  means: the promise is made
+- t_in: 4480
+  t_out: 7080
+  shot: static
+  framing: medium
+  frame: the line lands and nobody says anything
+  means: the pause the drop cuts off
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 4480
+  kind: beat_change
+  note: the line ends; the pre-roll swell starts after this
+- t: 7080
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 4480
+hook_recommended:
+  t_in: 0
+  t_out: 7080
+  pre_roll_bars: 1
+features:
+  energy: 0.499
+  luma: 0.245
+  contrast: 0.591
+  warmth: 0.563
+  saturation: 0.152
+  detail: 0.064
+  intensity_raw: 0.383
+axes:
+  light:
+    v: 0.245
+    pole: dark
+  motion:
+    v: 0.499
+    pole: mid
+  temp:
+    v: 0.563
+    pole: mid
+  scale:
+    v: 0.064
+    pole: wide

@@ -1,0 +1,61 @@
+schema: rtf.clip/v1
+id: subway-pass
+media: subway-pass.mp4
+title: a hard horizontal wipe that can hide a cut
+logline: a hard horizontal wipe that can hide a cut
+source_meta:
+  duration_ms: 4000
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Flavas of Chill
+  notes: third-party source, proof-of-concept library
+provenance:
+  query: subway train passing platform at night
+  url: https://www.youtube.com/watch?v=vHkwfRXm7-c
+  video_id: vHkwfRXm7-c
+  video_title: Night New York Subway White Noise Ambience Sounds | Reading, Studying,
+    Sleeping, Relaxing | ASMR
+  channel: Flavas of Chill
+  section_start_s: 77.375
+  section_dur_s: 4.0
+features:
+  energy: 0.004
+  luma: 0.143
+  contrast: 0.744
+  warmth: 0.442
+  saturation: 0.077
+  detail: 0.391
+  intensity_raw: 0.225
+axes:
+  light:
+    v: 0.143
+    pole: dark
+  motion:
+    v: 0.004
+    pole: still
+  temp:
+    v: 0.442
+    pole: mid
+  scale:
+    v: 0.391
+    pole: wide
+role:
+  primary: b_roll
+  can_lead: true
+  can_follow: true
+  min_useful_ms: 400
+cut_points:
+- t: 0
+  kind: in
+- t: 4000
+  kind: hard_cut
+screen:
+  overlay_ratio: 0.08531
+  axis_align: 0.653
+  motion: 0.043
+  verdict: unscreenable
+  usable: true

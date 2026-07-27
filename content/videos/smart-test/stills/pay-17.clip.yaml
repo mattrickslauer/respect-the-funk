@@ -1,0 +1,34 @@
+schema: rtf.clip/v1
+id: pay-17
+media: pay-17.png
+title: pay-17
+logline: Each image portrays the figure of a young man (seen from behind or as a silhouette) in a beige
+  graphic t-shirt, with a microphone held by a dark-skinned hand positioned near him, w
+rights:
+  source: ai
+  owner: anthony
+  people_release: true
+  minors_in_frame: false
+  notes: Synthetic. Generated for edit 'smart-test'. Disclose as AI.
+subjects: []
+role:
+  primary: b_roll
+  can_lead: false
+  can_follow: true
+provenance:
+  provider: gemini
+  model: gemini-2.5-flash-image
+  prompt: 'Each image portrays the figure of a young man (seen from behind or as a silhouette) in a beige
+    graphic t-shirt, with a microphone held by a dark-skinned hand positioned near him, within a dynamically
+    inverted and information-dense environment, rendered in a consistent medium close-up, realistic photographic
+    style, and naturalistic color palette. A young man, seen from behind, wearing a beige t-shirt with
+    a graphic design, with a microphone held by a dark-skinned hand positioned near him. The street is
+    replaced by a vast, infinitely deep cosmic library, its shelves laden with glowing tomes of universal
+    knowledge, each radiating intricate, symbolic glyphs that fill the dark, starry air. Photographic
+    style, natural colors, medium close-up. Photorealistic press-photograph realism with strong directional
+    light and rich saturated colour. Faces clearly lit, sharply in focus and unobscured. Natural unretouched
+    skin with fine texture — but YOUNG skin: smooth, unlined, no wrinkles and no age lines. No beauty
+    smoothing, no HDR glow, no plastic airbrushing. Natural depth of field, slightly imperfect handheld
+    framing. Vertical 9:16.'
+  sha256: 73d32c4274793755f694fbc4bb104d19c64edadd531074756eb5dd4da22b1a80
+  cache_key: .cache/73d32c4274793755f694fbc4bb104d19c64edadd531074756eb5dd4da22b1a80.png

@@ -1,0 +1,241 @@
+schema: rtf.edit/v2
+id: storytime-test
+format: promise-payoff
+song: losing-sleep
+cast:
+- storytime
+title: storytime — found hook, congruent payoff
+intent: 'Found dialogue makes the promise; the payoff inverts the world it was said in. Hook line: "are
+  you gonna scream?"'
+hook:
+  clip: storytime
+  t_in: 0
+  t_out: 4500
+congruence:
+  from: A worried cartoon figure faces an ambiguous, egg-shaped character on a stark white background.
+  to: The same cartoon figures are engulfed in a vibrant, chaotic, and joyfully impossible world.
+  invariant:
+  - 2D cartoon art style with thick black outlines, flat colors, and simple shading
+  - The character with brown hair, red and white striped shirt, and black pants/shoes
+  - The egg-shaped character with an orange beak and black spiky 'mask'
+  - Close-up framing that centers on the characters and cuts off body parts
+  - The general positioning of the two main figures relative to each other
+  inverted:
+    motion: stillness -> hyperactive movement
+    reality: ordinary -> surreal and impossible scenarios
+    space: empty white background -> densely crowded and overwhelming environments
+    order: clean and minimal -> chaotic and exploding with elements
+    emotion: apprehension -> unbridled exhilaration and joy
+prompt:
+  characters_block: '{storytime.prompt_description}'
+  identity: Each image depicts the brown-haired character and the egg-shaped character in the same relative
+    positions and attire, but the world around them is transformed by hyperactive movement, impossible
+    events, dense crowding, exploding chaos, and overwhelming exhilaration, all rendered in the hook's
+    distinct 2D cartoon style with thick black outlines and flat colors.
+carousel:
+  items:
+  - still: pay-01
+    hits:
+    - reality
+    intensity: 2
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt and the egg-shaped
+      character are framed similarly. In the background, a single, perfectly spherical cloud floats upside
+      down, a touch of surrealism.
+  - still: pay-02
+    hits:
+    - order
+    intensity: 2
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt and the egg-shaped
+      character are present. The once pristine white background now has a few playful, abstract splatters
+      of bright paint, suggesting minor disorder.
+  - still: pay-03
+    hits:
+    - motion
+    - space
+    intensity: 2
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt is startled, while
+      the egg-shaped character seems to bounce lightly. The background is filled with swirling, pastel-colored
+      smoke trails, suggesting both movement and a slightly fuller space.
+  - still: pay-04
+    hits:
+    - motion
+    intensity: 1
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt looks slightly surprised,
+      while the egg-shaped character is static. The white background is subtly rippling with soft, flowing
+      waves of color, creating a gentle sense of motion.
+  - still: pay-05
+    hits:
+    - emotion
+    intensity: 2
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt is seen from behind,
+      looking up. The egg-shaped character is also visible. The white background is bathed in a soft,
+      warm glow, evoking a feeling of mild pleasantness.
+  - still: pay-06
+    hits:
+    - space
+    intensity: 1
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt and the egg-shaped
+      character are centered. The white background is now lightly peppered with tiny, floating confetti,
+      giving a hint of crowdedness.
+  - still: pay-07
+    hits:
+    - space
+    - emotion
+    intensity: 3
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt is smiling broadly,
+      with the egg-shaped character next to them. The background is a dense field of shimmering, holographic
+      bubbles, creating a crowded, joyful atmosphere.
+  - still: pay-08
+    hits:
+    - order
+    - reality
+    intensity: 4
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt and the egg-shaped
+      character are situated amidst a scene where gravity has inverted for certain objects, causing them
+      to float upwards in perfect, impossible spirals. The background is a geometrically chaotic but visually
+      stunning array of these inverted elements.
+  - still: pay-09
+    hits:
+    - motion
+    - emotion
+    intensity: 5
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt is a blur of ecstatic
+      movement, arms flung out in pure joy, seen from behind. The egg-shaped character is cheering. The
+      background is a maelstrom of vibrant, spiraling energy and glowing particles, conveying absolute
+      euphoria and frantic motion.
+  - still: pay-10
+    hits:
+    - space
+    - order
+    intensity: 5
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt is almost lost in a
+      hyper-dense, infinitely repeating pattern of joyful, miniature versions of themselves and the egg-shaped
+      character, forming a crowded, chaotic, yet perfectly structured, infinite loop.
+  - still: pay-11
+    hits:
+    - emotion
+    - space
+    intensity: 4
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt is seen in joyful silhouette,
+      arms raised. The egg-shaped character is jumping. The background is an overwhelming, kaleidoscopic
+      burst of brilliant light and color, filling every corner, suggesting extreme exhilaration.
+  - still: pay-12
+    hits:
+    - reality
+    - order
+    intensity: 3
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt looks wide-eyed, and
+      the egg-shaped character is partially obscured. The background shows perfectly geometric shapes
+      floating and interlocking in an impossible, yet orderly, fashion.
+  - still: pay-13
+    hits:
+    - order
+    - motion
+    intensity: 3
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt and the egg-shaped
+      character are visible. The background is a vibrant explosion of abstract brushstrokes and paint
+      drips, all moving and swirling dynamically.
+  - still: pay-14
+    hits:
+    - motion
+    - reality
+    intensity: 3
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt is being lifted slightly,
+      arms out. The egg-shaped character is beside them. The background features several gravity-defying
+      objects (a flying teacup, a spinning book), all in mid-air.
+  - still: pay-15
+    hits:
+    - space
+    - motion
+    intensity: 4
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt is half-hidden by a
+      torrent of colorful, swirling stars. The egg-shaped character is also partially obscured. The entire
+      background is a dense, cosmic storm of meteor showers and nebulae, all moving at high speed.
+  - still: pay-16
+    hits:
+    - emotion
+    - reality
+    intensity: 5
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt and the egg-shaped
+      character are silhouetted against a background where the very fabric of reality is warping into
+      a joyful, impossible kaleidoscope of self-generating, shimmering rainbows and grinning suns, an
+      overwhelming sense of pure bliss.
+  - still: pay-17
+    hits:
+    - motion
+    - order
+    intensity: 4
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt is blurred with motion,
+      as if dancing wildly. The egg-shaped character is also in a dynamic pose. The background is a chaotic,
+      yet rhythmic, pattern of breaking geometric shapes and exploding lines.
+  - still: pay-18
+    hits:
+    - reality
+    - space
+    intensity: 4
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt and the egg-shaped
+      character are floating effortlessly. The background is a dense, impossible landscape of floating
+      islands made of candy and giant, smiling flowers, packed closely together.
+  - still: pay-19
+    hits:
+    - space
+    - emotion
+    intensity: 5
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt and the egg-shaped
+      character are engulfed in a tidal wave of pure, sparkling joy, depicted as an ocean of smiling faces
+      and cheering hands, overwhelmingly crowded. The characters' expressions are hidden by the sheer
+      number of elements, only their general shape visible.
+  - still: pay-20
+    hits:
+    - order
+    - motion
+    intensity: 5
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt and the egg-shaped
+      character are at the center of a cosmic ballet where entire galaxies are exploding into abstract,
+      colorful patterns, reorganizing themselves into dynamic, impossible formations, all in constant,
+      energetic motion.
+  - still: pay-21
+    hits:
+    - reality
+    - order
+    intensity: 5
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt and the egg-shaped
+      character are standing on a platform made of pure light, hovering over an impossibly inverted city
+      where buildings grow downwards from the sky. The scene is chaotically organized, defying all physical
+      laws.
+  - still: pay-22
+    hits:
+    - emotion
+    intensity: 3
+    prompt: A 2D cartoon illustration in the distinct style of the attached images, with thick black outlines
+      and flat colors. The brown-haired character in a red and white striped shirt is peacefully asleep,
+      head gently tilted, a serene smile barely visible. The egg-shaped character is also resting calmly
+      nearby. The background is a soft, warm gradient of pastel colors, slowly swirling, suggesting quiet
+      contentment after the chaos.
+tuning:
+  pre_roll:
+    bars: 1
+    curve: quadratic
+    from_gain: 0.0
+    to_gain: 1.0

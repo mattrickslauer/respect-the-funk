@@ -1,0 +1,60 @@
+schema: rtf.clip/v1
+id: ceiling-fan
+media: ceiling-fan.mp4
+title: the literal insomnia shot; the title, said once
+logline: the literal insomnia shot; the title, said once
+source_meta:
+  duration_ms: 4000
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Sam's Ceiling Fans
+  notes: third-party source, proof-of-concept library
+provenance:
+  query: ceiling fan spinning dark bedroom
+  url: https://www.youtube.com/watch?v=LU5bSqDdIzQ
+  video_id: LU5bSqDdIzQ
+  video_title: Black ceiling fan spinning fast
+  channel: Sam's Ceiling Fans
+  section_start_s: 25.875
+  section_dur_s: 4.0
+features:
+  energy: 0.701
+  luma: 0.386
+  contrast: 0.78
+  warmth: 0.577
+  saturation: 0.064
+  detail: 0.085
+  intensity_raw: 0.497
+axes:
+  light:
+    v: 0.386
+    pole: dark
+  motion:
+    v: 0.701
+    pole: kinetic
+  temp:
+    v: 0.577
+    pole: mid
+  scale:
+    v: 0.085
+    pole: wide
+role:
+  primary: b_roll
+  can_lead: true
+  can_follow: true
+  min_useful_ms: 400
+cut_points:
+- t: 0
+  kind: in
+- t: 4000
+  kind: hard_cut
+screen:
+  overlay_ratio: 0.0
+  axis_align: 0.0
+  motion: 21.202
+  verdict: clean
+  usable: true

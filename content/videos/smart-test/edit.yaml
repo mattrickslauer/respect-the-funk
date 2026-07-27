@@ -1,0 +1,250 @@
+schema: rtf.edit/v2
+id: smart-test
+format: promise-payoff
+song: losing-sleep
+cast: []
+title: interview-answer — found hook, congruent payoff
+intent: 'Found dialogue makes the promise; the payoff inverts the world it was said in. Hook line: "Are
+  you smart?"'
+hook:
+  clip: interview-answer
+  t_in: 0
+  t_out: 4500
+congruence:
+  from: A casual outdoor street interview under bright daylight, questioning intelligence.
+  to: An epic, impossible, and overwhelming display of cosmic understanding and mental power, witnessed
+    under various extreme conditions.
+  invariant:
+  - The figure of a young man (seen from behind or as a silhouette) in a beige t-shirt with a graphic
+    design
+  - A microphone held by a dark-skinned hand, positioned near the figure
+  - The general medium close-up framing and perspective
+  - The street/storefront architectural geometry (even if transformed)
+  - Photographic medium with a realistic style
+  inverted:
+    Impossible (Intellect): Ordinary intelligence -> Cosmic, impossible understanding
+    Night/Cosmic: Bright daylight -> Dark, star-filled, or extreme atmospheric conditions
+    Dynamic/Energetic: Calm, static interview -> Intense, active, or supercharged mental/environmental
+      states
+    Crowded/Complex (Information): Relatively simple background -> Teeming with data, patterns, or cosmic
+      structures
+    Hot/Intense: Neutral ambient temperature -> Superheated, electrified, or explosively energetic
+prompt:
+  characters_block: ''
+  identity: Each image portrays the figure of a young man (seen from behind or as a silhouette) in a beige
+    graphic t-shirt, with a microphone held by a dark-skinned hand positioned near him, within a dynamically
+    inverted and information-dense environment, rendered in a consistent medium close-up, realistic photographic
+    style, and naturalistic color palette.
+carousel:
+  items:
+  - still: pay-01
+    hits:
+    - Impossible (Intellect)
+    intensity: 2
+    prompt: A young man, seen as a silhouette, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. Above his head, a single, glowing mathematical
+      symbol hovers faintly in the air, barely noticeable. The street is otherwise ordinary, bright daylight.
+      Photographic style, natural colors, medium close-up.
+  - still: pay-02
+    hits:
+    - Night/Cosmic
+    - Dynamic/Energetic
+    intensity: 3
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The street is now deep night, illuminated by the
+      distant glow of a vibrant aurora borealis swirling in the sky above the familiar buildings. Photographic
+      style, natural colors, medium close-up.
+  - still: pay-03
+    hits:
+    - Night/Cosmic
+    intensity: 1
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The street scene is at dusk, with soft twilight
+      colors painting the sky above the familiar street architecture, still and quiet. Photographic style,
+      natural colors, medium close-up.
+  - still: pay-04
+    hits:
+    - Dynamic/Energetic
+    intensity: 2
+    prompt: A young man, seen as a silhouette, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The street scene is at dawn, with subtle light
+      trails from distant vehicles in the background, hinting at movement. Photographic style, natural
+      colors, medium close-up.
+  - still: pay-05
+    hits:
+    - Crowded/Complex (Information)
+    intensity: 2
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The storefront windows in the background display
+      subtle, almost subliminal, geometric patterns and equations instead of product advertisements. Photographic
+      style, natural colors, medium close-up.
+  - still: pay-06
+    hits:
+    - Impossible (Intellect)
+    - Crowded/Complex (Information)
+    intensity: 3
+    prompt: A young man, seen as a silhouette, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. His mind seems to be projecting a faint, intricate
+      web of glowing neural pathways and abstract thought patterns into the space directly above him,
+      partially obscuring the ordinary street background. Photographic style, natural colors, medium close-up.
+  - still: pay-07
+    hits:
+    - Hot/Intense
+    intensity: 3
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The air around him shimmers with visible heat haze,
+      and the pavement reflects a faint, warm glow from an unseen source. Bright daylight. Photographic
+      style, natural colors, medium close-up.
+  - still: pay-08
+    hits:
+    - Hot/Intense
+    - Impossible (Intellect)
+    intensity: 4
+    prompt: A young man, seen as a silhouette, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The air around him crackles with visible, blue-white
+      electrical energy, arcing from his head towards the sky, as if his thoughts are generating massive
+      power. Bright daylight. Photographic style, natural colors, medium close-up.
+  - still: pay-09
+    hits:
+    - Crowded/Complex (Information)
+    - Impossible (Intellect)
+    intensity: 4
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The entire street scene is overlaid with a dense,
+      transparent layer of scrolling, interconnected mathematical equations and philosophical texts, seemingly
+      drawn from his mind, filling every available space. Photographic style, natural colors, medium close-up.
+  - still: pay-10
+    hits:
+    - Night/Cosmic
+    - Crowded/Complex (Information)
+    - Dynamic/Energetic
+    intensity: 4
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The background is a swirling nebula of cosmic dust
+      and stars, interwoven with shimmering, holographic constellations representing complex data structures,
+      all in dynamic motion. Photographic style, natural colors, medium close-up.
+  - still: pay-11
+    hits:
+    - Night/Cosmic
+    - Dynamic/Energetic
+    intensity: 4
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The street is gone, replaced by the vacuum of space,
+      with a vast, swirling galaxy directly behind him, stars streaming past as if in motion. Photographic
+      style, natural colors, medium close-up.
+  - still: pay-12
+    hits:
+    - Impossible (Intellect)
+    - Hot/Intense
+    intensity: 4
+    prompt: A young man, seen as a silhouette, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. His head is surrounded by a halo of pure, white-hot,
+      conceptual energy, radiating outwards, while the street background remains eerily still under bright
+      daylight. Photographic style, natural colors, medium close-up.
+  - still: pay-13
+    hits:
+    - Crowded/Complex (Information)
+    - Dynamic/Energetic
+    intensity: 3
+    prompt: A young man, seen as a silhouette, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The background storefronts are now alive with scrolling
+      lines of complex code and holographic projections of dynamic data visualizations, casting colored
+      light. Photographic style, natural colors, medium close-up.
+  - still: pay-14
+    hits:
+    - Impossible (Intellect)
+    - Night/Cosmic
+    - Hot/Intense
+    intensity: 5
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. He gestures subtly, and behind him, a distant supernova
+      explodes in a silent burst of cosmic light and heat, perfectly contained within the original framing,
+      as if his will commanded it. Photographic style, natural colors, medium close-up.
+  - still: pay-15
+    hits:
+    - Dynamic/Energetic
+    - Hot/Intense
+    intensity: 4
+    prompt: A young man, seen as a silhouette, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The background street is engulfed in a gentle,
+      warm, golden energy field that ripples and pulses, making the air hum. Bright daylight. Photographic
+      style, natural colors, medium close-up.
+  - still: pay-16
+    hits:
+    - Impossible (Intellect)
+    - Dynamic/Energetic
+    - Crowded/Complex (Information)
+    intensity: 5
+    prompt: A young man, seen as a silhouette, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The street, now a shimmering illusion, parts to
+      reveal a dynamic, living diagram of quantum mechanics and general relativity, constantly reconfiguring
+      itself, as if his thoughts are directly manipulating reality. Bright daylight. Photographic style,
+      natural colors, medium close-up.
+  - still: pay-17
+    hits:
+    - Crowded/Complex (Information)
+    - Impossible (Intellect)
+    - Night/Cosmic
+    intensity: 5
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. The street is replaced by a vast, infinitely deep
+      cosmic library, its shelves laden with glowing tomes of universal knowledge, each radiating intricate,
+      symbolic glyphs that fill the dark, starry air. Photographic style, natural colors, medium close-up.
+  - still: pay-18
+    hits:
+    - Impossible (Intellect)
+    - Night/Cosmic
+    - Dynamic/Energetic
+    - Crowded/Complex (Information)
+    - Hot/Intense
+    intensity: 5
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. He stands before a cosmic singularity, his mind
+      projecting a holographic representation of the entire spacetime continuum, filled with glowing mathematical
+      constants, quantum fluctuations, and radiating immense, multi-colored energy. Photographic style,
+      natural colors, medium close-up.
+  - still: pay-19
+    hits:
+    - Dynamic/Energetic
+    - Hot/Intense
+    - Impossible (Intellect)
+    intensity: 5
+    prompt: A young man, seen as a silhouette, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. He stands at the center of a superheated, rapidly
+      expanding Big Bang event, with cosmic plasma and elementary particles swirling violently around
+      him, forming intricate patterns of pure energy. Photographic style, natural colors, medium close-up.
+  - still: pay-20
+    hits:
+    - Hot/Intense
+    - Crowded/Complex (Information)
+    - Dynamic/Energetic
+    intensity: 5
+    prompt: A young man, seen as a silhouette, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. He is surrounded by a fiery vortex of pure, living
+      data, spiraling upwards and outwards, forming a dazzling, superheated maelstrom of information and
+      energy, with bright daylight overhead. Photographic style, natural colors, medium close-up.
+  - still: pay-21
+    hits:
+    - Impossible (Intellect)
+    - Night/Cosmic
+    - Crowded/Complex (Information)
+    intensity: 5
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, with a microphone
+      held by a dark-skinned hand positioned near him. His silhouette is illuminated by an internal glow,
+      as the universe itself appears to be unfolding behind him, displaying all known scientific principles
+      and cosmic history as a hyper-detailed, impossible tapestry of light and information. Photographic
+      style, natural colors, medium close-up.
+  - still: pay-22
+    hits:
+    - Night/Cosmic
+    intensity: 3
+    prompt: A young man, seen from behind, wearing a beige t-shirt with a graphic design, now peacefully
+      sleeping, head gently bowed. The microphone, held by a dark-skinned hand, is resting silently near
+      him. The street is transformed into a serene, starlit garden with soft, glowing bioluminescent plants,
+      under a calm, clear night sky. Photographic style, natural colors, medium close-up.
+tuning:
+  pre_roll:
+    bars: 1
+    curve: quadratic
+    from_gain: 0.0
+    to_gain: 1.0

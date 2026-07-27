@@ -1,0 +1,61 @@
+schema: rtf.clip/v1
+id: hand-window
+media: hand-window.mp4
+title: the one dusk shot; earns its place by not being night
+logline: the one dusk shot; earns its place by not being night
+source_meta:
+  duration_ms: 4000
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Drive With Mahi
+  notes: third-party source, proof-of-concept library
+provenance:
+  query: hand out car window driving sunset slow motion
+  url: https://www.youtube.com/watch?v=2w5jlLkzTAk
+  video_id: 2w5jlLkzTAk
+  video_title: "EPIC Slow-Motion Highway Drive |Slow-Motion Drive That Feels Unreal\
+    \ \U0001F60D\u2728 #foryou #road #roadtrip #love"
+  channel: Drive With Mahi
+  section_start_s: 73.5
+  section_dur_s: 4.0
+features:
+  energy: 0.342
+  luma: 0.385
+  contrast: 1.0
+  warmth: 0.431
+  saturation: 0.079
+  detail: 0.133
+  intensity_raw: 0.39
+axes:
+  light:
+    v: 0.385
+    pole: dark
+  motion:
+    v: 0.342
+    pole: still
+  temp:
+    v: 0.431
+    pole: mid
+  scale:
+    v: 0.133
+    pole: wide
+role:
+  primary: b_roll
+  can_lead: true
+  can_follow: true
+  min_useful_ms: 400
+cut_points:
+- t: 0
+  kind: in
+- t: 4000
+  kind: hard_cut
+screen:
+  overlay_ratio: 0.0
+  axis_align: 0.0
+  motion: 7.253
+  verdict: clean
+  usable: true

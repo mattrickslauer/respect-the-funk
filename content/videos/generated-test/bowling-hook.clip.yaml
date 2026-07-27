@@ -1,0 +1,173 @@
+schema: rtf.clip/v1
+id: bowling-hook
+media: bowling-hook.mp4
+title: Have you ever been bowling?
+logline: 'Three flat, centred shots of a bowling alley quietly taking over an apartment — shoes by the
+  door, a ball sitting on the sofa like a guest, ten pins set up down the hallway — then Anthony asks
+  the camera whether it has ever been bowling, and a snap zoom finds Cosima on the carpet with both arms
+  around the ball.
+
+  '
+source_meta:
+  duration_ms: 5760
+  width: 1080
+  height: 1920
+  fps: 30
+  video_codec: h264
+  audio_codec: aac
+  aspect: '9:16'
+rights:
+  source: ai
+  owner: anthony
+  people_release: true
+  minors_in_frame: true
+  notes: 'Synthetic. Generated from the anthony/cosima reference frames; no third-party likenesses and
+    no third-party footage. Must carry an AI disclosure on publish.
+
+    '
+subjects:
+- anthony
+- cosima
+setting:
+  place: apartment living room
+  interior_exterior: interior
+  time_of_day: night
+  season: winter
+  weather: n/a — interior, one warm lamp and the glow of a muted television
+mood:
+- deadpan
+- absurd
+- domestic
+- escalating
+- punchline
+tags:
+- night
+- bowling
+- tableau
+- baby
+- reveal
+- cold_open
+- vertical
+- ai_generated
+audio:
+  has_speech: true
+  quote: Have you ever been bowling?
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 960
+  shot: static
+  framing: insert
+  frame: 'Flat-on, dead centre: a pair of scuffed rented bowling shoes, red and blue and cream, placed
+    neatly side by side on the carpet by an apartment front door. Nothing else in frame.'
+  means: The inventory opens small and almost plausible. Shoes by a door are normal.
+  subjects: []
+- t_in: 960
+  t_out: 1920
+  shot: static
+  framing: medium
+  frame: 'Flat-on, dead centre: a deep red and black marbled bowling ball sitting in the middle of a sofa
+    cushion like a seated guest, a television remote on the cushion beside it, the muted television glowing
+    off its surface.'
+  means: Escalation. The ball is not stored, it is sitting there, and it has the remote.
+  subjects: []
+- t_in: 1920
+  t_out: 2880
+  shot: static
+  framing: wide
+  frame: 'Flat-on straight down the length of a narrow apartment hallway: ten white bowling pins standing
+    in perfect regulation formation on the carpet at the far end, framed by the doorway.'
+  means: The pattern completes and plausibility breaks. This is now a bowling alley.
+  subjects: []
+- t_in: 2880
+  t_out: 4320
+  shot: static
+  framing: medium
+  frame: Anthony stands centred in the lamplight in a faded navy sweatshirt, arms at his sides, looking
+    straight down the lens with a completely flat expression.
+  means: The line. The first thing that has moved, delivered as if it were an ordinary question.
+  subjects:
+  - anthony
+- t_in: 4320
+  t_out: 5280
+  shot: snap_zoom
+  framing: close
+  frame: The middle of the living room carpet with the deep red and black marbled bowling ball sitting
+    on it, the lamp and the muted television behind.
+  means: The snap. The flat symmetry breaks for the first time.
+  subjects: []
+- t_in: 5280
+  t_out: 5760
+  shot: static
+  framing: close
+  frame: Cosima sitting on the carpet with both arms wrapped around the deep red and black marbled bowling
+    ball, three fingers in the finger holes, looking straight up into the lens.
+  means: The payoff. The answer to the question is that she has, and recently.
+  subjects:
+  - cosima
+cut_points:
+- t: 0
+  kind: in
+  note: Cold open on a flat symmetrical still — reads instantly with the sound off.
+- t: 960
+  kind: beat_change
+  note: Between tableaux; a legal entry if the first one gets trimmed.
+- t: 2880
+  kind: beat_change
+  note: Head of the line. Earliest legal out that still has a question in it.
+- t: 4320
+  kind: reveal
+  note: The snap.
+- t: 5760
+  kind: hard_cut
+  note: PRIMARY. Cut here on the drop.
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 2880
+continuity:
+  characters:
+  - anthony
+  - cosima
+  wardrobe:
+    anthony: faded navy sweatshirt, grey sweatpants, barefoot
+    cosima: cream waffle longsleeve and a nappy
+  props:
+  - a deep red and black marbled bowling ball, scuffed, three finger holes
+  - rented bowling shoes
+  - ten regulation white bowling pins
+  light: one warm tungsten lamp and the cold flicker of a muted television, low contrast, night interior
+  lens_feel: handheld phone, flat-on and symmetrical, close focal distance
+  emotional_carry: 'A flat question asked in an apartment that has quietly become a bowling alley, answered
+    by a baby who has clearly already been. The next shot must PAY IT OFF — same two people, same ball,
+    but ENORMOUS: arenas, neon, trophies, a whole vanished American sport at full volume.
+
+    '
+provenance:
+  provider: vertex
+  model: veo-3.1-fast-generate-001
+  cadence: count-off
+  segments:
+  - role: tableau_a
+    ms: 960
+    file: bowling-hook.tableau_a.png
+  - role: tableau_b
+    ms: 960
+    file: bowling-hook.tableau_b.png
+  - role: tableau_c
+    ms: 960
+    file: bowling-hook.tableau_c.png
+  - role: line
+    ms: 1440
+    file: bowling-hook.line.mp4
+  - role: snap
+    ms: 960
+    file: bowling-hook.snap.png
+  - role: hold
+    ms: 480
+    file: bowling-hook.hold.png
+  dialogue: Have you ever been bowling?

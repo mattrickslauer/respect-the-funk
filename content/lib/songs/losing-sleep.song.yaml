@@ -1,0 +1,61 @@
+schema: rtf.song/v1
+id: losing-sleep
+title: "Losing Sleep"
+artist: "Hallow Youth"
+file: ../audio/Losing Sleep - Hallow Youth - APLMate.com.mp3
+
+rights:
+  license: owned              # owned master only — Pillar 06. No license, no publish.
+  notes: "Owned master. No sync clearance needed."
+
+# ---------------------------------------------------------------------------
+# MEASURED, NOT TYPED.
+#
+#     python3 edits/measure_beat.py "audio/Losing Sleep …mp3" --drop-ms 125000 --cuts 23
+#
+# Every number in this block came off that tool. `method` is not decoration — a BPM with
+# no provenance is a guess, and a guess does not average out: a fixed offset makes every
+# one of the 23 cuts late by the same amount, for eleven straight seconds.
+# ---------------------------------------------------------------------------
+measured:
+  bpm: 125.00
+  beat_ms: 480                # 60000 / bpm — derived, restated here for reading only
+  bar_ms: 1920
+  drop_ms: 124784             # the transient at 2:05
+  method: >
+    Global comb over the whole track gives 125.00; a local comb over 113–137s gives
+    125.04 — 3ms of difference across the entire 22-beat sequence, so the global fit
+    (thousands of beats) wins over the local one (a median of a handful of onsets).
+    An earlier 83.33 reading was the dotted-quarter alias, 125 × 2/3.
+    Stated drop was 2:05. Grid beats there fall at 124304 / 124784 / 125264. 124784 is
+    the one carrying a real transient (strength 4.2) and sits 216ms from the estimate;
+    124304 is 696ms away with nothing on it. Since every beat gets a cut, bar phase is
+    not doing any work here — landing on the accent is.
+
+# ---------------------------------------------------------------------------
+# TUNING — everything the format lets a song move. This block is the reason a second
+# song is a day of work and not a rebuild. Overrides formats/promise-payoff defaults.
+# ---------------------------------------------------------------------------
+tuning:
+  carousel_beats: 23          # 21 pictures × 1 beat + a 2-beat end card = 11.04s of song
+                              # after the drop. This track's post-drop section stays at
+                              # full energy through bar 6; past that it starts breathing
+                              # and the cutting would fight the arrangement.
+  # There is no `division` knob, deliberately: an item's `beats` is already a number, not
+  # a count. `beats: 0.5` is a double-time cut and `beats: 2` is half-time, per picture,
+  # which is finer control than a track-wide divisor and one fewer thing to keep in sync.
+  pre_roll:
+    bars: 2                   # 2 bars = 3840ms of real run-up before the cut
+    curve: quadratic
+    from_gain: 0.0
+    to_gain: 1.0
+  # The swell starts at hook_out − 3840ms. For the california-test hook (6442ms) that is
+  # 2602ms — 202ms after the spoken line ends at 2400ms. The crescendo rises into the bag
+  # swing and the push-in, and never fights the dialogue. A hook whose line ends later
+  # than (t_out − pre_roll) needs bars: 1, or a later line.
+
+fits:
+  # Which formats this track has been tuned against, and what it wants from them.
+  promise-payoff:
+    hook_ms_range: [4500, 7500]   # under 4.5s the 2-bar swell has nowhere to live
+    energy: "hard four-on-the-floor drop, no ramp after it — cuts can be blunt"

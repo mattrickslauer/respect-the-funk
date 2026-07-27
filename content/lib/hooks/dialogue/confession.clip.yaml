@@ -1,0 +1,94 @@
+schema: rtf.clip/v1
+id: confession
+media: confession.mp4
+title: direct address, second person, immediate stakes
+logline: i think i started my period
+source_meta:
+  duration_ms: 4910
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Yawi Vlogs By Tannerites
+  notes: third-party source, proof-of-concept hook library. Identifiable people may
+    appear and have not consented; check before publishing or before holding a likeness
+    invariant in a payoff.
+  people_release: false
+  minors_in_frame: unknown
+provenance:
+  query: i have to tell you something storytime camera
+  url: https://www.youtube.com/watch?v=yuX9II4UMMM
+  video_id: yuX9II4UMMM
+  video_title: I Have Something To Tell You!
+  channel: Yawi Vlogs By Tannerites
+  section_start_s: 10.88
+  caption_score: 3.78
+  chosen_because: This line is a clear, standalone statement that immediately creates
+    curiosity about what happens next and how it might be visually paid off in an
+    unexpected way
+  gap_after_s: 1.73
+  line_db: -18.9
+  tail_db: -16.8
+  tail_quieter_db: -2.1
+audio:
+  has_speech: true
+  quote: i think i started my period
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 2310
+  shot: static
+  framing: medium
+  frame: the speaker delivers the line
+  means: the promise is made
+- t_in: 2310
+  t_out: 4910
+  shot: static
+  framing: medium
+  frame: the line lands and nobody says anything
+  means: the pause the drop cuts off
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 2310
+  kind: beat_change
+  note: the line ends; the pre-roll swell starts after this
+- t: 4910
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 2310
+hook_recommended:
+  t_in: 0
+  t_out: 4910
+  pre_roll_bars: 1
+features:
+  energy: 0.867
+  luma: 0.519
+  contrast: 1.0
+  warmth: 0.6
+  saturation: 0.118
+  detail: 0.275
+  intensity_raw: 0.655
+axes:
+  light:
+    v: 0.519
+    pole: mid
+  motion:
+    v: 0.867
+    pole: kinetic
+  temp:
+    v: 0.6
+    pole: mid
+  scale:
+    v: 0.275
+    pole: wide

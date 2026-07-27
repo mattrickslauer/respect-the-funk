@@ -1,0 +1,61 @@
+schema: rtf.clip/v1
+id: convenience-store
+media: convenience-store.mp4
+title: "sickly green light \u2014 the palette's cold pole"
+logline: "sickly green light \u2014 the palette's cold pole"
+source_meta:
+  duration_ms: 4000
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Urban Rainfall
+  notes: third-party source, proof-of-concept library
+provenance:
+  query: convenience store at night aesthetic fluorescent
+  url: https://www.youtube.com/watch?v=lM_0xBizArw
+  video_id: lM_0xBizArw
+  video_title: "Convenience store night shift Lo-Fi : \U0001F319 Fluorescent Dreams\
+    \ & Midnight Solitude \U0001F4AB"
+  channel: Urban Rainfall
+  section_start_s: 107.125
+  section_dur_s: 4.0
+features:
+  energy: 0.136
+  luma: 0.161
+  contrast: 0.615
+  warmth: 0.51
+  saturation: 0.113
+  detail: 0.308
+  intensity_raw: 0.253
+axes:
+  light:
+    v: 0.161
+    pole: dark
+  motion:
+    v: 0.136
+    pole: still
+  temp:
+    v: 0.51
+    pole: mid
+  scale:
+    v: 0.308
+    pole: wide
+role:
+  primary: b_roll
+  can_lead: true
+  can_follow: true
+  min_useful_ms: 400
+cut_points:
+- t: 0
+  kind: in
+- t: 4000
+  kind: hard_cut
+screen:
+  overlay_ratio: 6.0e-05
+  axis_align: 0.0
+  motion: 3.63
+  verdict: clean
+  usable: true

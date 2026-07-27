@@ -1,0 +1,19 @@
+schema: rtf.character/v1
+id: storytime
+name: storytime
+role_in_frame: the subject of the hook
+prompt_description: A 2D cartoon illustration in the distinct style of the attached
+  images, featuring thick black outlines, flat colors, and minimal shading. The brown-haired
+  character in a red and white striped shirt and black pants is positioned similarly
+  to the hook, often appearing startled or amazed. The egg-shaped character with an
+  orange beak and black spiky mask is also present, maintaining its characteristic
+  appearance. The framing is a close-up on these characters, often cutting off parts
+  of their bodies.
+reference_label: 'Frames from the ORIGINAL clip this image must match. Reproduce their
+  exact visual style — the same medium, the same line weight, the same flat colour
+  and shading, the same character designs and wardrobe. Do not re-render them in a
+  more polished or more realistic style:'
+reference_frames:
+- storytime-ref1.jpg
+- storytime-ref2.jpg
+- storytime-ref3.jpg

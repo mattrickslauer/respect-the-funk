@@ -1,0 +1,61 @@
+schema: rtf.clip/v1
+id: night-market
+media: night-market.mp4
+title: "density and warmth \u2014 the palette's hot pole"
+logline: "density and warmth \u2014 the palette's hot pole"
+source_meta:
+  duration_ms: 4000
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: CityDrift
+  notes: third-party source, proof-of-concept library
+provenance:
+  query: night market street food stall steam neon
+  url: https://www.youtube.com/watch?v=PsooQy0Ao90
+  video_id: PsooQy0Ao90
+  video_title: "Seoul Night Market Rain \U0001F327\uFE0F Korean Street Ambience |\
+    \ Study, Sleep & Relax | 3 Hours"
+  channel: CityDrift
+  section_start_s: 134.0
+  section_dur_s: 4.0
+features:
+  energy: 0.223
+  luma: 0.194
+  contrast: 0.411
+  warmth: 0.548
+  saturation: 0.088
+  detail: 0.165
+  intensity_raw: 0.225
+axes:
+  light:
+    v: 0.194
+    pole: dark
+  motion:
+    v: 0.223
+    pole: still
+  temp:
+    v: 0.548
+    pole: mid
+  scale:
+    v: 0.165
+    pole: wide
+role:
+  primary: b_roll
+  can_lead: true
+  can_follow: true
+  min_useful_ms: 400
+cut_points:
+- t: 0
+  kind: in
+- t: 4000
+  kind: hard_cut
+screen:
+  overlay_ratio: 1.0e-05
+  axis_align: 0.0
+  motion: 4.672
+  verdict: clean
+  usable: true

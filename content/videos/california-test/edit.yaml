@@ -1,0 +1,191 @@
+schema: rtf.edit/v2
+id: california-test
+format: promise-payoff        # → ../formats/promise-payoff.format.yaml
+song: losing-sleep            # → ../songs/losing-sleep.song.yaml
+# Who is in this video. Declared, not discovered — the prompt machinery used to glob
+# every character in the project, which is only correct while there is one cast.
+cast: [anthony, cosima]
+
+cadence: question-reveal    # → ../cadences/question-reveal.cadence.yaml
+
+title: "California test cut"
+intent: >
+  The worked example for the promise-payoff format. A real camera-original cold open
+  makes a promise in one line, a hard cut lands exactly on the drop, and a beat-locked
+  carousel of AI stills pays the promise off in an inverted world. It is also the
+  plumbing test — the joke only has to survive, not kill.
+
+# Everything not stated here is inherited: output geometry, look, flash frames, animate
+# cycle and end-card hold from the format; bpm, drop, pre-roll swell and carousel length
+# from the song. What is left below is the only part that is about THIS video.
+
+hook:
+  clip: test01                # → ../test01.clip.yaml
+  t_in: 0
+  t_out: 6442                 # its declared hard_cut. The drop lands here; nothing moves.
+  # audio: source and speech_lufs: -16 inherited — the line is the setup
+
+# ---------------------------------------------------------------------------
+# CONGRUENCE — the figure that is preserved, and the ground that is reflected.
+# Every carousel item declares which axes it flips; the first is its primary, and the
+# format forbids more than two in a row leading on the same one.
+# ---------------------------------------------------------------------------
+congruence:
+  from: "winter, indoors, flat overcast, cold, standing still in one room, nobody"
+  to:   "California, outdoors, hard sun, hot, moving through a huge state, somebody"
+  invariant:                  # must NOT change — this is what makes it a payoff
+    - anthony                 # same face, same age, same beard
+    - cosima                  # same face, same 7-month-old, same hair tuft
+    - "sage-green canvas duffel"
+    - "he is carrying her, always"
+  inverted:                   # must ALL be flipped, and all must be hit
+    temperature: "cold → hot"
+    light: "flat overcast, low contrast → hard directional sun, deep shadow"
+    scale: "one bedroom → landscape, coastline, granite, sky"
+    status: "anonymous and domestic → famous and photographed"
+    motion: "stuck at a window → travelling by limo, jet, car, foot"
+
+prompt:
+  # Overrides the format's generic string only to name the light. This video's light IS
+  # Californian — hard, high, and the whole point of the inversion.
+  shared_suffix: >
+    Photorealistic press-photograph realism with strong directional California light and
+    rich saturated colour. Faces clearly lit, sharply in focus and unobscured. Natural
+    unretouched skin with fine texture — but YOUNG skin: smooth, unlined, no wrinkles and
+    no age lines. No beauty smoothing, no HDR glow, no plastic airbrushing. Natural depth
+    of field, slightly imperfect handheld framing. Vertical 9:16.
+  identity: >
+    The man and the baby must be exactly the two people in the reference photographs.
+    Match their faces precisely, and match their AGES: he is 25 years old, she is 7
+    months old. Do not age them, idealise them, slim them or symmetrise them.
+
+# ---------------------------------------------------------------------------
+# The carousel. One picture per beat. Prompts live with the picture they make — there is
+# no reason for a prompt and its item to be two lists that have to agree.
+#
+# Rebalanced for likeness: his face is near camera, front-lit and unobscured in most
+# frames. The four that hide him (cali-14, 19, 21, 22) do it ON PURPOSE — silhouette,
+# shadows, fog, from behind — so the sequence still gets its wide graphic beats without
+# gambling on a face.
+# ---------------------------------------------------------------------------
+carousel:
+  items:
+    - still: cali-02
+      hits: [motion, status]
+      intensity: 2
+      prompt: "The two of them in a stopped convertible on Sunset Boulevard at dusk, him turned to camera in the driver's seat, face lit by the neon of a huge billboard, her beside him."
+
+    - still: cali-03
+      hits: [temperature, light]
+      intensity: 2
+      prompt: "Close on his face and hers side by side among Joshua trees at golden hour, him holding her against his cheek, low sun full and even on both faces, desert boulders soft behind."
+
+    - still: cali-12
+      hits: [light, temperature]
+      intensity: 2
+      prompt: "Close on the two of them in front of a bright pink mid-century door in Palm Springs, faces large in frame, hard desert noon light, both squinting at the camera."
+
+    - still: cali-15
+      hits: [status]
+      intensity: 2
+      prompt: "Him at an In-N-Out drive-thru window at 2am in a rumpled tuxedo, her asleep on his shoulder, his face lit hard by the service window."
+
+    - still: cali-16
+      hits: [motion, temperature]
+      intensity: 2
+      prompt: "The two of them on the Venice Beach boardwalk, him grinning at the camera with her held up, murals and skaters and palms behind."
+
+    - still: cali-17
+      hits: [temperature, light]
+      intensity: 2
+      prompt: "Close on the two of them among orange poppies, faces large in the frame and lit by full sun, the blazing orange hillside thrown out of focus behind."
+
+    - still: cali-01
+      hits: [status]
+      intensity: 3
+      prompt: "Close on him stepping out of a black limousine onto a red carpet, her on his hip, both looking straight at the lens, his face clearly lit by the paparazzi flashes, the sage-green duffel over his shoulder, photographers and barriers behind."
+
+    - still: cali-04
+      hits: [status]
+      intensity: 3
+      prompt: "Him mid-laugh on a sidewalk as a crowd of paparazzi crushes in, face clear and bright in the middle of the frame, her held against his chest, camera lenses filling the edges."
+
+    - still: cali-05
+      hits: [scale]
+      intensity: 3
+      prompt: "The two of them at a lookout above Big Sur, front-lit by late sun, the Pacific and a curve of cliff road far below and behind them."
+
+    - still: cali-07
+      hits: [scale, status]
+      intensity: 3
+      prompt: "Medium close of the two of them on a Hollywood Hills ridge, warm evening sun full on their faces, the HOLLYWOOD sign and the basin behind."
+
+    - still: cali-08
+      hits: [status, motion]
+      intensity: 3
+      prompt: "In the cream leather back seat of a Rolls-Royce, him leaning toward her car seat, both faces lit by soft window light, city sliding past outside."
+
+    - still: cali-10
+      hits: [scale]
+      intensity: 3
+      prompt: "Close on the two of them at the foot of a giant redwood, faces filling much of the frame in a shaft of canopy light, the trunk soft and enormous behind."
+
+    - still: cali-11
+      hits: [temperature, status]
+      intensity: 3
+      prompt: "Him waist-deep at the edge of a rooftop infinity pool holding her up, downtown LA skyline behind, low sun full on his face."
+
+    - still: cali-13
+      hits: [motion, scale]
+      intensity: 3
+      prompt: "Him carrying her in a hiking pack in Yosemite Valley, turning to camera, Half Dome and granite behind, cold clear morning light on his face."
+
+    - still: cali-18
+      hits: [status]
+      intensity: 3
+      prompt: "Him in a mirror-bulb backstage green room with her in his lap, both faces lit flat and bright by the bulbs, clothes racks behind."
+
+    - still: cali-19
+      hits: [light, status]
+      intensity: 3
+      prompt: "An empty red carpet photographed from above in low sun. NO PEOPLE ARE VISIBLE IN THE FRAME — only two long cast shadows stretching across the red carpet, one of a man and one tiny one of a baby on his hip. Just carpet, rope barriers and the two shadows."
+
+    - still: cali-20
+      hits: [status]
+      intensity: 3
+      prompt: "Her sitting up in the open sage-green duffel on the marble floor of a glass penthouse in enormous sunglasses, him crouched behind her looking at the camera, skyline through the window wall."
+
+    - still: cali-06
+      hits: [motion, status]
+      intensity: 4
+      prompt: "Close on him at the top of a private jet's airstairs, turning back to camera with her in one arm and the sage-green duffel in the other, bright tarmac light on his face."
+
+    - still: cali-14
+      hits: [scale, light]
+      intensity: 4
+      prompt: "Two figures silhouetted on a knife-edge dune at dawn in Death Valley, faces not visible, enormous pale sky."
+
+    - still: cali-21
+      hits: [scale]
+      intensity: 4
+      prompt: "The two of them from behind, small against the Golden Gate Bridge rising out of thick fog, faces away from camera."
+
+    - still: cali-22
+      hits: [status, scale]
+      intensity: 5
+      prompt: "Seen from behind him on a festival stage, her lifted overhead in silhouette against the stage lights, an enormous desert crowd beyond."
+
+    # End card. Inherits end_card_beats: 2 — the only picture that gets to breathe, and
+    # the only one where nothing is being performed. The promise, kept and asleep.
+    - still: cali-09
+      hits: [temperature, scale]
+      intensity: 1
+      prompt: "The two of them asleep in a hammock strung between two Joshua trees at sunrise, her on his chest, both faces turned up into clear morning light."
+
+rules_applied:
+  - "test01.role.can_lead = true → legal opener; audio.quote present → it has its one line."
+  - "test01.audio.keep_audio_on_cut = true → the line survives under the music bed."
+  - "Only cut_points declared in test01.clip.yaml were used (0 and 6442, kind hard_cut)."
+  - "Every still inherits test01.continuity.wardrobe + both character prompt_descriptions."
+  - "Every post-drop cut is quantized to the song's measured beat grid; none is hand-timed."
+  - "All five declared inverted axes are hit; no axis leads twice in a row."

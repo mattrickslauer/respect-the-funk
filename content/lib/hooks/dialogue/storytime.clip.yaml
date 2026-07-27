@@ -1,0 +1,94 @@
+schema: rtf.clip/v1
+id: storytime
+media: storytime.mp4
+title: a narrative promise — something is about to go wrong
+logline: are you gonna scream?
+source_meta:
+  duration_ms: 4500
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Sr Pelo
+  notes: third-party source, proof-of-concept hook library. Identifiable people may
+    appear and have not consented; check before publishing or before holding a likeness
+    invariant in a payoff.
+  people_release: false
+  minors_in_frame: unknown
+provenance:
+  query: storytime so basically what happened was
+  url: https://www.youtube.com/watch?v=3viekW3AnRA
+  video_id: 3viekW3AnRA
+  video_title: Every StoryTime Animation
+  channel: Sr Pelo
+  section_start_s: 394.64
+  caption_score: 4.06
+  chosen_because: This direct question immediately creates tension and curiosity,
+    making the viewer wonder what event or situation would prompt such a question,
+    and it can be vis
+  gap_after_s: 1.447
+  line_db: -18.9
+  tail_db: -23.7
+  tail_quieter_db: 4.8
+audio:
+  has_speech: true
+  quote: are you gonna scream?
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 1353
+  shot: static
+  framing: medium
+  frame: the speaker delivers the line
+  means: the promise is made
+- t_in: 1353
+  t_out: 4500
+  shot: static
+  framing: medium
+  frame: the line lands and nobody says anything
+  means: the pause the drop cuts off
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 1353
+  kind: beat_change
+  note: the line ends; the pre-roll swell starts after this
+- t: 4500
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 1500
+hook_recommended:
+  t_in: 0
+  t_out: 4500
+  pre_roll_bars: 1
+features:
+  energy: 0.323
+  luma: 0.898
+  contrast: 0.924
+  warmth: 0.551
+  saturation: 0.041
+  detail: 0.186
+  intensity_raw: 0.366
+axes:
+  light:
+    v: 0.898
+    pole: bright
+  motion:
+    v: 0.323
+    pole: still
+  temp:
+    v: 0.551
+    pole: mid
+  scale:
+    v: 0.186
+    pole: wide

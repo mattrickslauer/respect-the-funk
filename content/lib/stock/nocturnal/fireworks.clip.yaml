@@ -1,0 +1,61 @@
+schema: rtf.clip/v1
+id: fireworks
+media: fireworks.mp4
+title: "the peak \u2014 highest intensity in the library, spend it late"
+logline: "the peak \u2014 highest intensity in the library, spend it late"
+source_meta:
+  duration_ms: 4000
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Chill Core Visuals
+  notes: third-party source, proof-of-concept library
+provenance:
+  query: fireworks slow motion night sky close up
+  url: https://www.youtube.com/watch?v=qPOVRq_JpDk
+  video_id: qPOVRq_JpDk
+  video_title: "4K Fireworks Magic \U0001F386 | Colorful Celebration Visuals | Ambient\
+    \ Background Wallpaper"
+  channel: Chill Core Visuals
+  section_start_s: 21.5
+  section_dur_s: 4.0
+features:
+  energy: 0.344
+  luma: 0.073
+  contrast: 0.492
+  warmth: 0.644
+  saturation: 0.109
+  detail: 0.142
+  intensity_raw: 0.296
+axes:
+  light:
+    v: 0.073
+    pole: dark
+  motion:
+    v: 0.344
+    pole: still
+  temp:
+    v: 0.644
+    pole: warm
+  scale:
+    v: 0.142
+    pole: wide
+role:
+  primary: b_roll
+  can_lead: true
+  can_follow: true
+  min_useful_ms: 400
+cut_points:
+- t: 0
+  kind: in
+- t: 4000
+  kind: hard_cut
+screen:
+  overlay_ratio: 4.0e-05
+  axis_align: 0.0
+  motion: 11.46
+  verdict: clean
+  usable: true

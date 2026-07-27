@@ -1,0 +1,112 @@
+schema: rtf.cadence/v1
+id: question-reveal
+title: "Visual, beat, line, beat, drop"
+inspired_by: >
+  The deadpan cold open — The Office, Nathan Fielder, Fleabag. A flat statement made
+  straight down the lens by someone who does not think it is funny, and a camera that
+  then goes and finds the evidence.
+
+# ---------------------------------------------------------------------------
+# A cadence is the hook's PACING, and nothing else. Not what happens — when.
+#
+# Positions are BEATS BEFORE THE DROP, so the hook runs on the same grid the carousel
+# runs on, counted backward instead of forward. Change the song and every boundary moves
+# with it; the shape does not. That is what makes pacing reusable at all: at 125 BPM this
+# is a 6.24s hook, at 90 BPM it is 8.67s, and it is the same cadence both times.
+#
+#         13    12        11              8       6      4     2   0
+#         │     │         │               │       │      │     │   │
+#         ├─────┤         │               │       │      │     │   │
+#         establish       │               │       │      │     │   │
+#               ├─────────┤               │       │      │     │   │
+#               turn      │               │       │      │     │   │
+#                         ├───────────────┤       │      │     │   │
+#                         THE LINE                │      │     │   │
+#                                         ├───────┤      │     │   │
+#                                         commit  │      │     │   │
+#                                                 ├──────┤     │   │
+#                                                 push   │     │   │
+#                                                        ├─────┤   │
+#                                                        glimpse   │
+#                                                              ├───┤
+#                                                              hold │
+#                                                                  DROP
+#
+# WHY THESE NUMBERS: they are where test01's cuts already were. Measured against a 480ms
+# beat, its whip-pan head landed 12 beats before the cut (+32ms), the bag landing at 6
+# (−38ms) and the reveal at 4 (+22ms). Nobody planned that. The clip feels right because
+# the picture was already cutting on the music, and this file is that accident written
+# down so the next one does not have to be lucky.
+# ---------------------------------------------------------------------------
+
+hook_beats: 13                  # total length, in beats before the drop
+
+slots:
+  - role: establish
+    at: 13
+    what: "One static image that states the condition. No people, or people doing nothing."
+    why: >
+      The problem has to be legible with the sound off, inside the first second, or the
+      line lands on someone who has already scrolled.
+
+  - role: turn
+    at: 12
+    what: "A whip pan, a swish, a hard cut — one beat of pure movement."
+    why: >
+      The turn from problem to proposal. One beat is exactly enough: at 480ms it reads as
+      a gesture, at two beats it reads as a mistake.
+
+  - role: line
+    at: 11
+    what: "The phrase, delivered flat, straight down the lens."
+    why: >
+      Three beats — 1.44s at 125 BPM — which is about as long as a natural spoken sentence
+      of eight or nine words. Longer and you are performing it. This slot ENDS on beat 8,
+      which is where a 2-bar pre-roll begins, so the music starts swelling on the exact
+      frame the talking stops. That is not a coincidence to be arranged by hand; it falls
+      out of putting both on the same grid.
+
+  - role: commit
+    at: 8
+    what: "Wordless physical action. He does the thing he just described."
+    why: >
+      The proof that it is not a bit. Also the first two beats of the crescendo, so the
+      music is rising under movement rather than under dialogue.
+
+  - role: push
+    at: 6
+    what: "The camera moves toward something that is not the point yet."
+    why: "Misdirection. The audience is being told where to look, and it is the wrong place."
+
+  - role: glimpse
+    at: 4
+    obscured: true              # the ONLY slot where the face must not be legible
+    what: "A blurred, partial, half-beat-too-short view of the real subject."
+    why: >
+      The 'wait, what' beat. It must be too short to parse — if the audience solves it
+      here, the hold has nothing left to pay.
+
+  - role: hold
+    at: 2
+    what: "The reveal, static, held, looking down the lens. No movement, no further cut."
+    why: >
+      Two beats of stillness against a crescendo that is now nearly at full. The picture
+      stops moving precisely as the music stops climbing, and the drop resolves both.
+
+  - role: cut
+    at: 0
+    what: "The hard cut. The carousel starts on this frame."
+
+# What this cadence needs from the clip it is applied to.
+requires:
+  speech: true                  # there is a `line` slot, so something must be said in it
+  reveal: true                  # `glimpse` and `hold` both point at one withheld subject
+  min_line_words: 4
+  max_line_words: 12            # more than this will not fit three beats without rushing
+
+# The slots that are ABOUT the withheld subject. They stand or fall together: a glimpse of
+# something other than the thing being revealed is not a glimpse, it is a delay. If the
+# subject cannot be rendered by whatever makes the hook — a video model that refuses to
+# draw a child, say — then EVERY slot listed here moves to stills, not just the last one.
+# Splitting them deletes the two-stage turn, and nobody notices until the cut lands flat.
+reveal_slots: [glimpse, hold]

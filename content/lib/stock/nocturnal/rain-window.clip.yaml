@@ -1,0 +1,60 @@
+schema: rtf.clip/v1
+id: rain-window
+media: rain-window.mp4
+title: stillness with texture; the breath between kinetic shots
+logline: stillness with texture; the breath between kinetic shots
+source_meta:
+  duration_ms: 4000
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Pigment Ajans - Visual Effects
+  notes: third-party source, proof-of-concept library
+provenance:
+  query: rain on window at night city lights bokeh 4k
+  url: https://www.youtube.com/watch?v=OOzCuWVdERI
+  video_id: OOzCuWVdERI
+  video_title: Rain Drops on Window Glass,Bokeh Lights Traffic Lights in Background
+  channel: Pigment Ajans - Visual Effects
+  section_start_s: 3.5
+  section_dur_s: 4.0
+features:
+  energy: 0.451
+  luma: 0.074
+  contrast: 0.562
+  warmth: 0.544
+  saturation: 0.038
+  detail: 0.145
+  intensity_raw: 0.345
+axes:
+  light:
+    v: 0.074
+    pole: dark
+  motion:
+    v: 0.451
+    pole: mid
+  temp:
+    v: 0.544
+    pole: mid
+  scale:
+    v: 0.145
+    pole: wide
+role:
+  primary: b_roll
+  can_lead: true
+  can_follow: true
+  min_useful_ms: 400
+cut_points:
+- t: 0
+  kind: in
+- t: 4000
+  kind: hard_cut
+screen:
+  overlay_ratio: 0.00758
+  axis_align: 0.601
+  motion: 9.635
+  verdict: clean
+  usable: true

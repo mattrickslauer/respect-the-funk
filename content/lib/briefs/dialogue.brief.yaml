@@ -1,0 +1,77 @@
+schema: rtf.brief/v1
+id: dialogue
+song: losing-sleep
+format: promise-payoff
+title: "Dialogue hooks — found footage that makes a promise out loud"
+
+# ---------------------------------------------------------------------------
+# THE QUERY IS NOT LOOKING FOR THE LINE. THE TRANSCRIPT IS.
+#
+# `fetch_hooks.py` downloads the whole caption track first — it is a few kilobytes and
+# costs nothing — mines every utterance in the video for hook grammar, and only then
+# downloads the ten seconds around the winner. So these queries only have to return
+# *people talking to a camera in English with captions on*. The line is found, not
+# searched for.
+#
+# What counts as hook grammar is FORMAT-SPEC's, not a guess: one clip, one line, one
+# legal exit. Both worked examples are the same two shapes —
+#     a statement of intent   "It's too cold, I'm going to California."
+#     a question              "Have you ever been bowling?"
+# — and the payoff inverts the world the line was said in.
+# ---------------------------------------------------------------------------
+
+capture:
+  lead_in_ms: 400           # air before the line so it does not start on a hard in
+  tail_ms: 2600             # room after the line for the pre-roll swell to live in
+  min_hook_ms: 4500         # losing-sleep's fits.hook_ms_range
+  max_hook_ms: 7500
+  min_score: 2.0            # below this the line is not worth a library slot
+
+sources:
+  - id: ever-wondered
+    query: "have you ever wondered video essay talking to camera"
+    wants: "a question that opens a door"
+
+  - id: storytime
+    query: "storytime so basically what happened was"
+    wants: "a narrative promise — something is about to go wrong"
+
+  - id: crowd-work
+    query: "stand up comedy crowd work clip"
+    wants: "a question asked to a real person, with a real pause after it"
+
+  - id: podcast-clip
+    query: "podcast clip funniest moment guest reaction"
+    wants: "conversational setup with a natural gap to cut on"
+
+  - id: never-told
+    query: "the thing nobody tells you about talking to camera"
+    wants: "withheld information — the strongest promise shape there is"
+
+  - id: morning-vlog
+    query: "day in my life vlog talking to camera morning"
+    wants: "a statement of intent about the rest of the day"
+
+  - id: worst-day
+    query: "the worst day of my life storytime"
+    wants: "superlative setup; the payoff has somewhere to go"
+
+  - id: confession
+    query: "i have to tell you something storytime camera"
+    wants: "direct address, second person, immediate stakes"
+
+  - id: unpopular
+    query: "unpopular opinion video essay commentary"
+    wants: "a claim the payoff can literalise"
+
+  - id: interview-answer
+    query: "street interview funniest answer question"
+    wants: "question and a face reacting — two shots in one clip"
+
+  - id: about-to
+    query: "i'm about to do something stupid vlog"
+    wants: "intent plus consequence; the exact california-test shape"
+
+  - id: explainer-turn
+    query: "here's the thing nobody talks about explained"
+    wants: "a turn mid-sentence, which cuts hard"

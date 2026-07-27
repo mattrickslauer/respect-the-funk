@@ -1,0 +1,95 @@
+schema: rtf.clip/v1
+id: never-told
+media: never-told.mp4
+title: withheld information — the strongest promise shape there is
+logline: Seriously, what is the rule with the producers here?
+source_meta:
+  duration_ms: 4500
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Dr. Phil
+  notes: third-party source, proof-of-concept hook library. Identifiable people may
+    appear and have not consented; check before publishing or before holding a likeness
+    invariant in a payoff.
+  people_release: false
+  minors_in_frame: unknown
+provenance:
+  query: the thing nobody tells you about talking to camera
+  url: https://www.youtube.com/watch?v=VEe3pWkbPz8
+  video_id: VEe3pWkbPz8
+  video_title: ‘Nobody Tells Me Who To Put On My Show, Including You,’ Dr. Phil Tells
+    Guest
+  channel: Dr. Phil
+  section_start_s: 118.163
+  caption_score: 4.44
+  chosen_because: This line is a direct question that immediately creates curiosity
+    about a specific situation, setting up a clear visual payoff for an 'inverted
+    world' where rul
+  gap_after_s: 2.008
+  line_db: -13.3
+  tail_db: -14.4
+  tail_quieter_db: 1.1
+audio:
+  has_speech: true
+  quote: Seriously, what is the rule with the producers here?
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 1359
+  shot: static
+  framing: medium
+  frame: the speaker delivers the line
+  means: the promise is made
+- t_in: 1359
+  t_out: 4500
+  shot: static
+  framing: medium
+  frame: the line lands and nobody says anything
+  means: the pause the drop cuts off
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 1359
+  kind: beat_change
+  note: the line ends; the pre-roll swell starts after this
+- t: 4500
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 1500
+hook_recommended:
+  t_in: 0
+  t_out: 4500
+  pre_roll_bars: 1
+features:
+  energy: 0.075
+  luma: 0.295
+  contrast: 0.735
+  warmth: 0.393
+  saturation: 0.305
+  detail: 0.313
+  intensity_raw: 0.289
+axes:
+  light:
+    v: 0.295
+    pole: dark
+  motion:
+    v: 0.075
+    pole: still
+  temp:
+    v: 0.393
+    pole: cool
+  scale:
+    v: 0.313
+    pole: wide

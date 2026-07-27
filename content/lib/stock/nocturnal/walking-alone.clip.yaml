@@ -1,0 +1,60 @@
+schema: rtf.clip/v1
+id: walking-alone
+media: walking-alone.mp4
+title: "a human figure \u2014 the library's only recurring 'character'"
+logline: "a human figure \u2014 the library's only recurring 'character'"
+source_meta:
+  duration_ms: 4000
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: NoCopyrightVideos ( Free Stock Footage )
+  notes: third-party source, proof-of-concept library
+provenance:
+  query: person walking alone at night street lamp slow motion
+  url: https://www.youtube.com/watch?v=elnhlONC_0Y
+  video_id: elnhlONC_0Y
+  video_title: Man walking in street and sunset - Copyright Free Video
+  channel: NoCopyrightVideos ( Free Stock Footage )
+  section_start_s: 0.0
+  section_dur_s: 4.0
+features:
+  energy: 0.05
+  luma: 0.204
+  contrast: 0.622
+  warmth: 0.44
+  saturation: 0.074
+  detail: 0.141
+  intensity_raw: 0.183
+axes:
+  light:
+    v: 0.204
+    pole: dark
+  motion:
+    v: 0.05
+    pole: still
+  temp:
+    v: 0.44
+    pole: mid
+  scale:
+    v: 0.141
+    pole: wide
+role:
+  primary: b_roll
+  can_lead: true
+  can_follow: true
+  min_useful_ms: 400
+cut_points:
+- t: 0
+  kind: in
+- t: 4000
+  kind: hard_cut
+screen:
+  overlay_ratio: 5.0e-05
+  axis_align: 0.0
+  motion: 2.055
+  verdict: clean
+  usable: true

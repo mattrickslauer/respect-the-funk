@@ -1,0 +1,238 @@
+schema: rtf.edit/v2
+id: generated-test
+format: promise-payoff        # → ../formats/promise-payoff.format.yaml
+song: losing-sleep            # → ../songs/losing-sleep.song.yaml — one measured song, two videos
+# Who is in this video. Declared, not discovered — the prompt machinery used to glob
+# every character in the project, which is only correct while there is one cast.
+cast: [anthony, cosima]
+
+cadence: count-off          # three tableaux, line, snap — the comedy is in the cut    # → ../cadences/question-reveal.cadence.yaml
+
+title: "Bowling test cut"
+intent: >
+  The second instance, and the one that proves the format is a format. Nothing structural
+  is reused from california-test — different hook, different question, different world,
+  different axes of inversion, and a hook that is generated rather than filmed. What IS
+  reused is every rule: one line, one image, a hard cut on a measured drop, and a carousel
+  that keeps the figure and reflects the ground.
+
+# The hook is AI, which the format allows and the rights gate insists on being told about:
+# generated-test.clip.yaml declares rights.source: ai, so `hook.generate` below is
+# mandatory — an AI hook with no recorded prompt is a clip with no provenance.
+hook:
+  clip: bowling-hook             # → ../generated-test.clip.yaml
+  t_in: 0
+  t_out: 5760                 # its declared hard_cut. 40ms shorter than test01's, and the
+                              # 2-bar swell still fits with room over the line.
+  generate:
+    provider: vertex            # project bidpuma, via the google-genai SDK
+    model: veo-3.1-fast-generate-001   # cheap model for iteration; swap up once a take lands
+    resolution: 720p            # 9:16 is 720p-only on Veo 3
+    samples: 1                  # one take while we find out what works
+    person_generation: allow_adult   # allow_all is allowlist-gated and REFUSES when un-granted
+    # Veo will not render a real 7-month-old on any setting available to this project —
+    # the identical prompt passes without the reveal beat and is filtered with it. So the
+    # `hold` beat is drawn by the image model and spliced on. Verified, not assumed.
+    # No still_slots list any more: the CADENCE says which slots need a performance and
+    # which are images, so the split is a property of the shape rather than of this video.
+    # Here only `line` is a Veo take; the other five beats are stills with camera moves.
+    aspect: "9:16"
+    generate_audio: true
+    reference_characters: [anthony, cosima]
+    dialogue: "Have you ever been bowling?"
+    # Identity is carried by the FIRST FRAME, not by the video prompt. The image model
+    # already holds these two faces off ten reference photographs — it made all 22
+    # carousel stills — so the frame is generated there and handed to Veo as its starting
+    # image. Veo is then only asked for motion, performance and the line, which is the
+    # part it is actually better at. See generate_hook.py.
+    # Beat 3 only, and Anthony ALONE in it. Cosima is the reveal at beat 7; describing her
+    # here is what puts her in the opening shot, and no amount of "no baby" takes her back
+    # out. Her reference photographs are withheld for the same reason, and because a video
+    # model handed a child's face tends to decline the whole job.
+    first_frame_characters: [anthony]
+    first_frame_identity: >
+      The man must be exactly the person in the reference photographs. Match his face
+      precisely, and match his AGE: he is 25 years old. Do not age him, idealise him,
+      slim him or symmetrise him. He is completely alone in the room — no other person,
+      no child, is anywhere in the frame.
+    first_frame_prompt: >
+      Vertical 9:16 handheld phone photograph, night, small apartment living room lit by
+      one warm tungsten lamp and the cold flicker of a muted television. A YOUNG man of 25
+      in a faded navy sweatshirt and grey sweatpants stands in the lamplight looking
+      straight down the lens with a completely flat, deadpan expression, mouth slightly
+      open mid-sentence. Low contrast, slightly imperfect handheld framing, visible sensor
+      grain. On the carpet behind him, out of focus, a deep red and black marbled bowling
+      ball.
+    # NO `prompt:` HERE, AND NO TIMINGS ANYWHERE. The beat-by-beat prompt is composed at
+    # run time from the cadence grid and the descriptor's own `frame` lines, so the
+    # seconds quoted to Veo cannot disagree with the descriptor, the cadence or the song.
+    # Change the track and this retimes itself. Type them by hand and you have three files
+    # that each believe something different about when the line happens.
+    style: >
+      Vertical 9:16 handheld phone video, one continuous take, shot at night in a small
+      apartment living room lit by one warm tungsten lamp and the cold flicker of a muted
+      television. Low contrast, slight motion blur, no camera stabilisation, visible
+      sensor grain.
+    # Says nothing about the baby: she is in `still_slots`, so she never appears in a
+    # Veo beat, and naming her here only gives the safety filter something to catch.
+    closing: >
+      Hold the last beat to the final frame and end on it. The man must be exactly the
+      person in the reference photographs; match his face and his age precisely — he is
+      25 years old. Keep the room, the lamp and the television consistent throughout.
+
+# ---------------------------------------------------------------------------
+# CONGRUENCE
+#
+# Note what is NOT invariant here: wardrobe. california-test held the clothes fixed and
+# flipped the weather; this one flips the *era*, which wardrobe has to move with. The
+# invariant set is a per-instance choice, and the ball is doing the work the duffel did.
+# ---------------------------------------------------------------------------
+congruence:
+  from: "one dim living room at night, a flat question, a carpet, nobody watching"
+  to:   "American league bowling at its 1970s peak — cathedral alleys, neon, trophies, crowds"
+  invariant:
+    - anthony                 # same face, same age, same beard
+    - cosima                  # same face, same 7-month-old, same hair tuft
+    - "the deep red and black marbled bowling ball, scuffed, three finger holes"
+    - "he is with her, always"
+  inverted:
+    scale: "one carpet → forty lanes, vaulted ceilings, a wall of ten thousand balls"
+    status: "nobody asked → champion, televised, carried on shoulders"
+    era: "tonight → 1974, wood panelling, polyester, offset-print colour"
+    light: "one tungsten lamp → neon, blacklight, arena spotlight"
+
+prompt:
+  identity: >
+    The man and the baby must be exactly the two people in the reference photographs.
+    Match their faces precisely, and match their AGES: he is 25 years old, she is 7
+    months old. Do not age them, idealise them, slim them or symmetrise them.
+  # shared_suffix inherited from the format — this video's light is neon and tungsten,
+  # not Californian, so the generic string is the right one.
+
+# ---------------------------------------------------------------------------
+# The carousel. Same rebalancing rule as california-test: his face is near camera and
+# unobscured in most frames, and the four that hide him (bowl-16, 18, 20, 21) do it ON
+# PURPOSE — from behind, no people, from behind, silhouette — so the sequence still gets
+# its wide graphic beats without gambling on a face.
+# ---------------------------------------------------------------------------
+carousel:
+  items:
+    - still: bowl-07
+      hits: [status, light]
+      intensity: 3
+      prompt: "The two of them walking through a tunnel of photographers into an arena, ball bag in his free hand, her on his hip, camera flashes blowing out the edges of the frame and lighting both faces hard."
+
+    - still: bowl-12
+      hits: [light]
+      intensity: 2
+      prompt: "Red and blue neon alley signage reflecting off wet black asphalt at night, the two of them walking in from the car park, both faces lit hard by the neon, the ball bag swinging."
+
+    - still: bowl-05
+      hits: [era]
+      intensity: 2
+      prompt: "The two of them in a wood-panelled 1970s bowling lounge with a smoked glass table, him in a wide-collared shirt with her on his knee, low tungsten light full on both faces, the red and black ball on the table beside them."
+
+    - still: bowl-10
+      hits: [era, status]
+      intensity: 1
+      prompt: "Him at a 1970s alley scoring table filling in a paper scoresheet under an overhead projector, turning to camera, her asleep in an orange moulded plastic bucket seat beside him, warm tungsten light on his face."
+
+    - still: bowl-15
+      hits: [light]
+      intensity: 2
+      prompt: "Close on the two of them behind the lanes lit only by the orange working lights of the pinsetter machinery, oiled steel and belts behind, both faces warm and clearly lit."
+
+    - still: bowl-01
+      hits: [era]
+      intensity: 2
+      prompt: "Close on the two of them in a 1970s bowling alley in matching mustard and brown league shirts with embroidered chest patches, him holding her against his cheek, both looking at the lens, warm wood panelling and orange moulded plastic seats behind, hard flash light on both faces."
+
+    - still: bowl-04
+      hits: [light, era]
+      intensity: 3
+      prompt: "Cosmic blacklight bowling: close on the two of them lit in deep violet and acid green, their white shirts blazing under UV, neon-striped lanes streaking away behind, both faces clearly lit and looking at the lens."
+
+    - still: bowl-06
+      hits: [scale]
+      intensity: 5
+      prompt: "Him rolling the red and black marbled ball down a bowling lane cut through a giant redwood forest, the trees standing in for pins, her held up on his shoulder watching it go, shafts of canopy light."
+
+    - still: bowl-08
+      hits: [light, status]
+      intensity: 3
+      prompt: "Close on the two of them under one hot white spotlight in an otherwise pitch black arena, everything around them falling to nothing, the red and black ball glowing between them, both faces sharply lit."
+
+    - still: bowl-11
+      hits: [status]
+      intensity: 3
+      prompt: "Him mid-interview behind a bank of chunky 1970s television microphones, face bright and clear, her on his hip reaching out for one of them."
+
+    - still: bowl-17
+      hits: [era, status]
+      intensity: 3
+      prompt: "The two of them in a wood-panelled trophy room, hundreds of small gold bowling figures on shelves floor to ceiling, him holding her up to look at one, tungsten light full on both faces."
+
+    - still: bowl-18
+      hits: [status, light]
+      intensity: 3
+      prompt: "An empty championship bowling lane photographed from directly above in low raking light. NO PEOPLE ARE VISIBLE IN THE FRAME — only two long cast shadows stretching across the polished boards, one of a man and one tiny one of a baby on his hip, and a single dark ball rolling. Just the lane, the gutters and the two shadows."
+
+    - still: bowl-02
+      hits: [scale, era]
+      intensity: 4
+      prompt: "The two of them small at the head of a single bowling lane that runs away to a vanishing point hundreds of metres off, pins the size of houses at the far end, him turned back to camera with her on his hip and the red and black marbled ball under his arm."
+
+    - still: bowl-03
+      hits: [status]
+      intensity: 4
+      prompt: "Him holding an enormous gold bowling trophy over his head with her on his hip, both faces lit bright and clear, confetti falling, a crowd of league bowlers applauding behind."
+
+    - still: bowl-09
+      hits: [scale]
+      intensity: 4
+      prompt: "High wide view of a bowling alley the size of an airport terminal, forty lanes receding in perfect parallel under a vaulted roof, the two of them small and centred at lane one."
+
+    - still: bowl-13
+      hits: [scale]
+      intensity: 4
+      prompt: "The two of them dwarfed by a wall of ten thousand bowling balls stacked floor to ceiling in every colour, him holding her up to look, both faces lit by the racking lights."
+
+    - still: bowl-14
+      hits: [status, era]
+      intensity: 4
+      prompt: "Him carried on the shoulders of a 1970s bowling team in matching shirts, her lifted up beside him, a trophy in the air, everyone laughing, hard flash light."
+
+    - still: bowl-19
+      hits: [light, era]
+      intensity: 2
+      prompt: "The two of them in a blacklight arcade alongside the lanes, faces lit purple and cyan by cabinet screens, him crouched beside her with the ball on the carpet between them."
+
+    - still: bowl-16
+      hits: [scale, light]
+      intensity: 5
+      prompt: "A bowling lane so long it curves with the horizon, pins silhouetted against an enormous sunset, two small figures in the foreground seen from behind, faces not visible."
+
+    - still: bowl-20
+      hits: [scale]
+      intensity: 5
+      prompt: "The two of them from behind, small at the mouth of a bowling alley the size of a cathedral, vaulted ceiling and forty lanes of light beyond, faces away from camera."
+
+    - still: bowl-21
+      hits: [status, scale]
+      intensity: 5
+      prompt: "Seen from behind him on a championship podium, her lifted overhead in silhouette against banks of arena lights, an enormous crowd beyond."
+
+    # End card. Inherits end_card_beats: 2 — the only picture that gets to breathe, and
+    # the only one where nobody is competing. The question, answered and asleep.
+    - still: bowl-22
+      hits: [era, light]
+      intensity: 1
+      prompt: "The two of them asleep in orange moulded plastic seats at closing time in an empty 1970s alley, her on his chest, both faces turned up into the one row of lights still on, the lanes dark behind them and the red and black ball on the floor."
+
+rules_applied:
+  - "generated-test.role.can_lead = true → legal opener; audio.quote present → one line."
+  - "rights.source = ai → hook.generate is mandatory and records the exact prompt."
+  - "Only cut_points declared in generated-test.clip.yaml were used (0 and 6400, hard_cut)."
+  - "Every still inherits generated-test.continuity + both character prompt_descriptions."
+  - "Same song as california-test, unchanged — the song file was measured once and reused."
+  - "All four declared inverted axes are hit; no axis leads twice in a row."

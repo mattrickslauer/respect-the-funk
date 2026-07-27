@@ -1,0 +1,93 @@
+schema: rtf.clip/v1
+id: podcast-clip
+media: podcast-clip.mp4
+title: conversational setup with a natural gap to cut on
+logline: let's get into that position he's in let's get
+source_meta:
+  duration_ms: 6950
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: SidemenReacts
+  notes: third-party source, proof-of-concept hook library. Identifiable people may
+    appear and have not consented; check before publishing or before holding a likeness
+    invariant in a payoff.
+  people_release: false
+  minors_in_frame: unknown
+provenance:
+  query: podcast clip funniest moment guest reaction
+  url: https://www.youtube.com/watch?v=P2uhGkS5A4g
+  video_id: P2uhGkS5A4g
+  video_title: Outrageous *Bad Friends Podcast* Moments
+  channel: SidemenReacts
+  section_start_s: 420.44
+  caption_score: 2.72
+  chosen_because: This line sets up a clear visual promise by referring to a specific
+    'position' that the viewer will want to see.
+  gap_after_s: 2.809
+  line_db: -30.5
+  tail_db: -31.0
+  tail_quieter_db: 0.5
+audio:
+  has_speech: true
+  quote: let's get into that position he's in let's get
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 4350
+  shot: static
+  framing: medium
+  frame: the speaker delivers the line
+  means: the promise is made
+- t_in: 4350
+  t_out: 6950
+  shot: static
+  framing: medium
+  frame: the line lands and nobody says anything
+  means: the pause the drop cuts off
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 4350
+  kind: beat_change
+  note: the line ends; the pre-roll swell starts after this
+- t: 6950
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 4350
+hook_recommended:
+  t_in: 0
+  t_out: 6950
+  pre_roll_bars: 1
+features:
+  energy: 0.161
+  luma: 0.259
+  contrast: 0.899
+  warmth: 0.568
+  saturation: 0.172
+  detail: 0.428
+  intensity_raw: 0.351
+axes:
+  light:
+    v: 0.259
+    pole: dark
+  motion:
+    v: 0.161
+    pole: still
+  temp:
+    v: 0.568
+    pole: mid
+  scale:
+    v: 0.428
+    pole: mid

@@ -1,0 +1,36 @@
+schema: rtf.clip/v1
+id: pay-17
+media: pay-17.png
+title: pay-17
+logline: 'A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and a
+  street in the background, captured in a photographic, high-resolution, vertical format '
+rights:
+  source: ai
+  owner: anthony
+  people_release: true
+  minors_in_frame: false
+  notes: Synthetic. Generated for edit 'nate-test'. Disclose as AI.
+subjects:
+- nate-hook
+role:
+  primary: b_roll
+  can_lead: false
+  can_follow: true
+provenance:
+  provider: gemini
+  model: gemini-2.5-flash-image
+  prompt: 'A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+    a street in the background, captured in a photographic, high-resolution, vertical format with realistic
+    lighting and palette, mimicking a casual phone camera aesthetic. Each image depicts the same grassy
+    park verge, trees, stone wall, and distant street, maintaining a photographic, vertical aspect, focusing
+    on pigeons as the central figures while varying their actions and environment. A group of common city
+    pigeons on a lush green grassy verge, near trees, a stone wall, and a street in the background, captured
+    in a photographic, high-resolution, vertical format. Pigeons are engaged in an incredibly fast-paced,
+    dynamic chase scene across the grass, one riding a tiny, custom-built skateboard, all leaving dramatic
+    motion blur trails. Photorealistic press-photograph realism with strong directional light and rich
+    saturated colour. Faces clearly lit, sharply in focus and unobscured. Natural unretouched skin with
+    fine texture — but YOUNG skin: smooth, unlined, no wrinkles and no age lines. No beauty smoothing,
+    no HDR glow, no plastic airbrushing. Natural depth of field, slightly imperfect handheld framing.
+    Vertical 9:16.'
+  sha256: 9a87866e62c4d886fab2b5ab0e988698a8f694fbb4471fd8a5171c667fd4a128
+  cache_key: .cache/9a87866e62c4d886fab2b5ab0e988698a8f694fbb4471fd8a5171c667fd4a128.png

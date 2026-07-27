@@ -1,0 +1,80 @@
+schema: rtf.cadence/v1
+id: count-off
+title: "Three tableaux, line, snap, drop"
+inspired_by: >
+  Wes Anderson, and the credit sequences of 1960s heist films. Flat-on symmetrical
+  compositions changed on the beat like slides in a carousel, then a snap zoom.
+
+# The only cadence here whose hook is already cutting on the beat before the drop arrives,
+# which makes the transition into the carousel almost seamless — the pictures were already
+# switching at this rate. Use it when the joke is an inventory rather than a reveal: three
+# things, then the thing.
+#
+#    12        10        8         6              3     1  0
+#    ├─────────┤─────────┤─────────┤              │     │  │
+#    tableau a  tableau b  tableau c              │     │  │
+#                                   ├─────────────┤     │  │
+#                                   THE LINE      ├─────┤  │
+#                                                 snap  ├──┤
+#                                                       hold│
+#                                                          DROP
+
+hook_beats: 12
+
+slots:
+  - role: tableau_a
+    motion: static
+    move: push_in
+    at: 12
+    what: "Flat-on, centred, static. One object or person, held two beats."
+    why: >
+      Two beats each is the slowest rate that still reads as rhythm rather than as three
+      separate shots. At one beat each the viewer cannot take them in; at four they are
+      watching a slideshow.
+
+  - role: tableau_b
+    motion: static
+    at: 10
+    what: "Same framing logic, different subject. Hard cut, no movement."
+
+  - role: tableau_c
+    motion: static
+    move: pull_out
+    at: 8
+    what: "Third and last. The pattern is now established, so it can be broken."
+
+  - role: line
+    motion: performance
+    at: 6
+    what: "The phrase, delivered to camera, centred, deadpan."
+    why: "Three beats. It is the first thing that has moved, which is why it lands."
+
+  - role: snap
+    motion: camera
+    move: snap
+    at: 3
+    what: "A snap zoom or a hard push. Two beats, fast, settling immediately."
+    why: "The pattern breaking. The first non-symmetrical thing in the video."
+
+  - role: hold
+    motion: static
+    at: 1
+    what: "One beat, still, on the subject."
+    why: >
+      Shorter than the other cadences' holds because the snap already did the revealing.
+      A long hold after a snap zoom reads as a mistake.
+
+  - role: cut
+    at: 0
+    what: "The hard cut."
+
+requires:
+  speech: true
+  reveal: false                 # the inventory IS the payoff; nothing is withheld
+  min_line_words: 3
+  max_line_words: 12
+
+# Which slots are about the withheld subject — see question-reveal for why they move
+# together. Here it is only `hold`: count-off has no glimpse, because the snap zoom IS
+# the turn.
+reveal_slots: [hold]

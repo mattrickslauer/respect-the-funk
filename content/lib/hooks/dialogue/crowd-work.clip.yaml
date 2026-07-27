@@ -1,0 +1,95 @@
+schema: rtf.clip/v1
+id: crowd-work
+media: crowd-work.mp4
+title: a question asked to a real person, with a real pause after it
+logline: SCH helps you write some songs
+source_meta:
+  duration_ms: 4500
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Gianmarco Soresi
+  notes: third-party source, proof-of-concept hook library. Identifiable people may
+    appear and have not consented; check before publishing or before holding a likeness
+    invariant in a payoff.
+  people_release: false
+  minors_in_frame: unknown
+provenance:
+  query: stand up comedy crowd work clip
+  url: https://www.youtube.com/watch?v=qfmKrRseg6o
+  video_id: qfmKrRseg6o
+  video_title: Best Crowd Work 2024 - Part 1 | Gianmarco Soresi | Stand Up Comedy
+    Crowd Work
+  channel: Gianmarco Soresi
+  section_start_s: 507.84
+  caption_score: 3.14
+  chosen_because: 'It is the only complete, standalone sentence that makes a clear
+    statement, inviting curiosity about ''SCH'' and how it helps write songs, which
+    could be visually '
+  gap_after_s: 2.605
+  line_db: -21.1
+  tail_db: -24.3
+  tail_quieter_db: 3.2
+audio:
+  has_speech: true
+  quote: SCH helps you write some songs
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 1355
+  shot: static
+  framing: medium
+  frame: the speaker delivers the line
+  means: the promise is made
+- t_in: 1355
+  t_out: 4500
+  shot: static
+  framing: medium
+  frame: the line lands and nobody says anything
+  means: the pause the drop cuts off
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 1355
+  kind: beat_change
+  note: the line ends; the pre-roll swell starts after this
+- t: 4500
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 1500
+hook_recommended:
+  t_in: 0
+  t_out: 4500
+  pre_roll_bars: 1
+features:
+  energy: 0.367
+  luma: 0.484
+  contrast: 1.0
+  warmth: 0.474
+  saturation: 0.213
+  detail: 0.154
+  intensity_raw: 0.431
+axes:
+  light:
+    v: 0.484
+    pole: mid
+  motion:
+    v: 0.367
+    pole: still
+  temp:
+    v: 0.474
+    pole: mid
+  scale:
+    v: 0.154
+    pole: wide

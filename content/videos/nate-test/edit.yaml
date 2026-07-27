@@ -1,0 +1,235 @@
+schema: rtf.edit/v2
+id: nate-test
+format: promise-payoff
+song: losing-sleep
+cast:
+- nate-hook
+title: nate-hook — found hook, congruent payoff
+intent: 'Found dialogue makes the promise; the payoff inverts the world it was said in. Hook line: "Yo,
+  this has to be the craziest crew ever."'
+hook:
+  clip: nate-hook
+  t_in: 0
+  t_out: 7200
+congruence:
+  from: A casual park scene with a few ordinary pigeons.
+  to: A park scene where pigeons exhibit impossible, grand, and intense behaviors, fulfilling the 'craziest
+    crew' promise.
+  invariant:
+  - 'The park setting: lush green grassy verge, trees, stone wall, distant street, and general outdoor
+    light conditions.'
+  - The pigeons as the central figures, retaining their natural appearance (unless inverted by an axis).
+  - The photographic medium, high-resolution, vertical framing, and casual phone camera aesthetic.
+  inverted:
+    ordinary -> impossible: Pigeons' behavior changes from mundane to extraordinary or supernatural feats.
+    small -> huge: The scale of pigeons' actions or impact, from negligible to significant or monumental.
+    still -> moving: Pigeons' activity level, from static or slow to dynamic, fast-paced, and complex
+      motion.
+    empty -> crowded: The number of pigeons or the density of their collective activity, from sparse to
+      overwhelming.
+    day -> night: The time of day and associated lighting, from bright daylight to various night-time
+      scenarios.
+prompt:
+  characters_block: '{nate-hook.prompt_description}'
+  identity: Each image depicts the same grassy park verge, trees, stone wall, and distant street, maintaining
+    a photographic, vertical aspect, focusing on pigeons as the central figures while varying their actions
+    and environment.
+carousel:
+  items:
+  - still: pay-01
+    hits:
+    - day -> night
+    intensity: 2
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. The scene
+      is now at dusk, with warm, fading light and long shadows. Pigeons are silhouetted against the twilight
+      sky, perched on branches and the wall.
+  - still: pay-02
+    hits:
+    - ordinary -> impossible
+    intensity: 1
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. Three
+      pigeons are stacked neatly on top of each other, forming a small, stable pyramid, looking slightly
+      bemused.
+  - still: pay-03
+    hits:
+    - still -> moving
+    intensity: 1
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. One pigeon
+      is caught mid-air, wings blurred with motion, taking off with surprising agility, others watching.
+  - still: pay-04
+    hits:
+    - small -> huge
+    intensity: 2
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. A single
+      pigeon is meticulously holding a tiny, intricately crafted replica of a famous landmark building
+      in its beak, inspecting it closely.
+  - still: pay-05
+    hits:
+    - empty -> crowded
+    intensity: 2
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. The grassy
+      area is significantly more crowded than usual, with dozens of pigeons densely packed, all pecking
+      at the ground in unison.
+  - still: pay-06
+    hits:
+    - small -> huge
+    - ordinary -> impossible
+    intensity: 3
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. A pigeon
+      is perched on a small, high-tech control panel, using its beak to manipulate miniature joysticks
+      and buttons, operating a tiny drone hovering nearby.
+  - still: pay-07
+    hits:
+    - ordinary -> impossible
+    - still -> moving
+    intensity: 3
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. Several
+      pigeons are wearing tiny, perfectly tailored military uniforms, marching in a precise, disciplined
+      line across the grass, their tiny boots visible.
+  - still: pay-08
+    hits:
+    - small -> huge
+    - empty -> crowded
+    intensity: 5
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. A single,
+      enormous pigeon, several times the size of the others, stands majestically amidst the smaller pigeons,
+      casting a dominant shadow, seemingly directing the 'crew'.
+  - still: pay-09
+    hits:
+    - empty -> crowded
+    - ordinary -> impossible
+    intensity: 4
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. A 'construction
+      crew' of numerous pigeons, each wearing tiny hard hats, are meticulously building a miniature, complex
+      structure from twigs and leaves, using tiny tools.
+  - still: pay-10
+    hits:
+    - ordinary -> impossible
+    - small -> huge
+    intensity: 4
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. A pigeon
+      is intensely focused, operating a tiny, intricate mechanical device with precision, using its beak
+      to twist miniature gears and its foot to activate levers.
+  - still: pay-11
+    hits:
+    - empty -> crowded
+    - still -> moving
+    intensity: 4
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. The grassy
+      verge is entirely covered by a swirling, dynamic mass of hundreds of pigeons, creating a living
+      carpet of feathers and motion, with some taking flight in a dense cloud.
+  - still: pay-12
+    hits:
+    - still -> moving
+    - ordinary -> impossible
+    intensity: 3
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. A pigeon
+      is mid-air, performing an elaborate, acrobatic corkscrew maneuver, wings perfectly angled, leaving
+      a slight motion blur trail.
+  - still: pay-13
+    hits:
+    - day -> night
+    - ordinary -> impossible
+    intensity: 4
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. The scene
+      is now night. The park is illuminated by numerous miniature, glowing pigeon-shaped lanterns, casting
+      soft, magical light on the real pigeons who are looking up at them.
+  - still: pay-14
+    hits:
+    - small -> huge
+    - ordinary -> impossible
+    intensity: 4
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. A single
+      pigeon, visibly straining, is balancing a full-sized, miniature model car on its back, slowly pushing
+      it forward across the grass.
+  - still: pay-15
+    hits:
+    - ordinary -> impossible
+    - small -> huge
+    intensity: 5
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. Pigeons
+      are meticulously assembling a miniature, fully functional rocket ship on the grass, using tiny wrenches
+      and drills, with a plume of smoke starting to emerge from its base.
+  - still: pay-16
+    hits:
+    - empty -> crowded
+    - still -> moving
+    intensity: 5
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. The entire
+      sky above the park is completely black with an unbelievably massive, dense murmuration of pigeons,
+      forming complex, fluid, almost architectural shapes.
+  - still: pay-17
+    hits:
+    - still -> moving
+    - ordinary -> impossible
+    intensity: 5
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. Pigeons
+      are engaged in an incredibly fast-paced, dynamic chase scene across the grass, one riding a tiny,
+      custom-built skateboard, all leaving dramatic motion blur trails.
+  - still: pay-18
+    hits:
+    - small -> huge
+    - ordinary -> impossible
+    intensity: 5
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. A pigeon
+      is single-handedly, with immense effort, pushing a massive, ornate, oversized golden key across
+      the grass, the key being far larger than itself, indicating huge responsibility.
+  - still: pay-19
+    hits:
+    - ordinary -> impossible
+    - small -> huge
+    intensity: 5
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. Several
+      pigeons, wearing tiny surgical masks and caps, are gathered around a miniature operating table,
+      performing delicate 'surgery' on a tiny, intricate clockwork mechanism.
+  - still: pay-20
+    hits:
+    - day -> night
+    - ordinary -> impossible
+    intensity: 5
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. It is
+      deep night. All the pigeons are glowing with an intense, internal bioluminescence, casting vibrant,
+      eerie light and dramatic shadows across the park.
+  - still: pay-21
+    hits:
+    - still -> moving
+    - empty -> crowded
+    intensity: 4
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. A large
+      flock of pigeons is performing a complex, synchronized aerial ballet, forming intricate geometric
+      patterns in the sky above the park.
+  - still: pay-22
+    hits:
+    - ordinary -> impossible
+    intensity: 3
+    prompt: A group of common city pigeons on a lush green grassy verge, near trees, a stone wall, and
+      a street in the background, captured in a photographic, high-resolution, vertical format. Several
+      pigeons are peacefully sleeping on the grass, one wearing a tiny, elaborate silk eye mask, and another
+      has a miniature 'Do Not Disturb' sign propped up beside it.
+tuning:
+  pre_roll:
+    bars: 2
+    curve: quadratic
+    from_gain: 0.0
+    to_gain: 1.0

@@ -1,0 +1,40 @@
+schema: rtf.clip/v1
+id: pay-21
+media: pay-21.png
+title: pay-21
+logline: A 2D cartoon illustration in the distinct style of the attached images, featuring thick black
+  outlines, flat colors, and minimal shading. The brown-haired character in a red and wh
+rights:
+  source: ai
+  owner: anthony
+  people_release: true
+  minors_in_frame: false
+  notes: Synthetic. Generated for edit 'storytime-test'. Disclose as AI.
+subjects:
+- storytime
+role:
+  primary: b_roll
+  can_lead: false
+  can_follow: true
+provenance:
+  provider: gemini
+  model: gemini-2.5-flash-image
+  prompt: 'A 2D cartoon illustration in the distinct style of the attached images, featuring thick black
+    outlines, flat colors, and minimal shading. The brown-haired character in a red and white striped
+    shirt and black pants is positioned similarly to the hook, often appearing startled or amazed. The
+    egg-shaped character with an orange beak and black spiky mask is also present, maintaining its characteristic
+    appearance. The framing is a close-up on these characters, often cutting off parts of their bodies.
+    Each image depicts the brown-haired character and the egg-shaped character in the same relative positions
+    and attire, but the world around them is transformed by hyperactive movement, impossible events, dense
+    crowding, exploding chaos, and overwhelming exhilaration, all rendered in the hook''s distinct 2D
+    cartoon style with thick black outlines and flat colors. A 2D cartoon illustration in the distinct
+    style of the attached images, with thick black outlines and flat colors. The brown-haired character
+    in a red and white striped shirt and the egg-shaped character are standing on a platform made of pure
+    light, hovering over an impossibly inverted city where buildings grow downwards from the sky. The
+    scene is chaotically organized, defying all physical laws. Photorealistic press-photograph realism
+    with strong directional light and rich saturated colour. Faces clearly lit, sharply in focus and unobscured.
+    Natural unretouched skin with fine texture — but YOUNG skin: smooth, unlined, no wrinkles and no age
+    lines. No beauty smoothing, no HDR glow, no plastic airbrushing. Natural depth of field, slightly
+    imperfect handheld framing. Vertical 9:16.'
+  sha256: 68f57ebd249eb63695036c6b86877627dda34c69a9516012776af106917198a8
+  cache_key: .cache/68f57ebd249eb63695036c6b86877627dda34c69a9516012776af106917198a8.png

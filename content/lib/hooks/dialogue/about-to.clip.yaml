@@ -1,0 +1,92 @@
+schema: rtf.clip/v1
+id: about-to
+media: about-to.mp4
+title: intent plus consequence; the exact california-test shape
+logline: rude and immediately I was kind of like
+source_meta:
+  duration_ms: 5989
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Daniel Hentschel Archive
+  notes: third-party source, proof-of-concept hook library. Identifiable people may
+    appear and have not consented; check before publishing or before holding a likeness
+    invariant in a payoff.
+  people_release: false
+  minors_in_frame: unknown
+provenance:
+  query: i'm about to do something stupid vlog
+  url: https://www.youtube.com/watch?v=7REXrpSBZI0
+  video_id: 7REXrpSBZI0
+  video_title: (REUPLOAD) I said something stupid. | Daniel Hentschel
+  channel: Daniel Hentschel Archive
+  section_start_s: 166.88
+  caption_score: 3.61
+  chosen_because: mechanical pick
+  gap_after_s: 3.211
+  line_db: -20.9
+  tail_db: -47.9
+  tail_quieter_db: 27.0
+audio:
+  has_speech: true
+  quote: rude and immediately I was kind of like
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true
+beats:
+- t_in: 0
+  t_out: 3389
+  shot: static
+  framing: medium
+  frame: the speaker delivers the line
+  means: the promise is made
+- t_in: 3389
+  t_out: 5989
+  shot: static
+  framing: medium
+  frame: the line lands and nobody says anything
+  means: the pause the drop cuts off
+cut_points:
+- t: 0
+  kind: in
+  note: lead-in before the line
+- t: 3389
+  kind: beat_change
+  note: the line ends; the pre-roll swell starts after this
+- t: 5989
+  kind: hard_cut
+  note: the drop lands here — FORMAT-SPEC rule 1
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 3389
+hook_recommended:
+  t_in: 0
+  t_out: 5989
+  pre_roll_bars: 1
+features:
+  energy: 0.079
+  luma: 0.467
+  contrast: 0.945
+  warmth: 0.557
+  saturation: 0.09
+  detail: 0.401
+  intensity_raw: 0.303
+axes:
+  light:
+    v: 0.467
+    pole: mid
+  motion:
+    v: 0.079
+    pole: still
+  temp:
+    v: 0.557
+    pole: mid
+  scale:
+    v: 0.401
+    pole: mid

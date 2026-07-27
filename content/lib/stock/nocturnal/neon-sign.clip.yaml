@@ -1,0 +1,61 @@
+schema: rtf.clip/v1
+id: neon-sign
+media: neon-sign.mp4
+title: a close, an insert, a punctuation mark
+logline: a close, an insert, a punctuation mark
+source_meta:
+  duration_ms: 4000
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Fahad VFX
+  notes: third-party source, proof-of-concept library
+provenance:
+  query: neon sign flickering close up night
+  url: https://www.youtube.com/watch?v=WZEYTmtoYm8
+  video_id: WZEYTmtoYm8
+  video_title: Closed Neon Sign Glowing Flickering Neon Lights Loop Animation by Fahad
+    VFX
+  channel: Fahad VFX
+  section_start_s: 34.5
+  section_dur_s: 4.0
+features:
+  energy: 0.057
+  luma: 0.068
+  contrast: 0.506
+  warmth: 0.691
+  saturation: 0.144
+  detail: 0.098
+  intensity_raw: 0.17
+axes:
+  light:
+    v: 0.068
+    pole: dark
+  motion:
+    v: 0.057
+    pole: still
+  temp:
+    v: 0.691
+    pole: warm
+  scale:
+    v: 0.098
+    pole: wide
+role:
+  primary: b_roll
+  can_lead: true
+  can_follow: true
+  min_useful_ms: 400
+cut_points:
+- t: 0
+  kind: in
+- t: 4000
+  kind: hard_cut
+screen:
+  overlay_ratio: 0.0
+  axis_align: 0.0
+  motion: 1.538
+  verdict: unscreenable
+  usable: true

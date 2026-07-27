@@ -1,0 +1,17 @@
+schema: rtf.character/v1
+id: nate-hook
+name: nate-hook
+role_in_frame: the subject of the hook
+prompt_description: A group of common city pigeons on a lush green grassy verge, near
+  trees, a stone wall, and a street in the background, captured in a photographic,
+  high-resolution, vertical format with realistic lighting and palette, mimicking
+  a casual phone camera aesthetic.
+reference_label: 'Frames from the ORIGINAL clip. Match their MEDIUM exactly (photographic
+  vs drawn), and match the location, the light, the palette, the lens feel and the
+  framing. Do NOT reproduce, redraw or approximate any PERSON visible in them — no
+  faces, no likenesses. People may appear only as distant silhouettes, from behind,
+  or out of focus, or not at all:'
+reference_frames:
+- nate-hook-ref1.jpg
+- nate-hook-ref2.jpg
+- nate-hook-ref3.jpg

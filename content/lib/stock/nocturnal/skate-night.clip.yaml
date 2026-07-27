@@ -1,0 +1,60 @@
+schema: rtf.clip/v1
+id: skate-night
+media: skate-night.mp4
+title: kinetic human motion with a built-in impact
+logline: kinetic human motion with a built-in impact
+source_meta:
+  duration_ms: 1500
+  width: 1080
+  height: 1920
+  fps: 30
+  aspect: '9:16'
+rights:
+  source: youtube
+  owner: Loaded Boards
+  notes: third-party source, proof-of-concept library
+provenance:
+  query: skateboarding at night city slow motion
+  url: https://www.youtube.com/watch?v=kkviQ41u0eQ
+  video_id: kkviQ41u0eQ
+  video_title: 'Longboarding: Let Go'
+  channel: Loaded Boards
+  section_start_s: 0.75
+  section_dur_s: 1.5
+features:
+  energy: 1.0
+  luma: 0.56
+  contrast: 0.903
+  warmth: 0.474
+  saturation: 0.179
+  detail: 0.107
+  intensity_raw: 0.682
+axes:
+  light:
+    v: 0.56
+    pole: mid
+  motion:
+    v: 1.0
+    pole: kinetic
+  temp:
+    v: 0.474
+    pole: mid
+  scale:
+    v: 0.107
+    pole: wide
+role:
+  primary: b_roll
+  can_lead: true
+  can_follow: true
+  min_useful_ms: 400
+cut_points:
+- t: 0
+  kind: in
+- t: 1500
+  kind: hard_cut
+screen:
+  overlay_ratio: 0.0
+  axis_align: 0.0
+  motion: 26.656
+  verdict: clean
+  usable: true

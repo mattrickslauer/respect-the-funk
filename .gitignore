@@ -1,0 +1,64 @@
+# What git holds here is the SOURCE OF TRUTH, not the output.
+#
+# The pipeline is built so that descriptors, prompts and specs are the authored
+# artifacts and the media is a function of them: BUILD-SPEC §2b rule 5 makes every
+# generation content-addressed, so an identical prompt+model+params reuses the cached
+# object instead of regenerating. That means a render is reproducible from what is
+# committed here, and a 174MB tree of PNGs is a cache, not a deliverable. Media belongs
+# in object storage (B2), keyed by hash, with the descriptor in git pointing at it.
+#
+# The rule of thumb: if a tool wrote it, it is ignored. If a person or a model was
+# *asked* to write it and the answer was kept, it is committed.
+
+# ---------------------------------------------------------------- secrets
+# AGENT_GCP_KEY / GCP_PROJECT live here. Never commit; see .env.example.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------------------------------------------------------------- environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ---------------------------------------------------------------- caches
+# .cache/ is the content-addressed store generate_stills.py writes through. Deleting it
+# costs money to refill, which is exactly why it is a cache and not a source.
+.cache/
+content/.cache/
+
+# ---------------------------------------------------------------- generated media
+# Renders, stills and takes. All reproducible from the YAML that is committed.
+*.mp4
+*.mov
+*.MOV
+*.mp3
+*.wav
+*.m4a
+
+# Generated stills (768x1344 PNGs, ~1.3MB each). The prompt that made each one is in
+# the edit, and its sidecar records model + hash, so the picture itself is derivable.
+*.png
+
+# Camera-original photography — large, and not what this repo is for.
+*.heic
+*.HEIC
+
+# KEPT DELIBERATELY: *.jpg. These are the hook reference frames the style anchor is
+# built from (characters/*-ref*.jpg). They are small, and they are the only record of
+# what the image model was actually shown — losing them makes a rerun unreproducible.
+
+# ---------------------------------------------------------------- vendored binaries
+# 38MB standalone; fetch it rather than carry it.
+content/bin/yt-dlp
+
+# ---------------------------------------------------------------- os noise
+.DS_Store
+._*
+Thumbs.db

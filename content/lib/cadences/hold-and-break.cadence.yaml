@@ -1,0 +1,60 @@
+schema: rtf.cadence/v1
+id: hold-and-break
+title: "Hold, twitch, line, drop"
+inspired_by: >
+  The prestige-drama cold open — Breaking Bad, the Sopranos, Kubrick. A shot that refuses
+  to cut for far longer than a vertical feed thinks it can get away with, one small wrong
+  detail inside it, and a line that arrives as the last thing rather than the first.
+
+# The inverse bet to question-reveal. That one buys attention with movement in the first
+# beat; this one buys it by withholding movement until the viewer leans in to work out
+# why nothing is happening. It is the riskier cadence and it fails harder — if the held
+# frame is not interesting, there is no whip pan to rescue it — but when it works the line
+# lands into silence instead of into a setup.
+#
+#      14                    7          5         2   0
+#      ├─────────────────────┤          │         │   │
+#      stare                 ├──────────┤         │   │
+#                            twitch     ├─────────┤   │
+#                                       THE LINE  ├───┤
+#                                                 hold │
+#                                                     DROP
+
+hook_beats: 14
+
+slots:
+  - role: stare
+    at: 14
+    what: "One locked-off frame. A face, or an object, doing almost nothing."
+    why: >
+      Seven beats — 3.4s at 125 BPM — is an eternity on a vertical feed and that is the
+      point. The frame must contain one thing slightly wrong that the viewer finds on
+      their own; discovery is what buys the time.
+
+  - role: twitch
+    at: 7
+    what: "One small movement. A hand, a head turn, something entering frame."
+    why: "Release. The held tension needs somewhere to go before the line, not after it."
+
+  - role: line
+    at: 5
+    what: "The phrase, quiet, not necessarily to camera."
+    why: >
+      Three beats, arriving late. Because nothing has been explained yet, the line does
+      the explaining — which means it must be a statement, never a question. A question
+      here has no time left to be answered.
+
+  - role: hold
+    at: 2
+    what: "Back to stillness. Whatever the line named is now visible."
+    why: "The reveal and the drop arrive together rather than in sequence."
+
+  - role: cut
+    at: 0
+    what: "The hard cut."
+
+requires:
+  speech: true
+  reveal: true
+  min_line_words: 3
+  max_line_words: 12

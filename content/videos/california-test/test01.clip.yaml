@@ -1,0 +1,140 @@
+schema: rtf.clip/v1
+id: test01
+media: test01.MOV
+title: "It's too cold, I'm going to California"
+logline: >
+  Snow outside the window, then a whip-pan to Anthony packing a duffel and announcing
+  he's leaving for California — the camera pushes into the bag and finds Cosima inside,
+  already packed.
+
+source_meta:
+  duration_ms: 6442
+  width: 1080
+  height: 1920
+  rotation: 90            # 1920x1080 stored, displays vertical
+  fps: 30
+  video_codec: hevc
+  audio_codec: aac
+  aspect: "9:16"
+
+rights:
+  source: original
+  owner: anthony
+  people_release: true
+  minors_in_frame: true   # Cosima — guardian consent required before any public post
+  notes: "Camera original, shot on iPhone. No third-party footage, no licensed music in the bed."
+
+subjects: [anthony, cosima]
+
+setting:
+  place: "apartment bedroom"
+  interior_exterior: interior
+  time_of_day: day
+  season: winter
+  weather: "snow on the ground, flat overcast daylight"
+
+mood: [cold, deadpan, domestic, sweet, punchline]
+tags: [snow, packing, duffel_bag, baby, reveal, cold_open, vertical]
+
+audio:
+  has_speech: true
+  quote: "It's too cold, I'm going to California."
+  language: en
+  diegetic: true
+  music_bed_ok: true
+  keep_audio_on_cut: true   # the line IS the setup; never drop it under music
+
+beats:
+  - t_in: 0
+    t_out: 650
+    shot: static
+    framing: pov
+    frame: "Out the window: snowy road, bare trees, power lines, red barn, cold blue light."
+    means: "Establishes the problem in one image — it is winter and it is miserable."
+    subjects: []
+
+  - t_in: 650
+    t_out: 1000
+    shot: whip_pan
+    framing: wide
+    frame: "Fast pan across a curtain and doorframe, motion-blurred, into the bedroom."
+    means: "Transition device — the swish is the joke's turn from problem to plan."
+    subjects: []
+
+  - t_in: 1000
+    t_out: 2400
+    shot: handheld
+    framing: medium
+    frame: "Anthony stands against a green wall in a grey longsleeve and khakis, green duffel in hand, looking at camera."
+    means: "The line lands here. He states the plan, deadpan."
+    subjects: [anthony]
+
+  - t_in: 2400
+    t_out: 3600
+    shot: handheld
+    framing: medium
+    frame: "He swings the duffel up and across the room toward the bed; wardrobe and clothes blur past."
+    means: "Physical commitment — he's not talking about leaving, he's already packing."
+    subjects: [anthony]
+
+  - t_in: 3600
+    t_out: 4500
+    shot: dolly_in
+    framing: close
+    frame: "Bag lands on the white bedspread; camera pushes in on it as his hand reaches for the zip."
+    means: "Misdirection. The audience is being told to look at the luggage."
+    subjects: [anthony]
+
+  - t_in: 4500
+    t_out: 5300
+    shot: dolly_in
+    framing: insert
+    frame: "The flap peels back — a first blurred glimpse of a face inside the bag."
+    means: "The turn. Half a second of 'wait, what is that.'"
+    subjects: [cosima]
+
+  - t_in: 5300
+    t_out: 6442
+    shot: static
+    framing: close
+    frame: "Cosima lying in the open duffel in dark green overalls on a cream liner, one hand raised, looking straight up at the lens."
+    means: "The payoff, held. She is the thing being taken to California."
+    subjects: [cosima]
+
+cut_points:
+  - t: 0
+    kind: in
+    note: "Cold open. Snow reads instantly on a vertical feed — no ramp needed."
+  - t: 650
+    kind: beat_change
+    note: "Head of the whip-pan; a clean place to enter if the snow beat gets trimmed."
+  - t: 2400
+    kind: beat_change
+    note: "End of the spoken line. Earliest legal out that keeps the setup intact."
+  - t: 4500
+    kind: reveal
+    note: "The reveal frame."
+  - t: 6442
+    kind: hard_cut
+    note: "PRIMARY. Cut here on the drop — hold the full reveal, then hit."
+
+role:
+  primary: cold_open
+  can_lead: true
+  can_follow: false
+  min_useful_ms: 5442     # from t=1000 (drop the snow) through the reveal; below this the joke breaks
+
+continuity:
+  characters: [anthony, cosima]
+  wardrobe:
+    anthony: "grey/olive longsleeve crewneck over a pink collar, khaki chinos"
+    cosima: "dark green corduroy overalls over a cream knit longsleeve"
+  props: ["sage-green canvas duffel with pale grey webbing straps"]
+  light: "flat overcast winter daylight through a window, cool cast, low contrast"
+  lens_feel: "handheld phone, wide, close focal distance, slight motion blur"
+  emotional_carry: >
+    Deadpan promise made in the cold. The next shot must PAY IT OFF — same two people,
+    same duffel, but warm: sun, palms, saturated color. The comedy is the whiplash between
+    this frame and the one after it.
+
+provenance: null    # camera original

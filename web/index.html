@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RemixKit — make your releases worth remixing, and measure who does</title>
+<meta name="description" content="For independent labels chasing organic fan video, not bought seeding. We manufacture templates fans can copy, test them through openly label-owned accounts, and report only what is actually measurable. Research-led, sourced, and honest about the odds.">
+<meta property="og:title" content="RemixKit — make your releases worth remixing">
+<meta property="og:description" content="Create templates. Test them through our own accounts. Measure what's real. For labels who want organic UGC, not paid seeding.">
+<meta property="og:type" content="website">
+<style>
+:root{
+  --bg:#14121a; --bg-2:#0e0c14; --panel:#1c1926; --panel-2:#232030;
+  --ink:#ffffff; --ink-2:#c8c4d4; --ink-3:#8b8698;
+  --rule:rgba(255,255,255,0.10); --rule-2:rgba(255,255,255,0.055);
+  --gold:#f5b940;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181;
+  --display:"Futura","Avenir Next",system-ui,sans-serif;
+  --body:"Avenir Next","Helvetica Neue",Helvetica,system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  --maxw:1120px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--body); background:var(--bg); color:var(--ink-2);
+  font-size:17px; line-height:1.6; -webkit-font-smoothing:antialiased; overflow-x:hidden;
+}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+section{padding:92px 0;border-top:1px solid var(--rule-2)}
+h1,h2,h3{font-family:var(--display);font-weight:500;color:var(--ink);letter-spacing:-0.01em}
+h2{font-size:clamp(27px,3.9vw,41px);line-height:1.1;margin-bottom:14px}
+h3{font-size:18.5px;line-height:1.28;margin-bottom:8px;letter-spacing:0}
+p{max-width:68ch}
+strong{color:var(--ink);font-weight:600}
+em{color:var(--ink-2);font-style:italic}
+a{color:inherit}
+.eyebrow{font-family:var(--display);font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--gold);margin-bottom:18px}
+.lede{font-size:clamp(17px,1.7vw,20px);line-height:1.5;color:var(--ink-2);max-width:62ch}
+.small{font-size:14.5px;line-height:1.6;color:var(--ink-3)}
+.src{font-size:12.5px;line-height:1.5;color:var(--ink-3)}
+.src a{color:var(--ink-3)}
+
+/* ---------- nav ---------- */
+header{position:sticky;top:0;z-index:50;background:rgba(20,18,26,0.84);backdrop-filter:blur(12px);border-bottom:1px solid var(--rule-2)}
+.nav{display:flex;align-items:center;gap:28px;height:66px}
+.mark{font-family:var(--display);font-size:17px;letter-spacing:0.02em;color:var(--ink);text-decoration:none;white-space:nowrap}
+.mark span{color:var(--gold)}
+.nav .links{display:flex;gap:24px;margin-left:auto}
+.nav .links a{font-size:14.5px;color:var(--ink-3);text-decoration:none;transition:color .15s}
+.nav .links a:hover{color:var(--ink)}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-block;font-family:var(--display);font-size:15px;padding:12px 22px;border-radius:8px;text-decoration:none;transition:all .16s;white-space:nowrap}
+.btn-primary{background:var(--gold);color:#241a05;font-weight:600;border:1px solid var(--gold)}
+.btn-primary:hover{background:#ffc95a;border-color:#ffc95a}
+.btn-ghost{border:1px solid var(--rule);color:var(--ink)}
+.btn-ghost:hover{border-color:rgba(255,255,255,0.28);background:rgba(255,255,255,0.03)}
+.btn-sm{padding:9px 17px;font-size:14px}
+
+/* ---------- hero ---------- */
+.hero{padding:100px 0 88px;border-top:none;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:-40% 30% auto -20%;height:660px;background:radial-gradient(60% 50% at 40% 40%,rgba(245,185,64,0.10),transparent 70%);pointer-events:none}
+.hero .inner{position:relative}
+.hero h1{font-size:clamp(37px,6vw,66px);line-height:1.04;letter-spacing:-0.022em;margin-bottom:22px;max-width:17ch}
+.hero .lede{margin-bottom:32px}
+.cta-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.cta-note{font-size:13.5px;color:var(--ink-3);margin-top:18px;max-width:60ch}
+
+/* ---------- generic grids ---------- */
+.band{background:var(--bg-2)}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.g2{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.mt40{margin-top:40px}
+.mt28{margin-top:28px}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:24px 22px}
+.card p{font-size:15px;color:var(--ink-3);line-height:1.58}
+.card .src{margin-top:12px;padding-top:11px;border-top:1px solid var(--rule-2)}
+
+/* stat tiles */
+.stat{background:var(--panel);border:1px solid var(--rule);border-top:3px solid var(--gold);border-radius:10px;padding:22px 20px 18px}
+.stat .val{font-family:var(--display);font-size:37px;line-height:1;color:var(--ink);margin-bottom:9px}
+.stat .lab{font-size:14.5px;line-height:1.45;color:var(--ink-2);margin-bottom:10px}
+
+/* ---------- the loop ---------- */
+.loop{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin-top:44px;border:1px solid var(--rule);border-radius:12px;overflow:hidden;background:var(--panel)}
+.loop-step{padding:28px 26px;border-right:1px solid var(--rule);position:relative}
+.loop-step:last-child{border-right:none}
+.loop-step .n{font-family:var(--display);font-size:12px;letter-spacing:0.18em;color:var(--gold);margin-bottom:14px;display:block}
+.loop-step h3{margin-bottom:10px}
+.loop-step p{font-size:15px;color:var(--ink-3);line-height:1.58;max-width:none}
+.loop-foot{
+  grid-column:1/-1;border-top:1px solid var(--rule);background:var(--panel-2);
+  padding:18px 26px;font-size:14.5px;color:var(--ink-3);
+}
+.loop-foot strong{color:var(--gold);font-weight:600}
+
+/* ---------- evidence rows ---------- */
+.ev{border-top:1px solid var(--rule-2);padding:22px 0;display:grid;grid-template-columns:1fr 250px;gap:32px;align-items:start}
+.ev:last-child{border-bottom:1px solid var(--rule-2)}
+.ev h3{font-size:17px;margin-bottom:6px}
+.ev p{font-size:15px;color:var(--ink-3);line-height:1.58;max-width:none}
+.ev .cite{font-size:12.5px;color:var(--ink-3);line-height:1.5;font-family:var(--mono)}
+.tag{
+  display:inline-block;font-family:var(--display);font-size:10.5px;letter-spacing:0.13em;
+  text-transform:uppercase;padding:3px 8px;border-radius:4px;margin-bottom:8px;
+  border:1px solid var(--rule);color:var(--ink-3);
+}
+.tag.academic{color:var(--s1);border-color:rgba(57,135,229,0.35)}
+.tag.official{color:var(--s3);border-color:rgba(25,158,112,0.35)}
+.tag.data{color:var(--s4);border-color:rgba(201,133,0,0.4)}
+
+/* ---------- feature rows ---------- */
+.feat{display:grid;grid-template-columns:1.05fr 0.95fr;gap:54px;align-items:center}
+.fig{background:var(--panel);border:1px solid var(--rule);border-radius:12px;padding:24px}
+.fig-head{display:flex;align-items:center;gap:9px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--rule);font-family:var(--display);font-size:11.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-3)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--s3);flex:none}
+
+/* measurement table */
+.mtab{width:100%;border-collapse:collapse;font-size:14.5px}
+.mtab td{padding:11px 0;border-bottom:1px solid var(--rule-2);vertical-align:top}
+.mtab tr:last-child td{border-bottom:none}
+.mtab .yes{color:var(--s3);font-family:var(--mono);font-size:13px;white-space:nowrap;padding-right:14px;width:1%}
+.mtab .no{color:var(--s2);font-family:var(--mono);font-size:13px;white-space:nowrap;padding-right:14px;width:1%}
+.mtab .what{color:var(--ink-2)}
+.mtab .why{color:var(--ink-3);font-size:13px;display:block;margin-top:3px}
+
+/* levers */
+.lever{display:flex;gap:16px;align-items:flex-start;padding:20px 0;border-bottom:1px solid var(--rule-2)}
+.lever:last-child{border-bottom:none}
+.lever .cost{font-family:var(--display);font-size:15px;color:var(--gold);white-space:nowrap;padding-top:2px;width:52px;flex:none}
+.lever p{font-size:15px;color:var(--ink-3);line-height:1.58}
+
+/* don't sell */
+.nope-item h3{color:var(--ink-3);text-decoration:line-through;text-decoration-color:var(--s2);text-decoration-thickness:1.5px}
+
+/* final */
+.final{background:var(--bg-2);text-align:center}
+.final h2{max-width:22ch;margin:0 auto 16px}
+.final .lede{margin:0 auto 30px}
+.final .cta-row{justify-content:center}
+.final .cta-note{margin-left:auto;margin-right:auto}
+
+footer{padding:40px 0;border-top:1px solid var(--rule-2)}
+.foot{display:flex;gap:18px;align-items:center;flex-wrap:wrap;justify-content:space-between}
+.foot .small{max-width:none}
+
+@media (max-width:900px){
+  .feat{grid-template-columns:1fr;gap:32px}
+  .g3,.g2,.loop{grid-template-columns:1fr}
+  .loop-step{border-right:none;border-bottom:1px solid var(--rule)}
+  .ev{grid-template-columns:1fr;gap:12px}
+  section{padding:70px 0}
+  .nav .links{display:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a href="#top" class="mark">Remix<span>Kit</span></a>
+    <nav class="links">
+      <a href="#evidence">The evidence</a>
+      <a href="#loop">The loop</a>
+      <a href="#networks">Testing</a>
+      <a href="#measure">Measurement</a>
+    </nav>
+    <a href="#demo" class="btn btn-primary btn-sm">Book a demo</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="wrap inner">
+      <div class="eyebrow">For independent labels</div>
+      <h1>Make your releases worth remixing. Then measure who actually does.</h1>
+      <p class="lede">
+        Organic fan video is the only music-marketing channel with non-negative unit economics.
+        You can't buy it, and nobody can promise it. What you <em>can</em> do is make every release
+        maximally usable, put far more shots on goal for far less, and
+        <strong>test it through accounts you actually own</strong> — then report only what's genuinely measurable.
+      </p>
+      <div class="cta-row">
+        <a href="#demo" class="btn btn-primary">Book a demo</a>
+        <a href="#evidence" class="btn btn-ghost">Read the evidence first</a>
+      </div>
+      <p class="cta-note">
+        Built on 13 research pillars and ~2,440 sourced claims — most of which killed an idea before it
+        cost anyone money. Respect the Funk is customer zero.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ PROBLEM ============ -->
+  <section class="band">
+    <div class="wrap">
+      <div class="eyebrow">Why the usual playbook fails</div>
+      <h2>You cannot buy your way to a fan video.</h2>
+      <p class="lede">
+        Two doors, both closed. Ads into streams lose money by construction. Paid seeding has no
+        rigorous evidence it ever causes durable organic pickup — and the credible on-record
+        testimony leans the other way.
+      </p>
+      <div class="g3 mt40">
+        <div class="stat">
+          <div class="val">50×</div>
+          <div class="lab">Roughly the loss on buying streams with ads — about <strong>$22,500</strong> of spend returns some <strong>$400</strong> in royalties.</div>
+          <div class="src">Our cost modelling against Meta/TikTok CPMs &amp; Spotify per-stream rates — pillars 02 / 04 / 08</div>
+        </div>
+        <div class="stat">
+          <div class="val">−63%</div>
+          <div class="lab">Decline in Spotify streams per 100k TikTok posts, 2020→2025 (738 → 275). <strong>Virality got faster and worth less.</strong></div>
+          <div class="src">Chartmetric</div>
+        </div>
+        <div class="stat">
+          <div class="val">0</div>
+          <div class="lab">Rigorous studies showing paid seeding <strong>causes</strong> durable organic cascade. Nobody publishes a breakout hit rate — that absence is itself the finding.</div>
+          <div class="src">Pillar 13 §2 — full evidence review, on-record agency testimony</div>
+        </div>
+      </div>
+      <p class="small mt28" style="max-width:76ch">
+        Seeded momentum is repeatedly described by the people who sell it as
+        <em>contingent on continued spend</em>. One campaign manager on the record: visible paid
+        saturation can actively <strong>suppress</strong> genuine adoption — <em>"if every influencer is
+        posting the song, some people don't want to use it."</em> Treat seeding as buying paid content
+        with an unproven multiplier. If you wouldn't buy the videos alone, don't buy the hoped-for cascade.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ EVIDENCE ============ -->
+  <section id="evidence">
+    <div class="wrap">
+      <div class="eyebrow">What the research actually supports</div>
+      <h2>Three findings we built the product around.</h2>
+      <p class="lede">
+        Not vibes. These are the load-bearing results from the literature, with the strongest
+        available study designs — including the ones that constrain what we're allowed to claim.
+      </p>
+
+      <div class="mt40">
+        <div class="ev">
+          <div>
+            <span class="tag academic">Academic</span>
+            <h3>Templatability is the mechanism — not audio quality.</h3>
+            <p>
+              Sounds spread when they <em>imply a video</em> a creator can copy, exposed through the
+              "use this sound" repository. Hit-song science has failed repeatedly at the other
+              explanation: 32,000 titles and 632 acoustic features could not learn popularity, and
+              audio+lyrics explained only 1–8% of variance in a 646-entry study.
+              <strong>The song is the substrate. The template is the product.</strong>
+            </p>
+          </div>
+          <div class="cite">
+            Abidin &amp; Kaye 2021, <em>Audio memes, earworms, and templatability</em><br>
+            Pachet &amp; Roy, ISMIR 2008<br>
+            Eurovision hit-prediction, TISMIR
+          </div>
+        </div>
+
+        <div class="ev">
+          <div>
+            <span class="tag academic">Academic</span>
+            <h3>Network position predicts spread. The audio does not.</h3>
+            <p>
+              In hand-labeled TikTok virality analysis, <strong>creator follower count was the single
+              strongest predictor</strong> and music was not significant at all. Which means the lever
+              worth pulling is how many distinct follower graphs a release can enter — not how
+              catchy the chorus is.
+            </p>
+          </div>
+          <div class="cite">
+            arXiv 2111.02452<br>
+            <span style="color:var(--ink-3)">(small-N: 400 hand-labeled videos)</span>
+          </div>
+        </div>
+
+        <div class="ev">
+          <div>
+            <span class="tag data">Constraint</span>
+            <h3>Breakout is lottery-shaped. So the edge is cost per attempt.</h3>
+            <p>
+              The best-designed cultural-markets experiment ever run — 14,341 participants, 48 songs,
+              8 parallel worlds — found quality only weakly predicts success, and that adding social
+              influence <em>increases</em> both inequality and unpredictability. The top 10% of songs
+              take 96% of all TikTok creations. <strong>When outcomes are lottery-shaped, the edge
+              isn't a better ticket. It's more tickets at a radically lower cost per ticket.</strong>
+            </p>
+          </div>
+          <div class="cite">
+            Salganik, Dodds &amp; Watts, <em>Science</em> 2006<br>
+            arXiv 2405.14999 <span style="color:var(--ink-3)">(quasi-experiment, UMG withdrawal)</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="small mt28" style="max-width:76ch">
+        That third finding is the one most vendors in this category quietly omit, because it caps what
+        anyone can honestly sell. We put it on the homepage. It's also precisely why the product is
+        built the way it is: if you can't raise the hit rate reliably, you lower the cost of taking a
+        shot and raise the number of shots — and you instrument the whole thing so you find out.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ THE LOOP ============ -->
+  <section id="loop" class="band">
+    <div class="wrap">
+      <div class="eyebrow">How it works</div>
+      <h2>Create. Test. Measure. Repeat on what survived.</h2>
+      <p class="lede">
+        One loop, run per release, against your actual roster — with the expensive step amortised
+        across every song an artist ever puts out.
+      </p>
+
+      <div class="loop">
+        <div class="loop-step">
+          <span class="n">01 — Create</span>
+          <h3>Templates, not finished ads.</h3>
+          <p>
+            Register an artist once — look, wardrobe, likeness consent. After that every song
+            generates a pack of vertical, remix-ready templates in minutes, built to be
+            <em>imitated</em> rather than admired. Multiple variants per release, deliberately, because
+            you don't know which shape lands.
+          </p>
+        </div>
+        <div class="loop-step">
+          <span class="n">02 — Test</span>
+          <h3>Through accounts we openly own.</h3>
+          <p>
+            Variants go out through a small network of disclosed, label-owned niche accounts —
+            never covert, never impersonating fans. This is the transparent version of a tactic the
+            industry mostly runs in the dark, and it produces the one thing seeding never does:
+            a clean read on which template shape earns pickup.
+          </p>
+        </div>
+        <div class="loop-step">
+          <span class="n">03 — Measure</span>
+          <h3>Only what's genuinely countable.</h3>
+          <p>
+            Sound-usage data is measured behaviour, not inferred demographics. Clicks are real.
+            We report those, per variant, per release — and we refuse to report the numbers this
+            industry routinely invents.
+          </p>
+        </div>
+        <div class="loop-foot">
+          <strong>The compounding part:</strong> the artist identity is built once and reused forever,
+          so the second release is materially cheaper than the first — and every test result carries
+          forward into what we generate next.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ NETWORKS ============ -->
+  <section id="networks">
+    <div class="wrap">
+      <div class="feat">
+        <div>
+          <div class="eyebrow">Testing through our networks</div>
+          <h2>Disclosed accounts. Not simulated trends.</h2>
+          <p style="margin-bottom:16px">
+            Every platform's rule reduces to one test: <strong>does the account deceive people about
+            who is behind it?</strong> Not how many accounts you run. Meta and TikTok both ship
+            first-class infrastructure for one business operating many accounts — it's the deception
+            that's banned, not the count.
+          </p>
+          <p style="margin-bottom:16px">
+            So we run the version that's openly the label's. The industry's cautionary tale here —
+            an agency that admitted on record to "posting enough volume across enough accounts to
+            simulate the idea that the song is trending" — didn't get banned. It got found out, and
+            an analyst who checked its accounts found <em>poor engagement metrics</em> anyway.
+            <strong>The covert version may not even work, and you'll be hated for trying.</strong>
+          </p>
+          <p class="small">
+            <strong>Honest scoping:</strong> this is a slow instrument. Account tiers under 5K
+            followers now average ~350 views per post, down 59% year over year, and a usable audience
+            signal realistically takes 3–6 months per account. We start small and treat it as a
+            capability test, not a growth engine. Anyone promising you faster is guessing.
+          </p>
+        </div>
+        <div class="fig">
+          <div class="fig-head"><span class="dot"></span> Variant test · Losing Sleep</div>
+          <table class="mtab">
+            <tr>
+              <td class="yes">A</td>
+              <td class="what">Promise → payoff, 7s cut
+                <span class="why">4 accounts · pickup: 12 creator posts</span></td>
+            </tr>
+            <tr>
+              <td class="yes">B</td>
+              <td class="what">Hook-first, wardrobe variant
+                <span class="why">4 accounts · pickup: 3 creator posts</span></td>
+            </tr>
+            <tr>
+              <td class="no">C</td>
+              <td class="what">Slow build, no on-screen text
+                <span class="why">4 accounts · pickup: 0 — retired</span></td>
+            </tr>
+          </table>
+          <p class="src" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--rule)">
+            Illustrative structure of a variant read. Real tests report per-variant sound usage and
+            tracked clicks, never modelled stream counts.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MEASUREMENT ============ -->
+  <section id="measure" class="band">
+    <div class="wrap">
+      <div class="feat">
+        <div>
+          <div class="eyebrow">Analytics</div>
+          <h2>We report what's real and refuse the rest.</h2>
+          <p style="margin-bottom:16px">
+            There is <strong>no conversion signal flowing from Spotify back to any ad platform</strong> —
+            tracking ends at the click. Every vendor reporting streams-per-dollar is modelling, and
+            most won't tell you that. We'd rather hand you three honest numbers than twelve invented ones.
+          </p>
+          <p style="margin-bottom:16px">
+            The same applies to creator demographics. No platform exposes an arbitrary creator's
+            follower breakdown — third-party tools infer it from a visible sample, and
+            <strong>not one vendor in that market publishes an accuracy figure.</strong> Sound-usage
+            data is measured behaviour and roughly 10× cheaper. We use that instead.
+          </p>
+          <p class="small">Plus a full cost ledger: provider, model, units, cost — per kit and per delivered
+             asset, exported warehouse-ready. Nobody else in this category shows you the bill.</p>
+        </div>
+        <div class="fig">
+          <div class="fig-head"><span class="dot"></span> What we count</div>
+          <table class="mtab">
+            <tr><td class="yes">✓ count</td><td class="what">Sound usage per variant<span class="why">Measured creator behaviour, from sound pages</span></td></tr>
+            <tr><td class="yes">✓ count</td><td class="what">Tracked link clicks<span class="why">First-party, server-side, unblockable</span></td></tr>
+            <tr><td class="yes">✓ count</td><td class="what">Cost per kit &amp; per asset<span class="why">Every billable provider call, itemised</span></td></tr>
+            <tr><td class="no">✗ refuse</td><td class="what">Streams attributed to an ad<span class="why">Spotify exposes no conversion event. Unmeasurable.</span></td></tr>
+            <tr><td class="no">✗ refuse</td><td class="what">Creator audience demographics<span class="why">Estimated from samples. No vendor publishes accuracy.</span></td></tr>
+            <tr><td class="no">✗ refuse</td><td class="what">Projected virality<span class="why">Lottery-shaped. Not forecastable by anyone.</span></td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FREE LEVERS ============ -->
+  <section>
+    <div class="wrap">
+      <div class="eyebrow">The plumbing</div>
+      <h2>Two real levers, both free, both usually left on the floor.</h2>
+      <p class="lede">
+        Before anything clever happens, the boring things have to be right — and in our research
+        these were the only tactical levers that survived scrutiny at zero cost.
+      </p>
+      <div class="mt40" style="max-width:78ch">
+        <div class="lever">
+          <span class="cost">$0</span>
+          <div>
+            <h3>Set the TikTok clip window to the hook.</h3>
+            <p>
+              At distribution you specify a 60-second window creators pick from. Leave it blank and the
+              default is the first 60 seconds — chosen algorithmically, not hook-aware. It's a coarse
+              lever: you set the menu, not the meal. But because "tap to use" tends to grab from the
+              window's start, setting it at the hook biases the median creator. Confirmed across
+              DistroKid, TuneCore, CD Baby and SoundOn — support and editability differ, so we check yours.
+            </p>
+          </div>
+        </div>
+        <div class="lever">
+          <span class="cost">$0</span>
+          <div>
+            <h3>Fix Sound ID fragmentation before release.</h3>
+            <p>
+              Industry analysis found <strong>2.8 million Sound IDs across 141,000 songs</strong> — roughly
+              20× fragmentation. A track that breaks out on the wrong Sound ID earns nothing.
+              Metadata hygiene is unglamorous, costs nothing, and is the difference between a windfall
+              and a windfall someone else banks.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WHAT WE DON'T SELL ============ -->
+  <section class="band">
+    <div class="wrap">
+      <div class="eyebrow">Straight answers</div>
+      <h2>What we deliberately don't sell.</h2>
+      <p class="lede">
+        Each of these is dead for a sourced reason in our own research. Selling them anyway is how
+        this category earned its reputation.
+      </p>
+      <div class="g3 mt40">
+        <div class="card nope-item">
+          <h3>Virality guarantees</h3>
+          <p>Identical songs in identical experimental worlds produced wildly different winners.
+             Anyone selling you a breakout is selling the ticket, not the odds.</p>
+        </div>
+        <div class="card nope-item">
+          <h3>Paid seeding</h3>
+          <p>No rigorous evidence it causes durable organic pickup, credible testimony against it,
+             and a live reputational case study. We don't buy plays, followers, engagement or accounts.</p>
+        </div>
+        <div class="card nope-item">
+          <h3>Stream-count attribution</h3>
+          <p>Technically impossible — the signal doesn't exist. Any dashboard showing it is
+             modelling and calling it measurement.</p>
+        </div>
+      </div>
+      <p class="small mt28" style="max-width:78ch">
+        <strong>Our standard:</strong> every number carries a primary source. <em>"Unverified"</em> is a
+        valid answer — marked rather than guessed. Prices are dated, because pricing decays. Where
+        estimates conflict we quote the range instead of the flattering end. Three figures this
+        industry repeats constantly — <em>"$0.02–0.05 per stream,"</em> vendor accuracy percentages, and
+        <em>"+43% Spark Ads CVR"</em> — do not exist where they're attributed. We found that by checking.
+        It's why we check.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ FINAL CTA ============ -->
+  <section id="demo" class="final">
+    <div class="wrap">
+      <div class="eyebrow">Get started</div>
+      <h2>Bring us one artist and one song.</h2>
+      <p class="lede">
+        We'll build the artist identity, generate a set of template variants against a real release
+        from your catalogue, run them through our accounts, and hand you the read — including the
+        ledger for exactly what it cost. If the second release isn't materially cheaper than the
+        first, we haven't proven anything worth buying.
+      </p>
+      <div class="cta-row">
+        <a href="mailto:hello@respectthefunk.com?subject=RemixKit%20demo" class="btn btn-primary">Book a demo</a>
+        <a href="mailto:hello@respectthefunk.com?subject=RemixKit%20research" class="btn btn-ghost">Ask for the research</a>
+      </div>
+      <p class="cta-note">
+        Onboarding a small cohort of independent labels with a roster releasing continuously.
+        We'll tell you honestly if you're not one of them.
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <a href="#top" class="mark">Remix<span>Kit</span></a>
+    <p class="small">
+      Working name. A Respect the Funk product · © 2026 ·
+      Sources: Luminate, Chartmetric, Spotify Loud &amp; Clear, Pex, Social Insider, and the
+      peer-reviewed work cited above.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

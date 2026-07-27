@@ -20,6 +20,12 @@ variable "b2_bucket" {
   description = "Backblaze B2 bucket holding artists, identities, songs, masters, kits, manifests."
 }
 
+variable "b2_region" {
+  type        = string
+  default     = ""
+  description = "B2 S3 endpoint region, e.g. us-west-000. Confirm with b2_authorize_account; the default guess is wrong for many buckets."
+}
+
 variable "api_image_tag" {
   type    = string
   default = "api-latest"

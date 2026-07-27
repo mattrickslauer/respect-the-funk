@@ -100,11 +100,15 @@ module "api" {
   queue_arn   = module.queue.queue_arn
   ssm_path    = module.secrets.parameter_path
   b2_bucket   = var.b2_bucket
+  b2_region   = var.b2_region
   tenant_id   = var.tenant_id
 
   storage_backend   = var.storage_backend
   generator_backend = var.generator_backend
   queue_backend     = var.queue_backend
+
+  batch_job_queue      = module.worker.job_queue_arn
+  batch_job_definition = module.worker.job_definition_arn
 
   tags = local.tags
 }
@@ -128,7 +132,10 @@ module "worker" {
   queue_arn          = module.queue.queue_arn
   ssm_path           = module.secrets.parameter_path
   b2_bucket          = var.b2_bucket
+  b2_region          = var.b2_region
   tenant_id          = var.tenant_id
+  storage_backend    = var.storage_backend
+  generator_backend  = var.generator_backend
   subnet_ids         = data.aws_subnets.default.ids
   security_group_ids = [aws_security_group.worker.id]
   tags               = local.tags

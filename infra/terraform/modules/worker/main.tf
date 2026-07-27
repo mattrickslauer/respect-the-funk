@@ -17,6 +17,23 @@ variable "queue_url" { type = string }
 variable "queue_arn" { type = string }
 variable "ssm_path" { type = string }
 variable "b2_bucket" { type = string }
+variable "b2_region" {
+  type    = string
+  default = ""
+}
+
+# Mirrors modules/api. The worker must agree with the API about which backends are in
+# play — they share one bucket and one queue, so a worker on `genblaze` while the API
+# is on `mock` would produce kits the console cannot explain.
+variable "storage_backend" {
+  type    = string
+  default = "b2"
+}
+
+variable "generator_backend" {
+  type    = string
+  default = "genblaze"
+}
 variable "tenant_id" { type = string }
 variable "subnet_ids" { type = list(string) }
 variable "security_group_ids" { type = list(string) }
@@ -229,11 +246,12 @@ resource "aws_batch_job_definition" "this" {
 
     environment = [
       { name = "RK_ENV", value = var.env },
-      { name = "RK_STORAGE_BACKEND", value = "b2" },
-      { name = "RK_GENERATOR_BACKEND", value = "genblaze" },
+      { name = "RK_STORAGE_BACKEND", value = var.storage_backend },
+      { name = "RK_GENERATOR_BACKEND", value = var.generator_backend },
       { name = "RK_QUEUE_BACKEND", value = "sqs" },
       { name = "RK_SQS_QUEUE_URL", value = var.queue_url },
       { name = "RK_B2_BUCKET", value = var.b2_bucket },
+      { name = "RK_B2_REGION", value = var.b2_region },
       { name = "RK_DEFAULT_TENANT_ID", value = var.tenant_id },
       { name = "RK_AWS_REGION", value = data.aws_region.current.name },
       { name = "RK_SSM_PATH", value = var.ssm_path },

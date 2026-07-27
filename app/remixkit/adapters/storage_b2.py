@@ -52,10 +52,23 @@ class B2Storage:
         self._backend.delete(key)
 
     def list(self, prefix: str) -> list[str]:
-        return [
-            item if isinstance(item, str) else getattr(item, "key", str(item))
-            for item in self._backend.list(prefix)
-        ]
+        """Every key under `prefix`, following pagination to the end.
+
+        Two things the local backend could not have caught, both found against real B2:
+        `list()` returns a `ListPage` (a frozen dataclass of `entries` + `next_token`),
+        not an iterable of keys — iterating the page itself raises `TypeError`. And it
+        pages at 1000 keys, so a single call silently truncates. The document repository
+        builds the entire roster from this, so a truncated listing would present as
+        artists that simply vanish once the catalogue grows past a page.
+        """
+        keys: list[str] = []
+        token: str | None = None
+        while True:
+            page = self._backend.list(prefix, continuation_token=token)
+            keys.extend(entry.key for entry in page.entries)
+            token = page.next_token
+            if token is None:
+                return keys
 
     def presign_get(self, key: str, *, expires_in: int = 3600) -> str:
         return self._backend.presigned_get_url(key, expires_in=expires_in)

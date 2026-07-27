@@ -68,15 +68,42 @@ Structure, as the docs define it:
 
 A Skill is authored by describing the outcome in plain language; the Mind assembles all four artifacts. There is also a JSON-first CLI (`@animocabrands/minds-cli`) and a Node client library (`@animocabrands/minds-client-lib`, `MINDS_BUILDER_API_KEY`, Node 22+) for the parts that want to be scripted or embedded.
 
-**Consequence for the plan: the integration surface is one auth provider and a set of endpoint descriptions.** That is the entire reason this track is cheap, and it is the fact most likely to be wrong in a way that matters — §9 lists it as the thing to re-verify against the live platform in the first two days.
+**Consequence for the plan: the integration surface is one auth provider and a set of endpoint descriptions.** That is the entire reason this track is cheap.
+
+### 2a. ✅ The pass-through mechanism, confirmed against the live Bazaar
+
+This was §9's open technical risk and it is now closed, from evidence rather than from a FAQ. The public Bazaar catalog is queryable with no API key (`minds bazaar search`), and the pattern that wraps an arbitrary external REST API has a name — **`HTTP_Execute`** — and real adoption:
+
+| Skill | Equipped | Wraps |
+|---|---|---|
+| Hi-Fidelity Minds Video Production | **106** | Minds Video via the Video Bridge API |
+| GitHub_Sovereign_Bridge_v1 | 31 | The GitHub REST API |
+| The_Connector_MCP_Client_v1 | 27 | Any MCP server, JSON-RPC 2.0 over HTTP/S |
+| Nansen_Intelligence_v1 | 13 | Nansen Labs API v1 + v2 |
+| Classical_Knowledge_Engine | 2 | Open Opus + MusicBrainz, normalised to one JSON envelope |
+
+The last one is close to a reference implementation for §3: it routes operations across namespaces, executes HTTP via `HTTP_Execute`, and normalises every response into a stable envelope with a consistent `items` array. That is precisely the shape a RemixKit Skill wants, and it means the Tool table in §3 is a description exercise rather than an engineering one.
+
+**Two consequences that were not in the plan before:**
+
+- **A Mind can speak MCP.** `The_Connector_MCP_Client_v1` is a stateless MCP JSON-RPC client. [MEMORY-SPEC §7](./MEMORY-SPEC.md) already commits to CockroachDB's **Cloud Managed MCP Server** as one of its two required tools — so the Aug 18 deliverable is directly reachable by the Aug 28 agent, and Q4 in natural language becomes a path the Mind can take without any new adapter. The two tracks share a component rather than merely a repo.
+- **Media goes back over Telegram natively.** `Telegram Native Media Bridge (Video, Audio, Images)` — 31 equips — resolves the human's `chat_id` and sends photo/video/audio back. §3's judge loop needs the label to *see* the stills before rejecting one; this is how, without building a review UI.
+
+⚠️ **Minds generates video natively, and the most-equipped skill on the board does exactly that.** "Minds Video" via the Video Bridge API sits at 106 equips. This cuts both ways and should be decided rather than discovered: it is the obvious way to make Minds *a core product layer* rather than a notification pipe (§10 #2, the investment criterion) — and it is also the thing a judge might see as overlapping RemixKit's Genblaze pipeline. Recorded as §10 #7.
 
 ### 2b. Credentials — where a Mind ID comes from
 
 Three steps, in order, because each needs the one before it:
 
-1. **Create a Mind** at [hellominds.ai](https://www.hellominds.ai/) — free, email sign-up, no wallet. The Concierge onboards it and emails when it is awake; a One-Click template is the fast path. The docs are explicit that this is the prerequisite: *"You need at least one Mind before Builder Tools can route messages."*
-2. **Create a Builder API key** in the Builder console at [build.hellominds.ai/en/console](https://build.hellominds.ai/en/console) → **Credentials**. Name it, set an expiry (90 / 180 / 270 days / 1 year), and copy the token — **it is shown only once.** Store as `MINDS_BUILDER_API_KEY`.
-3. **Read the Mind ID** — it is not issued separately, it is the identifier of the Mind from step 1. `npx @animocabrands/minds-cli@latest list` (Node 22+) prints your Minds as JSON; `minds mind show <id>` gives detail.
+1. ✅ **Create a Mind** at [hellominds.ai](https://www.hellominds.ai/) — free, email sign-up, no wallet. The Concierge onboards it and emails when it is awake; a One-Click template is the fast path. The docs are explicit that this is the prerequisite: *"You need at least one Mind before Builder Tools can route messages."* **Done 2026-07-27.**
+2. **Create a Builder API key** in the Builder console at [build.hellominds.ai/en/console](https://build.hellominds.ai/en/console) → **Credentials**. Name it, set an expiry (90 / 180 / 270 days / 1 year), and copy the token — **it is shown only once.** Store as `MINDS_BUILDER_API_KEY`. The key is a JWT carrying `humanId`, which the CLI parses rather than asking for.
+3. **Read the Mind ID** — it is not issued separately, it is the identifier of the Mind from step 1, and `list`'s own help says so: *"List Minds on your builder account (mindId + name for chat create)."*
+
+   ```sh
+   npx @animocabrands/minds-cli@latest list | jq '.items[] | {mindId, name}'
+   ```
+
+⚠️ **The CLI declares `node >=22`; this repo's dev machine is on v20.19.6.** `npx` runs it anyway with an `EBADENGINE` warning and the read-only commands work, but do not assume the authenticated write paths are as forgiving. Node 22 before day 1.
 
 ⚠️ **Builder access may be gated.** The "Unlock Builder Access" control renders `disabled` in the docs page's server HTML, and the site carries a builder-access form asking about current activity on Minds and which primitives you have personally used. That is consistent with a sign-in gate that resolves on login — but also with an approval queue. If it is the latter, it has lead time and therefore belongs in the same "do it now" bucket as registration (§8), not on day 1.
 
@@ -224,7 +251,9 @@ Stated as a block rather than scattered, because more of this document rests on 
 5. **Whether a fan-facing surface is required** — see §4. If it is, reconsider the submission rather than the scope.
 6. **The submission deadline's time of day**, and what the deliverables are (repo? video? live demo URL?).
 
-**Also unverified, and technical rather than legal:** §2's claim that a Skill can wrap an arbitrary external HTTPS API with a bearer/API-key Connection is taken from a docs FAQ, not from having done it. Day 1 exists to falsify it.
+~~**Also unverified, and technical rather than legal:** §2's claim that a Skill can wrap an arbitrary external HTTPS API.~~ — **closed 2026-07-27.** Not by re-reading the FAQ but by querying the live Bazaar: `HTTP_Execute` is the named pass-through pattern, in production across skills with 2 to 106 equips, wrapping GitHub, Nansen, MusicBrainz, and MCP servers. See §2a. **The remaining risk on this axis is authentication shape, not capability** — whether a Connection can hold a plain bearer token for a self-hosted API, which day 1 answers.
+
+**Status of the legal block: still open.** DoraHacks registration is complete (2026-07-27), which may make the rules page readable while signed in. It was not readable otherwise, so items 1–6 above stand until someone reads them in a browser.
 
 ---
 
@@ -236,6 +265,7 @@ Stated as a block rather than scattered, because more of this document rests on 
 4. **Bazaar publication timing** — before or after judging, and under whose identity.
 5. **Which prize is targeted.** Grand, a track, or student (§9 #2). They imply different demo emphases and the choice is currently unmade.
 6. **Where memory lives — the database or the Soul.** §2c states the default (CockroachDB is the system of record; Tenets hold only the Mind's own conduct rules) and states the counter-argument. Needs a call before day 3, because the demo narrative depends on answering it in one sentence.
+7. **Whether the demo generates through Minds Video.** §2a. It is the strongest available answer to "is Minds a core product layer or a notification pipe" (#2), and the clearest overlap with the Genblaze pipeline the Aug 3 track is judged on. Both readings are defensible; drifting into one by accident is not.
 
 ---
 

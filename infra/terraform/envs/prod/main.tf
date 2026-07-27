@@ -112,6 +112,8 @@ module "api" {
   mail_backend   = var.mail_backend
   mail_from      = var.mail_from
   allowed_emails = var.allowed_emails
+  gcp_project    = var.gcp_project
+  gcp_location   = var.gcp_location
 
   batch_job_queue      = module.worker.job_queue_arn
   batch_job_definition = module.worker.job_definition_arn

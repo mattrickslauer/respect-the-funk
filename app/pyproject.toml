@@ -19,6 +19,7 @@ dependencies = [
 # end-to-end with none of these installed — see adapters/generator_mock.py.
 b2 = ["genblaze-s3>=0.3"]
 gmicloud = ["genblaze-gmicloud"]
+google = ["genblaze-google"]
 elevenlabs = ["genblaze-elevenlabs"]
 queue = ["boto3>=1.34"]
 dev = ["pytest>=8.2", "httpx>=0.27"]

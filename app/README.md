@@ -81,6 +81,41 @@ Five axes, five environment variables:
 
 ---
 
+## Which provider actually runs
+
+`RK_GENERATOR_BACKEND=genblaze` selects the live path; *which* provider serves each
+modality is then decided by what is installed **and actually keyed**:
+
+| Modality | First choice | Fallback |
+|---|---|---|
+| Video | GMI Cloud (`GMI_API_KEY`) | Google **Veo** (`GCP_PROJECT`, Vertex ADC) |
+| Image | GMI Cloud (`GMI_API_KEY`) | Google **Imagen** (`GCP_PROJECT`, Vertex ADC) |
+| Audio | ElevenLabs (`ELEVENLABS_API_KEY`) | — skipped |
+
+A modality nobody serves is skipped with a warning rather than failing the run, because
+a partial provider set is the normal state.
+
+**"Keyed" excludes the placeholder.** Terraform seeds each SSM parameter with a literal
+`PLACEHOLDER …` string so the slot exists before anyone has a key — Terraform must never
+hold the value itself, or it lands in state in plaintext. `providers._keyed()` treats
+that string as unset. This is not fussiness: `GMICloudVideoProvider()` constructs
+happily with no credential, so without the check a placeholder deployment reports a
+**live** generator and then fails at generate time with a provider auth error. Reporting
+`mock` would be more honest than that; the banner exists precisely to stop it.
+
+The Google path exists because it needs no new credential — Vertex authenticates with
+Application Default Credentials against `GCP_PROJECT`/`GCP_LOCATION`, which this repo
+already uses for `content/bin/vertex.py`. Express-mode API keys were withdrawn and 400
+now; ADC is the path that works.
+
+> **Prod caveat.** ADC is a laptop credential — there is no `gcloud auth` on Lambda. The
+> Google fallback therefore works in development and **not** in the deployed function
+> until a service-account key is put in SSM and surfaced as
+> `GOOGLE_APPLICATION_CREDENTIALS`. `GCP_PROJECT`/`GCP_LOCATION` are plumbed through
+> Terraform; the credential is not. Prod still wants a real `GMI_API_KEY`.
+
+---
+
 ## Two front doors
 
 ```

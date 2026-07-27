@@ -1,9 +1,12 @@
 {
   "id": "artist",
   "title": "Artist",
-  "route": "/artists/{artist_id}",
+  "route": "/console/artists/{artist_id}",
   "entity": "Artist",
-  "nav": { "group": "roster", "order": 2 },
+  "nav": {
+    "group": "roster",
+    "order": 2
+  },
   "purpose": "One roster member: their rights, their stored identity, their catalogue, and what has been generated for them.",
   "body": {
     "type": "col",
@@ -11,18 +14,42 @@
     "children": [
       {
         "type": "row",
-        "weights": [2, 1],
+        "weights": [
+          2,
+          1
+        ],
         "gap": "base",
         "children": [
           {
             "type": "region",
             "title": "Artist",
             "children": [
-              { "type": "detail", "entity": "Artist", "fields": ["name", "slug", "bio", "links", "approval", "created_at"], "columns": 2 },
-              { "type": "actions", "items": [
-                { "label": "Edit", "kind": "secondary" },
-                { "label": "Remove from roster", "kind": "danger" }
-              ]}
+              {
+                "type": "detail",
+                "entity": "Artist",
+                "fields": [
+                  "name",
+                  "slug",
+                  "bio",
+                  "links",
+                  "approval",
+                  "created_at"
+                ],
+                "columns": 2
+              },
+              {
+                "type": "actions",
+                "items": [
+                  {
+                    "label": "Edit",
+                    "kind": "secondary"
+                  },
+                  {
+                    "label": "Remove from roster",
+                    "kind": "danger"
+                  }
+                ]
+              }
             ]
           },
           {
@@ -30,16 +57,35 @@
             "title": "Likeness consent",
             "hint": "Gates generation. Withdrawal takes effect on the next kit, never retroactively.",
             "children": [
-              { "type": "detail", "entity": "LikenessConsent", "fields": "auto", "columns": 1 },
-              { "type": "media", "kind": "image", "ratio": "4:3", "caption": "Signed release document" },
-              { "type": "actions", "items": [
-                { "label": "Record consent", "kind": "primary" },
-                { "label": "Withdraw", "kind": "danger" }
-              ]},
+              {
+                "type": "detail",
+                "entity": "LikenessConsent",
+                "fields": "auto",
+                "columns": 1
+              },
+              {
+                "type": "media",
+                "kind": "image",
+                "ratio": "4:3",
+                "caption": "Signed release document"
+              },
+              {
+                "type": "actions",
+                "items": [
+                  {
+                    "label": "Record consent",
+                    "kind": "primary"
+                  },
+                  {
+                    "label": "Withdraw",
+                    "kind": "danger"
+                  }
+                ]
+              },
               {
                 "type": "banner",
                 "tone": "gap",
-                "source": "Blocked state — no recorded consent, so kits cannot be generated",
+                "source": "Blocked state \u2014 no recorded consent, so kits cannot be generated",
                 "note": "The refusal is a product feature and needs a surface the label can read and act on, not a validation toast."
               }
             ]
@@ -53,16 +99,44 @@
         "children": [
           {
             "type": "row",
-            "weights": [1, 1],
+            "weights": [
+              1,
+              1
+            ],
             "children": [
-              { "type": "detail", "entity": "Identity", "fields": ["version", "structural_features", "wardrobe", "negatives", "approval"], "columns": 1 },
-              { "type": "gallery", "count": 5, "ratio": "3:4", "caption": "Reference frames, one per lighting setup" }
+              {
+                "type": "detail",
+                "entity": "Identity",
+                "fields": [
+                  "version",
+                  "structural_features",
+                  "wardrobe",
+                  "negatives",
+                  "approval"
+                ],
+                "columns": 1
+              },
+              {
+                "type": "gallery",
+                "count": 5,
+                "ratio": "3:4",
+                "caption": "Reference frames, one per lighting setup"
+              }
             ]
           },
-          { "type": "actions", "items": [
-            { "label": "Open identity builder", "kind": "primary" },
-            { "label": "View version history", "kind": "secondary" }
-          ]}
+          {
+            "type": "actions",
+            "items": [
+              {
+                "label": "Open identity builder",
+                "kind": "primary"
+              },
+              {
+                "label": "View version history",
+                "kind": "secondary"
+              }
+            ]
+          }
         ]
       },
       {
@@ -70,9 +144,33 @@
         "title": "Songs",
         "hint": "Each measured once. The measurement is reused by every kit built from it.",
         "children": [
-          { "type": "table", "entity": "Song", "fields": ["title", "bpm", "bpm_method", "hook", "approval"], "rows": 5, "sortable": true },
-          { "type": "empty", "message": "No songs attached.", "action": "Attach a song" },
-          { "type": "actions", "items": [{ "label": "Attach song", "kind": "primary" }] }
+          {
+            "type": "table",
+            "entity": "Song",
+            "fields": [
+              "title",
+              "bpm",
+              "bpm_method",
+              "hook",
+              "approval"
+            ],
+            "rows": 5,
+            "sortable": true
+          },
+          {
+            "type": "empty",
+            "message": "No songs attached.",
+            "action": "Attach a song"
+          },
+          {
+            "type": "actions",
+            "items": [
+              {
+                "label": "Attach song",
+                "kind": "primary"
+              }
+            ]
+          }
         ]
       },
       {
@@ -80,8 +178,28 @@
         "title": "Kits",
         "hint": "Generated packs, newest first.",
         "children": [
-          { "type": "table", "entity": "Kit", "fields": ["name", "status", "approval", "total_cost_cents", "manifest_verified", "created_at"], "rows": 5 },
-          { "type": "actions", "items": [{ "label": "Generate kit", "kind": "primary" }] }
+          {
+            "type": "table",
+            "entity": "Kit",
+            "fields": [
+              "name",
+              "status",
+              "approval",
+              "total_cost_cents",
+              "manifest_verified",
+              "created_at"
+            ],
+            "rows": 5
+          },
+          {
+            "type": "actions",
+            "items": [
+              {
+                "label": "Generate kit",
+                "kind": "primary"
+              }
+            ]
+          }
         ]
       }
     ]

@@ -181,6 +181,62 @@
     }
   },
   "entities": {
+    "Account": {
+      "name": "Account",
+      "fields": [
+        {
+          "name": "tenant_id",
+          "annotation": "str",
+          "kind": "text",
+          "required": true,
+          "inherited": true
+        },
+        {
+          "name": "created_at",
+          "annotation": "datetime",
+          "kind": "date",
+          "required": false,
+          "inherited": true
+        },
+        {
+          "name": "updated_at",
+          "annotation": "datetime",
+          "kind": "date",
+          "required": false,
+          "inherited": true
+        },
+        {
+          "name": "id",
+          "annotation": "str",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "email",
+          "annotation": "str",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "display_name",
+          "annotation": "str | None",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "scopes",
+          "annotation": "list[str]",
+          "kind": "list",
+          "required": false
+        },
+        {
+          "name": "last_login_at",
+          "annotation": "datetime | None",
+          "kind": "date",
+          "required": false
+        }
+      ]
+    },
     "Artist": {
       "name": "Artist",
       "fields": [
@@ -573,6 +629,62 @@
         }
       ]
     },
+    "OtpChallenge": {
+      "name": "OtpChallenge",
+      "fields": [
+        {
+          "name": "tenant_id",
+          "annotation": "str",
+          "kind": "text",
+          "required": true,
+          "inherited": true
+        },
+        {
+          "name": "created_at",
+          "annotation": "datetime",
+          "kind": "date",
+          "required": false,
+          "inherited": true
+        },
+        {
+          "name": "updated_at",
+          "annotation": "datetime",
+          "kind": "date",
+          "required": false,
+          "inherited": true
+        },
+        {
+          "name": "id",
+          "annotation": "str",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "email",
+          "annotation": "str",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "code_hash",
+          "annotation": "str",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "expires_at",
+          "annotation": "datetime",
+          "kind": "date",
+          "required": true
+        },
+        {
+          "name": "attempts",
+          "annotation": "int",
+          "kind": "number",
+          "required": false
+        }
+      ]
+    },
     "ReferenceFrame": {
       "name": "ReferenceFrame",
       "fields": [
@@ -736,7 +848,7 @@
     {
       "id": "roster",
       "title": "Roster",
-      "route": "/",
+      "route": "/console",
       "entity": "Artist",
       "nav": {
         "group": "roster",
@@ -909,7 +1021,7 @@
     {
       "id": "artist",
       "title": "Artist",
-      "route": "/artists/{artist_id}",
+      "route": "/console/artists/{artist_id}",
       "entity": "Artist",
       "nav": {
         "group": "roster",
@@ -1305,7 +1417,7 @@
     {
       "id": "identity",
       "title": "Identity builder",
-      "route": "/artists/{artist_id}/identity",
+      "route": "/console/artists/{artist_id}/identity",
       "entity": "Identity",
       "nav": {
         "group": "roster",
@@ -1508,7 +1620,7 @@
     {
       "id": "song",
       "title": "Song",
-      "route": "/songs/{song_id}",
+      "route": "/console/songs/{song_id}",
       "entity": "Song",
       "nav": {
         "group": "catalogue",
@@ -1780,7 +1892,7 @@
     {
       "id": "kit",
       "title": "Kit",
-      "route": "/kits/{kit_id}",
+      "route": "/console/kits/{kit_id}",
       "entity": "Kit",
       "nav": {
         "group": "catalogue",
@@ -2189,7 +2301,7 @@
     {
       "id": "catalogue",
       "title": "Catalogue",
-      "route": "/catalogue",
+      "route": "/console/catalogue",
       "entity": "Song",
       "nav": {
         "group": "catalogue",
@@ -2380,7 +2492,7 @@
     {
       "id": "generate",
       "title": "Generate a kit",
-      "route": "/artists/{artist_id}/songs/{song_id}/generate",
+      "route": "/console/artists/{artist_id}/songs/{song_id}/generate",
       "entity": "Kit",
       "nav": {
         "group": "catalogue",
@@ -2681,7 +2793,7 @@
     {
       "id": "verify",
       "title": "Verifier",
-      "route": "/verify",
+      "route": "/console/verify",
       "entity": "Asset",
       "nav": {
         "group": "provenance",
@@ -2824,7 +2936,7 @@
     {
       "id": "settings",
       "title": "Deployment",
-      "route": "/settings",
+      "route": "/console/settings",
       "entity": "Kit",
       "nav": {
         "group": "system",
@@ -3104,7 +3216,7 @@
   ],
   "stats": {
     "screens": 9,
-    "entities": 9,
+    "entities": 11,
     "nodes": 146,
     "by_type": {
       "region": 34,

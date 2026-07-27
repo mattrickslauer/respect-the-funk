@@ -218,7 +218,9 @@ The argument that it is still the right call:
 | 1 — the system | The five AWS services plus Bedrock and the CockroachDB tier. Drawn to make two claims unmissable: the tier holds **vectors and rows, never bytes** (B2's role is untouched), and the teal edges form a **cycle** — solid retrieves memory before the model is called, dashed writes the result back. A tier with only read edges is a catalog. |
 | 2 — the loop | §1's economics and §6's loop as one picture: the mold is paid once per *artist*, amortised across every video, and `attempts per approved still` is the metric that falls as episodes accumulate. |
 
-⚠️ **Open, and deliberately unasserted:** what CockroachDB Cloud actually costs at idle for this workload. The $1/month claim does not survive an unverified assumption, so it is not being restated until the number is checked against the free/serverless tier. See §10.
+✅ **Checked, and the answer is $0.00.** This was left deliberately unasserted until the number could be verified against the free/serverless tier. It now has been — see [infra/MEMORY-WORKLOAD.md](./infra/MEMORY-WORKLOAD.md). CockroachDB Basic starts at $0/month, **scales to zero**, and includes **50M Request Units + 10 GiB storage free every month**, with the distributed vector index available on that plan. This workload sits inside that allowance at every modelled tier — 0.5% of free storage at pilot scale, 6.3% at ten tenants. **The $1/month idle claim survives the branch**, and the database tier contributes none of it.
+
+⚠️ **What replaced it as the open risk.** Not cost — the RU cost of a *filtered vector scan*, which CockroachDB does not publish. The free allowance therefore has to be measured rather than assumed. An operation would have to exceed ~9,500 RU at pilot scale, or ~1,150 RU at ten tenants, before 50M RU/month breaks. Day 1–2 of §9 provisions the cluster anyway; recording the RU cost of one Q1 there is the cheapest way to close this.
 
 ---
 
@@ -249,7 +251,7 @@ Fifteen days, and the first is spent not writing code.
 ## 10. Open decisions
 
 1. **Licence.** MIT or Apache-2.0 is required and the repo has neither. Apache-2.0 recommended (patent grant, and it is the safer default for anything with a commercial future). Needs a call before anything is made public.
-2. **CockroachDB Cloud idle cost** — verify against the free/serverless tier before §8's economics are restated anywhere.
+2. ~~**CockroachDB Cloud idle cost**~~ — **closed 2026-07-26.** Basic scales to zero; 50M RU + 10 GiB free per month covers this workload at every modelled tier, vector index included. Idle contribution: **$0.00**. Full model, unit economics and AWS line items in [infra/MEMORY-WORKLOAD.md](./infra/MEMORY-WORKLOAD.md). *Superseded by a sharper question: the unpublished RU cost of a filtered vector scan, which must be measured on days 1–2.*
 3. **Embedding models.** Bedrock Titan for text is the low-friction default; the face embedding is the real question, since `check_likeness.py` currently uses a vision model's judgement rather than a metric embedding, and a 512-d face vector is a new dependency rather than a refactor.
 4. **Public repo timing.** The CockroachDB submission requires a public repo. Does that happen before or after Aug 3, given the Backblaze submission is in the same repo?
 5. **Does the artist entity land on the Backblaze track too, or only here?** PRODUCT.md's proposed `lib/artists/<artist>/…` layout is good independent of this hackathon. Doing it once, before the branch, avoids doing it twice.

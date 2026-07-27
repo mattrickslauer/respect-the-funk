@@ -1,0 +1,18 @@
+# Genblaze + Backblaze B2. Kept separate from the rest of the pipeline because of the
+# interpreter floor below — the existing tools run happily on 3.9 and should not be held
+# hostage to this.
+#
+#   genblaze-core requires Python >= 3.11, and content/.venv is currently 3.9.
+#   Rebuild it before installing:
+#
+#       python3.13 -m venv .venv --clear
+#       .venv/bin/pip install pyyaml numpy pillow google-auth
+#       .venv/bin/pip install -r bin/requirements-genblaze.txt
+#       .venv/bin/python bin/blaze.py check
+#
+genblaze-core[parquet]>=0.3.7
+genblaze-s3>=0.3.6
+
+# Provider extras are opt-in. Add the ones a kit actually fans out to:
+# genblaze-gmicloud>=0.3.4
+# genblaze-elevenlabs

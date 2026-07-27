@@ -38,6 +38,12 @@ Five things to think about. One of them is durable.
 
 Plus ECR (image storage, ~cents) and CloudWatch (logs at 14-day retention, ~cents), which come along for the ride rather than being designed in.
 
+**The landing page is not on this list.** [`web/`](../web) is a Next.js static export — no server-side work at all — so it wants a bucket and a CDN, not compute. Put it in B2 behind **Cloudflare** rather than CloudFront: Backblaze's free-egress arrangement is with Cloudflare, so that path costs $0 in bandwidth. It joins the table above only when the authenticated app needs a server, at which point it becomes the ① Lambda.
+
+### Credentials
+
+`genblaze-s3` reads `B2_KEY_ID` and `B2_APP_KEY` by those exact names; the bucket and region are ours to supply. All five live in SSM Parameter Store in the deployed system and in `.env` locally — see `.env.example`. `content/bin/blaze.py check` reports readiness without spending anything.
+
 **Realistic idle cost: under $1/month** — B2 storage and a container image. No compute floor anywhere.
 
 ### The move that made it simple: there is no database

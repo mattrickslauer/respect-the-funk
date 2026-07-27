@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+/* Palette lifted verbatim from deck/remixkit-deck.html so the site and the investor
+   deck are recognisably one brand. The s1–s5 series is the validated categorical
+   palette from the deck's own dataviz work — reused here for accents rather than
+   inventing a second, unvalidated set. */
+@theme {
+  --color-bg: #14121a;
+  --color-bg-2: #0e0c14;
+  --color-panel: #1c1926;
+  --color-panel-2: #232030;
+  --color-ink: #ffffff;
+  --color-ink-2: #c8c4d4;
+  --color-ink-3: #8b8698;
+  --color-gold: #f5b940;
+  --color-s1: #3987e5;
+  --color-s2: #d95926;
+  --color-s3: #199e70;
+  --color-s4: #c98500;
+  --color-s5: #d55181;
+
+  --font-sans: "Avenir Next", "Helvetica Neue", Helvetica, ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", Arial, sans-serif;
+}
+
+:root {
+  --rule: rgba(255, 255, 255, 0.1);
+}
+
+html {
+  scroll-behavior: smooth;
+  background: var(--color-bg-2);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One hairline, used everywhere, so section boundaries read as the same object. */
+.rule {
+  border-color: var(--rule);
+}
+
+/* Numerals in the stat blocks are the load-bearing content — tabular so columns of
+   figures line up, and never hyphenated. */
+.stat-figure {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  hyphens: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

@@ -120,6 +120,7 @@ Carried from research so they do not creep back: no virality claim (breakout is 
 |---|---|
 | **PRODUCT.md** (this) | *Who is it for and what do they do?* |
 | BUILD-SPEC.md | *What gets built, in what order, at what cost?* — §1 role scope narrowed by this file |
+| MEMORY-SPEC.md | *How does "build the identity once" actually make the second video cheap?* — turns step 2 above into a mechanism, and gives gap #2 (approval state) and gap #1 (the artist entity) a home |
 | FORMAT-SPEC.md | *What shape does a video of this kind take?* |
 | CLIP-SPEC.md | *What does one clip mean, and where may it be cut?* |
 | infra/README.md | *What runs it?* |

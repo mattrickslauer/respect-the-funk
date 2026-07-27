@@ -52,6 +52,8 @@ For listing and search, Genblaze already emits the index: `genblaze index` → `
 
 **When to revisit:** the moment role 2 comes back. Attribution and leaderboards are relational and should not be faked on top of Parquet.
 
+> **It came back earlier than expected, on a branch.** [MEMORY-SPEC.md](../MEMORY-SPEC.md) reintroduces a database tier — CockroachDB — for a requirement this analysis did not consider: **filtered vector retrieval** over the clip corpus, where `rights.source` is a predicate inside the similarity query rather than a filter applied afterwards. Parquet + Athena is an analytics path and cannot serve that at interactive latency. That branch is taken after the Aug 3 submission; the architecture on this page ships unchanged. The cost conflict with "under $1/month" is stated in MEMORY-SPEC §8 and its idle number is explicitly unverified.
+
 ### What deferring the fan side removed
 
 Against `deferred-marketplace.pdf`: **CloudFront**, the **CloudFront Function + KeyValueStore** `/r/{code}` redirect, **Aurora Serverless v2** (and its 0-ACU resume problem), **EventBridge Scheduler** and the separate indexer Lambda, and the split between `kit-worker` and `composite-worker` — there is one generator now, because there are no fan composites to build.
@@ -89,6 +91,8 @@ The free-egress arrangement is with **Cloudflare**, not AWS. At label scale — 
 
 **4. Approval state has no home yet.**
 PRODUCT.md flags that nothing carries `draft | approved | published`. That is a data-model gap, not an infrastructure one, but it is the first thing that will want a real row somewhere. If it turns out to need queryable state, DynamoDB on-demand ($0 idle) is the answer that does not reintroduce a database tier.
+
+*Superseded on the memory branch:* [MEMORY-SPEC §4](../MEMORY-SPEC.md) gives approval its row in CockroachDB alongside the episode and identity tables, because that branch is paying for the tier anyway. On this architecture the DynamoDB answer still stands.
 
 ---
 

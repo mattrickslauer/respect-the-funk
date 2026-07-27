@@ -66,7 +66,11 @@ _KINDS = [
 
 def _kind_of(annotation: str, enums: set[str], objects: set[str]) -> str:
     base = annotation.replace(" ", "")
-    for name in sorted(enums | objects, key=len, reverse=True):
+    # Longest name first so `HookWindow` is not shadowed by a shorter substring match,
+    # then alphabetically — a set's iteration order is not stable across processes, and
+    # letting it decide here would let the same annotation resolve to a different kind
+    # on different runs.
+    for name in sorted(enums | objects, key=lambda n: (-len(n), n)):
         if name in base:
             return "enum" if name in enums else "object"
     if base.startswith("list[") or base.startswith("list["):
@@ -121,13 +125,18 @@ def introspect(path: Path) -> dict:
         taken = {f["name"] for f in inherited}
         return inherited + [f for f in own_fields(node) if f["name"] not in taken]
 
+    # Sorted, because `wireframe.json` is committed. Iterating the sets directly makes
+    # the output depend on string hash randomisation, so every build rewrote the file
+    # with the same entities in a different order — a few hundred lines of diff saying
+    # nothing. A generated file that is checked in has to be reproducible or it cannot
+    # be reviewed.
     registry = {}
-    for name in objects:
+    for name in sorted(objects):
         fields = resolve(name)
         if fields:
             registry[name] = {"name": name, "fields": fields}
 
-    for name in enums:
+    for name in sorted(enums):
         values = [
             ast.literal_eval(s.value)
             for s in classes[name].body

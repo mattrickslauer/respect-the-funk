@@ -181,110 +181,6 @@
     }
   },
   "entities": {
-    "HookWindow": {
-      "name": "HookWindow",
-      "fields": [
-        {
-          "name": "start_ms",
-          "annotation": "int",
-          "kind": "number",
-          "required": false
-        },
-        {
-          "name": "end_ms",
-          "annotation": "int",
-          "kind": "number",
-          "required": false
-        }
-      ]
-    },
-    "ReferenceFrame": {
-      "name": "ReferenceFrame",
-      "fields": [
-        {
-          "name": "key",
-          "annotation": "str",
-          "kind": "text",
-          "required": true
-        },
-        {
-          "name": "lighting",
-          "annotation": "str",
-          "kind": "text",
-          "required": false
-        },
-        {
-          "name": "caption",
-          "annotation": "str | None",
-          "kind": "text",
-          "required": false
-        },
-        {
-          "name": "sha256",
-          "annotation": "str | None",
-          "kind": "text",
-          "required": false
-        }
-      ]
-    },
-    "Base": {
-      "name": "Base",
-      "fields": [
-        {
-          "name": "tenant_id",
-          "annotation": "str",
-          "kind": "text",
-          "required": true
-        },
-        {
-          "name": "created_at",
-          "annotation": "datetime",
-          "kind": "date",
-          "required": false
-        },
-        {
-          "name": "updated_at",
-          "annotation": "datetime",
-          "kind": "date",
-          "required": false
-        }
-      ]
-    },
-    "LikenessConsent": {
-      "name": "LikenessConsent",
-      "fields": [
-        {
-          "name": "granted",
-          "annotation": "bool",
-          "kind": "bool",
-          "required": false
-        },
-        {
-          "name": "signed_by",
-          "annotation": "str | None",
-          "kind": "text",
-          "required": false
-        },
-        {
-          "name": "signed_at",
-          "annotation": "datetime | None",
-          "kind": "date",
-          "required": false
-        },
-        {
-          "name": "document_key",
-          "annotation": "str | None",
-          "kind": "text",
-          "required": false
-        },
-        {
-          "name": "notes",
-          "annotation": "str | None",
-          "kind": "text",
-          "required": false
-        }
-      ]
-    },
     "Artist": {
       "name": "Artist",
       "fields": [
@@ -343,6 +239,185 @@
           "name": "consent",
           "annotation": "LikenessConsent",
           "kind": "object",
+          "required": false
+        },
+        {
+          "name": "approval",
+          "annotation": "ApprovalState",
+          "kind": "enum",
+          "required": false
+        }
+      ]
+    },
+    "Asset": {
+      "name": "Asset",
+      "fields": [
+        {
+          "name": "id",
+          "annotation": "str",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "modality",
+          "annotation": "Modality",
+          "kind": "enum",
+          "required": true
+        },
+        {
+          "name": "provider",
+          "annotation": "str",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "model",
+          "annotation": "str",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "prompt",
+          "annotation": "str | None",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "key",
+          "annotation": "str | None",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "url",
+          "annotation": "str | None",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "sha256",
+          "annotation": "str | None",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "cost_cents",
+          "annotation": "int",
+          "kind": "number",
+          "required": false
+        },
+        {
+          "name": "params",
+          "annotation": "dict[str, Any]",
+          "kind": "map",
+          "required": false
+        }
+      ]
+    },
+    "Base": {
+      "name": "Base",
+      "fields": [
+        {
+          "name": "tenant_id",
+          "annotation": "str",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "created_at",
+          "annotation": "datetime",
+          "kind": "date",
+          "required": false
+        },
+        {
+          "name": "updated_at",
+          "annotation": "datetime",
+          "kind": "date",
+          "required": false
+        }
+      ]
+    },
+    "HookWindow": {
+      "name": "HookWindow",
+      "fields": [
+        {
+          "name": "start_ms",
+          "annotation": "int",
+          "kind": "number",
+          "required": false
+        },
+        {
+          "name": "end_ms",
+          "annotation": "int",
+          "kind": "number",
+          "required": false
+        }
+      ]
+    },
+    "Identity": {
+      "name": "Identity",
+      "fields": [
+        {
+          "name": "tenant_id",
+          "annotation": "str",
+          "kind": "text",
+          "required": true,
+          "inherited": true
+        },
+        {
+          "name": "created_at",
+          "annotation": "datetime",
+          "kind": "date",
+          "required": false,
+          "inherited": true
+        },
+        {
+          "name": "updated_at",
+          "annotation": "datetime",
+          "kind": "date",
+          "required": false,
+          "inherited": true
+        },
+        {
+          "name": "id",
+          "annotation": "str",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "artist_id",
+          "annotation": "str",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "version",
+          "annotation": "int",
+          "kind": "number",
+          "required": false
+        },
+        {
+          "name": "structural_features",
+          "annotation": "str | None",
+          "kind": "text",
+          "required": false
+        },
+        {
+          "name": "wardrobe",
+          "annotation": "list[str]",
+          "kind": "list",
+          "required": false
+        },
+        {
+          "name": "reference_frames",
+          "annotation": "list[ReferenceFrame]",
+          "kind": "object",
+          "required": false
+        },
+        {
+          "name": "negatives",
+          "annotation": "list[str]",
+          "kind": "list",
           "required": false
         },
         {
@@ -463,121 +538,58 @@
         }
       ]
     },
-    "Identity": {
-      "name": "Identity",
+    "LikenessConsent": {
+      "name": "LikenessConsent",
       "fields": [
         {
-          "name": "tenant_id",
-          "annotation": "str",
-          "kind": "text",
-          "required": true,
-          "inherited": true
-        },
-        {
-          "name": "created_at",
-          "annotation": "datetime",
-          "kind": "date",
-          "required": false,
-          "inherited": true
-        },
-        {
-          "name": "updated_at",
-          "annotation": "datetime",
-          "kind": "date",
-          "required": false,
-          "inherited": true
-        },
-        {
-          "name": "id",
-          "annotation": "str",
-          "kind": "text",
+          "name": "granted",
+          "annotation": "bool",
+          "kind": "bool",
           "required": false
         },
         {
-          "name": "artist_id",
-          "annotation": "str",
-          "kind": "text",
-          "required": true
-        },
-        {
-          "name": "version",
-          "annotation": "int",
-          "kind": "number",
-          "required": false
-        },
-        {
-          "name": "structural_features",
+          "name": "signed_by",
           "annotation": "str | None",
           "kind": "text",
           "required": false
         },
         {
-          "name": "wardrobe",
-          "annotation": "list[str]",
-          "kind": "list",
+          "name": "signed_at",
+          "annotation": "datetime | None",
+          "kind": "date",
           "required": false
         },
         {
-          "name": "reference_frames",
-          "annotation": "list[ReferenceFrame]",
-          "kind": "object",
+          "name": "document_key",
+          "annotation": "str | None",
+          "kind": "text",
           "required": false
         },
         {
-          "name": "negatives",
-          "annotation": "list[str]",
-          "kind": "list",
-          "required": false
-        },
-        {
-          "name": "approval",
-          "annotation": "ApprovalState",
-          "kind": "enum",
+          "name": "notes",
+          "annotation": "str | None",
+          "kind": "text",
           "required": false
         }
       ]
     },
-    "Asset": {
-      "name": "Asset",
+    "ReferenceFrame": {
+      "name": "ReferenceFrame",
       "fields": [
         {
-          "name": "id",
-          "annotation": "str",
-          "kind": "text",
-          "required": false
-        },
-        {
-          "name": "modality",
-          "annotation": "Modality",
-          "kind": "enum",
-          "required": true
-        },
-        {
-          "name": "provider",
-          "annotation": "str",
-          "kind": "text",
-          "required": true
-        },
-        {
-          "name": "model",
-          "annotation": "str",
-          "kind": "text",
-          "required": true
-        },
-        {
-          "name": "prompt",
-          "annotation": "str | None",
-          "kind": "text",
-          "required": false
-        },
-        {
           "name": "key",
-          "annotation": "str | None",
+          "annotation": "str",
+          "kind": "text",
+          "required": true
+        },
+        {
+          "name": "lighting",
+          "annotation": "str",
           "kind": "text",
           "required": false
         },
         {
-          "name": "url",
+          "name": "caption",
           "annotation": "str | None",
           "kind": "text",
           "required": false
@@ -586,18 +598,6 @@
           "name": "sha256",
           "annotation": "str | None",
           "kind": "text",
-          "required": false
-        },
-        {
-          "name": "cost_cents",
-          "annotation": "int",
-          "kind": "number",
-          "required": false
-        },
-        {
-          "name": "params",
-          "annotation": "dict[str, Any]",
-          "kind": "map",
           "required": false
         }
       ]

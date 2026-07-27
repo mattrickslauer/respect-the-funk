@@ -101,6 +101,21 @@ module "api" {
   ssm_path    = module.secrets.parameter_path
   b2_bucket   = var.b2_bucket
   tenant_id   = var.tenant_id
+
+  storage_backend   = var.storage_backend
+  generator_backend = var.generator_backend
+  queue_backend     = var.queue_backend
+
+  tags = local.tags
+}
+
+# The reachable front door. See modules/http_api for why this exists alongside the
+# Function URL rather than instead of it.
+module "http_api" {
+  source      = "../../modules/http_api"
+  name_prefix = local.name_prefix
+  lambda_arn  = module.api.function_arn
+  lambda_name = module.api.function_name
   tags        = local.tags
 }
 

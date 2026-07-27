@@ -29,3 +29,20 @@ variable "worker_image_tag" {
   type    = string
   default = "worker-latest"
 }
+
+# Backend selection. Defaults are production; override in terraform.tfvars to bring a
+# console up before credentials exist. See modules/api for the reasoning.
+variable "storage_backend" {
+  type    = string
+  default = "b2"
+}
+
+variable "generator_backend" {
+  type    = string
+  default = "genblaze"
+}
+
+variable "queue_backend" {
+  type    = string
+  default = "sqs"
+}

@@ -120,10 +120,13 @@ data "aws_iam_policy_document" "job" {
     resources = [var.queue_arn]
   }
 
+  # Both ARNs — see the note in modules/api: GetParametersByPath acts on the path
+  # node, GetParameter on the children.
   statement {
     actions = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
     resources = [
-      "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_path}/*"
+      "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_path}",
+      "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_path}/*",
     ]
   }
 

@@ -12,19 +12,23 @@
 # without the app knowing it is on Lambda. No Mangum, no handler shim, and the same
 # image runs locally with `docker run -p 8000:8000`.
 
+# ffmpeg, copied from a pinned multi-arch static image rather than downloaded.
+#
+# The generator container needs it for compositing, and the mock provider needs it to
+# synthesise media (absent it, modalities are skipped rather than faked — see
+# adapters/mock_media.py).
+#
+# The first attempt fetched johnvansickle's static tarball and 404'd: those filenames
+# use `amd64`/`arm64`, while `uname -m` reports `x86_64`/`aarch64`. Rather than carry
+# an arch-translation table, copy the binaries out of an image that already publishes
+# both architectures — no network fetch in the build, no arch mapping, and the version
+# is pinned instead of tracking whatever "release" currently points at.
+FROM mwader/static-ffmpeg:7.1 AS ffmpeg
+
 FROM public.ecr.aws/lambda/python:3.12 AS base
 
-# ffmpeg: the generator container needs it for compositing, and the mock provider
-# needs it to synthesise media. Absent it, mock modalities are skipped rather than
-# failing — see adapters/mock_media.py.
-RUN dnf install -y tar xz findutils && \
-    ARCH=$(uname -m) && \
-    curl -fsSL "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-${ARCH}-static.tar.xz" -o /tmp/ffmpeg.tar.xz && \
-    tar -xJf /tmp/ffmpeg.tar.xz -C /tmp && \
-    find /tmp -name ffmpeg -type f -exec cp {} /usr/local/bin/ffmpeg \; && \
-    find /tmp -name ffprobe -type f -exec cp {} /usr/local/bin/ffprobe \; && \
-    chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe && \
-    rm -rf /tmp/ffmpeg* && dnf clean all
+COPY --from=ffmpeg /ffmpeg /usr/local/bin/ffmpeg
+COPY --from=ffmpeg /ffprobe /usr/local/bin/ffprobe
 
 WORKDIR /app
 COPY pyproject.toml ./

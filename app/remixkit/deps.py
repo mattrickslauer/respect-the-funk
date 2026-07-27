@@ -98,6 +98,8 @@ class Container:
             warnings.append("Storage is ephemeral (/tmp) — data will not survive a restart.")
         if self.settings.auth_backend == "none":
             warnings.append("No authentication — every caller is the default tenant.")
+        if not getattr(self.queue, "can_execute", True):
+            warnings.append(getattr(self.queue, "unavailable_reason", "The job queue cannot execute jobs."))
         return {
             "env": self.settings.env,
             "tenant": self.settings.default_tenant_id,

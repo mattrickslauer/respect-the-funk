@@ -28,6 +28,10 @@ TILES = [
     ("gmicloud", "GMI", "#2D6CDF", "#FFFFFF"),
     ("elevenlabs", "11", "#111111", "#FFFFFF"),
     ("browser", "WWW", "#4A5568", "#FFFFFF"),
+    # CockroachDB is not an AWS service, so `diagrams` has no icon for it either. Used
+    # only by the memory-branch pages (MEMORY-SPEC.md); the label-scope architecture has
+    # no database tier and never draws this.
+    ("cockroachdb", "COCKROACH\nDB", "#6933FF", "#FFFFFF"),
 ]
 
 FONTS = [

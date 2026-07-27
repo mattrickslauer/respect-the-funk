@@ -1,0 +1,124 @@
+{# The identity builder as its own surface — wireframe gap #1.
+
+   "Reference frames have no surface. The domain model carries them and nothing can
+   create one, so the identity is text-only in practice."
+
+   The identity is the reason the second video is cheap: hold the face structure
+   invariant once, and every subsequent kit reuses it instead of re-describing it. #}
+{% extends "_layout.html" %}
+{% block title %}Identity — {{ artist.name }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">
+    <a href="/console">Roster</a> /
+    <a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a> / identity
+  </p>
+  <h1>Identity builder</h1>
+  <p class="lede">
+    Held invariant across every kit. Structure and wardrobe describe what must stay the
+    same; negatives describe the drift to push against.
+  </p>
+</section>
+
+{% if artist.consent.blocks_generation %}
+  {# Stated here as well as on the artist page, because this is the screen where someone
+     uploads photographs of a person's face. #}
+  <div class="notice notice-error">
+    <strong>No likeness consent on file.</strong>
+    An identity holds this artist's face invariant, which needs auditable rights.
+    <a href="/console/artists/{{ artist.id }}">Record consent →</a>
+  </div>
+{% endif %}
+
+<div class="split">
+  <div class="split-main">
+    <section class="panel">
+      <div class="panel-head">
+        <h3>Current identity</h3>
+        {% if identity %}<span class="version">v{{ identity.version }}</span>{% endif %}
+      </div>
+
+      {# Saving creates a new version rather than editing in place: a kit records which
+         identity version it was generated from, so mutating one would silently rewrite
+         the provenance of every kit that already used it. #}
+      <p class="hint">
+        Saving creates a new version. Kits record the version they were built from, so
+        an edit in place would rewrite the provenance of kits already delivered.
+      </p>
+
+      <form class="form" hx-post="/ui/artists/{{ artist.id }}/identity"
+            hx-target="#identity" hx-swap="outerHTML">
+        <label>Structural features
+          <textarea name="structural_features" rows="3"
+            placeholder="Face structure held invariant across every shot">{{ identity.structural_features if identity else "" }}</textarea>
+        </label>
+        <label>Wardrobe <span class="hint">one per line</span>
+          <textarea name="wardrobe" rows="3">{{ identity.wardrobe|join("\n") if identity else "" }}</textarea>
+        </label>
+        <label>Negatives <span class="hint">one per line — what the model must not drift toward</span>
+          <textarea name="negatives" rows="3">{{ identity.negatives|join("\n") if identity else "" }}</textarea>
+        </label>
+        <button class="btn btn-primary" type="submit">Save as new version</button>
+      </form>
+
+      <div id="identity">{% include "components/_identity.html" %}</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h3>Reference frames</h3></div>
+      <p class="hint">
+        Stills the generator matches against. Lighting is recorded because a face lit
+        three different ways is three different references, not one.
+      </p>
+
+      {% if identity %}
+        <form class="form" hx-post="/ui/identities/{{ identity.id }}/frames"
+              hx-target="#frames" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+          <div class="form-row">
+            <label>Image <input name="file" type="file" accept="image/*" required></label>
+            <label>Lighting
+              <select name="lighting">
+                {% for l in ("neutral", "warm", "hard-flash", "backlit", "low-key") %}
+                  <option value="{{ l }}">{{ l }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Caption <input name="caption" type="text" placeholder="optional"></label>
+          </div>
+          <button class="btn btn-primary" type="submit">Add reference frame</button>
+        </form>
+
+        <div id="frames">{% include "components/_frames.html" %}</div>
+      {% else %}
+        <p class="empty">Save an identity first — frames attach to a version.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <aside class="split-side">
+    <section class="panel">
+      <div class="panel-head"><h3>Version history</h3></div>
+      {% if identities %}
+        <div class="rows">
+          {% for v in identities|sort(attribute="version", reverse=true) %}
+            <div class="row">
+              <div class="row-main">
+                <h4>v{{ v.version }}
+                  {% with state = v.approval %}{% include "components/_badge.html" %}{% endwith %}
+                </h4>
+                <p class="small">
+                  {{ v.reference_frames|length }} frame{{ "" if v.reference_frames|length == 1 else "s" }} ·
+                  {{ v.created_at.strftime("%Y-%m-%d") }}
+                </p>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty">No versions yet.</p>
+      {% endif %}
+    </section>
+  </aside>
+</div>
+{% endblock %}

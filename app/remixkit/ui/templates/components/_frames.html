@@ -1,0 +1,31 @@
+{# Reference frames on the current identity version.
+
+   `asset_url` is called per render rather than stored, for the same reason the kit
+   asset grid does it: on B2 these are presigned URLs with an expiry, and persisting one
+   gives a page that looks right immediately after upload and fills with broken images
+   an hour later. #}
+<div id="frames">
+  {% if identity.reference_frames %}
+    <div class="assets">
+      {% for frame in identity.reference_frames %}
+        <figure class="asset">
+          <img src="{{ asset_url(frame) }}" alt="{{ frame.caption or 'reference frame' }}" loading="lazy">
+          <figcaption class="small">
+            <span class="method">{{ frame.lighting }}</span>
+            {% if frame.caption %} · {{ frame.caption }}{% endif %}
+          </figcaption>
+        </figure>
+      {% endfor %}
+    </div>
+    <p class="hint">
+      {{ identity.reference_frames|length }} frame{{ "" if identity.reference_frames|length == 1 else "s" }}
+      on v{{ identity.version }}. Frames attach in place — adding evidence of how the
+      artist looks is not a change of intent, so it does not mint a version.
+    </p>
+  {% else %}
+    <p class="empty">
+      No reference frames. The identity is text-only, so the generator has nothing to
+      match a face against.
+    </p>
+  {% endif %}
+</div>

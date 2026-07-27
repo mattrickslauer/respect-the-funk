@@ -1,0 +1,95 @@
+{# Deployment. The footer already names which backends are live; this says what each
+   one would need in order to be real, so "why is generation mocked" is answerable
+   without reading deps.describe().
+
+   Read-only on purpose. These are process-level settings read once at startup —
+   `get_settings()` is lru_cached, so a form here would write a value the running
+   process would never see, which is worse than no form. #}
+{% extends "_layout.html" %}
+{% block title %}Deployment — RemixKit{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">{{ env.tenant }}</p>
+  <h1>Deployment</h1>
+  <p class="lede">
+    Five axes, each independently real or mocked. Every page carries a banner naming
+    which are live; this is the same information with the gap spelled out.
+  </p>
+</section>
+
+{% if env.warnings %}
+  <div class="notice">
+    <strong>{{ env.warnings|length }} axis{{ "" if env.warnings|length == 1 else "es" }} not live.</strong>
+    Nothing here is broken — each is a deliberate default that runs with no credentials.
+  </div>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><h3>Backends</h3></div>
+  <table class="table">
+    <thead>
+      <tr><th>Axis</th><th>Variable</th><th>Now</th><th>Live value</th><th>What that needs</th></tr>
+    </thead>
+    <tbody>
+      {% for label, var, current, live, needs in axes %}
+        <tr>
+          <td>{{ label }}</td>
+          <td><code>{{ var }}</code></td>
+          <td>
+            {% if current == live %}
+              <span class="badge badge-approved">{{ current }}</span>
+            {% else %}
+              <span class="badge">{{ current }}</span>
+            {% endif %}
+          </td>
+          <td><code>{{ live }}</code></td>
+          <td class="small">
+            {% if current == live %}<span class="hint">— already live</span>{% else %}{{ needs }}{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<div class="split">
+  <div class="split-main">
+    <section class="panel">
+      <div class="panel-head"><h3>This process</h3></div>
+      <dl class="kv">
+        {% for key, value in described.items() if key != "warnings" %}
+          <dt>{{ key }}</dt><dd><code>{{ value }}</code></dd>
+        {% endfor %}
+      </dl>
+      <p class="small">
+        The same object is served as JSON at <a href="/healthz"><code>/healthz</code></a>,
+        which is what the load balancer polls.
+      </p>
+    </section>
+  </div>
+
+  <aside class="split-side">
+    <section class="panel">
+      <div class="panel-head"><h3>Warnings</h3></div>
+      {% if env.warnings %}
+        <ul class="small">
+          {% for w in env.warnings %}<li>{{ w }}</li>{% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">Every axis is live.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h3>Why read-only</h3></div>
+      <p class="small">
+        Settings are read once, at startup — <code>get_settings()</code> is cached for
+        the life of the process. A form here would write a value this process would
+        never read, so these are set by environment or Terraform and take effect on the
+        next deploy.
+      </p>
+    </section>
+  </aside>
+</div>
+{% endblock %}

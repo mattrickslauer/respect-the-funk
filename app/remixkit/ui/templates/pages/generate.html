@@ -1,0 +1,121 @@
+{# Cost before the button — wireframe gap #3.
+
+   "Cost is visible only after the fact. generate.json puts the estimate, the remaining
+   budget, and the count of shots reusable from cache *before* the control that queues
+   the job."
+
+   The shot list below is not an illustration. It is the exact plan `KitService.request`
+   will build for these inputs, priced by the same `estimate_cents`, so what is shown
+   and what is bought cannot diverge. #}
+{% extends "_layout.html" %}
+{% block title %}Generate — {{ song.title }}{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">
+    <a href="/console">Roster</a> /
+    <a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a> /
+    <a href="/console/songs/{{ song.id }}">{{ song.title }}</a> / generate
+  </p>
+  <h1>Generate a kit</h1>
+  <p class="lede">
+    A pack of vertical, remix-ready templates cut to this song's hook. Priced before it
+    is queued.
+  </p>
+</section>
+
+{% if blocked %}
+  <div class="notice notice-error">
+    <strong>{{ artist.name }} has no recorded likeness consent.</strong>
+    A kit holds the artist's face invariant, and that needs auditable rights.
+    <a href="/console/artists/{{ artist.id }}">Record consent →</a>
+  </div>
+{% endif %}
+
+<div class="split">
+  <div class="split-main">
+    <section class="panel">
+      <div class="panel-head"><h3>What this will buy</h3></div>
+
+      {# Re-pricing is a GET so the estimate is always the server's answer, not the
+         browser's arithmetic. A client-side total would be a second opinion about
+         cost, and the whole point of this screen is that there is only one. #}
+      <form class="form-inline" method="get">
+        <label>Videos
+          <input name="video_count" type="number" min="0" max="8" value="{{ video_count }}">
+        </label>
+        <button class="btn btn-quiet" type="submit">Re-price</button>
+      </form>
+
+      {% if shots %}
+        <table class="table">
+          <thead><tr><th>#</th><th>Modality</th><th>Length</th><th>Prompt</th></tr></thead>
+          <tbody>
+            {% for shot in shots %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ shot.modality.value }}</td>
+                <td>{% if shot.seconds %}{{ "%.1f"|format(shot.seconds) }}s{% else %}—{% endif %}</td>
+                <td class="small">{{ shot.prompt|truncate(110) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">No shots at this count. Raise the video count above zero.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <aside class="split-side">
+    <section class="panel">
+      <div class="panel-head"><h3>Estimate</h3></div>
+      <p class="sha">{{ "$%.2f"|format(estimate_cents / 100) }}</p>
+      <p class="hint">
+        {{ shots|length }} shot{{ "" if shots|length == 1 else "s" }} ·
+        {{ env.generator }}
+      </p>
+      {% if "mock" in env.generator %}
+        <p class="small">
+          Generation is mocked, so this run costs nothing. The figure is what the same
+          plan would cost against a live provider.
+        </p>
+      {% endif %}
+
+      <form hx-post="/ui/kits" hx-target="#queued" hx-swap="innerHTML">
+        <input type="hidden" name="song_id" value="{{ song.id }}">
+        <input type="hidden" name="artist_id" value="{{ artist.id }}">
+        <input type="hidden" name="video_count" value="{{ video_count }}">
+        <button class="btn btn-primary" type="submit" {{ "disabled" if blocked }}>
+          Queue this kit
+        </button>
+      </form>
+      <div id="queued"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h3>Preconditions</h3></div>
+      <dl class="kv">
+        <dt>Consent</dt>
+        <dd>{% if blocked %}<span class="err">missing</span>{% else %}on file{% endif %}</dd>
+        <dt>Measurement</dt>
+        <dd>
+          {% if song.bpm %}{{ "%.2f"|format(song.bpm) }} <span class="method">{{ song.bpm_method }}</span>
+          {% else %}<span class="err">unmeasured</span>{% endif %}
+        </dd>
+        <dt>Hook window</dt>
+        <dd>
+          {% if song.hook.duration_ms %}{{ "%.1f"|format(song.hook.duration_ms / 1000) }}s
+          {% else %}<span class="hint">unset — loops default to 6s</span>{% endif %}
+        </dd>
+        <dt>Identity</dt>
+        <dd>
+          {% if identity %}v{{ identity.version }}
+          {% else %}<span class="hint">none — shots will not hold a face</span>{% endif %}
+        </dd>
+      </dl>
+      <p class="small"><a href="/console/artists/{{ artist.id }}/identity">Edit identity →</a></p>
+    </section>
+  </aside>
+</div>
+{% endblock %}

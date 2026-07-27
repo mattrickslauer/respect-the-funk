@@ -10,6 +10,8 @@ deadline: "2026-08-18 17:00 EDT"
 
 **Two hackathons, sequenced — not one submission sent twice.**
 
+> **Superseded in count, not in substance (2026-07-27).** A third track was added — [MINDS-SPEC](./MINDS-SPEC.md), deadline **2026-08-28** — which consumes §4–§6 of this document rather than competing with it. Everything below stands; the sequence is now Aug 3 → Aug 18 → Aug 28, and the rule in this section extends unchanged: nothing on the Minds track may touch the Aug 18 submission path before Aug 18.
+
 | | Backblaze Generative Media | CockroachDB × AWS: Build with Agentic Memory |
 |---|---|---|
 | Deadline | **2026-08-03** 17:00 EDT | **2026-08-18** 17:00 EDT |

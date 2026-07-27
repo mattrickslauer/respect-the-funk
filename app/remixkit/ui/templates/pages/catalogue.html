@@ -1,0 +1,98 @@
+{# The work queue. Wireframe gap #2: "which songs have no approved kit" is the label's
+   actual daily question and it spans three collections, so no single-collection page
+   can answer it.
+
+   Blocked rows sort first (CatalogueService.gaps), because a screen whose purpose is
+   "what needs attention" must not put the work below the fold. #}
+{% extends "_layout.html" %}
+{% block title %}Catalogue — RemixKit{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">{{ env.tenant }}</p>
+  <h1>Catalogue</h1>
+  <p class="lede">
+    What is missing. A song can only be generated from once it has a measurement, a hook
+    window, a master, and an artist whose likeness consent is on file — four preconditions
+    living on three different records.
+  </p>
+</section>
+
+<div class="grid">
+  {% for label, value, hint in [
+      ("No measurement",   catalogue.unmeasured,       "bpm and method both required"),
+      ("No hook window",   catalogue.no_hook,          "duration is zero"),
+      ("No approved kit",  catalogue.no_approved_kit,  "generated but never cleared"),
+      ("Blocked artists",  catalogue.blocked_artists,  "likeness consent not recorded"),
+    ] %}
+    <div class="card">
+      <div class="card-head"><h3>{{ label }}</h3></div>
+      <p class="sha">{{ value }}</p>
+      <p class="hint">{{ hint }}</p>
+    </div>
+  {% endfor %}
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <h3>Gaps</h3>
+    <span class="hint">{{ catalogue.ready }} of {{ catalogue.rows|length }} ready to generate</span>
+  </div>
+
+  {# Filtering is a GET so the filtered view is a URL someone can send to a colleague. #}
+  <form class="form-inline" method="get" action="/console/catalogue">
+    <select name="artist_id">
+      <option value="">Every artist</option>
+      {% for a in artists %}
+        <option value="{{ a.id }}" {{ "selected" if a.id == artist_id }}>{{ a.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-quiet" type="submit">Filter</button>
+    {% if artist_id %}<a class="btn btn-quiet" href="/console/catalogue">Clear</a>{% endif %}
+  </form>
+
+  {% if not catalogue.rows %}
+    <p class="empty">No songs yet. Attach one from an artist's page.</p>
+  {% else %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Song</th><th>Artist</th><th>Measured</th><th>Hook</th>
+          <th>Master</th><th>Consent</th><th>Kits</th><th>Blocked on</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in catalogue.rows %}
+          <tr {% if not row.ready %}class="unmeasured"{% endif %}>
+            <td><a href="/console/songs/{{ row.song.id }}">{{ row.song.title }}</a></td>
+            <td>
+              {% if row.artist %}
+                <a href="/console/artists/{{ row.artist.id }}">{{ row.artist.name }}</a>
+              {% else %}<span class="hint">—</span>{% endif %}
+            </td>
+            {# ✓/· rather than words: eight columns of "yes"/"no" is unreadable, and the
+               eye needs to find the gaps, not read them. #}
+            <td>{% if row.measured %}✓{% else %}<span class="err">·</span>{% endif %}</td>
+            <td>{% if row.has_hook %}✓{% else %}<span class="err">·</span>{% endif %}</td>
+            <td>{% if row.has_master %}✓{% else %}<span class="err">·</span>{% endif %}</td>
+            <td>{% if row.consent_ok %}✓{% else %}<span class="err">·</span>{% endif %}</td>
+            <td>
+              {{ row.kit_count }}
+              {% if row.approved_kit %}<span class="badge badge-approved">approved</span>{% endif %}
+            </td>
+            <td class="small">
+              {% if row.blocked_on %}
+                {{ row.blocked_on|join(", ") }}
+              {% elif row.approved_kit %}
+                <span class="hint">complete</span>
+              {% else %}
+                <a href="/console/artists/{{ row.song.artist_id }}/songs/{{ row.song.id }}/generate">Generate →</a>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+{% endblock %}

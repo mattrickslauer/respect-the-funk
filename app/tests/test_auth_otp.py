@@ -290,6 +290,25 @@ def test_the_intended_destination_survives_the_redirect(otp_client):
     )
 
 
+@pytest.mark.parametrize(
+    "path", ["/console", "/console/catalogue", "/console/settings"]
+)
+def test_every_console_screen_is_behind_the_login(otp_client, path):
+    """No route has an auth branch, so this is really a check that each page handler
+    took `CurrentPrincipal` — the omission that would silently expose a screen."""
+    response = otp_client.get(path, headers={"accept": "text/html"}, follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/auth/login")
+
+
+def test_the_verifier_stays_public(otp_client):
+    """PRODUCT.md keeps /verify usable without an account. It reads no tenant data —
+    `manifest.verify()` runs over uploaded bytes — so this is intent, not an oversight.
+    It sits outside `/console` precisely so the URL does not imply a gate."""
+    response = otp_client.get("/verify", headers={"accept": "text/html"}, follow_redirects=False)
+    assert response.status_code == 200
+
+
 def test_the_landing_page_is_public(otp_client):
     """`/` must render for a stranger even with auth on — it is the marketing site, and
     it carries the only link a new operator has into the login."""

@@ -1,0 +1,15 @@
+{# The measured tempo, as a fragment so the save round-trips without a page reload.
+
+   The method is shown next to the number rather than tucked into a tooltip, because
+   the two together are the claim — SongService.set_measurement refuses a BPM without
+   one, and the UI should not present a number as if the source did not matter. #}
+<div id="song-measurement">
+  {% if song.bpm %}
+    <dl class="kv">
+      <dt>BPM</dt><dd>{{ "%.2f"|format(song.bpm) }} <span class="method">{{ song.bpm_method }}</span></dd>
+      <dt>Drop</dt><dd>{% if song.drop_ms %}{{ song.drop_ms }} ms{% else %}—{% endif %}</dd>
+    </dl>
+  {% else %}
+    <p class="empty unmeasured">Unmeasured. Every kit built from this song will guess.</p>
+  {% endif %}
+</div>

@@ -85,12 +85,24 @@ Five axes, five environment variables:
 
 ```
 /                    the landing page — public, always
+/verify              provenance checking — public, on purpose
 /auth/login          the sign-in card
 /console             the roster — and everything under it
+/console/catalogue          what is missing, across collections
+/console/settings           which backends are live, and what each gap needs
 /console/artists/{id}
-/console/verify
+/console/artists/{id}/identity                    the identity builder
+/console/artists/{id}/songs/{sid}/generate        cost before the button
+/console/songs/{id}
+/console/kits/{id}
 /api/v1/*            JSON, Authorization: Bearer
 ```
+
+Two routes sit outside `/console`, and both are deliberate: `/` is the marketing page,
+and `/verify` is public because PRODUCT.md keeps it usable by a judge with no account.
+It reads no tenant data — `manifest.verify()` runs over uploaded bytes. It is *not* at
+`/console/verify`, because a URL under that prefix promises a session check that this
+handler does not perform.
 
 `/` is the marketing site (`ui/templates/pages/landing.html`, moved here from `web/`)
 and it is the **only** page whose route does not take `CurrentPrincipal`. That is the

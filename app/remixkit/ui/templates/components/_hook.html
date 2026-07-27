@@ -1,0 +1,15 @@
+{# The hook window, as a fragment.
+
+   Duration is derived rather than stored — `HookWindow.duration_ms` is end minus start
+   — so it cannot drift from the two numbers a person actually set. #}
+<div id="song-hook">
+  {% if song.hook.duration_ms %}
+    <dl class="kv">
+      <dt>Window</dt><dd>{{ song.hook.start_ms }} – {{ song.hook.end_ms }} ms</dd>
+      <dt>Duration</dt>
+      <dd>{{ "%.1f"|format(song.hook.duration_ms / 1000) }}s <span class="hint">every loop cuts to this</span></dd>
+    </dl>
+  {% else %}
+    <p class="empty unmeasured">No hook window. Loops will default to six seconds.</p>
+  {% endif %}
+</div>

@@ -31,6 +31,7 @@ from remixkit.domain.models import Modality
 from remixkit.ports.mailer import Mailer
 from remixkit.services.accounts import AccountService
 from remixkit.services.artists import ArtistService
+from remixkit.services.catalogue import CatalogueService
 from remixkit.services.delivery import DeliveryService
 from remixkit.services.identities import IdentityService
 from remixkit.services.kits import JOB_TYPE, KitService
@@ -97,6 +98,7 @@ class Container:
             max_shots=settings.max_shots_per_kit,
         )
         self.delivery = DeliveryService(self.storage, self.kits)
+        self.catalogue = CatalogueService(artists=self.artists, songs=self.songs, kits=self.kits)
         self.verify = VerifyService()
 
         # The inline queue needs the handler that the SQS path gives to the worker
@@ -303,6 +305,10 @@ def get_verify() -> VerifyService:
     return get_container().verify
 
 
+def get_catalogue() -> CatalogueService:
+    return get_container().catalogue
+
+
 def get_delivery() -> DeliveryService:
     return get_container().delivery
 
@@ -315,4 +321,5 @@ Identities = Annotated[IdentityService, Depends(get_identities)]
 Songs = Annotated[SongService, Depends(get_songs)]
 Kits = Annotated[KitService, Depends(get_kits)]
 Verify = Annotated[VerifyService, Depends(get_verify)]
+Catalogue = Annotated[CatalogueService, Depends(get_catalogue)]
 Delivery = Annotated[DeliveryService, Depends(get_delivery)]

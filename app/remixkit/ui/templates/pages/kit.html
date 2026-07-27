@@ -1,0 +1,145 @@
+{# One generated pack: what it cost, what it produced, whether its provenance holds,
+   and whether a human has cleared it.
+
+   `status` and `approval` are kept visually distinct throughout. Conflating them is the
+   easy mistake: status is technical (did the run succeed), approval is editorial (may a
+   human publish it). A kit can be READY and still not publishable, and a label that
+   auto-published on READY would be publishing AI content about its own artists without
+   anyone looking at it. #}
+{% extends "_layout.html" %}
+{% block title %}{{ kit.name }} — RemixKit{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">
+    <a href="/console">Roster</a> /
+    {% if artist %}<a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a> / {% endif %}
+    {% if song %}<a href="/console/songs/{{ song.id }}">{{ song.title }}</a> / {% endif %}
+    kit
+  </p>
+  <h1>{{ kit.name }}</h1>
+  <p>
+    <span class="badge badge-{{ kit.status.value }}">{{ kit.status.value }}</span>
+    {% with state = kit.approval %}{% include "components/_badge.html" %}{% endwith %}
+    {% if kit.manifest_verified %}
+      <span class="badge badge-verified" title="manifest.verify() passed">provenance verified</span>
+    {% endif %}
+  </p>
+</section>
+
+{% if kit.error %}
+  <div class="notice notice-error"><strong>The run failed.</strong> {{ kit.error }}</div>
+{% endif %}
+
+<div class="split">
+  <div class="split-main">
+    <section class="panel">
+      <div class="panel-head">
+        <h3>Assets</h3>
+        <span class="hint">
+          {{ kit.assets|length }} delivered ·
+          <strong>{{ "$%.2f"|format(kit.total_cost_cents / 100) }}</strong>
+          {% if kit.assets %}
+            ({{ "%.1f"|format(kit.total_cost_cents / kit.assets|length) }}¢ each)
+          {% endif %}
+        </span>
+      </div>
+      {% if kit.assets %}
+        {% include "components/_asset_grid.html" %}
+      {% elif kit.status.value in ("queued", "running") %}
+        <p class="empty">Still running. Assets appear as the pipeline writes them.</p>
+      {% else %}
+        <p class="empty">This kit produced nothing.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h3>Brief</h3></div>
+      <p class="hint">The brief the run was built from — shot count, identity version, requested modalities.</p>
+      {% if kit.brief %}
+        <dl class="kv">
+          {% for key, value in kit.brief.items() %}
+            <dt>{{ key }}</dt><dd>{{ value }}</dd>
+          {% endfor %}
+        </dl>
+      {% else %}
+        <p class="empty">No brief recorded.</p>
+      {% endif %}
+    </section>
+
+    {% if kit.assets %}
+      <section class="panel">
+        <div class="panel-head"><h3>Cost ledger</h3></div>
+        {# Per-asset cost, because "the kit cost $2.10" is not actionable and "video is
+           14× the price of an image" is. #}
+        <table class="table">
+          <thead><tr><th>Modality</th><th>Provider</th><th>Model</th><th>Cost</th></tr></thead>
+          <tbody>
+            {% for asset in kit.assets %}
+              <tr>
+                <td>{{ asset.modality.value }}</td>
+                <td>{{ asset.provider }}</td>
+                <td><code>{{ asset.model }}</code></td>
+                <td>{{ "$%.3f"|format(asset.cost_cents / 100) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    {% endif %}
+  </div>
+
+  <aside class="split-side">
+    <section class="panel">
+      <div class="panel-head"><h3>Review</h3></div>
+      <p class="hint">A label does not auto-publish AI content about its own artists.</p>
+      {% if kit.status.value == "ready" %}
+        <form class="form-inline" hx-post="/ui/kits/{{ kit.id }}/approval"
+              hx-target="#kit-{{ kit.id }}" hx-swap="outerHTML">
+          <select name="state">
+            {% for s in ("draft", "approved", "published") %}
+              <option value="{{ s }}" {{ "selected" if kit.approval.value == s }}>{{ s }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-primary" type="submit">Set</button>
+        </form>
+        <div id="kit-{{ kit.id }}" hidden></div>
+      {% else %}
+        <p class="empty">Not reviewable until the run finishes.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h3>Provenance</h3></div>
+      {# Provenance is disclosure: the manifest travels inside the delivered file, so a
+         creator downloading a clip carries the record of which model made it. #}
+      <dl class="kv">
+        <dt>Manifest</dt>
+        <dd>{% if kit.manifest_key %}<code class="sha">{{ kit.manifest_key }}</code>{% else %}—{% endif %}</dd>
+        <dt>Verified</dt>
+        <dd>
+          {% if kit.manifest_verified is none %}<span class="hint">not checked</span>
+          {% elif kit.manifest_verified %}manifest.verify() passed
+          {% else %}<span class="err">verification failed</span>{% endif %}
+        </dd>
+        <dt>Run</dt>
+        <dd>{% if kit.run_id %}<code class="sha">{{ kit.run_id }}</code>{% else %}—{% endif %}</dd>
+        {% if kit.parent_run_id %}
+          <dt>Parent run</dt><dd><code class="sha">{{ kit.parent_run_id }}</code></dd>
+        {% endif %}
+      </dl>
+      <p class="small">
+        <a href="/verify">Verify a downloaded asset →</a>
+      </p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h3>Timing</h3></div>
+      <dl class="kv">
+        <dt>Created</dt><dd>{{ kit.created_at.strftime("%Y-%m-%d %H:%M") }}</dd>
+        <dt>Updated</dt><dd>{{ kit.updated_at.strftime("%Y-%m-%d %H:%M") }}</dd>
+      </dl>
+    </section>
+  </aside>
+</div>
+{% endblock %}

@@ -16,6 +16,7 @@ tenant it reads is the tenant a real login would supply.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from fastapi.templating import Jinja2Templates
 from remixkit.deps import (
     Accounts,
     Artists,
+    Catalogue,
     CurrentPrincipal,
     Identities,
     Kits,
@@ -34,8 +36,9 @@ from remixkit.deps import (
     Verify,
     get_container,
 )
-from remixkit.domain.models import ApprovalState
-from remixkit.services.errors import ServiceError
+from remixkit.domain.models import ApprovalState, ReferenceFrame
+from remixkit.services.briefs import default_shot_plan
+from remixkit.services.errors import Conflict, ServiceError
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
@@ -59,7 +62,10 @@ def asset_url(asset) -> str:
             return container.storage.presign_get(asset.key, expires_in=3600)
         except Exception:
             log.warning("could not presign %s", asset.key)
-    return asset.url or ""
+    # `getattr` rather than `.url`: this helper also renders ReferenceFrame, which has a
+    # key and no url. Reaching for a missing attribute here would turn a presign failure
+    # into a 500 on the identity page.
+    return getattr(asset, "url", "") or ""
 
 
 templates.env.globals["asset_url"] = asset_url
@@ -93,6 +99,18 @@ def _render(request: Request, template: str, **ctx) -> HTMLResponse:
             **ctx,
         },
     )
+
+
+def _optional(read):
+    """Return what `read()` gives, or None if the record is simply not there.
+
+    Used where a related record is decoration rather than the subject of the page — a
+    kit whose song was deleted is still a kit with assets and a manifest worth showing.
+    """
+    try:
+        return read()
+    except ServiceError:
+        return None
 
 
 def _error_fragment(request: Request, exc: ServiceError, target: str = "") -> HTMLResponse:
@@ -163,9 +181,185 @@ def artist_detail(
     )
 
 
-@router.get("/console/verify", response_class=HTMLResponse)
+@router.get("/verify", response_class=HTMLResponse)
 def verify_page(request: Request):
+    """Provenance checking, deliberately public — and therefore deliberately not under
+    `/console`.
+
+    PRODUCT.md keeps this when the rest of the ops/judge role is deferred, because a
+    judge must be able to check a delivered asset without an account. It takes no
+    `CurrentPrincipal`, which is exactly why it cannot live at `/console/verify`: every
+    other path under that prefix requires a session, and a URL that implies a gate it
+    does not have is worse than either choice made honestly.
+
+    Safe to expose because it reads nothing: `verify_bytes` runs `manifest.verify()`
+    over the uploaded bytes and touches no tenant document.
+    """
     return _render(request, "pages/verify.html", report=None)
+
+
+@router.get("/console/catalogue", response_class=HTMLResponse)
+def catalogue_page(
+    request: Request,
+    principal: CurrentPrincipal,
+    catalogue: Catalogue,
+    artists: Artists,
+    artist_id: str = "",
+):
+    """What is missing, across collections — wireframe gap #2.
+
+    The roster answers "who is on the label"; this answers "what is not yet usable",
+    which is the question a release calendar actually generates.
+    """
+    return _render(
+        request,
+        "pages/catalogue.html",
+        catalogue=catalogue.gaps(principal, artist_id=artist_id or None),
+        artists=artists.list(principal),
+        artist_id=artist_id,
+    )
+
+
+@router.get("/console/songs/{song_id}", response_class=HTMLResponse)
+def song_detail(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    artists: Artists,
+    kits: Kits,
+):
+    try:
+        song = songs.get(principal, song_id)
+        artist = artists.get(principal, song.artist_id)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return _render(
+        request,
+        "pages/song.html",
+        song=song,
+        artist=artist,
+        kits=[k for k in kits.list(principal) if k.song_id == song.id],
+    )
+
+
+@router.get("/console/kits/{kit_id}", response_class=HTMLResponse)
+def kit_detail(
+    request: Request,
+    kit_id: str,
+    principal: CurrentPrincipal,
+    kits: Kits,
+    songs: Songs,
+    artists: Artists,
+):
+    try:
+        kit = kits.get(principal, kit_id)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    # A kit outliving its song or artist is not an error worth a 500 — the kit and its
+    # provenance are still the thing being looked at.
+    song = _optional(lambda: songs.get(principal, kit.song_id))
+    artist = _optional(lambda: artists.get(principal, kit.artist_id))
+    return _render(request, "pages/kit.html", kit=kit, song=song, artist=artist)
+
+
+@router.get("/console/artists/{artist_id}/identity", response_class=HTMLResponse)
+def identity_page(
+    request: Request,
+    artist_id: str,
+    principal: CurrentPrincipal,
+    artists: Artists,
+    identities: Identities,
+):
+    """The identity builder as its own surface — wireframe gap #1.
+
+    The domain model has carried `reference_frames` since it was written and nothing
+    could create one, so an identity was text-only in practice. This is the screen that
+    closes that.
+    """
+    try:
+        artist = artists.get(principal, artist_id)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return _render(
+        request,
+        "pages/identity.html",
+        artist=artist,
+        identity=identities.current(principal, artist_id),
+        identities=identities.list_for_artist(principal, artist_id),
+    )
+
+
+@router.get("/console/artists/{artist_id}/songs/{song_id}/generate", response_class=HTMLResponse)
+def generate_page(
+    request: Request,
+    artist_id: str,
+    song_id: str,
+    principal: CurrentPrincipal,
+    artists: Artists,
+    songs: Songs,
+    identities: Identities,
+    kits: Kits,
+    video_count: int = 3,
+):
+    """Cost *before* the button — wireframe gap #3.
+
+    Everywhere else in the console the price of a kit appears after it has been bought.
+    This screen prices the exact shot plan that the queue button would submit, by
+    building the same plan `KitService.request` builds and running it through the same
+    `estimate_cents`. Two code paths that disagree about what a kit costs would be worse
+    than no estimate, so there is only one.
+    """
+    try:
+        artist = artists.get(principal, artist_id)
+        song = songs.get(principal, song_id)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    identity = identities.current(principal, artist_id)
+    video_count = max(0, min(video_count, 8))
+    hook_lines = [line for line in (song.title,) if line]
+    shots = default_shot_plan(song, identity, video_count=video_count, hook_lines=hook_lines)
+
+    return _render(
+        request,
+        "pages/generate.html",
+        artist=artist,
+        song=song,
+        identity=identity,
+        shots=shots,
+        video_count=video_count,
+        estimate_cents=kits.estimate_cents(shots),
+        blocked=artist.consent.blocks_generation,
+    )
+
+
+@router.get("/console/settings", response_class=HTMLResponse)
+def settings_page(request: Request, principal: CurrentPrincipal):
+    """Deployment — which backends are live, and what each one would need to be real.
+
+    The footer already names them; this says what the gap is, so "why is generation
+    mocked" is answerable without reading `deps.describe()`.
+    """
+    container = get_container()
+    settings = container.settings
+    return _render(
+        request,
+        "pages/settings.html",
+        described=container.describe(),
+        axes=[
+            ("Storage", "RK_STORAGE_BACKEND", settings.storage_backend, "b2",
+             "Backblaze B2 bucket, key id, and application key."),
+            ("Generation", "RK_GENERATOR_BACKEND", settings.generator_backend, "genblaze",
+             "A credentialed provider — GMI Cloud, or Google via GCP_PROJECT."),
+            ("Queue", "RK_QUEUE_BACKEND", settings.queue_backend, "sqs",
+             "An SQS queue URL, and Batch to run the generator."),
+            ("Mail", "RK_MAIL_BACKEND", settings.mail_backend, "zeptomail",
+             "A ZeptoMail send token and a verified sender domain."),
+            ("Sign-in", "RK_AUTH_BACKEND", settings.auth_backend, "otp",
+             "A session secret and an allowlist — no external service needed."),
+        ],
+    )
 
 
 # ---------------------------------------------------------------- sign in
@@ -426,6 +620,102 @@ def ui_set_hook(
     except ServiceError as exc:
         return _error_fragment(request, exc)
     return _render(request, "components/_song_row.html", song=song, artist_id=song.artist_id)
+
+
+@router.post("/ui/identities/{identity_id}/frames", response_class=HTMLResponse)
+async def ui_add_reference_frame(
+    request: Request,
+    identity_id: str,
+    principal: CurrentPrincipal,
+    identities: Identities,
+    file: UploadFile = File(...),
+    lighting: str = Form("neutral"),
+    caption: str = Form(""),
+):
+    """Upload a reference still — the surface the domain model has always lacked.
+
+    `ReferenceFrame` has been on `Identity` since it was written and nothing could
+    create one, so an identity was text-only in practice. That is wireframe gap #1.
+
+    Unlike a master, these bytes *do* pass through the application. A master is large
+    and presigned browser-to-bucket; a reference still is a photograph of a few hundred
+    kilobytes, and routing it through here means the key layout and the tenant check
+    stay in one place rather than being re-implemented in JavaScript.
+    """
+    container = get_container()
+    data = await file.read()
+    if not data:
+        return _error_fragment(request, Conflict("That file was empty."))
+
+    try:
+        identity = identities.get(principal, identity_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+
+    # Same HIERARCHICAL shape as every other object: prefix / tenant / collection.
+    digest = hashlib.sha256(data).hexdigest()[:16]
+    suffix = Path(file.filename or "frame.png").suffix or ".png"
+    key = (
+        f"{container.settings.key_prefix}/tenants/{principal.tenant_id}"
+        f"/identities/{identity.id}/frames/{digest}{suffix}"
+    )
+    container.storage.put(key, data, content_type=file.content_type or "image/png")
+
+    frame = ReferenceFrame(key=key, lighting=lighting or "neutral", caption=caption or None)
+    try:
+        identity = identities.add_reference_frame(principal, identity_id, frame)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _render(request, "components/_frames.html", identity=identity)
+
+
+@router.post("/ui/songs/{song_id}/measurement", response_class=HTMLResponse)
+def ui_set_measurement(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    bpm: float = Form(...),
+    bpm_method: str = Form(""),
+    drop_ms: str = Form(""),
+):
+    try:
+        song = songs.set_measurement(
+            principal,
+            song_id,
+            bpm=bpm,
+            bpm_method=bpm_method or None,
+            # An empty field means "leave it alone", not "set it to zero" — passing 0
+            # would silently claim the drop is at the very start of the track.
+            drop_ms=int(drop_ms) if drop_ms.strip() else None,
+        )
+    except ValueError:
+        return _error_fragment(request, Conflict("Drop must be a whole number of milliseconds."))
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _render(request, "components/_measurement.html", song=song)
+
+
+@router.post("/ui/songs/{song_id}/hook-window", response_class=HTMLResponse)
+def ui_set_hook_window(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    start_ms: int = Form(...),
+    end_ms: int = Form(...),
+):
+    """The song page's hook form.
+
+    Separate from `/ui/songs/{id}/hook` only because the two callers want different
+    markup back: the artist page swaps a whole song row, this swaps the window panel.
+    Same service call, so they cannot disagree about what was saved.
+    """
+    try:
+        song = songs.set_hook(principal, song_id, start_ms=start_ms, end_ms=end_ms)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _render(request, "components/_hook.html", song=song)
 
 
 # ---------------------------------------------------------------- kit fragments

@@ -8,11 +8,11 @@
   {% for asset in kit.assets %}
     <figure class="asset">
       {% if asset.modality.value == "video" %}
-        <video src="{{ asset.url }}" controls preload="metadata" playsinline muted></video>
+        <video src="{{ asset_url(asset) }}" controls preload="metadata" playsinline muted></video>
       {% elif asset.modality.value == "image" %}
-        <img src="{{ asset.url }}" alt="{{ asset.prompt|truncate(80) }}" loading="lazy">
+        <img src="{{ asset_url(asset) }}" alt="{{ asset.prompt|truncate(80) }}" loading="lazy">
       {% else %}
-        <audio src="{{ asset.url }}" controls preload="metadata"></audio>
+        <audio src="{{ asset_url(asset) }}" controls preload="metadata"></audio>
       {% endif %}
       <figcaption>
         <span class="mod">{{ asset.modality.value }}</span>

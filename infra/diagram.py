@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Render the RemixKit AWS architecture to a two-page PDF.
+"""Render the RemixKit AWS architectures to PDF.
 
     python3 make_icons.py && python3 diagram.py
 
-Page 1 is the system: who calls what, and which boxes cost money when nobody is using
-them (none of them). Page 2 is the argument the system exists to make — generate once,
-remix infinitely — drawn as a flow so the unit economics and the provenance lineage are
-the same picture.
+Two outputs, because PRODUCT.md narrowed the scope to one user role and the difference
+is most of the architecture:
 
-The diagram is generated rather than drawn so it cannot drift from the writeup: the node
-labels carry the actual configuration (`min 0 ACU`, `Function URL`, `Fargate Spot`), and
-changing the architecture means changing this file.
+  architecture.pdf              THE ONE TO BUILD. Label-only scope: five services,
+                                one durable store, no database tier.
+  deferred-marketplace.pdf      The three-sided design, kept for when roles 2 and 3
+                                come back. Page 1 the system, page 2 the economics.
+
+The diagrams are generated rather than drawn so they cannot drift from the writeup: node
+labels carry the actual configuration (`minvCpus: 0`, `Function URL`, `Fargate Spot`),
+and changing the architecture means changing this file.
 
 Requires: graphviz on PATH (`brew install graphviz`), plus requirements.txt.
 """
@@ -60,6 +63,56 @@ GRAPH = {
 NODE = {"fontsize": "13", "fontname": "Helvetica"}
 EDGE = {"fontsize": "11", "fontname": "Helvetica"}
 CLUSTER = {"fontsize": "16", "fontname": "Helvetica-Bold", "style": "rounded", "penwidth": "2"}
+
+
+def page_label_scope(out: Path) -> Path:
+    """The architecture for PRODUCT.md's scope: one user role, no marketplace.
+
+    The point of this picture is what is NOT in it. Deferring the fan side removes the
+    only things that needed SQL — attribution joins, leaderboard views, reward ledgers —
+    and the database tier goes with them. What is left is a queue and a bucket.
+    """
+    title = ("RemixKit on AWS — label scope (PRODUCT.md)\n"
+             "five services · one durable store · no database tier · $0 idle compute")
+    with Diagram(title, filename=str(out), outformat="pdf", show=False,
+                 direction="TB", graph_attr={**GRAPH, "nodesep": "1.8", "ranksep": "1.3"},
+                 node_attr=NODE, edge_attr=EDGE):
+
+        label = Custom("Label\nthe only user", WWW)
+
+        with Cluster("AWS — scale-to-zero, $0 idle",
+                     graph_attr={**CLUSTER, "bgcolor": "#F0F7FF"}):
+            web = Lambda("① web · FastAPI\nWeb Adapter + Function URL")
+            q = SQS("② SQS jobs\nidempotent, keyed")
+            worker = Batch("③ generator · Fargate Spot\nGenblaze + ffmpeg, minvCpus: 0")
+            ssm = ParameterStore("④ SSM Parameters\nB2 + provider keys")
+
+        with Cluster("Backblaze B2 — the only durable store",
+                     graph_attr={**CLUSTER, "bgcolor": "#FFF5F5", "penwidth": "3"}):
+            artists = Custom("⑤ artists/{artist}/\nidentity + songs + rights", B2)
+            kits = Custom("kits/{artist}/{song}/\nassets + embedded manifests", B2)
+            parquet = Athena("manifests.parquet\nthe catalog index — no DB needed")
+
+        with Cluster("AI providers — via Genblaze",
+                     graph_attr={**CLUSTER, "bgcolor": "#FFFAF0"}):
+            gb = Custom("Genblaze Pipeline", GENBLAZE)
+            p1 = Custom("GMI Cloud\nvideo + image", GMI)
+            p2 = Custom("ElevenLabs\naudio", ELEVEN)
+
+        label >> Edge(color=PLAIN, label="HTTPS") >> web
+        web >> Edge(color=ASYNC, style="dashed", label="enqueue") >> q
+        q >> Edge(color=ASYNC, style="dashed") >> worker
+        worker >> Edge(color=PLAIN, style="dotted") >> ssm
+        artists >> Edge(color=PLAIN, style="dotted", label="identity + hook window") >> worker
+        worker >> Edge(color=PLAIN) >> gb
+        gb >> Edge(color=PLAIN) >> [p1, p2]
+        worker >> Edge(color=HOT, penwidth="2.5", label="ObjectStorageSink") >> kits
+        worker >> Edge(color=PLAIN, style="dotted", label="genblaze index") >> parquet
+        label >> Edge(color=DIRECT, style="dashed", penwidth="2.5",
+                      label="presigned PUT / GET\nnever transits compute",
+                      constraint="false") >> kits
+
+    return out.with_suffix(".pdf")
 
 
 def page_system(out: Path) -> Path:
@@ -190,20 +243,27 @@ def page_economics(out: Path) -> Path:
     return out.with_suffix(".pdf")
 
 
-def main() -> None:
+def bundle(pages: list[Path], final: Path) -> None:
     from pypdf import PdfWriter
-
-    tmp = HERE / ".build"
-    tmp.mkdir(exist_ok=True)
-    pages = [page_system(tmp / "01-system"), page_economics(tmp / "02-economics")]
 
     w = PdfWriter()
     for p in pages:
         w.append(str(p))
-    final = HERE / "architecture.pdf"
     with open(final, "wb") as fh:
         w.write(fh)
-    print(f"-> {final}  ({len(pages)} pages)")
+    print(f"-> {final}  ({len(pages)} page{'s' if len(pages) > 1 else ''})")
+
+
+def main() -> None:
+    tmp = HERE / ".build"
+    tmp.mkdir(exist_ok=True)
+
+    # The one to build.
+    bundle([page_label_scope(tmp / "00-label-scope")], HERE / "architecture.pdf")
+
+    # Kept, not deleted — role 2 is sequenced, not cancelled (PRODUCT.md).
+    bundle([page_system(tmp / "01-system"), page_economics(tmp / "02-economics")],
+           HERE / "deferred-marketplace.pdf")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,8 @@ deadline: "2026-08-03 17:00 EDT"
 
 > **Working name: RemixKit.** Placeholder — see [§13 Open decisions](#13-open-decisions). Product is generic (sold to any label/artist); **Respect the Funk is tenant #1** and *Losing Sleep* is the dogfood release.
 
+> **There is now a second, later track.** [MEMORY-SPEC.md](./MEMORY-SPEC.md) adds the CockroachDB × AWS *Build with Agentic Memory* hackathon (deadline **2026-08-18**) as a branch taken **after** this submission ships. Nothing in it may touch the Aug 3 path before Aug 3. It amends §12 by appending a track, and it reverses §2's "no database" decision on that branch only — with the conflict stated in its §8.
+
 ---
 
 ## 0. Why one build serves both goals

@@ -79,3 +79,6 @@ app/**/__pycache__/
 *.tfstate.*
 .terraform.lock.hcl
 terraform.tfvars
+
+# Built on demand for sharing; the served page is index.html + wireframe.json
+web/wireframe/standalone.html

@@ -5,16 +5,37 @@ status: "STRUCTURE ONLY — no functionality, no visual design decisions, no cop
 date: "2026-07-27"
 ---
 
-## Build it
+## Run it
 
 ```bash
 python3 web/wireframe/build.py
-open web/wireframe/index.html
+python3 -m http.server 8000 --directory web/wireframe
+open http://localhost:8000
 ```
 
-Standard library only. No `pip install`, no node, no build tool — deliberately, so the
-wireframe builds on any machine that can run Python even when the application's
+Standard library only — no `pip install`, no node, no build tool. Deliberately, so the
+wireframe runs on any machine that can run Python even when the application's
 dependencies are not installed.
+
+**The working loop is short because the page is served rather than generated.**
+`index.html` is hand-written and links the stylesheet and renderer; the model is a
+separate file fetched at load. So:
+
+| Change | What you do |
+|---|---|
+| a screen spec, a primitive, the domain model | `python3 build.py`, then refresh |
+| `src/wireframe.css`, `src/renderer.js`, `index.html` | just refresh |
+
+Nothing regenerates `index.html`. The only generated files are `wireframe.json` and —
+with `--standalone` — a single-file copy for sending to someone:
+
+```bash
+python3 build.py --standalone     # → standalone.html, opens straight from disk
+```
+
+Opening `index.html` from the filesystem will not work, and says so rather than showing
+a blank page: browsers block `fetch()` on `file://`. That is the one thing the server
+buys, and it is what makes the rebuild-and-refresh loop possible.
 
 ## Why it is generated rather than drawn
 
@@ -109,14 +130,15 @@ into the screen that would close it rather than left as a note somewhere else.
 
 | Path | What |
 |---|---|
+| `index.html` | The page. Hand-written, served, never regenerated. |
 | `build.py` | Introspect · validate · emit. Stdlib only. |
 | `spec/meta.json` | Product name, nav groups, model source |
 | `spec/primitives.json` | The block vocabulary and the props each accepts |
 | `spec/screens/*.json` | One file per screen |
 | `src/wireframe.css` | Tokens and block styles, both themes |
 | `src/renderer.js` | One recursive walk. No per-screen code. |
-| `index.html` | **Generated** — self-contained, opens from disk |
-| `artifact.html` | **Generated** — same page for hosts that supply the document skeleton |
-| `wireframe.json` | **Generated** — the resolved model, for anything else that wants it |
+| `wireframe.json` | **Generated** — the resolved model, fetched by the page at load |
+| `standalone.html` | **Generated, `--standalone` only** — single file, for sharing |
 
-Generated files are committed so the wireframe can be opened without running anything.
+`wireframe.json` is committed so the wireframe serves immediately after a clone.
+`standalone.html` is not committed; build it when you need one.

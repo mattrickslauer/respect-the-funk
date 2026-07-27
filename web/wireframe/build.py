@@ -42,9 +42,8 @@ MODELS = REPO / "app" / "remixkit" / "domain" / "models.py"
 SPEC = HERE / "spec"
 SRC = HERE / "src"
 OUT_JSON = HERE / "wireframe.json"
-OUT_HTML = HERE / "index.html"
-# Same page, without a document skeleton — for hosts that supply their own.
-OUT_FRAGMENT = HERE / "artifact.html"
+# Only written with --standalone. index.html is hand-written and served, not generated.
+OUT_STANDALONE = HERE / "standalone.html"
 
 
 class BuildError(Exception):
@@ -280,58 +279,72 @@ def build() -> dict:
     }
 
 
-def emit(model: dict) -> None:
+def emit(model: dict, standalone: bool = False) -> list[Path]:
+    """Write the resolved model. The served page reads it at load and is never rewritten."""
     OUT_JSON.write_text(json.dumps(model, indent=2) + "\n")
+    written = [OUT_JSON]
 
-    css = (SRC / "wireframe.css").read_text()
-    js = (SRC / "renderer.js").read_text()
-    meta = model["meta"]
-    # `</script>` inside the payload would close the tag early; escaping the slash is
-    # the standard fix and stays valid JSON.
-    payload = json.dumps(model, separators=(",", ":")).replace("</", "<\\/")
+    if standalone:
+        # One file, everything inlined, no server required. For sending to someone —
+        # the local working copy is index.html + http.server.
+        css = (SRC / "wireframe.css").read_text()
+        js = (SRC / "renderer.js").read_text()
+        meta = model["meta"]
+        # `</script>` inside the payload would close the tag early; escaping the slash
+        # is the standard fix and stays valid JSON.
+        payload = json.dumps(model, separators=(",", ":")).replace("</", "<\\/")
 
-    title = f"{meta['product']} — {meta['surface']} wireframe"
-    inner = (
-        f'<div id="app"></div>\n'
-        f'<script id="model" type="application/json">{payload}</script>\n'
-        f"<script>\n{js}\n</script>\n"
-    )
-
-    OUT_HTML.write_text(f"""<!doctype html>
+        OUT_STANDALONE.write_text(f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title>
+<title>{meta['product']} — {meta['surface']} wireframe</title>
 <style>
 {css}
 </style>
 </head>
 <body>
-{inner}</body>
+<div id="app"></div>
+<script id="model" type="application/json">{payload}</script>
+<script>
+{js}
+</script>
+</body>
 </html>
 """)
+        written.append(OUT_STANDALONE)
 
-    OUT_FRAGMENT.write_text(f"<title>{title}</title>\n<style>\n{css}\n</style>\n{inner}")
+    return written
 
 
-def main() -> int:
+def main(argv: list[str]) -> int:
+    standalone = "--standalone" in argv
+    unknown = [a for a in argv if a not in ("--standalone",)]
+    if unknown:
+        print(f"wireframe: unknown option(s) {' '.join(unknown)}\n"
+              f"usage: build.py [--standalone]", file=sys.stderr)
+        return 2
+
     try:
         model = build()
     except BuildError as exc:
         print(f"wireframe: {exc}", file=sys.stderr)
         return 1
 
-    emit(model)
+    written = emit(model, standalone=standalone)
     stats = model["stats"]
     print(f"wireframe: {stats['screens']} screens, {stats['nodes']} nodes, "
           f"{stats['entities']} entities from {MODELS.relative_to(REPO)}")
     for kind, n in list(stats["by_type"].items())[:6]:
         print(f"  {kind:<10} {n}")
-    for path in (OUT_HTML, OUT_JSON, OUT_FRAGMENT):
+    for path in written:
         print(f"  → {path.relative_to(REPO)}")
+    if not standalone:
+        print("\nserve it:  python3 -m http.server 8000 --directory "
+              f"{HERE.relative_to(REPO)}\n           http://localhost:8000")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

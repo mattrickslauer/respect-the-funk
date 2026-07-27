@@ -11,11 +11,8 @@
 (function () {
   "use strict";
 
-  var MODEL = JSON.parse(document.getElementById("model").textContent);
-  var state = {
-    view: MODEL.screens.length ? MODEL.screens[0].id : "ref:primitives",
-    annotations: true
-  };
+  var MODEL = null;
+  var state = { view: null, annotations: true };
 
   /* -------------------------------------------------------------- dom helpers */
   function el(tag, props) {
@@ -371,7 +368,57 @@
     app.appendChild(el("div", { class: "shell" }, rail(), el("main", { class: "main" }, body())));
   }
 
-  var hash = window.location.hash.slice(1);
-  if (hash) state.view = decodeURIComponent(hash);
-  render();
+  /* -------------------------------------------------------------- boot
+   *
+   * Two ways in, and the normal one is the fetch.
+   *
+   * Served locally, the model is a separate file the page pulls at load. That is what
+   * makes the edit loop short: change a spec, re-run build.py, refresh — the HTML, the
+   * CSS and this file are untouched, so there is nothing to regenerate and nothing to
+   * cache-bust. Editing the CSS or this file needs no build at all.
+   *
+   * The inline path exists for the single-file `--standalone` build, which has to work
+   * with no server at all.
+   */
+  function boot(model) {
+    MODEL = model;
+    state.view = MODEL.screens.length ? MODEL.screens[0].id : "ref:primitives";
+    var hash = window.location.hash.slice(1);
+    if (hash) state.view = decodeURIComponent(hash);
+    render();
+  }
+
+  function fail(heading, detail) {
+    document.getElementById("app").appendChild(
+      el("div", { class: "main" },
+        el("div", { class: "titleblock" },
+          el("div", { class: "titleblock__body" },
+            el("h1", { class: "titleblock__name", text: heading }),
+            el("p", { class: "titleblock__purpose", text: detail })))));
+  }
+
+  var inline = document.getElementById("model");
+  if (inline) {
+    boot(JSON.parse(inline.textContent));
+  } else if (window.location.protocol === "file:") {
+    // fetch() is blocked on file:// by every browser, so say the useful thing rather
+    // than leaving a blank page and a console error.
+    fail("Serve this over HTTP",
+      "This page loads wireframe.json at runtime, which a browser will not do from the "
+      + "filesystem. Run  python3 -m http.server 8000 --directory web/wireframe  and open "
+      + "http://localhost:8000. For a version that opens straight from disk, build with "
+      + "python3 build.py --standalone.");
+  } else {
+    fetch("wireframe.json", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(boot)
+      .catch(function (e) {
+        fail("No model to draw",
+          "Could not load wireframe.json (" + e.message + "). Run  python3 build.py  "
+          + "in web/wireframe to generate it.");
+      });
+  }
 })();

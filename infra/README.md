@@ -55,7 +55,9 @@ For listing and search, Genblaze already emits the index: `genblaze index` → `
 
 **When to revisit:** the moment role 2 comes back. Attribution and leaderboards are relational and should not be faked on top of Parquet.
 
-> **It came back earlier than expected, on a branch.** [MEMORY-SPEC.md](../MEMORY-SPEC.md) reintroduces a database tier — CockroachDB — for a requirement this analysis did not consider: **filtered vector retrieval** over the clip corpus, where `rights.source` is a predicate inside the similarity query rather than a filter applied afterwards. Parquet + Athena is an analytics path and cannot serve that at interactive latency. That branch is taken after the Aug 3 submission; the architecture on this page ships unchanged. The cost conflict with "under $1/month" is stated in MEMORY-SPEC §8 and its idle number is explicitly unverified.
+> **It came back earlier than expected, on a branch.** [MEMORY-SPEC.md](../MEMORY-SPEC.md) reintroduces a database tier — CockroachDB — for a requirement this analysis did not consider: **filtered vector retrieval** over the clip corpus, where `rights.source` is a predicate inside the similarity query rather than a filter applied afterwards. Parquet + Athena is an analytics path and cannot serve that at interactive latency. That branch is taken after the Aug 3 submission; the architecture on this page ships unchanged.
+>
+> **The cost conflict has since been priced, and it is not a conflict.** [MEMORY-WORKLOAD.md](./MEMORY-WORKLOAD.md) closes MEMORY-SPEC §10 decision 2: CockroachDB Basic starts at $0/month, scales to zero, and gives 50M Request Units + 10 GiB of storage free every month, with the vector index included on that plan. The workload fits inside the free allowance at every tier modelled — so **the "under $1/month idle" claim above survives the branch**, and the database contributes **$0.00** of it. The binding constraint turns out not to be price at all: it is that the RU cost of a filtered vector scan is unpublished and must be measured.
 >
 > **The picture is [`memory-branch.pdf`](./memory-branch.pdf)** — the same five services plus the tier, drawn to make two things unmissable: CockroachDB holds *vectors and rows, never bytes* (B2's role is untouched, and the presigned browser↔B2 path is still the only way an asset moves), and the teal edges form a **cycle** rather than a fan-in. A memory tier with only read edges is a catalog, which is precisely what this section says a bucket already does.
 
@@ -118,4 +120,8 @@ A shape to approve, not code to run. Once agreed, `infra/terraform/` gets: ECR +
 | `deferred-marketplace.pdf` | The three-sided design, 2 pages, kept for later |
 | `diagram.py` | Generates all three |
 | `make_icons.py` | Draws the non-AWS tiles (B2, Genblaze, CockroachDB, providers) |
-| `requirements.txt` | `diagrams`, `pillow`, `pypdf` |
+| `MEMORY-WORKLOAD.md` | **The numbers behind the memory branch** — workload drivers, unit economics, free-allowance headroom, and what is still unverified |
+| `memory-workload.pdf` | The same, visual — 6 pages, charts, per-tier AWS line items |
+| `memory-workload.csv` | The AWS workload estimate in AWS Pricing Calculator's export schema, for diffing against a real estimate |
+| `workload.py` | Generates the last three from one constants block |
+| `requirements.txt` | `diagrams`, `pillow`, `pypdf` (`workload.py` needs only `weasyprint` on PATH) |

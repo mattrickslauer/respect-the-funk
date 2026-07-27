@@ -20,6 +20,12 @@ variable "b2_bucket" {
   description = "Backblaze B2 bucket holding artists, identities, songs, masters, kits, manifests."
 }
 
+variable "b2_region" {
+  type        = string
+  default     = ""
+  description = "B2 S3 endpoint region, e.g. us-west-000. Confirm with b2_authorize_account; the default guess is wrong for many buckets."
+}
+
 variable "api_image_tag" {
   type    = string
   default = "api-latest"
@@ -28,4 +34,21 @@ variable "api_image_tag" {
 variable "worker_image_tag" {
   type    = string
   default = "worker-latest"
+}
+
+# Backend selection. Defaults are production; override in terraform.tfvars to bring a
+# console up before credentials exist. See modules/api for the reasoning.
+variable "storage_backend" {
+  type    = string
+  default = "b2"
+}
+
+variable "generator_backend" {
+  type    = string
+  default = "genblaze"
+}
+
+variable "queue_backend" {
+  type    = string
+  default = "sqs"
 }

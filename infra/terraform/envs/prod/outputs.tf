@@ -1,13 +1,14 @@
 output "console_url" {
-  value       = module.api.function_url
+  value       = module.http_api.api_url
   description = "The artist console. No authentication — see remixkit/auth/."
 }
 
-output "ecr_repository_url" {
-  value       = module.ecr.repository_url
-  description = "Push api-latest and worker-latest here before the first apply completes."
+output "function_url" {
+  value       = module.api.function_url
+  description = "Direct Lambda Function URL. Returns 403 while this account blocks anonymous function-URL access; use console_url."
 }
 
+output "ecr_repository_url" { value = module.ecr.repository_url }
 output "queue_url" { value = module.queue.queue_url }
 output "dlq_url" { value = module.queue.dlq_url }
 output "batch_job_queue" { value = module.worker.job_queue_arn }

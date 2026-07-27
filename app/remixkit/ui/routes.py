@@ -16,6 +16,7 @@ tenant it reads is the tenant a real login would supply.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile, File
@@ -36,7 +37,32 @@ from remixkit.services.errors import ServiceError
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+
+
+def asset_url(asset) -> str:
+    """A URL the browser can fetch *now*, minted at render time.
+
+    The kit document stores the URL Genblaze reported when the asset was written, and
+    on B2 that is a **presigned** URL with an expiry. Persisting it means the console
+    looks correct immediately after a kit finishes and then quietly fills with broken
+    tiles once the signature lapses — the kind of bug that only shows up in a demo,
+    long after the code that caused it.
+
+    So the durable thing is the key, and the URL is derived from it on every render.
+    On local storage this is the `/files/...` route and costs nothing.
+    """
+    container = get_container()
+    if asset.key:
+        try:
+            return container.storage.presign_get(asset.key, expires_in=3600)
+        except Exception:
+            log.warning("could not presign %s", asset.key)
+    return asset.url or ""
+
+
+templates.env.globals["asset_url"] = asset_url
 router = APIRouter(tags=["console"])
+log = logging.getLogger(__name__)
 
 
 def _render(request: Request, template: str, **ctx) -> HTMLResponse:

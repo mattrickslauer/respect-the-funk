@@ -13,9 +13,52 @@ variable "env" { type = string }
 variable "image_uri" { type = string }
 variable "queue_url" { type = string }
 variable "queue_arn" { type = string }
+
+# The API starts the worker on enqueue — see adapters/queue_sqs.py for why the wake-up
+# lives here rather than in an event-source mapping or a poller.
+variable "batch_job_queue" {
+  type    = string
+  default = ""
+}
+
+variable "batch_job_definition" {
+  type    = string
+  default = ""
+}
 variable "ssm_path" { type = string }
 variable "b2_bucket" { type = string }
+
+# Not a secret, so it is declared config rather than an SSM parameter. It is also not
+# optional: genblaze-s3 defaults to guessing us-west-004, and a bucket in a different
+# B2 region answers HeadBucket with a bare 403 that reads exactly like a bad key.
+variable "b2_region" {
+  type    = string
+  default = ""
+}
 variable "tenant_id" { type = string }
+
+# The three backend axes, surfaced as variables rather than hard-coded.
+#
+# They default to the production trio. They exist as knobs because a deployment can be
+# legitimately live before its credentials are: with B2 keys still unset, `b2` makes the
+# app refuse to start (by design — bootstrap.py will not hand a placeholder to a
+# provider), so there would be no console at all. Setting them to local/mock yields a
+# working, honestly-labelled console in the meantime — every page banners exactly which
+# backends are in play, so this cannot be mistaken for the real thing.
+variable "storage_backend" {
+  type    = string
+  default = "b2"
+}
+
+variable "generator_backend" {
+  type    = string
+  default = "genblaze"
+}
+
+variable "queue_backend" {
+  type    = string
+  default = "sqs"
+}
 variable "tags" {
   type    = map(string)
   default = {}
@@ -76,11 +119,29 @@ data "aws_iam_policy_document" "app" {
     resources = [var.queue_arn]
   }
 
+  # Start the generator, and nothing else. Submitting a job is not the same authority
+  # as managing Batch: it cannot create or alter a job definition, so it cannot change
+  # what the worker runs.
+  dynamic "statement" {
+    for_each = var.batch_job_queue == "" ? [] : [1]
+    content {
+      actions   = ["batch:SubmitJob"]
+      resources = [var.batch_job_queue, var.batch_job_definition]
+    }
+  }
+
   # Read its own secrets, and nothing else's — scoped to this env's path.
+  #
+  # Both ARNs are required, and the missing one is not obvious: `GetParameter` acts on
+  # an individual parameter (the `/*` form), but `GetParametersByPath` acts on the
+  # *path node itself* (the bare form). Granting only `/*` yields an AccessDenied that
+  # names a resource — `parameter/remixkit/prod` — which does not visibly appear in the
+  # policy, and the Lambda dies during init rather than at first use.
   statement {
     actions = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"]
     resources = [
-      "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_path}/*"
+      "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_path}",
+      "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_path}/*",
     ]
   }
 
@@ -118,17 +179,20 @@ resource "aws_lambda_function" "this" {
 
   environment {
     variables = {
-      RK_ENV               = var.env
-      RK_STORAGE_BACKEND   = "b2"
-      RK_GENERATOR_BACKEND = "genblaze"
-      RK_QUEUE_BACKEND     = "sqs"
-      RK_AUTH_BACKEND      = "none" # deliberate: there is no auth yet
-      RK_SQS_QUEUE_URL     = var.queue_url
-      RK_B2_BUCKET         = var.b2_bucket
-      RK_DEFAULT_TENANT_ID = var.tenant_id
-      RK_AWS_REGION        = data.aws_region.current.name
-      RK_SSM_PATH          = var.ssm_path
-      AWS_LWA_INVOKE_MODE  = "buffered"
+      RK_ENV                  = var.env
+      RK_STORAGE_BACKEND      = var.storage_backend
+      RK_GENERATOR_BACKEND    = var.generator_backend
+      RK_QUEUE_BACKEND        = var.queue_backend
+      RK_AUTH_BACKEND         = "none" # deliberate: there is no auth yet
+      RK_SQS_QUEUE_URL        = var.queue_url
+      RK_B2_BUCKET            = var.b2_bucket
+      RK_B2_REGION            = var.b2_region
+      RK_DEFAULT_TENANT_ID    = var.tenant_id
+      RK_AWS_REGION           = data.aws_region.current.name
+      RK_SSM_PATH             = var.ssm_path
+      RK_BATCH_JOB_QUEUE      = var.batch_job_queue
+      RK_BATCH_JOB_DEFINITION = var.batch_job_definition
+      AWS_LWA_INVOKE_MODE     = "buffered"
     }
   }
 
@@ -150,6 +214,20 @@ resource "aws_lambda_function_url" "this" {
   }
 }
 
+# A Function URL with auth type NONE still needs a resource-based policy granting
+# public invoke. The console adds this for you; the API and Terraform do not — so
+# without it the URL exists, resolves, and returns 403 to everyone. This is the
+# difference between "deployed" and "reachable".
+resource "aws_lambda_permission" "public_url" {
+  statement_id           = "AllowPublicFunctionUrlInvoke"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.this.function_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}
+
 output "function_url" { value = aws_lambda_function_url.this.function_url }
 output "function_name" { value = aws_lambda_function.this.function_name }
 output "role_arn" { value = aws_iam_role.this.arn }
+
+output "function_arn" { value = aws_lambda_function.this.arn }

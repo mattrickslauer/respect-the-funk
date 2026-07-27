@@ -98,6 +98,14 @@ class Container:
             warnings.append("Storage is ephemeral (/tmp) — data will not survive a restart.")
         if self.settings.auth_backend == "none":
             warnings.append("No authentication — every caller is the default tenant.")
+        if self.settings.queue_backend == "sqs" and not (
+            self.settings.batch_job_queue and self.settings.batch_job_definition
+        ):
+            warnings.append(
+                "No Batch job queue configured — kits will sit on SQS with nothing to run them."
+            )
+        if not getattr(self.queue, "can_execute", True):
+            warnings.append(getattr(self.queue, "unavailable_reason", "The job queue cannot execute jobs."))
         return {
             "env": self.settings.env,
             "tenant": self.settings.default_tenant_id,
@@ -138,7 +146,12 @@ def _build_queue(settings: Settings):
     if settings.queue_backend == "sqs":
         from remixkit.adapters.queue_sqs import SQSQueue
 
-        return SQSQueue(settings.sqs_queue_url, region=settings.aws_region)
+        return SQSQueue(
+            settings.sqs_queue_url,
+            region=settings.aws_region,
+            batch_job_queue=settings.batch_job_queue,
+            batch_job_definition=settings.batch_job_definition,
+        )
     return InlineQueue()
 
 

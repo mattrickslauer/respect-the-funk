@@ -44,7 +44,7 @@
     <p class="small">The only record of what the image model was actually shown.</p>
     <div class="frames">
       {% for frame in identity.reference_frames %}
-        <figure><img src="/files/{{ frame.key }}" alt="{{ frame.caption or frame.lighting }}">
+        <figure><img src="{{ asset_url(frame) }}" alt="{{ frame.caption or frame.lighting }}">
           <figcaption>{{ frame.lighting }}</figcaption></figure>
       {% endfor %}
     </div>

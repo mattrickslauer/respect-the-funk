@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     # ---- queue -----------------------------------------------------------------
     sqs_queue_url: str = ""
     aws_region: str = "us-east-1"
+    # Which Batch job to start when a kit is enqueued. Without these the message lands
+    # on SQS and nothing consumes it.
+    batch_job_queue: str = ""
+    batch_job_definition: str = ""
 
     @property
     def is_readonly_fs(self) -> bool:

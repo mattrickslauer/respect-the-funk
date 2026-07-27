@@ -113,6 +113,11 @@ class KitService:
         if not shots:
             raise Conflict("That brief produces no shots. Ask for at least one video or lyric card.")
 
+        # A queue that cannot execute must say so before a kit row is written, not
+        # leave one sitting at `queued` forever.
+        if not getattr(self._queue, "can_execute", True):
+            raise Conflict(getattr(self._queue, "unavailable_reason", "The job queue cannot execute jobs."))
+
         estimate = self.estimate_cents(shots)
         if budget_cents is not None and estimate > budget_cents:
             raise Conflict(

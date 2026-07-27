@@ -23,7 +23,7 @@ import json
 import logging
 import sys
 
-from remixkit.bootstrap import load_secrets
+from remixkit.bootstrap import export_for_libs, load_secrets
 from remixkit.deps import get_container
 from remixkit.settings import get_settings
 
@@ -91,7 +91,11 @@ def poll(max_messages: int = 10) -> int:
 
 
 def main() -> int:
-    load_secrets()  # before any get_settings() call — see remixkit/bootstrap.py
+    # Same two-step as create_app: the path to the secrets is itself a setting, and on
+    # a laptop it comes from app/.env. See remixkit/bootstrap.py.
+    if load_secrets(get_settings().ssm_path, profile=get_settings().aws_profile):
+        get_settings.cache_clear()
+    export_for_libs(get_settings())
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kit-id", help="Run one kit and exit")
     parser.add_argument("--tenant-id", help="Tenant (defaults to RK_DEFAULT_TENANT_ID)")

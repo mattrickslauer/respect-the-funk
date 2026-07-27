@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from remixkit.api.v1 import router as api_router
 from remixkit.auth.provider import AuthError
-from remixkit.bootstrap import load_secrets
+from remixkit.bootstrap import export_for_libs, load_secrets
 from remixkit.deps import get_container
 from remixkit.services.errors import ServiceError
 from remixkit.settings import get_settings
@@ -40,10 +40,21 @@ def _wants_html(request: Request) -> bool:
 
 
 def create_app() -> FastAPI:
-    # Before `get_settings()` — it is lru_cached, so the environment as it stands at
-    # the first call is what this process believes for its whole life.
-    load_secrets()
+    # Two reads of `get_settings()`, deliberately.
+    #
+    # Secrets have to land in the environment before the settings this process will live
+    # by are built, because `get_settings()` is lru_cached — whatever the environment
+    # looks like at the first call is what it believes forever. But the *location* of
+    # those secrets is itself a setting, and on a laptop it comes from `app/.env`, which
+    # only `Settings` knows how to read.
+    #
+    # So: read once to find out where the secrets are, fetch them, then drop the cache so
+    # the authoritative read sees what SSM just supplied. In a deployment `ssm_path`
+    # comes from the environment and the second read is simply identical.
+    if load_secrets(get_settings().ssm_path, profile=get_settings().aws_profile):
+        get_settings.cache_clear()
     settings = get_settings()
+    export_for_libs(settings)
     app = FastAPI(
         title="RemixKit",
         version="0.1.0",

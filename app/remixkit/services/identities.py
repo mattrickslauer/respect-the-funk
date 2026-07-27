@@ -1,0 +1,89 @@
+"""The identity — "build it once" made operational.
+
+MEMORY-SPEC's economic claim is that the second video for an artist is cheap because
+this exists. So the service is versioned: editing an identity mints a new version
+rather than mutating the old one, because a kit generated last week was generated
+against a specific description of how the artist reads on screen, and losing that
+makes the run unreproducible.
+"""
+
+from __future__ import annotations
+
+from remixkit.auth.provider import Principal
+from remixkit.domain.models import ApprovalState, Identity, ReferenceFrame
+from remixkit.ports.repository import DocumentRepository
+from remixkit.services.errors import NotFound
+
+COLLECTION = "identities"
+
+
+class IdentityService:
+    def __init__(self, repo: DocumentRepository) -> None:
+        self._repo = repo
+
+    def list_for_artist(self, principal: Principal, artist_id: str) -> list[Identity]:
+        identities = [
+            i
+            for i in self._repo.list(principal.tenant_id, COLLECTION, Identity)
+            if i.artist_id == artist_id
+        ]
+        return sorted(identities, key=lambda i: i.version, reverse=True)
+
+    def current(self, principal: Principal, artist_id: str) -> Identity | None:
+        """The highest version. What generation uses unless told otherwise."""
+        identities = self.list_for_artist(principal, artist_id)
+        return identities[0] if identities else None
+
+    def get(self, principal: Principal, identity_id: str) -> Identity:
+        identity = self._repo.get(principal.tenant_id, COLLECTION, identity_id, Identity)
+        if identity is None:
+            raise NotFound(f"No identity {identity_id!r}")
+        return identity
+
+    def create_version(
+        self,
+        principal: Principal,
+        artist_id: str,
+        *,
+        structural_features: str | None = None,
+        wardrobe: list[str] | None = None,
+        negatives: list[str] | None = None,
+        reference_frames: list[ReferenceFrame] | None = None,
+    ) -> Identity:
+        previous = self.current(principal, artist_id)
+        identity = Identity(
+            tenant_id=principal.tenant_id,
+            artist_id=artist_id,
+            version=(previous.version + 1) if previous else 1,
+            structural_features=structural_features or (previous.structural_features if previous else None),
+            wardrobe=wardrobe if wardrobe is not None else (previous.wardrobe if previous else []),
+            negatives=negatives if negatives is not None else (previous.negatives if previous else []),
+            reference_frames=(
+                reference_frames
+                if reference_frames is not None
+                else (previous.reference_frames if previous else [])
+            ),
+        )
+        self._repo.put(principal.tenant_id, COLLECTION, identity.id, identity)
+        return identity
+
+    def add_reference_frame(
+        self, principal: Principal, identity_id: str, frame: ReferenceFrame
+    ) -> Identity:
+        """Frames land on the current version in place.
+
+        Adding evidence of how the artist looks is not a change of intent, so it does
+        not mint a version — unlike editing the description, which is.
+        """
+        identity = self.get(principal, identity_id)
+        identity.reference_frames.append(frame)
+        identity.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, identity.id, identity)
+        return identity
+
+    def set_approval(self, principal: Principal, identity_id: str, state: ApprovalState) -> Identity:
+        identity = self.get(principal, identity_id)
+        identity.approval = state
+        identity.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, identity.id, identity)
+        return identity

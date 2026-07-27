@@ -1,0 +1,29 @@
+{# Delivered assets.
+
+   The provider and model are shown on every tile, not tucked into a details pane.
+   The hackathon submission has to document which models were used, and a label
+   publishing AI content about its own artist needs to know what made it — in both
+   cases the answer should be visible without clicking. #}
+<div class="assets">
+  {% for asset in kit.assets %}
+    <figure class="asset">
+      {% if asset.modality.value == "video" %}
+        <video src="{{ asset.url }}" controls preload="metadata" playsinline muted></video>
+      {% elif asset.modality.value == "image" %}
+        <img src="{{ asset.url }}" alt="{{ asset.prompt|truncate(80) }}" loading="lazy">
+      {% else %}
+        <audio src="{{ asset.url }}" controls preload="metadata"></audio>
+      {% endif %}
+      <figcaption>
+        <span class="mod">{{ asset.modality.value }}</span>
+        <span class="model">{{ asset.provider }} · {{ asset.model }}</span>
+        <span class="cost">{{ asset.cost_cents }}¢</span>
+        {% if asset.sha256 %}<code class="sha" title="content hash — identical inputs reuse this object">{{ asset.sha256[:10] }}</code>{% endif %}
+        <a class="dl" href="/api/v1/kits/{{ kit.id }}/assets/{{ asset.id }}/download"
+           title="Downloads with the run's manifest embedded in the file — provenance travels with it">
+          Download with provenance
+        </a>
+      </figcaption>
+    </figure>
+  {% endfor %}
+</div>

@@ -1,0 +1,6 @@
+{# Approval state, one definition, used everywhere state is shown.
+
+   draft → approved → published is an *editorial* axis, deliberately distinct from a
+   kit's technical status. A label cannot auto-publish AI content about its own
+   artists, so this is the thing a human moves. #}
+<span class="badge badge-{{ state.value if state.value is defined else state }}">{{ state.value if state.value is defined else state }}</span>

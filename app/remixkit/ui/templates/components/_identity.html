@@ -1,0 +1,52 @@
+{# The identity — "build it once", and the reason the second kit is cheap.
+
+   Editing mints a new version rather than overwriting, because a kit generated last
+   week was generated against a specific description of how this artist reads on
+   screen. Losing that makes the run unreproducible, which is the one thing the
+   provenance story cannot afford. #}
+<section class="panel" id="identity">
+  <div class="panel-head">
+    <h3>Identity{% if identity %} <span class="version">v{{ identity.version }}</span>{% endif %}</h3>
+    {% if identities|length > 1 %}
+      <span class="small">{{ identities|length }} versions</span>
+    {% endif %}
+  </div>
+
+  <p class="small">
+    A stored, reusable description of how this artist looks and reads on screen. It is
+    prepended to every prompt in every kit, which is what keeps them looking like
+    themselves — and why the second video costs a fraction of the first.
+  </p>
+
+  <form class="form"
+        hx-post="/ui/artists/{{ artist_id }}/identity"
+        hx-target="#identity"
+        hx-swap="outerHTML">
+    <label>Structural features
+      <textarea name="structural_features" rows="3"
+                placeholder="Held invariant across shots: face structure, hair, distinguishing features.">{{ identity.structural_features if identity else "" }}</textarea>
+    </label>
+    <label>Wardrobe <span class="hint">comma-separated</span>
+      <input name="wardrobe" value="{{ identity.wardrobe|join(', ') if identity else '' }}"
+             placeholder="black leather jacket, silver chain">
+    </label>
+    <label>Anti-drift negatives <span class="hint">comma-separated — sent as negative_prompt</span>
+      <input name="negatives" value="{{ identity.negatives|join(', ') if identity else '' }}"
+             placeholder="extra fingers, warped face, text artifacts">
+    </label>
+    <button class="btn btn-primary" type="submit">
+      {{ "Save as v%d"|format(identity.version + 1) if identity else "Create identity" }}
+    </button>
+  </form>
+
+  {% if identity and identity.reference_frames %}
+    <h4 class="sub">Reference frames</h4>
+    <p class="small">The only record of what the image model was actually shown.</p>
+    <div class="frames">
+      {% for frame in identity.reference_frames %}
+        <figure><img src="/files/{{ frame.key }}" alt="{{ frame.caption or frame.lighting }}">
+          <figcaption>{{ frame.lighting }}</figcaption></figure>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>

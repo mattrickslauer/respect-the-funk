@@ -1,0 +1,45 @@
+{# The provenance report.
+
+   `source` is the part worth reading: "embedded" means the manifest came out of the
+   media file itself, which is the disclosure claim made literal — the record travels
+   inside the bytes and cannot be quietly stripped without this check failing. #}
+<div class="panel verify-report">
+  <div class="panel-head">
+    <h3>{{ filename or "Asset" }}</h3>
+    <span class="badge {{ 'badge-verified' if report.verified else 'badge-blocked' }}">
+      {{ "verified" if report.verified else "not verified" }}
+    </span>
+  </div>
+
+  <p>{{ report.detail }}</p>
+
+  <dl class="kv">
+    <dt>Manifest source</dt>
+    <dd>
+      {% if report.source == "embedded" %}embedded in the file
+        <span class="hint">— provenance travelled inside the media</span>
+      {% elif report.source == "manifest" %}a manifest document
+      {% else %}none found{% endif %}
+    </dd>
+    {% if report.run_id %}<dt>Run</dt><dd><code>{{ report.run_id }}</code></dd>{% endif %}
+    {% if report.tenant_id %}<dt>Tenant</dt><dd><code>{{ report.tenant_id }}</code></dd>{% endif %}
+    {% if report.canonical_hash %}<dt>Canonical hash</dt><dd><code>{{ report.canonical_hash[:32] }}…</code></dd>{% endif %}
+  </dl>
+
+  {% if report.steps %}
+    <h4 class="sub">What made it</h4>
+    <table class="table">
+      <thead><tr><th>Provider</th><th>Model</th><th>Modality</th><th>Prompt</th></tr></thead>
+      <tbody>
+        {% for step in report.steps %}
+          <tr>
+            <td>{{ step.provider }}</td>
+            <td><code>{{ step.model }}</code></td>
+            <td>{{ step.modality }}</td>
+            <td class="prompt">{{ step.prompt|truncate(120) if step.prompt else "—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>

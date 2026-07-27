@@ -1,0 +1,32 @@
+{# One roster member.
+
+   The consent state is on the card, not buried in the detail page, because it is the
+   thing that decides whether this artist can be generated for at all. A label
+   scanning its roster should see immediately which artists are blocked. #}
+<article class="card">
+  <div class="card-head">
+    <h3><a href="/artists/{{ artist.id }}">{{ artist.name }}</a></h3>
+    {% with state = artist.approval %}{% include "components/_badge.html" %}{% endwith %}
+  </div>
+  <p class="handle"><code>{{ artist.slug }}</code></p>
+  {% if artist.bio %}<p class="small">{{ artist.bio }}</p>{% endif %}
+
+  <p class="consent-line {{ 'ok' if artist.consent.granted else 'blocked' }}">
+    {% if artist.consent.granted %}
+      Likeness consent on file{% if artist.consent.signed_by %} — {{ artist.consent.signed_by }}{% endif %}
+    {% else %}
+      No likeness consent — generation blocked
+    {% endif %}
+  </p>
+
+  <div class="card-foot">
+    <a class="btn btn-quiet" href="/artists/{{ artist.id }}">Open</a>
+    <button class="btn btn-danger btn-quiet"
+            hx-delete="/ui/artists/{{ artist.id }}"
+            hx-target="#roster"
+            hx-swap="outerHTML"
+            hx-confirm="Remove {{ artist.name }} from the roster? Songs and kits already generated are not deleted.">
+      Remove
+    </button>
+  </div>
+</article>

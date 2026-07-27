@@ -1,0 +1,14 @@
+{# The narrow variant of a kit, for the roster sidebar.
+
+   A separate component rather than responsive CSS on `_kit_row.html`, because the two
+   want different *content*, not a different arrangement of the same content: the
+   sidebar wants "which kit, did it work, what did it cost", and the artist page wants
+   the assets and the approval control. Squeezing the wide row into 340px produced a
+   column of stacked badges, which is how you can tell it was the wrong component. #}
+<a class="kit-summary" href="/artists/{{ kit.artist_id }}">
+  <span class="kit-summary-name">{{ kit.name }}</span>
+  <span class="kit-summary-meta">
+    <span class="badge badge-{{ kit.status.value }}">{{ kit.status.value }}</span>
+    {% if kit.assets %}<span class="small">{{ kit.assets|length }} assets · {{ "$%.2f"|format(kit.total_cost_cents / 100) }}</span>{% endif %}
+  </span>
+</a>

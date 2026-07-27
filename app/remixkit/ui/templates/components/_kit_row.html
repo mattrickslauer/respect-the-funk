@@ -1,0 +1,52 @@
+{# One kit.
+
+   Polls itself while queued or running — `hx-trigger="every 3s"` on the row, which
+   stops the moment the row comes back in a terminal state because the replacement
+   markup has no trigger. Polling rather than websockets is BUILD-SPEC §2b's
+   deliberate deferral, and at one row per kit it costs nothing.
+
+   Two distinct axes are shown, and conflating them would be the easy mistake:
+   `status` is technical (did the run succeed), `approval` is editorial (may a human
+   publish it). A kit can be READY and still not publishable. #}
+<div class="row kit-row" id="kit-{{ kit.id }}"
+     {% if kit.status.value in ("queued", "running") %}
+       hx-get="/ui/kits/{{ kit.id }}/row"
+       hx-trigger="every 3s"
+       hx-target="#kit-{{ kit.id }}"
+       hx-swap="outerHTML"
+     {% endif %}>
+
+  <div class="row-main">
+    <div class="kit-head">
+      <h4>{{ kit.name }}</h4>
+      <span class="badge badge-{{ kit.status.value }}">{{ kit.status.value }}</span>
+      {% with state = kit.approval %}{% include "components/_badge.html" %}{% endwith %}
+      {% if kit.manifest_verified %}<span class="badge badge-verified" title="manifest.verify() passed">provenance verified</span>{% endif %}
+    </div>
+
+    <p class="small">
+      {{ kit.assets|length }} asset{{ "" if kit.assets|length == 1 else "s" }} ·
+      <strong>{{ "$%.2f"|format(kit.total_cost_cents / 100) }}</strong>
+      {% if kit.assets %}<span class="hint">({{ "%.1f"|format(kit.total_cost_cents / kit.assets|length) }}¢ per delivered asset)</span>{% endif %}
+      {% if kit.run_id %} · run <code>{{ kit.run_id[:12] }}</code>{% endif %}
+    </p>
+
+    {% if kit.error %}<p class="small err">{{ kit.error }}</p>{% endif %}
+
+    {% if kit.assets %}{% include "components/_asset_grid.html" %}{% endif %}
+  </div>
+
+  {% if kit.status.value == "ready" %}
+    <form class="form-inline tight"
+          hx-post="/ui/kits/{{ kit.id }}/approval"
+          hx-target="#kit-{{ kit.id }}"
+          hx-swap="outerHTML">
+      <select name="state">
+        <option value="draft" {{ "selected" if kit.approval.value == "draft" }}>draft</option>
+        <option value="approved" {{ "selected" if kit.approval.value == "approved" }}>approved</option>
+        <option value="published" {{ "selected" if kit.approval.value == "published" }}>published</option>
+      </select>
+      <button class="btn btn-quiet" type="submit">Set</button>
+    </form>
+  {% endif %}
+</div>

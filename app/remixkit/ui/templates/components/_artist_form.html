@@ -1,0 +1,17 @@
+{# Register an artist. Deliberately four fields — PRODUCT.md names catalogue
+   onboarding, not compute, as the real bottleneck, so the registration step stays
+   cheap and the expensive detail lives on the identity. #}
+<form class="panel form"
+      hx-post="/ui/artists"
+      hx-target="#roster"
+      hx-swap="outerHTML"
+      hx-on::after-request="if(event.detail.successful) this.reset()">
+  <h3>Register an artist</h3>
+  <label>Name <input name="name" required placeholder="Nocturnal"></label>
+  <label>Bio <input name="bio" placeholder="One line. What they sound like."></label>
+  <div class="form-row">
+    <label>Spotify <input name="spotify" placeholder="https://open.spotify.com/artist/…"></label>
+    <label>Instagram <input name="instagram" placeholder="@handle"></label>
+  </div>
+  <button class="btn btn-primary" type="submit">Add to roster</button>
+</form>

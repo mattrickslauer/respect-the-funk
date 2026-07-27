@@ -1,0 +1,54 @@
+{# The shell. Design tokens are lifted verbatim from deck/remixkit-deck.html and
+   web/index.html so the console, the deck, and the site read as one brand — that
+   inheritance is web/README's stated rule, not a coincidence. Dark-committed for the
+   same reason it is there: it matches the other thing labels see. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}RemixKit — artist console{% endblock %}</title>
+<script src="/static/htmx.min.js" defer></script>
+<link rel="stylesheet" href="/static/console.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="/">
+      <span class="brand-mark">◆</span>
+      <span>RemixKit</span>
+      <span class="brand-sub">artist console</span>
+    </a>
+    <nav class="topnav">
+      <a href="/">Roster</a>
+      <a href="/verify">Verify</a>
+      <a href="/docs">API</a>
+    </nav>
+  </div>
+</header>
+
+{% include "components/_env_banner.html" %}
+
+<main class="wrap">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <p class="small">
+      Tenant <code>{{ env.tenant }}</code> ·
+      storage <code>{{ env.storage }}</code> ·
+      generator <code>{{ env.generator }}</code> ·
+      queue <code>{{ env.queue }}</code> ·
+      auth <code>{{ env.auth }}</code>
+    </p>
+    <p class="src">
+      Every asset carries its Genblaze manifest. Provenance is disclosure — the record of
+      which model made a clip, from which prompt, for which release, travels inside the file.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

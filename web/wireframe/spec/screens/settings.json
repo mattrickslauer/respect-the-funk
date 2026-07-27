@@ -1,9 +1,12 @@
 {
   "id": "settings",
   "title": "Deployment",
-  "route": "/settings",
+  "route": "/console/settings",
   "entity": "Kit",
-  "nav": { "group": "system", "order": 1 },
+  "nav": {
+    "group": "system",
+    "order": 1
+  },
   "purpose": "What this deployment actually is. A console on mock providers must be impossible to mistake for a live one.",
   "body": {
     "type": "col",
@@ -14,14 +17,43 @@
         "title": "Backends",
         "hint": "One row per swappable adapter, showing the selected implementation.",
         "children": [
-          { "type": "repeat", "of": "Kit", "count": 4, "children": [
-            { "type": "row", "weights": [1, 2, 1], "children": [
-              { "type": "text", "lines": 1, "label": "axis — storage, generator, queue, auth" },
-              { "type": "text", "lines": 1, "label": "selected implementation" },
-              { "type": "text", "lines": 1, "label": "state" }
-            ]}
-          ]},
-          { "type": "banner", "tone": "warn", "source": "Active warnings from the deployment descriptor" }
+          {
+            "type": "repeat",
+            "of": "Kit",
+            "count": 4,
+            "children": [
+              {
+                "type": "row",
+                "weights": [
+                  1,
+                  2,
+                  1
+                ],
+                "children": [
+                  {
+                    "type": "text",
+                    "lines": 1,
+                    "label": "axis \u2014 storage, generator, queue, auth"
+                  },
+                  {
+                    "type": "text",
+                    "lines": 1,
+                    "label": "selected implementation"
+                  },
+                  {
+                    "type": "text",
+                    "lines": 1,
+                    "label": "state"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "banner",
+            "tone": "warn",
+            "source": "Active warnings from the deployment descriptor"
+          }
         ]
       },
       {
@@ -29,21 +61,55 @@
         "title": "Tenant",
         "hint": "Every record, object key and job payload is partitioned by this.",
         "children": [
-          { "type": "detail", "entity": "Base", "fields": "auto", "columns": 2 },
-          { "type": "slot", "name": "authentication", "reason": "No sign-in surface is specified. Until one exists every caller resolves to the same tenant, and this screen should say so rather than imply otherwise." }
+          {
+            "type": "detail",
+            "entity": "Base",
+            "fields": "auto",
+            "columns": 2
+          },
+          {
+            "type": "slot",
+            "name": "authentication",
+            "reason": "No sign-in surface is specified. Until one exists every caller resolves to the same tenant, and this screen should say so rather than imply otherwise."
+          }
         ]
       },
       {
         "type": "region",
         "title": "Queue health",
         "children": [
-          { "type": "stats", "items": [
-            { "label": "Kits queued", "source": "count where Kit.status is queued" },
-            { "label": "Kits running", "source": "count where Kit.status is running" },
-            { "label": "Failed, last 24h", "source": "count where Kit.status is failed" },
-            { "label": "Dead-lettered", "source": "depth of the dead-letter queue" }
-          ]},
-          { "type": "table", "entity": "Kit", "fields": ["name", "status", "error", "updated_at"], "rows": 4 }
+          {
+            "type": "stats",
+            "items": [
+              {
+                "label": "Kits queued",
+                "source": "count where Kit.status is queued"
+              },
+              {
+                "label": "Kits running",
+                "source": "count where Kit.status is running"
+              },
+              {
+                "label": "Failed, last 24h",
+                "source": "count where Kit.status is failed"
+              },
+              {
+                "label": "Dead-lettered",
+                "source": "depth of the dead-letter queue"
+              }
+            ]
+          },
+          {
+            "type": "table",
+            "entity": "Kit",
+            "fields": [
+              "name",
+              "status",
+              "error",
+              "updated_at"
+            ],
+            "rows": 4
+          }
         ]
       }
     ]

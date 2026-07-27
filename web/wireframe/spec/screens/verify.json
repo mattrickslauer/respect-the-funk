@@ -1,10 +1,13 @@
 {
   "id": "verify",
   "title": "Verifier",
-  "route": "/verify",
+  "route": "/console/verify",
   "entity": "Asset",
-  "nav": { "group": "provenance", "order": 1 },
-  "purpose": "Drop in a file, read back what made it. Nothing is looked up — the answer comes out of the bytes.",
+  "nav": {
+    "group": "provenance",
+    "order": 1
+  },
+  "purpose": "Drop in a file, read back what made it. Nothing is looked up \u2014 the answer comes out of the bytes.",
   "body": {
     "type": "col",
     "gap": "loose",
@@ -14,8 +17,21 @@
         "title": "Check a file",
         "hint": "Accepts a media file with an embedded manifest, or a manifest document on its own.",
         "children": [
-          { "type": "media", "kind": "image", "ratio": "16:5", "caption": "Drop target" },
-          { "type": "actions", "items": [{ "label": "Choose file", "kind": "primary" }] }
+          {
+            "type": "media",
+            "kind": "image",
+            "ratio": "16:5",
+            "caption": "Drop target"
+          },
+          {
+            "type": "actions",
+            "items": [
+              {
+                "label": "Choose file",
+                "kind": "primary"
+              }
+            ]
+          }
         ]
       },
       {
@@ -24,17 +40,41 @@
         "children": [
           {
             "type": "row",
-            "weights": [1, 2],
+            "weights": [
+              1,
+              2
+            ],
             "children": [
-              { "type": "banner", "tone": "ok", "source": "Verdict — verified, unverified, or no provenance found" },
-              { "type": "text", "lines": 2, "label": "What the verdict means, in plain terms" }
+              {
+                "type": "banner",
+                "tone": "ok",
+                "source": "Verdict \u2014 verified, unverified, or no provenance found"
+              },
+              {
+                "type": "text",
+                "lines": 2,
+                "label": "What the verdict means, in plain terms"
+              }
             ]
           },
-          { "type": "detail", "entity": "Kit", "fields": ["run_id", "manifest_key"], "columns": 2 },
+          {
+            "type": "detail",
+            "entity": "Kit",
+            "fields": [
+              "run_id",
+              "manifest_key"
+            ],
+            "columns": 2
+          },
           {
             "type": "table",
             "entity": "Asset",
-            "fields": ["modality", "provider", "model", "prompt"],
+            "fields": [
+              "modality",
+              "provider",
+              "model",
+              "prompt"
+            ],
             "rows": 4,
             "note": "One row per step in the run. This is the disclosure the file carries about itself."
           }
@@ -45,7 +85,11 @@
         "title": "Absent provenance",
         "hint": "The common case for a file that did not come from here. It is a finding, not an error.",
         "children": [
-          { "type": "empty", "message": "No manifest found. This file carries no provenance.", "action": "Check another file" }
+          {
+            "type": "empty",
+            "message": "No manifest found. This file carries no provenance.",
+            "action": "Check another file"
+          }
         ]
       }
     ]

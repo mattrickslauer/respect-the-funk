@@ -83,6 +83,20 @@ def test_audio_is_skipped_rather_than_fatal(monkeypatch):
     assert Modality.AUDIO not in providers.live_providers()
 
 
+def test_a_keyed_elevenlabs_actually_serves_audio(monkeypatch):
+    """The regression guard on a two-year-old typo.
+
+    `providers.py` imported `ElevenLabsProvider`, which genblaze-elevenlabs has never
+    exported — it ships `ElevenLabsTTSProvider` and `ElevenLabsSFXProvider`. The bare
+    `except` around the import turned that into a silent skip, so audio was missing even
+    with a valid key and the only symptom was a modality quietly absent from the kit.
+    """
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "real-looking-key")
+    resolved = providers.live_providers()
+    assert Modality.AUDIO in resolved, "a keyed ElevenLabs must actually serve audio"
+    assert type(resolved[Modality.AUDIO]).__name__ == "ElevenLabsTTSProvider"
+
+
 def test_mock_backend_is_unaffected_by_credentials(monkeypatch):
     """`resolve('mock')` must never consult the environment — it is what makes a laptop
     run identical to CI."""

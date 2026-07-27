@@ -182,9 +182,14 @@ def live_providers() -> dict[Modality, Any]:
 
     if _keyed("ELEVENLABS_API_KEY"):
         try:
-            from genblaze_elevenlabs import ElevenLabsProvider
+            # `ElevenLabsTTSProvider`, not `ElevenLabsProvider` — the latter has never
+            # existed in genblaze-elevenlabs, so this import raised ImportError on every
+            # run and the bare `except` below swallowed it. Audio was therefore skipped
+            # even when a key was present, and nothing said so above debug level. The
+            # package splits speech from sound effects; the kit brief wants speech.
+            from genblaze_elevenlabs import ElevenLabsTTSProvider
 
-            providers[Modality.AUDIO] = ElevenLabsProvider()
+            providers[Modality.AUDIO] = ElevenLabsTTSProvider()
         except Exception as exc:
             log.warning("ElevenLabs unavailable (%s) — audio shots will be skipped", exc)
     else:

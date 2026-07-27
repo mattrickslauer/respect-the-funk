@@ -150,6 +150,18 @@ resource "aws_lambda_function_url" "this" {
   }
 }
 
+# A Function URL with auth type NONE still needs a resource-based policy granting
+# public invoke. The console adds this for you; the API and Terraform do not — so
+# without it the URL exists, resolves, and returns 403 to everyone. This is the
+# difference between "deployed" and "reachable".
+resource "aws_lambda_permission" "public_url" {
+  statement_id           = "AllowPublicFunctionUrlInvoke"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.this.function_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}
+
 output "function_url" { value = aws_lambda_function_url.this.function_url }
 output "function_name" { value = aws_lambda_function.this.function_name }
 output "role_arn" { value = aws_iam_role.this.arn }

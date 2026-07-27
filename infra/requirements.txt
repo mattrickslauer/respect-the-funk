@@ -1,0 +1,5 @@
+# Diagram toolchain only — not the application's runtime dependencies.
+# Also needs the graphviz BINARY on PATH: `brew install graphviz`.
+diagrams>=0.24
+pillow>=10.0
+pypdf>=4.0

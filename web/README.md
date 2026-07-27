@@ -67,7 +67,9 @@ the copy is worth.
 
 ## Known placeholders
 
-- `hello@respectthefunk.com` in both CTA `mailto:` links — swap for the real inbox.
+- Both CTA `mailto:` links point at `anthonybtedesco@gmail.com`. Swap for a
+  label-branded inbox before this is shown to labels at any scale — a personal
+  Gmail address undercuts the page's own credibility pitch.
 - "RemixKit" is still the working name (`BUILD-SPEC.md` §13.1, unresolved).
 - Figures inside the two illustrative figures (variant test, ledger) are structural
   examples, labelled as such in the page copy.

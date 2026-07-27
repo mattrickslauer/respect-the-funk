@@ -5,7 +5,7 @@
    sidebar wants "which kit, did it work, what did it cost", and the artist page wants
    the assets and the approval control. Squeezing the wide row into 340px produced a
    column of stacked badges, which is how you can tell it was the wrong component. #}
-<a class="kit-summary" href="/artists/{{ kit.artist_id }}">
+<a class="kit-summary" href="/console/artists/{{ kit.artist_id }}">
   <span class="kit-summary-name">{{ kit.name }}</span>
   <span class="kit-summary-meta">
     <span class="badge badge-{{ kit.status.value }}">{{ kit.status.value }}</span>

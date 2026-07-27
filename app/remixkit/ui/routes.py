@@ -108,7 +108,27 @@ def _error_fragment(request: Request, exc: ServiceError, target: str = "") -> HT
 
 
 # ---------------------------------------------------------------- pages
+CONSOLE_PATH = "/console"
+
+
 @router.get("/", response_class=HTMLResponse)
+def landing(request: Request):
+    """The public page — the marketing site, served by the same app as the console.
+
+    No `Principal` in the signature, and that is the whole point: this is the one route
+    that must render for someone who has never signed in and may never sign in. Every
+    other page takes `CurrentPrincipal` and therefore raises `AuthError` without a
+    session, which is what puts the console behind the login.
+
+    It lives here rather than on a second host because `web/README.md` costed that out:
+    a separate front end is a second deploy target, a second dependency tree, and a
+    $20/mo Vercel commercial seat — the entire always-on floor of this stack, spent on
+    a page that never re-renders. One app, one deploy, per BUILD-SPEC §2.
+    """
+    return _render(request, "pages/landing.html")
+
+
+@router.get(CONSOLE_PATH, response_class=HTMLResponse)
 def roster(request: Request, principal: CurrentPrincipal, artists: Artists, kits: Kits):
     return _render(
         request,
@@ -118,7 +138,7 @@ def roster(request: Request, principal: CurrentPrincipal, artists: Artists, kits
     )
 
 
-@router.get("/artists/{artist_id}", response_class=HTMLResponse)
+@router.get("/console/artists/{artist_id}", response_class=HTMLResponse)
 def artist_detail(
     request: Request,
     artist_id: str,
@@ -143,7 +163,7 @@ def artist_detail(
     )
 
 
-@router.get("/verify", response_class=HTMLResponse)
+@router.get("/console/verify", response_class=HTMLResponse)
 def verify_page(request: Request):
     return _render(request, "pages/verify.html", report=None)
 
@@ -163,12 +183,16 @@ def _safe_next(raw: str) -> str:
     """
     if raw.startswith("/") and not raw.startswith("//"):
         return raw
-    return "/"
+    return CONSOLE_PATH
 
 
 @router.get(LOGIN_PATH, response_class=HTMLResponse)
-def login_page(request: Request, principal: MaybePrincipal, next: str = "/"):
-    """The one page that renders without a session — and redirects if there is one."""
+def login_page(request: Request, principal: MaybePrincipal, next: str = CONSOLE_PATH):
+    """The card itself — and a redirect if the visitor already has a session.
+
+    One of the two pages that render without one (the other is the landing page); every
+    console route requires `CurrentPrincipal` and so refuses.
+    """
     destination = _safe_next(next)
     if principal is not None and principal.authenticated:
         return RedirectResponse(destination, status_code=303)
@@ -180,7 +204,7 @@ def ui_request_code(
     request: Request,
     accounts: Accounts,
     email: str = Form(...),
-    next: str = Form("/"),
+    next: str = Form(CONSOLE_PATH),
 ):
     try:
         sent = accounts.request_code(email)
@@ -214,7 +238,7 @@ def ui_verify_code(
     accounts: Accounts,
     email: str = Form(...),
     code: str = Form(...),
-    next: str = Form("/"),
+    next: str = Form(CONSOLE_PATH),
 ):
     try:
         account, token = accounts.verify_code(email, code)

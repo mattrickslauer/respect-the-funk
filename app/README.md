@@ -15,14 +15,17 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/uvicorn remixkit.main:app --reload
 ```
 
-Open <http://localhost:8000>. Register an artist, record likeness consent, save an
-identity, attach a song, set its hook window, generate a kit. Real videos appear.
+Open <http://localhost:8000/console>. Register an artist, record likeness consent, save
+an identity, attach a song, set its hook window, generate a kit. Real videos appear.
+
+<http://localhost:8000> is the public landing page — the B2B site, served by this same
+app, and the only page that renders without a session. See [Two front doors](#two-front-doors).
 
 `ffmpeg` is the one non-Python dependency (`brew install ffmpeg`). Without it the mock
 generator reports the modality unavailable rather than producing something misleading.
 
 ```bash
-.venv/bin/python -m pytest        # 24 tests, ~2s
+.venv/bin/python -m pytest        # 67 tests, ~2s
 ```
 
 ---
@@ -62,7 +65,7 @@ remixkit/
                        accounts  ← sign-in codes and sessions
   auth/                provider (Protocol) · anonymous · otp
   api/v1.py            JSON API
-  ui/                  Jinja + htmx components
+  ui/                  Jinja + htmx components, plus pages/landing.html — the site
   deps.py              the composition root — the only file that names an adapter
 ```
 
@@ -75,6 +78,33 @@ Five axes, five environment variables:
 | `RK_QUEUE_BACKEND` | `inline` | `sqs` |
 | `RK_MAIL_BACKEND` | `console` | `zeptomail` |
 | `RK_AUTH_BACKEND` | `none` | `otp` |
+
+---
+
+## Two front doors
+
+```
+/                    the landing page — public, always
+/auth/login          the sign-in card
+/console             the roster — and everything under it
+/console/artists/{id}
+/console/verify
+/api/v1/*            JSON, Authorization: Bearer
+```
+
+`/` is the marketing site (`ui/templates/pages/landing.html`, moved here from `web/`)
+and it is the **only** page whose route does not take `CurrentPrincipal`. That is the
+entire gate: every console handler asks for a principal, so every console handler
+refuses without a session, and no route contains an `if authenticated` branch.
+
+It is one app rather than two because `web/README.md` costed the alternative: a separate
+front end is a second deploy target, a second dependency tree, and a $20/mo Vercel
+commercial-ToS seat — the whole always-on floor of this stack, spent on a page that
+never re-renders. The page needed no rework to move; it was already valid Jinja.
+
+The nav swaps **Sign in** for **Open console** when the `rk_session` cookie verifies, so
+an operator who is already signed in is not sent to a login form that would bounce them
+straight back out again.
 
 ---
 
@@ -129,6 +159,12 @@ misconfigured deployment.
 Two guards, both refusing to start rather than warning: `RK_REQUIRE_AUTH=true` with
 `RK_AUTH_BACKEND=none`, and `RK_REQUIRE_AUTH=true` with an empty `RK_SESSION_SECRET`
 (which would otherwise sign sessions with a key that changes every restart).
+
+In prod these are Terraform variables rather than a `.env`, and
+`infra/terraform/envs/prod/variables.tf` now defaults to `auth_backend = "otp"` and
+`require_auth = true`. Put `SESSION_SECRET` and `ZEPTOMAIL_TOKEN` into SSM **before**
+the first apply — with `require_auth` on, a missing signing key is a function that does
+not boot, which is the intended failure but an opaque one if you were not expecting it.
 
 What made this cheap: every request already resolved a `Principal`, and every document,
 object key, and job payload already carried its `tenant_id`. Adding auth was one

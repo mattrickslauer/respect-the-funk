@@ -1,3 +1,11 @@
+{# The public landing page, served at `/` by ui/routes.py:landing. Documented in
+   web/README.md, which it was moved here from — the positioning, the design tokens, and
+   in particular the rule that **every statistic traces to a sourced claim in /research**
+   still bind. If you edit a number, re-check its pillar first.
+
+   Deliberately standalone rather than extending _layout.html: the console shell is a
+   topbar for someone signed in, and this page is for someone who is not. The only
+   context it reads is `viewer`, for the Sign in / Open console swap in the nav. #}
 <!doctype html>
 <html lang="en">
 <head>
@@ -57,6 +65,9 @@ header{position:sticky;top:0;z-index:60;background:rgba(20,18,26,0.86);backdrop-
 .nav .links{display:flex;gap:24px;margin-left:auto}
 .nav .links a{font-size:14.5px;color:var(--ink-3);text-decoration:none;transition:color .15s}
 .nav .links a:hover{color:var(--ink)}
+/* Sign in lives beside the demo CTA rather than in .links, because .links is hidden at
+   960px — an operator on a phone still needs a way into the console. */
+.nav-cta{display:flex;gap:10px;align-items:center}
 
 /* ---------- buttons ---------- */
 .btn{display:inline-block;font-family:var(--display);font-size:15px;padding:12px 22px;border-radius:8px;text-decoration:none;transition:all .16s}
@@ -198,6 +209,7 @@ footer{padding:40px 0;border-top:1px solid var(--rule-2)}
   .ev{grid-template-columns:1fr;gap:12px}
   section{padding:72px 0}
   .nav .links{display:none}
+  .nav-cta{margin-left:auto}
   .phones{max-width:330px}
 }
 @media (prefers-reduced-motion:reduce){
@@ -227,7 +239,17 @@ footer{padding:40px 0;border-top:1px solid var(--rule-2)}
       <a href="#testing">Testing</a>
       <a href="#measure">Measurement</a>
     </nav>
-    <a href="#demo" class="btn btn-primary btn-sm">Book a demo</a>
+    {# `viewer` is the verified session cookie (ui.routes._render), so an operator who is
+       already signed in gets the console rather than a login form that would bounce them
+       straight back to it. Absent under RK_AUTH_BACKEND=none. #}
+    <div class="nav-cta">
+      {% if viewer %}
+      <a href="/console" class="btn btn-ghost btn-sm">Open console</a>
+      {% else %}
+      <a href="/auth/login" class="btn btn-ghost btn-sm">Sign in</a>
+      {% endif %}
+      <a href="#demo" class="btn btn-primary btn-sm">Book a demo</a>
+    </div>
   </div>
 </header>
 

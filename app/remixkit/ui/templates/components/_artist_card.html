@@ -5,7 +5,7 @@
    scanning its roster should see immediately which artists are blocked. #}
 <article class="card">
   <div class="card-head">
-    <h3><a href="/artists/{{ artist.id }}">{{ artist.name }}</a></h3>
+    <h3><a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a></h3>
     {% with state = artist.approval %}{% include "components/_badge.html" %}{% endwith %}
   </div>
   <p class="handle"><code>{{ artist.slug }}</code></p>
@@ -20,7 +20,7 @@
   </p>
 
   <div class="card-foot">
-    <a class="btn btn-quiet" href="/artists/{{ artist.id }}">Open</a>
+    <a class="btn btn-quiet" href="/console/artists/{{ artist.id }}">Open</a>
     <button class="btn btn-danger btn-quiet"
             hx-delete="/ui/artists/{{ artist.id }}"
             hx-target="#roster"

@@ -22,7 +22,7 @@ from remixkit.bootstrap import load_secrets
 from remixkit.deps import get_container
 from remixkit.services.errors import ServiceError
 from remixkit.settings import get_settings
-from remixkit.ui.routes import LOGIN_PATH, router as ui_router
+from remixkit.ui.routes import CONSOLE_PATH, LOGIN_PATH, router as ui_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -86,7 +86,10 @@ def create_app() -> FastAPI:
             target = request.url.path
             if request.url.query:
                 target = f"{target}?{request.url.query}"
-            suffix = "" if target == "/" else f"?next={quote(target, safe='')}"
+            # The console root is where sign-in lands by default, so carrying it as
+            # `?next=` would only put a redundant parameter in the URL bar. `/` never
+            # reaches here at all — it is the public landing page.
+            suffix = "" if target == CONSOLE_PATH else f"?next={quote(target, safe='')}"
             return RedirectResponse(f"{LOGIN_PATH}{suffix}", status_code=303)
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 

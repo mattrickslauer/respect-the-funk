@@ -272,17 +272,42 @@ def test_removal_from_the_allowlist_ends_the_session(otp_container, mailer):
 
 # ------------------------------------------------------------------ over HTTP
 def test_browser_without_a_session_is_sent_to_the_login_page(otp_client):
-    response = otp_client.get("/", headers={"accept": "text/html"}, follow_redirects=False)
+    response = otp_client.get(
+        "/console", headers={"accept": "text/html"}, follow_redirects=False
+    )
     assert response.status_code == 303
+    # No `?next=` — the console root is where sign-in lands anyway.
     assert response.headers["location"] == "/auth/login"
 
 
 def test_the_intended_destination_survives_the_redirect(otp_client):
     response = otp_client.get(
-        "/artists/art_123", headers={"accept": "text/html"}, follow_redirects=False
+        "/console/artists/art_123", headers={"accept": "text/html"}, follow_redirects=False
     )
     assert response.status_code == 303
-    assert response.headers["location"] == "/auth/login?next=%2Fartists%2Fart_123"
+    assert (
+        response.headers["location"] == "/auth/login?next=%2Fconsole%2Fartists%2Fart_123"
+    )
+
+
+def test_the_landing_page_is_public(otp_client):
+    """`/` must render for a stranger even with auth on — it is the marketing site, and
+    it carries the only link a new operator has into the login."""
+    response = otp_client.get("/", headers={"accept": "text/html"}, follow_redirects=False)
+    assert response.status_code == 200
+    assert 'href="/auth/login"' in response.text
+    assert "Sign in" in response.text
+
+
+def test_the_landing_page_offers_the_console_to_someone_signed_in(otp_client, mailer):
+    otp_client.post("/ui/auth/request-code", data={"email": FIRST_USER})
+    otp_client.post("/ui/auth/verify-code", data={"email": FIRST_USER, "code": mailer.last_code})
+
+    response = otp_client.get("/", headers={"accept": "text/html"})
+    assert response.status_code == 200
+    assert 'href="/console"' in response.text
+    # A login link here would bounce them straight back to the console.
+    assert 'href="/auth/login"' not in response.text
 
 
 def test_api_without_a_token_is_401_json_not_a_redirect(otp_client):
@@ -324,7 +349,7 @@ def test_bearer_token_opens_the_api(otp_client, otp_container, mailer):
 
 def test_the_full_console_sign_in_sets_a_cookie_and_admits_the_user(otp_client, mailer):
     step_one = otp_client.post(
-        "/ui/auth/request-code", data={"email": FIRST_USER, "next": "/verify"}
+        "/ui/auth/request-code", data={"email": FIRST_USER, "next": "/console/verify"}
     )
     assert step_one.status_code == 200
     assert FIRST_USER in step_one.text
@@ -332,15 +357,15 @@ def test_the_full_console_sign_in_sets_a_cookie_and_admits_the_user(otp_client, 
 
     step_two = otp_client.post(
         "/ui/auth/verify-code",
-        data={"email": FIRST_USER, "code": mailer.last_code, "next": "/verify"},
+        data={"email": FIRST_USER, "code": mailer.last_code, "next": "/console/verify"},
     )
     assert step_two.status_code == 204
-    assert step_two.headers["hx-redirect"] == "/verify"
+    assert step_two.headers["hx-redirect"] == "/console/verify"
 
     cookie = otp_client.cookies.get("rk_session")
     assert cookie
     # The cookie the browser now holds is a real session for the roster.
-    roster = otp_client.get("/", headers={"accept": "text/html"})
+    roster = otp_client.get("/console", headers={"accept": "text/html"})
     assert roster.status_code == 200
     assert "Sign out" in roster.text
 
@@ -387,7 +412,7 @@ def test_next_cannot_be_used_as_an_open_redirect(otp_client, mailer, hostile):
         "/ui/auth/verify-code",
         data={"email": FIRST_USER, "code": mailer.last_code, "next": hostile},
     )
-    assert response.headers["hx-redirect"] == "/"
+    assert response.headers["hx-redirect"] == "/console"
 
 
 def test_the_asset_route_is_not_a_way_around_the_login(otp_client):
@@ -415,7 +440,7 @@ def test_the_login_page_bounces_someone_already_signed_in(otp_client, mailer):
         "/auth/login", headers={"accept": "text/html"}, follow_redirects=False
     )
     assert response.status_code == 303
-    assert response.headers["location"] == "/"
+    assert response.headers["location"] == "/console"
 
 
 # ------------------------------------------------------------------ the default shape
@@ -423,6 +448,7 @@ def test_auth_off_by_default_still_admits_everyone(client):
     """The `none` backend is unchanged — this is the regression guard on that promise."""
     assert client.get("/api/v1/artists").status_code == 200
     assert client.get("/", headers={"accept": "text/html"}).status_code == 200
+    assert client.get("/console", headers={"accept": "text/html"}).status_code == 200
 
 
 def test_require_auth_refuses_an_unauthenticated_deployment(otp_settings):

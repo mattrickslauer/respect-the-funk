@@ -85,6 +85,21 @@ variable "mail_from_name" {
   default = "Respect the Funk"
 }
 
+variable "require_auth" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Refuse to start rather than serve an unauthenticated console that believes it is
+    authenticated. Two checks, both in deps.py: `auth_backend = "none"` with this set is
+    fatal, and so is an empty RK_SESSION_SECRET — which would otherwise fall back to a
+    per-process random key, signing sessions that no other Lambda instance can verify.
+
+    The consequence to know before setting it: if SESSION_SECRET is not in SSM, the
+    function does not boot. That is deliberate — a login that silently logs everyone out
+    on every cold start is harder to diagnose than one that never came up.
+  EOT
+}
+
 variable "allowed_emails" {
   type        = list(string)
   default     = []
@@ -220,6 +235,7 @@ resource "aws_lambda_function" "this" {
       RK_GENERATOR_BACKEND    = var.generator_backend
       RK_QUEUE_BACKEND        = var.queue_backend
       RK_AUTH_BACKEND         = var.auth_backend
+      RK_REQUIRE_AUTH         = tostring(var.require_auth)
       RK_MAIL_BACKEND         = var.mail_backend
       RK_MAIL_FROM            = var.mail_from
       RK_MAIL_FROM_NAME       = var.mail_from_name

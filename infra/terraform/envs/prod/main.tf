@@ -108,6 +108,7 @@ module "api" {
   queue_backend     = var.queue_backend
 
   auth_backend   = var.auth_backend
+  require_auth   = var.require_auth
   mail_backend   = var.mail_backend
   mail_from      = var.mail_from
   allowed_emails = var.allowed_emails

@@ -70,12 +70,25 @@ def test_api_bpm_without_method_is_refused(client):
 
 
 def test_console_renders(client):
-    page = client.get("/")
+    page = client.get("/console")
     assert page.status_code == 200
     assert "Roster" in page.text
     assert "Register an artist" in page.text
     # The environment banner must be on the page, not buried in /healthz.
     assert "MOCKED" in page.text
+
+
+def test_landing_renders_and_offers_a_way_in(client):
+    """`/` is the marketing page and carries the only public link to the login."""
+    page = client.get("/")
+    assert page.status_code == 200
+    assert "For independent labels" in page.text
+    assert 'href="/auth/login"' in page.text
+    # It is the landing page, not the console — none of the roster's machinery is on it.
+    # (Matching on copy would not work: the page's own body says "Register an artist
+    # once" as a description of the product.)
+    assert 'hx-post="/ui/artists"' not in page.text
+    assert 'id="roster"' not in page.text
 
 
 def test_console_fragment_is_a_fragment(client):
@@ -113,7 +126,7 @@ def test_verify_rejects_an_asset_with_no_provenance(client):
 
 def test_artist_page_shows_the_consent_gate(client):
     artist = client.post("/api/v1/artists", json={"name": "Nocturnal"}).json()
-    page = client.get(f"/artists/{artist['id']}")
+    page = client.get(f"/console/artists/{artist['id']}")
     assert page.status_code == 200
     assert "Likeness consent" in page.text
     assert "generation is blocked" in page.text

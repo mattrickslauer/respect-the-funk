@@ -1,5 +1,11 @@
 # web/ — B2B landing page
 
+> **The page now lives in the app**, at
+> [`app/remixkit/ui/templates/pages/landing.html`](../app/remixkit/ui/templates/pages/landing.html),
+> served at `/` by `ui/routes.py:landing`. This file is still its documentation — the
+> positioning, the design tokens, and the rule about the numbers all still bind. What is
+> left in `web/` is `wireframe/`.
+
 One self-contained HTML file. No build step, no framework, no dependencies.
 
 ## Why not Next.js
@@ -13,25 +19,36 @@ always-on floor of the stack, spent on a page that never re-renders.
 This follows the precedent already in the repo: `deck/remixkit-deck.html` is a
 hand-rolled self-contained HTML file too.
 
-## How it deploys
+## How it deploys — done
 
-Today it is a static file — open it, or serve it from anywhere.
-
-When the FastAPI app from `BUILD-SPEC.md` §2 exists, this drops in as a Jinja template
-with **zero rework** (it is already valid Jinja — there is no `{{ }}` or `{% %}` syntax to
-escape):
+It was a static file; it is now a Jinja template inside the FastAPI app, which is what
+this section predicted and cost. The move needed **zero rework**: the page contained no
+`{{ }}`, `{% %}`, or `{# #}` to escape, so it was already a valid template.
 
 ```python
-templates = Jinja2Templates(directory="web")
-
-@app.get("/", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
 def landing(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return _render(request, "pages/landing.html")
 ```
+
+It had to move *into* `app/remixkit/` rather than be served from `web/`, because the
+Dockerfile copies `remixkit/` and `worker.py` and nothing else — a template outside the
+package is not in the image.
+
+The one thing that is no longer static: the nav renders **Open console** instead of
+**Sign in** when the `rk_session` cookie verifies. That is the page's only Jinja, and it
+exists so a signed-in operator is not sent to a login form that would bounce them back.
 
 That keeps the whole product on **one deploy**, which is the stack decision recorded in
 `BUILD-SPEC.md` §2 ("Frontend: default server-rendered Jinja + htmx inside the same
 FastAPI app") and resolves open decision §13.5.
+
+## How someone gets in
+
+`/` is public and is the only route that renders without a session. The nav's **Sign in**
+points at `/auth/login`; everything under `/console` requires `CurrentPrincipal` and so
+refuses without one. There is no sign-up — `RK_ALLOWED_EMAILS` is the user table. See
+`app/README.md` § *Two front doors*.
 
 ## Design system
 

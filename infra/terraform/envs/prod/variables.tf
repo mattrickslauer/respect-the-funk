@@ -53,25 +53,38 @@ variable "queue_backend" {
   default = "sqs"
 }
 
-# Sign-in. Off by default so applying this alone changes nothing about a live console.
-# To turn it on, in this order:
+# Sign-in. **On.** The console is behind email-OTP; `/` is the public landing page and
+# is the only route that renders without a session.
+#
+# Both secrets must be in SSM *before* this is applied, because `require_auth` makes
+# their absence fatal rather than silent:
 #
 #   1. aws ssm put-parameter --name /remixkit/prod/SESSION_SECRET  --type SecureString \
 #        --value "$(python -c 'import secrets;print(secrets.token_urlsafe(32))')" --overwrite
 #   2. aws ssm put-parameter --name /remixkit/prod/ZEPTOMAIL_TOKEN --type SecureString \
 #        --value "…" --overwrite
-#   3. set auth_backend = "otp", mail_backend = "zeptomail", and allowed_emails here.
 #
-# Secrets first: a console that turns on auth before it can sign or send is one nobody
-# can enter, including whoever needs to fix it.
+# Secrets first, in that order: a console that turns on auth before it can sign or send
+# is one nobody can enter, including whoever needs to fix it. With `require_auth = true`
+# that failure is a function that does not boot (deps.py `_session_secret`) rather than
+# one quietly signing sessions with a key that changes on every cold start.
+#
+# To go back to an open console — only ever for a scratch environment — set
+# auth_backend = "none" *and* require_auth = false. Either alone refuses to start.
 variable "auth_backend" {
   type    = string
-  default = "none"
+  default = "otp"
+}
+
+variable "require_auth" {
+  type        = bool
+  default     = true
+  description = "Refuse to start rather than serve an open console that believes it is gated."
 }
 
 variable "mail_backend" {
   type    = string
-  default = "console"
+  default = "zeptomail"
 }
 
 variable "mail_from" {
@@ -83,7 +96,11 @@ variable "mail_from" {
 }
 
 variable "allowed_emails" {
-  type        = list(string)
-  default     = []
+  type = list(string)
+  # This is the user table. There is no sign-up: an address either appears here or it is
+  # refused before a code is ever sent, so adding a colleague is a reviewed line in this
+  # file rather than a button in the console. Empty refuses to start under `otp` —
+  # a console nobody can enter is a failure, not a safe default.
+  default     = ["anthonybtedesco@gmail.com"]
   description = "Addresses permitted to sign in. This is the user table."
 }

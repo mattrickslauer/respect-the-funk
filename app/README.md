@@ -15,6 +15,11 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/uvicorn remixkit.main:app --reload
 ```
 
+Everything the app needs is read from `app/.env` — including `RK_SSM_PATH`, which is how
+real credentials arrive. Nothing needs exporting first: `source .env` would not work
+anyway, because a plain `KEY=value` line sets a shell variable rather than an exported
+one, so a child process never sees it.
+
 Open <http://localhost:8000/console>. Register an artist, record likeness consent, save
 an identity, attach a song, set its hook window, generate a kit. Real videos appear.
 

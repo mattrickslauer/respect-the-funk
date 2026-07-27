@@ -33,6 +33,14 @@ def _hermetic_env(monkeypatch):
     for key in [k for k in os.environ if k.startswith("RK_")]:
         monkeypatch.delenv(key, raising=False)
 
+    # Deleting is not enough for the fields that reach the *network*. `get_settings()`
+    # reads `app/.env`, and `create_app()` now uses `ssm_path` from it to fetch secrets —
+    # so a developer with a real `.env` would have the whole suite calling AWS, turning a
+    # 3-second run into a 45-second one that fails on a plane. An environment variable
+    # outranks the file, so setting these empty is what actually closes the file.
+    for key in ("RK_SSM_PATH", "RK_GCP_PROJECT", "RK_AWS_PROFILE"):
+        monkeypatch.setenv(key, "")
+
 
 @pytest.fixture
 def settings(tmp_path) -> Settings:

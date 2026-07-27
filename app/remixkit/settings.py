@@ -108,6 +108,21 @@ class Settings(BaseSettings):
     # (BUILD-SPEC §12). Small kits fail fast and cost little.
     max_shots_per_kit: int = 8
 
+    # ---- secrets ---------------------------------------------------------------
+    # Where `bootstrap.load_secrets` fetches credentials from. Declared here rather than
+    # read only from the process environment so that `app/.env` can name it: an .env
+    # that turns on `storage_backend=b2` but cannot say where the B2 keys live sets up a
+    # failure whose message is about missing credentials rather than about the missing
+    # setting that would have found them.
+    ssm_path: str = ""
+    # Vertex project/region for the Google (Veo/Imagen) provider. Settings rather than
+    # bare environment variables so `app/.env` can supply them — see `export_for_libs`.
+    gcp_project: str = ""
+    gcp_location: str = "us-central1"
+    # Which AWS credential profile to use. Empty means boto3's own resolution (env vars,
+    # then `default`), which is right on Lambda — the execution role has no profile.
+    aws_profile: str = ""
+
     # ---- queue -----------------------------------------------------------------
     sqs_queue_url: str = ""
     aws_region: str = "us-east-1"

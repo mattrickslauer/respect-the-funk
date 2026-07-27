@@ -38,17 +38,30 @@ _PROVIDER_KEYS = {
 }
 
 
-def load_secrets(path: str | None = None, region: str | None = None) -> int:
+def load_secrets(
+    path: str | None = None,
+    region: str | None = None,
+    profile: str | None = None,
+) -> int:
     """Fetch every parameter under `path` into `os.environ`. Returns how many landed.
 
-    A no-op when `RK_SSM_PATH` is unset, which is the whole local-development story:
-    nothing to configure, nothing to stub.
+    A no-op when no path is given and `RK_SSM_PATH` is unset, which is the whole
+    local-development story: nothing to configure, nothing to stub.
+
+    `path` is passed explicitly by `create_app`, from settings — so `app/.env` can name
+    it. Falling back to the environment keeps the deployed path unchanged, where the
+    variable is set by Terraform and there is no .env at all.
+
+    `profile` exists for the same reason: on a laptop the right credentials are usually
+    a named profile, and boto3 would otherwise silently use `default` and fail with an
+    authentication error that says nothing about which identity it tried.
     """
     path = path or os.environ.get("RK_SSM_PATH", "")
     if not path:
         return 0
 
     region = region or os.environ.get("RK_AWS_REGION") or os.environ.get("AWS_REGION") or "us-east-1"
+    profile = profile or os.environ.get("AWS_PROFILE") or ""
 
     try:
         import boto3
@@ -57,7 +70,8 @@ def load_secrets(path: str | None = None, region: str | None = None) -> int:
             "RK_SSM_PATH is set but boto3 is not installed: pip install 'remixkit[queue]'"
         ) from exc
 
-    client = boto3.client("ssm", region_name=region)
+    session = boto3.Session(profile_name=profile) if profile else boto3.Session()
+    client = session.client("ssm", region_name=region)
     loaded = 0
 
     paginator = client.get_paginator("get_parameters_by_path")
@@ -80,3 +94,25 @@ def load_secrets(path: str | None = None, region: str | None = None) -> int:
 
     log.info("loaded %d secret(s) from SSM path %s", loaded, path)
     return loaded
+
+
+def export_for_libs(settings) -> list[str]:
+    """Publish settings that third-party libraries read straight off the environment.
+
+    `genblaze-google` resolves Vertex credentials from `GCP_PROJECT`/`GCP_LOCATION`
+    itself; `providers.live_providers` reads the same names. Neither consults our
+    `Settings`, so a value that arrived via `app/.env` would be invisible to them —
+    the same gap `ssm_path` closes for SSM, one layer further out.
+
+    `setdefault`, not assignment: a real environment variable is a deliberate override
+    and must win over the file.
+    """
+    published = []
+    for name, value in (
+        ("GCP_PROJECT", settings.gcp_project),
+        ("GCP_LOCATION", settings.gcp_location),
+    ):
+        if value and name not in os.environ:
+            os.environ[name] = value
+            published.append(name)
+    return published

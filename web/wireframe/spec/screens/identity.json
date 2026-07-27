@@ -1,0 +1,77 @@
+{
+  "id": "identity",
+  "title": "Identity builder",
+  "route": "/artists/{artist_id}/identity",
+  "entity": "Identity",
+  "nav": { "group": "roster", "order": 3 },
+  "purpose": "Build the artist's reusable on-screen identity once. Editing mints a version; adding evidence does not.",
+  "body": {
+    "type": "col",
+    "gap": "loose",
+    "children": [
+      {
+        "type": "banner",
+        "tone": "warn",
+        "source": "Version notice — kits already generated stay bound to the version that produced them",
+        "note": "Losing the description a run was generated against makes that run unreproducible."
+      },
+      {
+        "type": "row",
+        "weights": [1, 1],
+        "gap": "base",
+        "children": [
+          {
+            "type": "region",
+            "title": "Description",
+            "hint": "Text the generator receives before every shot prompt.",
+            "children": [
+              { "type": "form", "entity": "Identity", "fields": ["structural_features", "wardrobe", "negatives"], "submit": "Save as new version", "layout": "stacked" }
+            ]
+          },
+          {
+            "type": "region",
+            "title": "Composed prompt",
+            "hint": "What a provider will actually receive, assembled from the fields on the left.",
+            "children": [
+              { "type": "text", "lines": 4, "label": "identity fragment + shot prompt" },
+              { "type": "text", "lines": 2, "label": "negative prompt" },
+              {
+                "type": "banner",
+                "tone": "gap",
+                "source": "Contradiction check between the identity fragment and the shot prompt",
+                "note": "A prompt that describes a face and then asks for an empty centre frame resolves as one or the other. Surfacing the assembled string is how that gets caught before it is bought."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "region",
+        "title": "Reference frames",
+        "hint": "The image half of the identity. One frame per lighting setup, plus accepted stills.",
+        "children": [
+          {
+            "type": "gallery",
+            "count": 8,
+            "ratio": "3:4",
+            "caption": "Reference frame — lighting setup, framing, content hash",
+            "note": "The domain model carries these and nothing can currently create one. This is the surface that closes that gap."
+          },
+          { "type": "form", "entity": "ReferenceFrame", "fields": ["lighting", "caption"], "submit": "Upload frame", "layout": "two-up" },
+          { "type": "empty", "message": "No reference frames. The identity is text-only until frames are added.", "action": "Upload the first frame" }
+        ]
+      },
+      {
+        "type": "region",
+        "title": "Version history",
+        "children": [
+          { "type": "table", "entity": "Identity", "fields": ["version", "structural_features", "approval", "created_at"], "rows": 4 },
+          { "type": "actions", "items": [
+            { "label": "Compare versions", "kind": "secondary" },
+            { "label": "Approve current", "kind": "primary" }
+          ]}
+        ]
+      }
+    ]
+  }
+}

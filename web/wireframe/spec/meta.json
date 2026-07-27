@@ -1,0 +1,12 @@
+{
+  "product": "RemixKit",
+  "surface": "Artist console",
+  "subtitle": "Structural wireframe. No behaviour, no styling decisions, no copy that survives.",
+  "model_source": "app/remixkit/domain/models.py",
+  "nav_groups": [
+    { "id": "roster",     "label": "Roster",     "order": 1, "hint": "Who the label represents" },
+    { "id": "catalogue",  "label": "Catalogue",  "order": 2, "hint": "What has been made, and what is missing" },
+    { "id": "provenance", "label": "Provenance", "order": 3, "hint": "What can be proved about a file" },
+    { "id": "system",     "label": "System",     "order": 4, "hint": "What this deployment actually is" }
+  ]
+}

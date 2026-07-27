@@ -1,0 +1,74 @@
+{
+  "id": "catalogue",
+  "title": "Catalogue",
+  "route": "/catalogue",
+  "entity": "Song",
+  "nav": { "group": "catalogue", "order": 3 },
+  "purpose": "The label's actual daily job: what is missing. Which songs are unmeasured, which have no approved kit, whose consent is stale.",
+  "body": {
+    "type": "col",
+    "gap": "loose",
+    "children": [
+      {
+        "type": "banner",
+        "tone": "info",
+        "source": "Scope of the current query — tenant, filters applied, records matched",
+        "note": "These are cross-collection questions. Answering them by scanning every record is what this screen must be built to avoid."
+      },
+      {
+        "type": "stats",
+        "items": [
+          { "label": "Songs without a measurement", "source": "count where Song.bpm is null" },
+          { "label": "Songs without a hook window", "source": "count where HookWindow.duration_ms is 0" },
+          { "label": "Songs with no approved kit", "source": "count of Song with no Kit at approval=approved" },
+          { "label": "Artists blocked on consent", "source": "count where not consent.granted" }
+        ]
+      },
+      {
+        "type": "region",
+        "title": "Gaps",
+        "hint": "One row per song, with each precondition shown as met or missing.",
+        "children": [
+          { "type": "filters", "entity": "Song", "fields": ["artist_id", "approval", "bpm"] },
+          {
+            "type": "table",
+            "entity": "Song",
+            "fields": ["title", "artist_id", "bpm", "hook", "approval"],
+            "rows": 8,
+            "sortable": true,
+            "note": "State reads as form, not only as text — a missing precondition should be visible without reading the cell."
+          },
+          { "type": "actions", "align": "right", "items": [
+            { "label": "Export", "kind": "secondary" },
+            { "label": "Queue measurement", "kind": "primary" }
+          ]}
+        ]
+      },
+      {
+        "type": "region",
+        "title": "Spend",
+        "hint": "What generation has cost across the catalogue, and what remains available.",
+        "children": [
+          {
+            "type": "row",
+            "weights": [2, 1],
+            "children": [
+              { "type": "media", "kind": "image", "ratio": "16:6", "caption": "Cost over time, by modality" },
+              { "type": "stats", "items": [
+                { "label": "Spent this month", "source": "sum of Kit.total_cost_cents" },
+                { "label": "Remaining budget", "source": "tenant budget − spent" },
+                { "label": "Most expensive kit", "source": "max Kit.total_cost_cents" }
+              ]}
+            ]
+          },
+          {
+            "type": "banner",
+            "tone": "warn",
+            "source": "Budget threshold — generation refused before enqueue once the cap is reached",
+            "note": "A cap enforced before the job is queued is the only place refusing is free."
+          }
+        ]
+      }
+    ]
+  }
+}

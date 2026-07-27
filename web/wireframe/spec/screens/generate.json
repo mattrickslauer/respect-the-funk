@@ -1,0 +1,72 @@
+{
+  "id": "generate",
+  "title": "Generate a kit",
+  "route": "/artists/{artist_id}/songs/{song_id}/generate",
+  "entity": "Kit",
+  "nav": { "group": "catalogue", "order": 4 },
+  "purpose": "The one screen that spends money. Everything on it exists to make the cost and the preconditions legible before the job is queued.",
+  "body": {
+    "type": "col",
+    "gap": "loose",
+    "children": [
+      {
+        "type": "region",
+        "title": "Preconditions",
+        "hint": "Each is a hard gate. The screen refuses rather than queueing a job that will fail.",
+        "children": [
+          { "type": "repeat", "of": "Artist", "count": 4, "children": [
+            { "type": "row", "weights": [1, 4], "children": [
+              { "type": "text", "lines": 1, "label": "state" },
+              { "type": "text", "lines": 1, "label": "precondition — consent, identity, measurement, hook window" }
+            ]}
+          ]},
+          { "type": "banner", "tone": "gap", "source": "Unmet precondition, naming the screen that fixes it" }
+        ]
+      },
+      {
+        "type": "row",
+        "weights": [1, 1],
+        "gap": "base",
+        "children": [
+          {
+            "type": "region",
+            "title": "Brief",
+            "children": [
+              { "type": "form", "entity": "Kit", "fields": ["name"], "submit": "", "layout": "stacked" },
+              { "type": "text", "lines": 3, "label": "Shot plan — modality, count, mood spread" },
+              { "type": "text", "lines": 2, "label": "Hook lines for lyric cards" }
+            ]
+          },
+          {
+            "type": "region",
+            "title": "Estimate",
+            "hint": "Shown before the job is queued, not after the bill arrives.",
+            "children": [
+              { "type": "stats", "items": [
+                { "label": "Shots", "source": "count of ShotSpec in plan" },
+                { "label": "Estimated cost", "source": "sum of per-modality unit price" },
+                { "label": "Reused from cache", "source": "count of shots matching a prior content hash" },
+                { "label": "Remaining budget", "source": "tenant budget − spent" }
+              ], "note": "Reuse is a first-class line. A shot whose prompt, model and parameters already produced an asset should be shown as free before the run, not discovered afterwards." },
+              { "type": "actions", "align": "right", "items": [
+                { "label": "Queue generation", "kind": "primary" },
+                { "label": "Cancel", "kind": "secondary" }
+              ]}
+            ]
+          }
+        ]
+      },
+      {
+        "type": "region",
+        "title": "Preview",
+        "hint": "The assembled prompt for each shot, exactly as the provider will receive it.",
+        "children": [
+          { "type": "repeat", "of": "Asset", "count": 3, "children": [
+            { "type": "text", "lines": 2, "label": "identity fragment + shot prompt + negative prompt" }
+          ]},
+          { "type": "slot", "name": "craft-toolchain", "reason": "Where a format-driven shot plan would replace a fixed mood list. Unresolved by design — the decision is upstream of this wireframe." }
+        ]
+      }
+    ]
+  }
+}

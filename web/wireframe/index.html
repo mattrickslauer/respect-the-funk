@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RemixKit — Artist console wireframe</title>
+<style>
+/* Drafting-sheet vernacular, on purpose.
+ *
+ * A wireframe that looks finished gets critiqued as a finished thing — people argue
+ * about colour instead of structure. So: hairlines not shadows, hatching not imagery,
+ * bars not lorem, and exactly one accent.
+ *
+ * Two voices carry the whole design. Mono is the machine layer — primitive names,
+ * field names, bindings, routes: everything that came from the spec. Sans is the
+ * content layer — the placeholder shapes standing in for what a person will read.
+ * Keeping them visually distinct is what makes the wireframe legible as a *system*
+ * rather than a drawing.
+ */
+
+:root {
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --paper: #e9edf1;
+  --plate: #f8fafb;
+  --sunk:  #eef2f6;
+  --ink:   #18212c;
+  --muted: #64738799;
+  --label: #647387;
+  --faint: #94a2b3;
+  --rule:  #ccd5de;
+  --hair:  #dde4ea;
+  --accent:#2f6f8f;
+  --accent-soft: #2f6f8f1a;
+  --ok:    #45785a;
+  --gap:   #8f6b1c;
+  --warn:  #9c5330;
+
+  --step-0: 0.6875rem;  /* 11px — machine labels */
+  --step-1: 0.75rem;    /* 12px */
+  --step-2: 0.8125rem;  /* 13px — body */
+  --step-3: 0.9375rem;  /* 15px */
+  --step-4: 1.1875rem;  /* 19px */
+  --step-5: 1.625rem;   /* 26px */
+
+  --gap-tight: 6px;
+  --gap-base: 14px;
+  --gap-loose: 26px;
+
+  --rail: 232px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0f1319;
+    --plate: #161b23;
+    --sunk:  #12171e;
+    --ink:   #ccd6e0;
+    --muted: #7e8c9e99;
+    --label: #8593a5;
+    --faint: #5a6878;
+    --rule:  #2a333f;
+    --hair:  #212933;
+    --accent:#6fb2d2;
+    --accent-soft: #6fb2d21f;
+    --ok:    #6d9e7c;
+    --gap:   #bd9741;
+    --warn:  #c67d55;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #0f1319; --plate: #161b23; --sunk: #12171e;
+  --ink: #ccd6e0; --muted: #7e8c9e99; --label: #8593a5; --faint: #5a6878;
+  --rule: #2a333f; --hair: #212933;
+  --accent: #6fb2d2; --accent-soft: #6fb2d21f;
+  --ok: #6d9e7c; --gap: #bd9741; --warn: #c67d55;
+}
+
+:root[data-theme="light"] {
+  --paper: #e9edf1; --plate: #f8fafb; --sunk: #eef2f6;
+  --ink: #18212c; --muted: #64738799; --label: #647387; --faint: #94a2b3;
+  --rule: #ccd5de; --hair: #dde4ea;
+  --accent: #2f6f8f; --accent-soft: #2f6f8f1a;
+  --ok: #45785a; --gap: #8f6b1c; --warn: #9c5330;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--step-2);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- shell */
+.shell { display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); min-height: 100vh; }
+
+.rail {
+  border-right: 1px solid var(--rule);
+  background: var(--plate);
+  padding: 22px 0 40px;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+
+.rail__mark { padding: 0 20px 20px; border-bottom: 1px solid var(--hair); }
+.rail__product { font-family: var(--mono); font-size: var(--step-3); letter-spacing: -0.01em; }
+.rail__surface { font-family: var(--mono); font-size: var(--step-0); color: var(--label); text-transform: uppercase; letter-spacing: 0.09em; margin-top: 3px; }
+
+.rail__group { padding: 18px 20px 0; }
+.rail__grouplabel { font-family: var(--mono); font-size: var(--step-0); text-transform: uppercase; letter-spacing: 0.09em; color: var(--faint); }
+.rail__grouphint { font-size: var(--step-1); color: var(--label); margin-top: 2px; line-height: 1.35; }
+
+.rail__list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+
+.rail__link {
+  display: block; width: 100%; text-align: left;
+  font-family: var(--mono); font-size: var(--step-1);
+  background: none; border: 0; border-left: 2px solid transparent;
+  color: var(--ink); padding: 5px 10px; cursor: pointer;
+}
+.rail__link:hover { background: var(--sunk); }
+.rail__link[aria-current="true"] { border-left-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+.rail__controls { padding: 22px 20px 0; margin-top: 14px; border-top: 1px solid var(--hair); display: flex; flex-direction: column; gap: 8px; }
+
+.toggle {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: var(--step-0); color: var(--label);
+  text-transform: uppercase; letter-spacing: 0.07em; cursor: pointer;
+  background: none; border: 0; padding: 0; text-align: left;
+}
+.toggle__box { width: 11px; height: 11px; border: 1px solid var(--rule); flex: none; }
+.toggle[aria-pressed="true"] .toggle__box { background: var(--accent); border-color: var(--accent); }
+.toggle[aria-pressed="true"] { color: var(--ink); }
+
+/* ---------------------------------------------------------------- plate */
+.main { padding: 30px 34px 90px; max-width: 1180px; }
+
+.titleblock {
+  border: 1px solid var(--rule); background: var(--plate);
+  display: grid; grid-template-columns: 1fr auto;
+}
+.titleblock__body { padding: 16px 18px; }
+.titleblock__name { font-size: var(--step-5); letter-spacing: -0.02em; margin: 0; text-wrap: balance; }
+.titleblock__purpose { color: var(--label); margin: 6px 0 0; max-width: 62ch; font-size: var(--step-3); line-height: 1.45; }
+.titleblock__meta { border-left: 1px solid var(--rule); padding: 16px 18px; display: flex; flex-direction: column; gap: 7px; min-width: 210px; }
+.titleblock__row { font-family: var(--mono); font-size: var(--step-0); display: flex; gap: 8px; }
+.titleblock__key { color: var(--faint); text-transform: uppercase; letter-spacing: 0.07em; }
+.titleblock__val { color: var(--ink); word-break: break-all; }
+
+.sheet { margin-top: var(--gap-loose); display: flex; flex-direction: column; gap: var(--gap-loose); }
+
+/* ---------------------------------------------------------------- blocks */
+.b { position: relative; min-width: 0; }
+.b--col, .b--row, .b--grid { display: flex; min-width: 0; }
+.b--col { flex-direction: column; }
+.b--row { flex-direction: row; align-items: flex-start; }
+.b--grid { display: grid; }
+.gap-none { gap: 0; } .gap-tight { gap: var(--gap-tight); } .gap-base { gap: var(--gap-base); } .gap-loose { gap: var(--gap-loose); }
+
+.region { border: 1px solid var(--rule); background: var(--plate); }
+.region__head { padding: 11px 14px; border-bottom: 1px solid var(--hair); display: flex; flex-direction: column; gap: 2px; }
+.region__title { font-family: var(--mono); font-size: var(--step-1); text-transform: uppercase; letter-spacing: 0.08em; }
+.region__hint { font-size: var(--step-1); color: var(--label); max-width: 74ch; line-height: 1.4; }
+.region__body { padding: 14px; display: flex; flex-direction: column; gap: var(--gap-base); }
+
+.card { border: 1px solid var(--hair); background: var(--sunk); }
+.card__title { font-family: var(--mono); font-size: var(--step-0); text-transform: uppercase; letter-spacing: 0.08em; color: var(--label); padding: 8px 12px; border-bottom: 1px solid var(--hair); }
+.card__body { padding: 12px; display: flex; flex-direction: column; gap: var(--gap-base); }
+
+/* placeholder bars — content that does not exist yet, and should not pretend to */
+.bar { height: 8px; background: var(--rule); }
+.bars { display: flex; flex-direction: column; gap: 6px; }
+.bars .bar:last-child { width: 62%; }
+.ph { display: flex; flex-direction: column; gap: 5px; }
+.ph__label { font-family: var(--mono); font-size: var(--step-0); color: var(--faint); }
+
+/* hatching stands in for imagery; it reads as "not a decision yet" at any size */
+.hatch {
+  background-color: var(--sunk);
+  background-image: repeating-linear-gradient(45deg,
+    var(--hair) 0, var(--hair) 1px, transparent 1px, transparent 7px);
+  border: 1px solid var(--rule);
+  display: flex; align-items: center; justify-content: center;
+}
+.hatch__note { font-family: var(--mono); font-size: var(--step-0); color: var(--faint); background: var(--plate); padding: 2px 6px; border: 1px solid var(--hair); text-align: center; max-width: 88%; }
+
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 10px; }
+
+/* tables */
+.tablewrap { overflow-x: auto; border: 1px solid var(--hair); }
+table.t { border-collapse: collapse; width: 100%; font-size: var(--step-1); }
+table.t th {
+  font-family: var(--mono); font-size: var(--step-0); font-weight: 500; text-align: left;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--label);
+  padding: 7px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; background: var(--sunk);
+}
+table.t td { padding: 8px 10px; border-bottom: 1px solid var(--hair); }
+table.t tr:last-child td { border-bottom: 0; }
+.t__kind { font-family: var(--mono); font-size: var(--step-0); color: var(--faint); text-transform: none; letter-spacing: 0; }
+.cell { height: 8px; background: var(--rule); width: 76%; }
+.cell--num { width: 38%; margin-left: auto; }
+.cell--enum { height: 14px; width: 54px; border: 1px solid var(--rule); background: transparent; }
+.cell--bool { height: 10px; width: 10px; border: 1px solid var(--rule); background: transparent; }
+
+/* forms — inputs are shapes, not controls; nothing here accepts input */
+.fields { display: grid; gap: 11px; }
+.fields--two-up { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field__label { font-family: var(--mono); font-size: var(--step-0); color: var(--label); display: flex; align-items: baseline; gap: 6px; }
+.field__req { color: var(--warn); }
+.field__type { color: var(--faint); margin-left: auto; }
+.input { border: 1px solid var(--rule); background: var(--sunk); height: 26px; }
+.input--list, .input--map, .input--object { height: 44px; }
+.input--bool { height: 14px; width: 14px; }
+.input--enum { height: 26px; width: 130px; }
+
+/* read-only detail */
+.detail { display: grid; gap: 9px 20px; }
+.detail__row { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.detail__key { font-family: var(--mono); font-size: var(--step-0); color: var(--label); }
+.detail__val { height: 8px; background: var(--rule); width: 70%; }
+
+/* stats — summary before detail */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+.stat { background: var(--plate); padding: 11px 13px; display: flex; flex-direction: column; gap: 5px; }
+.stat__val { height: 16px; width: 46px; background: var(--rule); }
+.stat__label { font-size: var(--step-1); }
+.stat__src { font-family: var(--mono); font-size: var(--step-0); color: var(--faint); line-height: 1.35; }
+
+/* actions */
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions--right { justify-content: flex-end; }
+.btn { font-family: var(--mono); font-size: var(--step-1); padding: 5px 12px; border: 1px solid var(--rule); background: transparent; color: var(--ink); cursor: default; }
+.btn--primary { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.btn--danger { border-color: var(--warn); color: var(--warn); }
+
+/* state — encoded in form as well as text */
+.banner { border: 1px solid var(--rule); border-left-width: 3px; padding: 9px 12px; display: flex; flex-direction: column; gap: 3px; background: var(--sunk); }
+.banner__tone { font-family: var(--mono); font-size: var(--step-0); text-transform: uppercase; letter-spacing: 0.08em; }
+.banner__src { font-size: var(--step-1); color: var(--label); }
+.banner--info { border-left-color: var(--accent); } .banner--info .banner__tone { color: var(--accent); }
+.banner--ok   { border-left-color: var(--ok); }     .banner--ok .banner__tone { color: var(--ok); }
+.banner--gap  { border-left-color: var(--gap); }    .banner--gap .banner__tone { color: var(--gap); }
+.banner--warn { border-left-color: var(--warn); }   .banner--warn .banner__tone { color: var(--warn); }
+
+.empty { border: 1px dashed var(--rule); padding: 18px; text-align: center; display: flex; flex-direction: column; gap: 7px; align-items: center; }
+.empty__msg { color: var(--label); font-size: var(--step-1); }
+
+.slot { border: 1px dashed var(--gap); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.slot__name { font-family: var(--mono); font-size: var(--step-0); text-transform: uppercase; letter-spacing: 0.08em; color: var(--gap); }
+.slot__reason { font-size: var(--step-1); color: var(--label); max-width: 72ch; }
+
+.repeat { border-left: 2px solid var(--hair); padding-left: 12px; display: flex; flex-direction: column; gap: 9px; }
+.repeat__mark { font-family: var(--mono); font-size: var(--step-0); color: var(--faint); }
+
+/* ---------------------------------------------------------------- annotation layer */
+.tag {
+  position: absolute; top: 0; right: 0; z-index: 2;
+  font-family: var(--mono); font-size: 9px; line-height: 1.5;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--accent); background: var(--plate);
+  border: 1px solid var(--accent); border-right: 0; border-top: 0;
+  padding: 1px 5px; pointer-events: none; white-space: nowrap;
+}
+.note {
+  border-left: 2px solid var(--accent); background: var(--accent-soft);
+  padding: 7px 11px; font-size: var(--step-1); color: var(--ink);
+  max-width: 76ch; line-height: 1.45;
+}
+[data-annotations="off"] .tag,
+[data-annotations="off"] .note { display: none; }
+[data-annotations="on"] .b > .region,
+[data-annotations="on"] .b > .card { outline: 1px dashed transparent; }
+
+/* ---------------------------------------------------------------- reference views */
+.ref { display: flex; flex-direction: column; gap: var(--gap-base); }
+.ref__item { border: 1px solid var(--rule); background: var(--plate); padding: 12px 14px; }
+.ref__name { font-family: var(--mono); font-size: var(--step-2); color: var(--accent); }
+.ref__summary { color: var(--label); font-size: var(--step-1); margin-top: 3px; max-width: 74ch; }
+.ref__props { font-family: var(--mono); font-size: var(--step-0); color: var(--faint); margin-top: 7px; word-break: break-word; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.chip { font-family: var(--mono); font-size: var(--step-0); border: 1px solid var(--hair); padding: 1px 6px; color: var(--label); }
+.chip--req { border-color: var(--warn); color: var(--warn); }
+.chip--inh { border-style: dashed; }
+
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: var(--gap-base); }
+.legend__item { display: flex; flex-direction: column; gap: 5px; }
+.legend__label { font-family: var(--mono); font-size: var(--step-0); color: var(--label); text-transform: uppercase; letter-spacing: 0.07em; }
+
+@media (max-width: 860px) {
+  .shell { grid-template-columns: 1fr; }
+  .rail { position: static; height: auto; }
+  .main { padding: 20px 16px 60px; }
+  .titleblock { grid-template-columns: 1fr; }
+  .titleblock__meta { border-left: 0; border-top: 1px solid var(--rule); }
+  .b--row { flex-direction: column; }
+  .b--row > .b { width: 100% !important; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sheet { animation: settle 0.18s ease-out; }
+  @keyframes settle { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+}
+
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script id="model" type="application/json">{"meta":{"product":"RemixKit","surface":"Artist console","subtitle":"Structural wireframe. No behaviour, no styling decisions, no copy that survives.","model_source":"app/remixkit/domain/models.py","nav_groups":[{"id":"roster","label":"Roster","order":1,"hint":"Who the label represents"},{"id":"catalogue","label":"Catalogue","order":2,"hint":"What has been made, and what is missing"},{"id":"provenance","label":"Provenance","order":3,"hint":"What can be proved about a file"},{"id":"system","label":"System","order":4,"hint":"What this deployment actually is"}],"generated":"2026-07-27"},"primitives":{"col":{"summary":"Vertical stack. The default container.","props":{"gap":"scale","children":"nodes"}},"row":{"summary":"Horizontal split. `weights` are flex ratios, one per child.","props":{"gap":"scale","weights":"numbers","children":"nodes"}},"grid":{"summary":"Uniform grid. `min` is the column floor before wrapping.","props":{"min":"px","gap":"scale","children":"nodes"}},"region":{"summary":"A labelled area of a screen. The primary structural unit.","props":{"title":"text","hint":"text","children":"nodes"}},"card":{"summary":"A bounded panel inside a region.","props":{"title":"text","children":"nodes"}},"table":{"summary":"Tabular readout of an entity. Columns come from the binding.","props":{"entity":"entity","fields":"fieldset","exclude":"names","rows":"count","sortable":"flag"}},"form":{"summary":"Entry surface for an entity. Inputs come from the binding.","props":{"entity":"entity","fields":"fieldset","exclude":"names","submit":"text","layout":"oneof:stacked,two-up"}},"detail":{"summary":"Read-only key/value readout of one record.","props":{"entity":"entity","fields":"fieldset","exclude":"names","columns":"count"}},"repeat":{"summary":"A structure that repeats per record. `count` is a placeholder quantity, not data.","props":{"of":"entity","count":"count","children":"nodes"}},"gallery":{"summary":"Media tiles. `ratio` is the tile aspect, e.g. 9:16 for vertical.","props":{"count":"count","ratio":"text","caption":"text"}},"stats":{"summary":"Metric tiles. Each item names where its number comes from.","props":{"items":"statitems"}},"actions":{"summary":"Controls. Labels only \u2014 this wireframe carries no behaviour.","props":{"items":"actionitems","align":"oneof:left,right"}},"tabs":{"summary":"Named panels sharing one area.","props":{"items":"tabitems"}},"filters":{"summary":"Filter bar above a collection.","props":{"entity":"entity","fields":"fieldset","exclude":"names"}},"banner":{"summary":"System notice. `tone` carries state, not decoration.","props":{"tone":"oneof:info,gap,ok,warn","source":"text"}},"empty":{"summary":"The state before there is anything. Specified, not left to chance.","props":{"message":"text","action":"text"}},"text":{"summary":"Placeholder prose. `lines` sets the block height.","props":{"lines":"count","label":"text"}},"media":{"summary":"A single media frame \u2014 player, waveform, or still.","props":{"kind":"oneof:video,audio,image,waveform","ratio":"text","caption":"text"}},"slot":{"summary":"A named extension point. Marks where a screen is deliberately unfinished.","props":{"name":"text","reason":"text"}}},"entities":{"LikenessConsent":{"name":"LikenessConsent","fields":[{"name":"granted","annotation":"bool","kind":"bool","required":false},{"name":"signed_by","annotation":"str | None","kind":"text","required":false},{"name":"signed_at","annotation":"datetime | None","kind":"date","required":false},{"name":"document_key","annotation":"str | None","kind":"text","required":false},{"name":"notes","annotation":"str | None","kind":"text","required":false}]},"Base":{"name":"Base","fields":[{"name":"tenant_id","annotation":"str","kind":"text","required":true},{"name":"created_at","annotation":"datetime","kind":"date","required":false},{"name":"updated_at","annotation":"datetime","kind":"date","required":false}]},"Identity":{"name":"Identity","fields":[{"name":"tenant_id","annotation":"str","kind":"text","required":true,"inherited":true},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"updated_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"id","annotation":"str","kind":"text","required":false},{"name":"artist_id","annotation":"str","kind":"text","required":true},{"name":"version","annotation":"int","kind":"number","required":false},{"name":"structural_features","annotation":"str | None","kind":"text","required":false},{"name":"wardrobe","annotation":"list[str]","kind":"list","required":false},{"name":"reference_frames","annotation":"list[ReferenceFrame]","kind":"object","required":false},{"name":"negatives","annotation":"list[str]","kind":"list","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false}]},"Asset":{"name":"Asset","fields":[{"name":"id","annotation":"str","kind":"text","required":false},{"name":"modality","annotation":"Modality","kind":"enum","required":true},{"name":"provider","annotation":"str","kind":"text","required":true},{"name":"model","annotation":"str","kind":"text","required":true},{"name":"prompt","annotation":"str | None","kind":"text","required":false},{"name":"key","annotation":"str | None","kind":"text","required":false},{"name":"url","annotation":"str | None","kind":"text","required":false},{"name":"sha256","annotation":"str | None","kind":"text","required":false},{"name":"cost_cents","annotation":"int","kind":"number","required":false},{"name":"params","annotation":"dict[str, Any]","kind":"map","required":false}]},"HookWindow":{"name":"HookWindow","fields":[{"name":"start_ms","annotation":"int","kind":"number","required":false},{"name":"end_ms","annotation":"int","kind":"number","required":false}]},"Song":{"name":"Song","fields":[{"name":"tenant_id","annotation":"str","kind":"text","required":true,"inherited":true},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"updated_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"id","annotation":"str","kind":"text","required":false},{"name":"artist_id","annotation":"str","kind":"text","required":true},{"name":"slug","annotation":"str","kind":"text","required":true},{"name":"title","annotation":"str","kind":"text","required":true},{"name":"bpm","annotation":"float | None","kind":"number","required":false},{"name":"bpm_method","annotation":"str | None","kind":"text","required":false},{"name":"drop_ms","annotation":"int | None","kind":"number","required":false},{"name":"hook","annotation":"HookWindow","kind":"object","required":false},{"name":"master_key","annotation":"str | None","kind":"text","required":false},{"name":"isrc","annotation":"str | None","kind":"text","required":false},{"name":"spotify_url","annotation":"str | None","kind":"text","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false}]},"ReferenceFrame":{"name":"ReferenceFrame","fields":[{"name":"key","annotation":"str","kind":"text","required":true},{"name":"lighting","annotation":"str","kind":"text","required":false},{"name":"caption","annotation":"str | None","kind":"text","required":false},{"name":"sha256","annotation":"str | None","kind":"text","required":false}]},"Kit":{"name":"Kit","fields":[{"name":"tenant_id","annotation":"str","kind":"text","required":true,"inherited":true},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"updated_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"id","annotation":"str","kind":"text","required":false},{"name":"artist_id","annotation":"str","kind":"text","required":true},{"name":"song_id","annotation":"str","kind":"text","required":true},{"name":"name","annotation":"str","kind":"text","required":true},{"name":"status","annotation":"KitStatus","kind":"enum","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false},{"name":"run_id","annotation":"str | None","kind":"text","required":false},{"name":"parent_run_id","annotation":"str | None","kind":"text","required":false},{"name":"manifest_key","annotation":"str | None","kind":"text","required":false},{"name":"manifest_verified","annotation":"bool | None","kind":"bool","required":false},{"name":"assets","annotation":"list[Asset]","kind":"object","required":false},{"name":"total_cost_cents","annotation":"int","kind":"number","required":false},{"name":"error","annotation":"str | None","kind":"text","required":false},{"name":"brief","annotation":"dict[str, Any]","kind":"map","required":false}]},"Artist":{"name":"Artist","fields":[{"name":"tenant_id","annotation":"str","kind":"text","required":true,"inherited":true},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"updated_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"id","annotation":"str","kind":"text","required":false},{"name":"slug","annotation":"str","kind":"text","required":true},{"name":"name","annotation":"str","kind":"text","required":true},{"name":"bio","annotation":"str | None","kind":"text","required":false},{"name":"links","annotation":"dict[str, str]","kind":"map","required":false},{"name":"consent","annotation":"LikenessConsent","kind":"object","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false}]},"ApprovalState":{"name":"ApprovalState","enum":true,"values":["draft","approved","published"],"fields":[]},"KitStatus":{"name":"KitStatus","enum":true,"values":["queued","running","ready","failed"],"fields":[]},"Modality":{"name":"Modality","enum":true,"values":["video","image","audio"],"fields":[]}},"screens":[{"id":"roster","title":"Roster","route":"/","entity":"Artist","nav":{"group":"roster","order":1},"purpose":"The landing surface. Who is on the roster, and which of them are ready to generate.","body":{"type":"col","gap":"loose","children":[{"type":"banner","tone":"info","source":"Deployment descriptor \u2014 which storage, generator and queue are live","note":"Always visible. A console running on mock providers must never look identical to one running live."},{"type":"stats","items":[{"label":"Artists","source":"count of Artist"},{"label":"Cleared to generate","source":"count where consent.granted"},{"label":"Songs measured","source":"count where Song.bpm is set"},{"label":"Kits awaiting review","source":"count where Kit.approval is draft"}],"note":"Summary before detail. Each tile names its own derivation so the number is auditable."},{"type":"region","title":"Roster","hint":"Sorted by name. Paginated \u2014 the collection is not assumed to be small.","children":[{"type":"filters","entity":"Artist","fields":["name","approval"],"note":"Filtering belongs server-side. Scanning the whole collection to filter in the client is the failure this screen must not repeat.","binding":{"entity":"Artist","fields":[{"name":"name","annotation":"str","kind":"text","required":true},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false}]}},{"type":"table","entity":"Artist","fields":["name","slug","consent","approval","updated_at"],"rows":6,"sortable":true,"binding":{"entity":"Artist","fields":[{"name":"name","annotation":"str","kind":"text","required":true},{"name":"slug","annotation":"str","kind":"text","required":true},{"name":"consent","annotation":"LikenessConsent","kind":"object","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false},{"name":"updated_at","annotation":"datetime","kind":"date","required":false,"inherited":true}]}},{"type":"empty","message":"No artists yet.","action":"Register the first artist"}]},{"type":"region","title":"Register an artist","children":[{"type":"form","entity":"Artist","fields":["name","bio","links"],"submit":"Register","layout":"stacked","note":"Identity, consent and songs are separate steps. Registration stays short so it is never the thing that blocks onboarding.","binding":{"entity":"Artist","fields":[{"name":"name","annotation":"str","kind":"text","required":true},{"name":"bio","annotation":"str | None","kind":"text","required":false},{"name":"links","annotation":"dict[str, str]","kind":"map","required":false}]}}]}]}},{"id":"artist","title":"Artist","route":"/artists/{artist_id}","entity":"Artist","nav":{"group":"roster","order":2},"purpose":"One roster member: their rights, their stored identity, their catalogue, and what has been generated for them.","body":{"type":"col","gap":"loose","children":[{"type":"row","weights":[2,1],"gap":"base","children":[{"type":"region","title":"Artist","children":[{"type":"detail","entity":"Artist","fields":["name","slug","bio","links","approval","created_at"],"columns":2,"binding":{"entity":"Artist","fields":[{"name":"name","annotation":"str","kind":"text","required":true},{"name":"slug","annotation":"str","kind":"text","required":true},{"name":"bio","annotation":"str | None","kind":"text","required":false},{"name":"links","annotation":"dict[str, str]","kind":"map","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true}]}},{"type":"actions","items":[{"label":"Edit","kind":"secondary"},{"label":"Remove from roster","kind":"danger"}]}]},{"type":"region","title":"Likeness consent","hint":"Gates generation. Withdrawal takes effect on the next kit, never retroactively.","children":[{"type":"detail","entity":"LikenessConsent","fields":"auto","columns":1,"binding":{"entity":"LikenessConsent","fields":[{"name":"granted","annotation":"bool","kind":"bool","required":false},{"name":"signed_by","annotation":"str | None","kind":"text","required":false},{"name":"signed_at","annotation":"datetime | None","kind":"date","required":false},{"name":"document_key","annotation":"str | None","kind":"text","required":false},{"name":"notes","annotation":"str | None","kind":"text","required":false}]}},{"type":"media","kind":"image","ratio":"4:3","caption":"Signed release document"},{"type":"actions","items":[{"label":"Record consent","kind":"primary"},{"label":"Withdraw","kind":"danger"}]},{"type":"banner","tone":"gap","source":"Blocked state \u2014 no recorded consent, so kits cannot be generated","note":"The refusal is a product feature and needs a surface the label can read and act on, not a validation toast."}]}]},{"type":"region","title":"Identity","hint":"The stored description of how this artist reads on screen. Reused by every kit.","children":[{"type":"row","weights":[1,1],"children":[{"type":"detail","entity":"Identity","fields":["version","structural_features","wardrobe","negatives","approval"],"columns":1,"binding":{"entity":"Identity","fields":[{"name":"version","annotation":"int","kind":"number","required":false},{"name":"structural_features","annotation":"str | None","kind":"text","required":false},{"name":"wardrobe","annotation":"list[str]","kind":"list","required":false},{"name":"negatives","annotation":"list[str]","kind":"list","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false}]}},{"type":"gallery","count":5,"ratio":"3:4","caption":"Reference frames, one per lighting setup"}]},{"type":"actions","items":[{"label":"Open identity builder","kind":"primary"},{"label":"View version history","kind":"secondary"}]}]},{"type":"region","title":"Songs","hint":"Each measured once. The measurement is reused by every kit built from it.","children":[{"type":"table","entity":"Song","fields":["title","bpm","bpm_method","hook","approval"],"rows":5,"sortable":true,"binding":{"entity":"Song","fields":[{"name":"title","annotation":"str","kind":"text","required":true},{"name":"bpm","annotation":"float | None","kind":"number","required":false},{"name":"bpm_method","annotation":"str | None","kind":"text","required":false},{"name":"hook","annotation":"HookWindow","kind":"object","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false}]}},{"type":"empty","message":"No songs attached.","action":"Attach a song"},{"type":"actions","items":[{"label":"Attach song","kind":"primary"}]}]},{"type":"region","title":"Kits","hint":"Generated packs, newest first.","children":[{"type":"table","entity":"Kit","fields":["name","status","approval","total_cost_cents","manifest_verified","created_at"],"rows":5,"binding":{"entity":"Kit","fields":[{"name":"name","annotation":"str","kind":"text","required":true},{"name":"status","annotation":"KitStatus","kind":"enum","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false},{"name":"total_cost_cents","annotation":"int","kind":"number","required":false},{"name":"manifest_verified","annotation":"bool | None","kind":"bool","required":false},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true}]}},{"type":"actions","items":[{"label":"Generate kit","kind":"primary"}]}]}]}},{"id":"identity","title":"Identity builder","route":"/artists/{artist_id}/identity","entity":"Identity","nav":{"group":"roster","order":3},"purpose":"Build the artist's reusable on-screen identity once. Editing mints a version; adding evidence does not.","body":{"type":"col","gap":"loose","children":[{"type":"banner","tone":"warn","source":"Version notice \u2014 kits already generated stay bound to the version that produced them","note":"Losing the description a run was generated against makes that run unreproducible."},{"type":"row","weights":[1,1],"gap":"base","children":[{"type":"region","title":"Description","hint":"Text the generator receives before every shot prompt.","children":[{"type":"form","entity":"Identity","fields":["structural_features","wardrobe","negatives"],"submit":"Save as new version","layout":"stacked","binding":{"entity":"Identity","fields":[{"name":"structural_features","annotation":"str | None","kind":"text","required":false},{"name":"wardrobe","annotation":"list[str]","kind":"list","required":false},{"name":"negatives","annotation":"list[str]","kind":"list","required":false}]}}]},{"type":"region","title":"Composed prompt","hint":"What a provider will actually receive, assembled from the fields on the left.","children":[{"type":"text","lines":4,"label":"identity fragment + shot prompt"},{"type":"text","lines":2,"label":"negative prompt"},{"type":"banner","tone":"gap","source":"Contradiction check between the identity fragment and the shot prompt","note":"A prompt that describes a face and then asks for an empty centre frame resolves as one or the other. Surfacing the assembled string is how that gets caught before it is bought."}]}]},{"type":"region","title":"Reference frames","hint":"The image half of the identity. One frame per lighting setup, plus accepted stills.","children":[{"type":"gallery","count":8,"ratio":"3:4","caption":"Reference frame \u2014 lighting setup, framing, content hash","note":"The domain model carries these and nothing can currently create one. This is the surface that closes that gap."},{"type":"form","entity":"ReferenceFrame","fields":["lighting","caption"],"submit":"Upload frame","layout":"two-up","binding":{"entity":"ReferenceFrame","fields":[{"name":"lighting","annotation":"str","kind":"text","required":false},{"name":"caption","annotation":"str | None","kind":"text","required":false}]}},{"type":"empty","message":"No reference frames. The identity is text-only until frames are added.","action":"Upload the first frame"}]},{"type":"region","title":"Version history","children":[{"type":"table","entity":"Identity","fields":["version","structural_features","approval","created_at"],"rows":4,"binding":{"entity":"Identity","fields":[{"name":"version","annotation":"int","kind":"number","required":false},{"name":"structural_features","annotation":"str | None","kind":"text","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true}]}},{"type":"actions","items":[{"label":"Compare versions","kind":"secondary"},{"label":"Approve current","kind":"primary"}]}]}]}},{"id":"song","title":"Song","route":"/songs/{song_id}","entity":"Song","nav":{"group":"catalogue","order":1},"purpose":"One measured master. Measurement and hook window are set here once and reused by every kit.","body":{"type":"col","gap":"loose","children":[{"type":"row","weights":[1,1],"gap":"base","children":[{"type":"region","title":"Song","children":[{"type":"detail","entity":"Song","fields":["title","slug","isrc","spotify_url","approval","created_at"],"columns":2,"binding":{"entity":"Song","fields":[{"name":"title","annotation":"str","kind":"text","required":true},{"name":"slug","annotation":"str","kind":"text","required":true},{"name":"isrc","annotation":"str | None","kind":"text","required":false},{"name":"spotify_url","annotation":"str | None","kind":"text","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true}]}}]},{"type":"region","title":"Master","hint":"Owned masters only. Uploaded browser-to-bucket; the file never passes through the application.","children":[{"type":"media","kind":"waveform","ratio":"16:5","caption":"Uploaded master"},{"type":"detail","entity":"Song","fields":["master_key"],"columns":1,"binding":{"entity":"Song","fields":[{"name":"master_key","annotation":"str | None","kind":"text","required":false}]}},{"type":"actions","items":[{"label":"Upload master","kind":"primary"}]}]}]},{"type":"region","title":"Measurement","hint":"A tempo without a method is refused. The provenance of the number is part of the number.","children":[{"type":"form","entity":"Song","fields":["bpm","bpm_method","drop_ms"],"submit":"Save measurement","layout":"two-up","binding":{"entity":"Song","fields":[{"name":"bpm","annotation":"float | None","kind":"number","required":false},{"name":"bpm_method","annotation":"str | None","kind":"text","required":false},{"name":"drop_ms","annotation":"int | None","kind":"number","required":false}]}},{"type":"banner","tone":"gap","source":"Unmeasured state \u2014 this song cannot produce a hook-aligned kit yet","note":"Catalogue onboarding, not compute, is the throughput limit. This screen is where that cost is actually paid, so it should show progress rather than hide it."}]},{"type":"region","title":"Hook window","hint":"The one free lever. Drives loop length and travels into every manifest.","children":[{"type":"media","kind":"waveform","ratio":"16:4","caption":"Selectable hook region against the beat grid"},{"type":"form","entity":"HookWindow","fields":"auto","submit":"Set hook window","layout":"two-up","binding":{"entity":"HookWindow","fields":[{"name":"start_ms","annotation":"int","kind":"number","required":false},{"name":"end_ms","annotation":"int","kind":"number","required":false}]}}]},{"type":"region","title":"Kits from this song","children":[{"type":"table","entity":"Kit","fields":["name","status","approval","total_cost_cents","created_at"],"rows":4,"binding":{"entity":"Kit","fields":[{"name":"name","annotation":"str","kind":"text","required":true},{"name":"status","annotation":"KitStatus","kind":"enum","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false},{"name":"total_cost_cents","annotation":"int","kind":"number","required":false},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true}]}},{"type":"empty","message":"Nothing generated from this song yet.","action":"Generate a kit"}]}]}},{"id":"kit","title":"Kit","route":"/kits/{kit_id}","entity":"Kit","nav":{"group":"catalogue","order":2},"purpose":"One generated pack: what it cost, what it produced, whether its provenance holds, and whether a human has cleared it.","body":{"type":"col","gap":"loose","children":[{"type":"row","weights":[3,2],"gap":"base","children":[{"type":"region","title":"Kit","children":[{"type":"detail","entity":"Kit","fields":["name","status","run_id","created_at","updated_at"],"columns":2,"binding":{"entity":"Kit","fields":[{"name":"name","annotation":"str","kind":"text","required":true},{"name":"status","annotation":"KitStatus","kind":"enum","required":false},{"name":"run_id","annotation":"str | None","kind":"text","required":false},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"updated_at","annotation":"datetime","kind":"date","required":false,"inherited":true}]}},{"type":"detail","entity":"Kit","fields":["brief"],"columns":1,"note":"The brief the run was built from \u2014 shot count, identity version, requested modalities.","binding":{"entity":"Kit","fields":[{"name":"brief","annotation":"dict[str, Any]","kind":"map","required":false}]}}]},{"type":"region","title":"Review","hint":"A label does not auto-publish AI content about its own artists.","children":[{"type":"detail","entity":"Kit","fields":["approval"],"columns":1,"binding":{"entity":"Kit","fields":[{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false}]}},{"type":"actions","align":"left","items":[{"label":"Approve","kind":"primary"},{"label":"Send back to draft","kind":"secondary"},{"label":"Publish","kind":"primary"}]},{"type":"text","lines":2,"label":"Reviewer note"}]}]},{"type":"region","title":"Progress","hint":"Generation is minutes. This surface is polled, not streamed.","children":[{"type":"repeat","of":"Asset","count":4,"children":[{"type":"row","weights":[1,3,1],"children":[{"type":"text","lines":1,"label":"modality"},{"type":"text","lines":1,"label":"step state"},{"type":"text","lines":1,"label":"cost"}]}],"binding":{"entity":"Asset","fields":[{"name":"id","annotation":"str","kind":"text","required":false},{"name":"modality","annotation":"Modality","kind":"enum","required":true},{"name":"provider","annotation":"str","kind":"text","required":true},{"name":"model","annotation":"str","kind":"text","required":true},{"name":"prompt","annotation":"str | None","kind":"text","required":false},{"name":"key","annotation":"str | None","kind":"text","required":false},{"name":"url","annotation":"str | None","kind":"text","required":false},{"name":"sha256","annotation":"str | None","kind":"text","required":false},{"name":"cost_cents","annotation":"int","kind":"number","required":false},{"name":"params","annotation":"dict[str, Any]","kind":"map","required":false}]}},{"type":"banner","tone":"gap","source":"Failure state \u2014 error text from the run, shown in full"}]},{"type":"region","title":"Assets","hint":"Vertical loops and cards. Each downloadable with provenance embedded in the file.","children":[{"type":"gallery","count":6,"ratio":"9:16","caption":"Generated asset \u2014 provider, model, content hash"},{"type":"table","entity":"Asset","fields":["modality","provider","model","sha256","cost_cents"],"rows":5,"binding":{"entity":"Asset","fields":[{"name":"modality","annotation":"Modality","kind":"enum","required":true},{"name":"provider","annotation":"str","kind":"text","required":true},{"name":"model","annotation":"str","kind":"text","required":true},{"name":"sha256","annotation":"str | None","kind":"text","required":false},{"name":"cost_cents","annotation":"int","kind":"number","required":false}]}},{"type":"actions","items":[{"label":"Download all","kind":"primary"},{"label":"Copy manifest","kind":"secondary"}]}]},{"type":"region","title":"Cost","hint":"What the run actually cost, per step and in total.","children":[{"type":"stats","items":[{"label":"Total","source":"Kit.total_cost_cents"},{"label":"Per delivered asset","source":"total \u00f7 count of Asset"},{"label":"Estimated before run","source":"Kit.brief.estimate_cents"},{"label":"Variance","source":"actual \u2212 estimate"}]}]},{"type":"region","title":"Provenance","children":[{"type":"detail","entity":"Kit","fields":["manifest_key","manifest_verified","parent_run_id"],"columns":2,"binding":{"entity":"Kit","fields":[{"name":"manifest_key","annotation":"str | None","kind":"text","required":false},{"name":"manifest_verified","annotation":"bool | None","kind":"bool","required":false},{"name":"parent_run_id","annotation":"str | None","kind":"text","required":false}]}},{"type":"actions","items":[{"label":"Open in verifier","kind":"secondary"}]}]}]}},{"id":"catalogue","title":"Catalogue","route":"/catalogue","entity":"Song","nav":{"group":"catalogue","order":3},"purpose":"The label's actual daily job: what is missing. Which songs are unmeasured, which have no approved kit, whose consent is stale.","body":{"type":"col","gap":"loose","children":[{"type":"banner","tone":"info","source":"Scope of the current query \u2014 tenant, filters applied, records matched","note":"These are cross-collection questions. Answering them by scanning every record is what this screen must be built to avoid."},{"type":"stats","items":[{"label":"Songs without a measurement","source":"count where Song.bpm is null"},{"label":"Songs without a hook window","source":"count where HookWindow.duration_ms is 0"},{"label":"Songs with no approved kit","source":"count of Song with no Kit at approval=approved"},{"label":"Artists blocked on consent","source":"count where not consent.granted"}]},{"type":"region","title":"Gaps","hint":"One row per song, with each precondition shown as met or missing.","children":[{"type":"filters","entity":"Song","fields":["artist_id","approval","bpm"],"binding":{"entity":"Song","fields":[{"name":"artist_id","annotation":"str","kind":"text","required":true},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false},{"name":"bpm","annotation":"float | None","kind":"number","required":false}]}},{"type":"table","entity":"Song","fields":["title","artist_id","bpm","hook","approval"],"rows":8,"sortable":true,"note":"State reads as form, not only as text \u2014 a missing precondition should be visible without reading the cell.","binding":{"entity":"Song","fields":[{"name":"title","annotation":"str","kind":"text","required":true},{"name":"artist_id","annotation":"str","kind":"text","required":true},{"name":"bpm","annotation":"float | None","kind":"number","required":false},{"name":"hook","annotation":"HookWindow","kind":"object","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false}]}},{"type":"actions","align":"right","items":[{"label":"Export","kind":"secondary"},{"label":"Queue measurement","kind":"primary"}]}]},{"type":"region","title":"Spend","hint":"What generation has cost across the catalogue, and what remains available.","children":[{"type":"row","weights":[2,1],"children":[{"type":"media","kind":"image","ratio":"16:6","caption":"Cost over time, by modality"},{"type":"stats","items":[{"label":"Spent this month","source":"sum of Kit.total_cost_cents"},{"label":"Remaining budget","source":"tenant budget \u2212 spent"},{"label":"Most expensive kit","source":"max Kit.total_cost_cents"}]}]},{"type":"banner","tone":"warn","source":"Budget threshold \u2014 generation refused before enqueue once the cap is reached","note":"A cap enforced before the job is queued is the only place refusing is free."}]}]}},{"id":"generate","title":"Generate a kit","route":"/artists/{artist_id}/songs/{song_id}/generate","entity":"Kit","nav":{"group":"catalogue","order":4},"purpose":"The one screen that spends money. Everything on it exists to make the cost and the preconditions legible before the job is queued.","body":{"type":"col","gap":"loose","children":[{"type":"region","title":"Preconditions","hint":"Each is a hard gate. The screen refuses rather than queueing a job that will fail.","children":[{"type":"repeat","of":"Artist","count":4,"children":[{"type":"row","weights":[1,4],"children":[{"type":"text","lines":1,"label":"state"},{"type":"text","lines":1,"label":"precondition \u2014 consent, identity, measurement, hook window"}]}],"binding":{"entity":"Artist","fields":[{"name":"tenant_id","annotation":"str","kind":"text","required":true,"inherited":true},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"updated_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"id","annotation":"str","kind":"text","required":false},{"name":"slug","annotation":"str","kind":"text","required":true},{"name":"name","annotation":"str","kind":"text","required":true},{"name":"bio","annotation":"str | None","kind":"text","required":false},{"name":"links","annotation":"dict[str, str]","kind":"map","required":false},{"name":"consent","annotation":"LikenessConsent","kind":"object","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false}]}},{"type":"banner","tone":"gap","source":"Unmet precondition, naming the screen that fixes it"}]},{"type":"row","weights":[1,1],"gap":"base","children":[{"type":"region","title":"Brief","children":[{"type":"form","entity":"Kit","fields":["name"],"submit":"","layout":"stacked","binding":{"entity":"Kit","fields":[{"name":"name","annotation":"str","kind":"text","required":true}]}},{"type":"text","lines":3,"label":"Shot plan \u2014 modality, count, mood spread"},{"type":"text","lines":2,"label":"Hook lines for lyric cards"}]},{"type":"region","title":"Estimate","hint":"Shown before the job is queued, not after the bill arrives.","children":[{"type":"stats","items":[{"label":"Shots","source":"count of ShotSpec in plan"},{"label":"Estimated cost","source":"sum of per-modality unit price"},{"label":"Reused from cache","source":"count of shots matching a prior content hash"},{"label":"Remaining budget","source":"tenant budget \u2212 spent"}],"note":"Reuse is a first-class line. A shot whose prompt, model and parameters already produced an asset should be shown as free before the run, not discovered afterwards."},{"type":"actions","align":"right","items":[{"label":"Queue generation","kind":"primary"},{"label":"Cancel","kind":"secondary"}]}]}]},{"type":"region","title":"Preview","hint":"The assembled prompt for each shot, exactly as the provider will receive it.","children":[{"type":"repeat","of":"Asset","count":3,"children":[{"type":"text","lines":2,"label":"identity fragment + shot prompt + negative prompt"}],"binding":{"entity":"Asset","fields":[{"name":"id","annotation":"str","kind":"text","required":false},{"name":"modality","annotation":"Modality","kind":"enum","required":true},{"name":"provider","annotation":"str","kind":"text","required":true},{"name":"model","annotation":"str","kind":"text","required":true},{"name":"prompt","annotation":"str | None","kind":"text","required":false},{"name":"key","annotation":"str | None","kind":"text","required":false},{"name":"url","annotation":"str | None","kind":"text","required":false},{"name":"sha256","annotation":"str | None","kind":"text","required":false},{"name":"cost_cents","annotation":"int","kind":"number","required":false},{"name":"params","annotation":"dict[str, Any]","kind":"map","required":false}]}},{"type":"slot","name":"craft-toolchain","reason":"Where a format-driven shot plan would replace a fixed mood list. Unresolved by design \u2014 the decision is upstream of this wireframe."}]}]}},{"id":"verify","title":"Verifier","route":"/verify","entity":"Asset","nav":{"group":"provenance","order":1},"purpose":"Drop in a file, read back what made it. Nothing is looked up \u2014 the answer comes out of the bytes.","body":{"type":"col","gap":"loose","children":[{"type":"region","title":"Check a file","hint":"Accepts a media file with an embedded manifest, or a manifest document on its own.","children":[{"type":"media","kind":"image","ratio":"16:5","caption":"Drop target"},{"type":"actions","items":[{"label":"Choose file","kind":"primary"}]}]},{"type":"region","title":"Result","children":[{"type":"row","weights":[1,2],"children":[{"type":"banner","tone":"ok","source":"Verdict \u2014 verified, unverified, or no provenance found"},{"type":"text","lines":2,"label":"What the verdict means, in plain terms"}]},{"type":"detail","entity":"Kit","fields":["run_id","manifest_key"],"columns":2,"binding":{"entity":"Kit","fields":[{"name":"run_id","annotation":"str | None","kind":"text","required":false},{"name":"manifest_key","annotation":"str | None","kind":"text","required":false}]}},{"type":"table","entity":"Asset","fields":["modality","provider","model","prompt"],"rows":4,"note":"One row per step in the run. This is the disclosure the file carries about itself.","binding":{"entity":"Asset","fields":[{"name":"modality","annotation":"Modality","kind":"enum","required":true},{"name":"provider","annotation":"str","kind":"text","required":true},{"name":"model","annotation":"str","kind":"text","required":true},{"name":"prompt","annotation":"str | None","kind":"text","required":false}]}}]},{"type":"region","title":"Absent provenance","hint":"The common case for a file that did not come from here. It is a finding, not an error.","children":[{"type":"empty","message":"No manifest found. This file carries no provenance.","action":"Check another file"}]}]}},{"id":"settings","title":"Deployment","route":"/settings","entity":"Kit","nav":{"group":"system","order":1},"purpose":"What this deployment actually is. A console on mock providers must be impossible to mistake for a live one.","body":{"type":"col","gap":"loose","children":[{"type":"region","title":"Backends","hint":"One row per swappable adapter, showing the selected implementation.","children":[{"type":"repeat","of":"Kit","count":4,"children":[{"type":"row","weights":[1,2,1],"children":[{"type":"text","lines":1,"label":"axis \u2014 storage, generator, queue, auth"},{"type":"text","lines":1,"label":"selected implementation"},{"type":"text","lines":1,"label":"state"}]}],"binding":{"entity":"Kit","fields":[{"name":"tenant_id","annotation":"str","kind":"text","required":true,"inherited":true},{"name":"created_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"updated_at","annotation":"datetime","kind":"date","required":false,"inherited":true},{"name":"id","annotation":"str","kind":"text","required":false},{"name":"artist_id","annotation":"str","kind":"text","required":true},{"name":"song_id","annotation":"str","kind":"text","required":true},{"name":"name","annotation":"str","kind":"text","required":true},{"name":"status","annotation":"KitStatus","kind":"enum","required":false},{"name":"approval","annotation":"ApprovalState","kind":"enum","required":false},{"name":"run_id","annotation":"str | None","kind":"text","required":false},{"name":"parent_run_id","annotation":"str | None","kind":"text","required":false},{"name":"manifest_key","annotation":"str | None","kind":"text","required":false},{"name":"manifest_verified","annotation":"bool | None","kind":"bool","required":false},{"name":"assets","annotation":"list[Asset]","kind":"object","required":false},{"name":"total_cost_cents","annotation":"int","kind":"number","required":false},{"name":"error","annotation":"str | None","kind":"text","required":false},{"name":"brief","annotation":"dict[str, Any]","kind":"map","required":false}]}},{"type":"banner","tone":"warn","source":"Active warnings from the deployment descriptor"}]},{"type":"region","title":"Tenant","hint":"Every record, object key and job payload is partitioned by this.","children":[{"type":"detail","entity":"Base","fields":"auto","columns":2,"binding":{"entity":"Base","fields":[{"name":"tenant_id","annotation":"str","kind":"text","required":true},{"name":"created_at","annotation":"datetime","kind":"date","required":false},{"name":"updated_at","annotation":"datetime","kind":"date","required":false}]}},{"type":"slot","name":"authentication","reason":"No sign-in surface is specified. Until one exists every caller resolves to the same tenant, and this screen should say so rather than imply otherwise."}]},{"type":"region","title":"Queue health","children":[{"type":"stats","items":[{"label":"Kits queued","source":"count where Kit.status is queued"},{"label":"Kits running","source":"count where Kit.status is running"},{"label":"Failed, last 24h","source":"count where Kit.status is failed"},{"label":"Dead-lettered","source":"depth of the dead-letter queue"}]},{"type":"table","entity":"Kit","fields":["name","status","error","updated_at"],"rows":4,"binding":{"entity":"Kit","fields":[{"name":"name","annotation":"str","kind":"text","required":true},{"name":"status","annotation":"KitStatus","kind":"enum","required":false},{"name":"error","annotation":"str | None","kind":"text","required":false},{"name":"updated_at","annotation":"datetime","kind":"date","required":false,"inherited":true}]}}]}]}}],"stats":{"screens":9,"entities":9,"nodes":146,"by_type":{"region":34,"text":15,"actions":13,"banner":11,"row":11,"detail":11,"col":9,"table":9,"stats":6,"form":6,"empty":5,"media":5,"repeat":4,"gallery":3,"filters":2,"slot":2}}}</script>
+<script>
+/* The renderer.
+ *
+ * One recursive walk over the resolved model. There is no per-screen code anywhere in
+ * this file and there must never be: every screen is data, and the only thing that
+ * varies between them is the tree they carry. Adding a screen touches no JavaScript.
+ *
+ * Adding a *primitive* touches exactly two places — a declaration in
+ * spec/primitives.json, so the build can validate it, and an entry in DRAW below, so
+ * it can be drawn. Nothing else in the system needs to know it exists.
+ */
+(function () {
+  "use strict";
+
+  var MODEL = JSON.parse(document.getElementById("model").textContent);
+  var state = {
+    view: MODEL.screens.length ? MODEL.screens[0].id : "ref:primitives",
+    annotations: true
+  };
+
+  /* -------------------------------------------------------------- dom helpers */
+  function el(tag, props) {
+    var node = document.createElement(tag);
+    props = props || {};
+    Object.keys(props).forEach(function (key) {
+      var value = props[key];
+      if (value === null || value === undefined || value === false) return;
+      if (key === "class") node.className = value;
+      else if (key === "text") node.textContent = value;
+      else if (key === "style") node.setAttribute("style", value);
+      else if (key.slice(0, 2) === "on") node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value === true ? "" : value);
+    });
+    for (var i = 2; i < arguments.length; i++) add(node, arguments[i]);
+    return node;
+  }
+
+  function add(parent, child) {
+    if (child === null || child === undefined || child === false) return;
+    if (Array.isArray(child)) { child.forEach(function (c) { add(parent, c); }); return; }
+    parent.appendChild(child.nodeType ? child : document.createTextNode(String(child)));
+  }
+
+  function bars(n, label) {
+    var rows = [];
+    for (var i = 0; i < (n || 1); i++) rows.push(el("div", { class: "bar" }));
+    return el("div", { class: "ph" },
+      label ? el("div", { class: "ph__label", text: label }) : null,
+      el("div", { class: "bars" }, rows));
+  }
+
+  function hatch(ratio, note) {
+    var parts = String(ratio || "16:9").split(":");
+    var pct = (Number(parts[1]) / Number(parts[0])) * 100;
+    return el("div", {
+      class: "hatch",
+      style: "aspect-ratio:" + parts[0] + "/" + parts[1] + ";min-height:" + Math.min(pct, 60) + "px"
+    }, note ? el("span", { class: "hatch__note", text: note }) : null);
+  }
+
+  function fieldsOf(node) { return node.binding ? node.binding.fields : []; }
+
+  /* -------------------------------------------------------------- primitives */
+  var DRAW = {
+    col: function (n) { return el("div", { class: "b b--col " + gap(n) }, kids(n)); },
+    row: function (n) {
+      var weights = n.weights || [];
+      var box = el("div", { class: "b b--row " + gap(n) });
+      (n.children || []).forEach(function (child, i) {
+        var wrapped = el("div", { class: "b", style: "flex:" + (weights[i] || 1) + " 1 0;min-width:0" }, draw(child));
+        box.appendChild(wrapped);
+      });
+      return box;
+    },
+    grid: function (n) {
+      return el("div", {
+        class: "b b--grid " + gap(n),
+        style: "grid-template-columns:repeat(auto-fit,minmax(" + (n.min || 200) + "px,1fr))"
+      }, kids(n));
+    },
+
+    region: function (n) {
+      return el("section", { class: "region" },
+        el("header", { class: "region__head" },
+          el("h2", { class: "region__title", text: n.title || "Region" }),
+          n.hint ? el("p", { class: "region__hint", text: n.hint }) : null),
+        el("div", { class: "region__body" }, kids(n)));
+    },
+
+    card: function (n) {
+      return el("div", { class: "card" },
+        n.title ? el("div", { class: "card__title", text: n.title }) : null,
+        el("div", { class: "card__body" }, kids(n)));
+    },
+
+    table: function (n) {
+      var fields = fieldsOf(n);
+      var head = el("tr", {}, fields.map(function (f) {
+        return el("th", {}, f.name, el("div", { class: "t__kind", text: f.kind }));
+      }));
+      var body = [];
+      for (var r = 0; r < (n.rows || 3); r++) {
+        body.push(el("tr", {}, fields.map(function (f) {
+          return el("td", {}, el("div", { class: "cell " + cellMod(f.kind) }));
+        })));
+      }
+      return el("div", { class: "tablewrap" },
+        el("table", { class: "t" }, el("thead", {}, head), el("tbody", {}, body)));
+    },
+
+    form: function (n) {
+      return el("div", { class: "b b--col gap-base" },
+        el("div", { class: "fields fields--" + (n.layout || "stacked") },
+          fieldsOf(n).map(function (f) {
+            return el("label", { class: "field" },
+              el("span", { class: "field__label" },
+                f.name,
+                f.required ? el("span", { class: "field__req", text: "required" }) : null,
+                el("span", { class: "field__type", text: f.kind })),
+              el("div", { class: "input input--" + f.kind }));
+          })),
+        n.submit ? el("div", { class: "actions" }, el("span", { class: "btn btn--primary", text: n.submit })) : null);
+    },
+
+    detail: function (n) {
+      return el("div", {
+        class: "detail",
+        style: "grid-template-columns:repeat(" + (n.columns || 2) + ",minmax(0,1fr))"
+      }, fieldsOf(n).map(function (f) {
+        return el("div", { class: "detail__row" },
+          el("span", { class: "detail__key", text: f.name }),
+          el("div", { class: "detail__val" }));
+      }));
+    },
+
+    repeat: function (n) {
+      var out = [el("div", { class: "repeat__mark", text: "repeats per " + (n.of || "record") + " — " + (n.count || 3) + " shown" })];
+      for (var i = 0; i < (n.count || 3); i++) out.push(kids(n));
+      return el("div", { class: "repeat" }, out);
+    },
+
+    gallery: function (n) {
+      var tiles = [];
+      for (var i = 0; i < (n.count || 4); i++) tiles.push(hatch(n.ratio || "9:16", n.ratio || null));
+      return el("div", { class: "b b--col gap-tight" },
+        el("div", { class: "gallery" }, tiles),
+        n.caption ? el("div", { class: "ph__label", text: n.caption }) : null);
+    },
+
+    media: function (n) { return hatch(n.ratio || "16:9", (n.kind || "media") + (n.caption ? " — " + n.caption : "")); },
+
+    stats: function (n) {
+      return el("div", { class: "stats" }, (n.items || []).map(function (item) {
+        return el("div", { class: "stat" },
+          el("div", { class: "stat__val" }),
+          el("div", { class: "stat__label", text: item.label }),
+          el("div", { class: "stat__src", text: item.source }));
+      }));
+    },
+
+    actions: function (n) {
+      return el("div", { class: "actions" + (n.align === "right" ? " actions--right" : "") },
+        (n.items || []).map(function (item) {
+          return el("span", { class: "btn" + (item.kind ? " btn--" + item.kind : ""), text: item.label });
+        }));
+    },
+
+    tabs: function (n) {
+      return el("div", { class: "b b--col gap-base" },
+        el("div", { class: "actions" }, (n.items || []).map(function (t, i) {
+          return el("span", { class: "btn" + (i === 0 ? " btn--primary" : ""), text: t.label });
+        })),
+        (n.items && n.items[0] ? (n.items[0].children || []).map(draw) : null));
+    },
+
+    filters: function (n) {
+      return el("div", { class: "actions" }, fieldsOf(n).map(function (f) {
+        return el("span", { class: "btn", text: f.name + " ▾" });
+      }));
+    },
+
+    banner: function (n) {
+      var tone = n.tone || "info";
+      return el("div", { class: "banner banner--" + tone },
+        el("div", { class: "banner__tone", text: tone }),
+        el("div", { class: "banner__src", text: n.source || "" }));
+    },
+
+    empty: function (n) {
+      return el("div", { class: "empty" },
+        el("div", { class: "empty__msg", text: n.message || "Nothing here yet." }),
+        n.action ? el("span", { class: "btn btn--primary", text: n.action }) : null);
+    },
+
+    text: function (n) { return bars(n.lines || 2, n.label); },
+
+    slot: function (n) {
+      return el("div", { class: "slot" },
+        el("div", { class: "slot__name", text: "unresolved — " + (n.name || "slot") }),
+        n.reason ? el("div", { class: "slot__reason", text: n.reason }) : null);
+    }
+  };
+
+  function gap(n) { return "gap-" + (n.gap || "base"); }
+  function kids(n) { return (n.children || []).map(draw); }
+  function cellMod(kind) {
+    if (kind === "number") return "cell--num";
+    if (kind === "enum") return "cell--enum";
+    if (kind === "bool") return "cell--bool";
+    return "";
+  }
+
+  /* -------------------------------------------------------------- the walk */
+  function draw(node) {
+    var render = DRAW[node.type];
+    if (!render) {
+      // The build rejects unknown primitives, so this only fires if the two files
+      // drift. Say which one is behind rather than rendering nothing.
+      return el("div", { class: "slot" },
+        el("div", { class: "slot__name", text: "no renderer for “" + node.type + "”" }),
+        el("div", { class: "slot__reason", text: "Declared in primitives.json but missing from DRAW in renderer.js." }));
+    }
+    var box = el("div", { class: "b" }, render(node));
+    var label = node.type + (node.binding ? " · " + node.binding.entity : "");
+    box.appendChild(el("span", { class: "tag", text: label }));
+    if (node.note) box.appendChild(el("div", { class: "note", text: node.note }));
+    return box;
+  }
+
+  /* -------------------------------------------------------------- views */
+  function screenView(screen) {
+    return el("div", {},
+      el("div", { class: "titleblock" },
+        el("div", { class: "titleblock__body" },
+          el("h1", { class: "titleblock__name", text: screen.title }),
+          screen.purpose ? el("p", { class: "titleblock__purpose", text: screen.purpose }) : null),
+        el("div", { class: "titleblock__meta" },
+          metaRow("route", screen.route),
+          metaRow("entity", screen.entity || "—"),
+          metaRow("spec", "spec/screens/" + screen.id + ".json"))),
+      el("div", { class: "sheet" }, draw(screen.body)));
+  }
+
+  function metaRow(key, value) {
+    return el("div", { class: "titleblock__row" },
+      el("span", { class: "titleblock__key", text: key }),
+      el("span", { class: "titleblock__val", text: value }));
+  }
+
+  function primitivesView() {
+    var names = Object.keys(MODEL.primitives).sort();
+    return el("div", {},
+      el("div", { class: "titleblock" },
+        el("div", { class: "titleblock__body" },
+          el("h1", { class: "titleblock__name", text: "Vocabulary" }),
+          el("p", { class: "titleblock__purpose", text: "Every block on every screen is one of these. The build refuses a node that names anything else, or that carries a prop its primitive does not declare." })),
+        el("div", { class: "titleblock__meta" },
+          metaRow("primitives", names.length),
+          metaRow("nodes drawn", MODEL.stats.nodes),
+          metaRow("spec", "spec/primitives.json"))),
+      el("div", { class: "sheet" },
+        el("div", { class: "ref" }, names.map(function (name) {
+          var p = MODEL.primitives[name];
+          var used = MODEL.stats.by_type[name] || 0;
+          return el("div", { class: "ref__item" },
+            el("div", { class: "ref__name", text: name }),
+            el("div", { class: "ref__summary", text: p.summary }),
+            el("div", { class: "ref__props", text: "props: " + Object.keys(p.props).join(", ") + "   ·   used " + used + "×" }));
+        }))));
+  }
+
+  function entitiesView() {
+    var names = Object.keys(MODEL.entities).sort();
+    return el("div", {},
+      el("div", { class: "titleblock" },
+        el("div", { class: "titleblock__body" },
+          el("h1", { class: "titleblock__name", text: "Model" }),
+          el("p", { class: "titleblock__purpose", text: "Read from the application's domain model at build time, not restated here. Every table, form and readout in this wireframe draws its fields from this registry, so a field added to the model appears on the screens that bind it." })),
+        el("div", { class: "titleblock__meta" },
+          metaRow("entities", MODEL.stats.entities),
+          metaRow("source", MODEL.meta.model_source),
+          metaRow("read via", "ast, not import"))),
+      el("div", { class: "sheet" },
+        el("div", { class: "ref" }, names.map(function (name) {
+          var e = MODEL.entities[name];
+          return el("div", { class: "ref__item" },
+            el("div", { class: "ref__name", text: name + (e.enum ? "  (enum)" : "") }),
+            e.enum
+              ? el("div", { class: "chips" }, (e.values || []).map(function (v) {
+                  return el("span", { class: "chip", text: v });
+                }))
+              : el("div", { class: "chips" }, e.fields.map(function (f) {
+                  var cls = "chip" + (f.required ? " chip--req" : "") + (f.inherited ? " chip--inh" : "");
+                  return el("span", { class: cls, text: f.name + " : " + f.kind });
+                })));
+        }))));
+  }
+
+  /* -------------------------------------------------------------- shell */
+  function rail() {
+    var nav = el("nav", { class: "rail" },
+      el("div", { class: "rail__mark" },
+        el("div", { class: "rail__product", text: MODEL.meta.product }),
+        el("div", { class: "rail__surface", text: MODEL.meta.surface + " · wireframe" })));
+
+    MODEL.meta.nav_groups.slice().sort(function (a, b) { return a.order - b.order; })
+      .forEach(function (group) {
+        var members = MODEL.screens.filter(function (s) { return s.nav.group === group.id; });
+        if (!members.length) return;
+        nav.appendChild(el("div", { class: "rail__group" },
+          el("div", { class: "rail__grouplabel", text: group.label }),
+          group.hint ? el("div", { class: "rail__grouphint", text: group.hint }) : null,
+          el("ul", { class: "rail__list" }, members.map(function (s) {
+            return el("li", {}, el("button", {
+              class: "rail__link",
+              "aria-current": state.view === s.id ? "true" : "false",
+              onclick: function () { go(s.id); }
+            }, s.title));
+          }))));
+      });
+
+    nav.appendChild(el("div", { class: "rail__group" },
+      el("div", { class: "rail__grouplabel", text: "Reference" }),
+      el("div", { class: "rail__grouphint", text: "The system this wireframe is generated from" }),
+      el("ul", { class: "rail__list" },
+        el("li", {}, el("button", {
+          class: "rail__link", "aria-current": state.view === "ref:primitives" ? "true" : "false",
+          onclick: function () { go("ref:primitives"); }
+        }, "Vocabulary")),
+        el("li", {}, el("button", {
+          class: "rail__link", "aria-current": state.view === "ref:entities" ? "true" : "false",
+          onclick: function () { go("ref:entities"); }
+        }, "Model")))));
+
+    nav.appendChild(el("div", { class: "rail__controls" },
+      el("button", {
+        class: "toggle", "aria-pressed": String(state.annotations),
+        onclick: function () { state.annotations = !state.annotations; render(); }
+      }, el("span", { class: "toggle__box" }), "Annotations"),
+      el("button", {
+        class: "toggle", "aria-pressed": String(document.documentElement.dataset.theme === "dark"),
+        onclick: function () {
+          var root = document.documentElement;
+          root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+          render();
+        }
+      }, el("span", { class: "toggle__box" }), "Dark"),
+      el("div", { class: "rail__grouphint", style: "margin-top:6px",
+        text: MODEL.stats.screens + " screens · " + MODEL.stats.nodes + " nodes · built " + MODEL.meta.generated })));
+
+    return nav;
+  }
+
+  function go(view) {
+    state.view = view;
+    if (history.replaceState) history.replaceState(null, "", "#" + view);
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  function body() {
+    if (state.view === "ref:primitives") return primitivesView();
+    if (state.view === "ref:entities") return entitiesView();
+    var screen = MODEL.screens.filter(function (s) { return s.id === state.view; })[0];
+    return screen ? screenView(screen) : primitivesView();
+  }
+
+  function render() {
+    document.documentElement.setAttribute("data-annotations", state.annotations ? "on" : "off");
+    var app = document.getElementById("app");
+    app.textContent = "";
+    app.appendChild(el("div", { class: "shell" }, rail(), el("main", { class: "main" }, body())));
+  }
+
+  var hash = window.location.hash.slice(1);
+  if (hash) state.view = decodeURIComponent(hash);
+  render();
+})();
+
+</script>
+</body>
+</html>

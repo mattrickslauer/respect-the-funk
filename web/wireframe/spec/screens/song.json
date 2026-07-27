@@ -1,0 +1,69 @@
+{
+  "id": "song",
+  "title": "Song",
+  "route": "/songs/{song_id}",
+  "entity": "Song",
+  "nav": { "group": "catalogue", "order": 1 },
+  "purpose": "One measured master. Measurement and hook window are set here once and reused by every kit.",
+  "body": {
+    "type": "col",
+    "gap": "loose",
+    "children": [
+      {
+        "type": "row",
+        "weights": [1, 1],
+        "gap": "base",
+        "children": [
+          {
+            "type": "region",
+            "title": "Song",
+            "children": [
+              { "type": "detail", "entity": "Song", "fields": ["title", "slug", "isrc", "spotify_url", "approval", "created_at"], "columns": 2 }
+            ]
+          },
+          {
+            "type": "region",
+            "title": "Master",
+            "hint": "Owned masters only. Uploaded browser-to-bucket; the file never passes through the application.",
+            "children": [
+              { "type": "media", "kind": "waveform", "ratio": "16:5", "caption": "Uploaded master" },
+              { "type": "detail", "entity": "Song", "fields": ["master_key"], "columns": 1 },
+              { "type": "actions", "items": [{ "label": "Upload master", "kind": "primary" }] }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "region",
+        "title": "Measurement",
+        "hint": "A tempo without a method is refused. The provenance of the number is part of the number.",
+        "children": [
+          { "type": "form", "entity": "Song", "fields": ["bpm", "bpm_method", "drop_ms"], "submit": "Save measurement", "layout": "two-up" },
+          {
+            "type": "banner",
+            "tone": "gap",
+            "source": "Unmeasured state — this song cannot produce a hook-aligned kit yet",
+            "note": "Catalogue onboarding, not compute, is the throughput limit. This screen is where that cost is actually paid, so it should show progress rather than hide it."
+          }
+        ]
+      },
+      {
+        "type": "region",
+        "title": "Hook window",
+        "hint": "The one free lever. Drives loop length and travels into every manifest.",
+        "children": [
+          { "type": "media", "kind": "waveform", "ratio": "16:4", "caption": "Selectable hook region against the beat grid" },
+          { "type": "form", "entity": "HookWindow", "fields": "auto", "submit": "Set hook window", "layout": "two-up" }
+        ]
+      },
+      {
+        "type": "region",
+        "title": "Kits from this song",
+        "children": [
+          { "type": "table", "entity": "Kit", "fields": ["name", "status", "approval", "total_cost_cents", "created_at"], "rows": 4 },
+          { "type": "empty", "message": "Nothing generated from this song yet.", "action": "Generate a kit" }
+        ]
+      }
+    ]
+  }
+}

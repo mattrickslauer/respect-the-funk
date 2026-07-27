@@ -3,17 +3,25 @@
 
     python3 make_icons.py && python3 diagram.py
 
-Two outputs, because PRODUCT.md narrowed the scope to one user role and the difference
+Three outputs, because PRODUCT.md narrowed the scope to one user role and the difference
 is most of the architecture:
 
-  architecture.pdf              THE ONE TO BUILD. Label-only scope: five services,
-                                one durable store, no database tier.
+  architecture.pdf              THE ONE TO BUILD, and the one that ships on Aug 3.
+                                Label-only scope: five services, one durable store,
+                                no database tier.
+  memory-branch.pdf             MEMORY-SPEC.md's branch, taken after Aug 3. Adds the
+                                CockroachDB memory tier the file above deliberately
+                                removed. Page 1 the system, page 2 the loop + economics.
   deferred-marketplace.pdf      The three-sided design, kept for when roles 2 and 3
                                 come back. Page 1 the system, page 2 the economics.
 
+`architecture.pdf` is not modified by the memory branch and must not be — infra/README.md
+derives "under $1/month idle" from having no database tier, and MEMORY-SPEC §8 commits to
+that architecture shipping unchanged. The branch is a third document, not an edit.
+
 The diagrams are generated rather than drawn so they cannot drift from the writeup: node
-labels carry the actual configuration (`minvCpus: 0`, `Function URL`, `Fargate Spot`),
-and changing the architecture means changing this file.
+labels carry the actual configuration (`minvCpus: 0`, `Function URL`, `Fargate Spot`,
+`VECTOR(1024)`), and changing the architecture means changing this file.
 
 Requires: graphviz on PATH (`brew install graphviz`), plus requirements.txt.
 """
@@ -26,6 +34,7 @@ from diagrams.aws.compute import Batch, Lambda
 from diagrams.aws.database import Aurora
 from diagrams.aws.integration import SQS, EventbridgeScheduler
 from diagrams.aws.management import Cloudwatch, ParameterStore
+from diagrams.aws.ml import Bedrock
 from diagrams.aws.network import CloudFront
 from diagrams.custom import Custom
 
@@ -37,6 +46,7 @@ GENBLAZE = str(A / "genblaze.png")
 GMI = str(A / "gmicloud.png")
 ELEVEN = str(A / "elevenlabs.png")
 WWW = str(A / "browser.png")
+CRDB = str(A / "cockroachdb.png")
 
 # Palette. Hot path is the one a viral release actually exercises; it is drawn heaviest
 # because the whole design is about keeping compute off it.
@@ -44,6 +54,12 @@ HOT = "#D32127"      # storage/CDN read path — thick, red
 ASYNC = "#7B61FF"    # queued work — dashed, purple
 DIRECT = "#0B7A4B"   # browser <-> B2 presigned, never through compute — dashed, green
 PLAIN = "#4A5568"
+
+# Memory branch only. Same logic as HOT above, applied to the thing THAT design is about:
+# the loop is drawn heaviest because a memory tier that is only ever read is a catalog.
+# Solid = retrieve (memory -> generation). Dashed = write back (result -> memory). Both
+# teal, because the point is that they are two halves of one cycle rather than two paths.
+MEM = "#0E7C86"
 
 # nodesep is the load-bearing number here. `diagrams` hangs the label *under* a
 # fixed-size icon, so a two-word label is far wider than the node graphviz is spacing,
@@ -111,6 +127,142 @@ def page_label_scope(out: Path) -> Path:
         label >> Edge(color=DIRECT, style="dashed", penwidth="2.5",
                       label="presigned PUT / GET\nnever transits compute",
                       constraint="false") >> kits
+
+    return out.with_suffix(".pdf")
+
+
+def page_memory_branch(out: Path) -> Path:
+    """MEMORY-SPEC.md's architecture: the same five services plus a memory tier.
+
+    Two things this picture has to say, or it is just the label-scope diagram with a
+    database bolted to the side:
+
+      1. CockroachDB holds *vectors and rows*, never bytes. B2 keeps every master,
+         reference frame and delivered asset exactly as before — so the presigned
+         browser<->B2 path survives untouched, and the new tier is not on the hot path.
+      2. The teal edges form a cycle. Solid retrieves memory before generating; dashed
+         writes the result back. A tier with only solid edges would be a catalog, which
+         is what infra/README.md correctly said a bucket could already do.
+    """
+    title = ("RemixKit on AWS — memory branch (MEMORY-SPEC.md)\n"
+             "CockroachDB is the memory tier · B2 still holds the bytes · the teal cycle is what is new")
+    with Diagram(title, filename=str(out), outformat="pdf", show=False,
+                 direction="TB", graph_attr={**GRAPH, "nodesep": "1.7", "ranksep": "1.25"},
+                 node_attr=NODE, edge_attr=EDGE):
+
+        label = Custom("Label\nthe only user", WWW)
+
+        with Cluster("AWS — scale-to-zero compute",
+                     graph_attr={**CLUSTER, "bgcolor": "#F0F7FF"}):
+            web = Lambda("① web · FastAPI\nWeb Adapter + Function URL")
+            q = SQS("② SQS jobs\nidempotent, keyed")
+            worker = Batch("③ generator · Fargate Spot\nGenblaze + ffmpeg, minvCpus: 0")
+            agent = Bedrock("④ Bedrock\nembeddings + agent runtime")
+            ssm = ParameterStore("⑤ SSM Parameters\nkeys")
+
+        with Cluster("CockroachDB — the memory tier (vectors + rows, never bytes)",
+                     graph_attr={**CLUSTER, "bgcolor": "#F5F0FF", "penwidth": "3"}):
+            ident = Custom("identity + negatives\nface VECTOR(512)", CRDB)
+            corpus = Custom("clip corpus\nmeaning VECTOR(1024)", CRDB)
+            eps = Custom("episodes + lessons\nevery attempt, kept", CRDB)
+            cat = Custom("artist · approval\nplain SQL joins — Q4", CRDB)
+
+        # The presigned browser<->B2 path is deliberately NOT drawn here, though it still
+        # exists unchanged. As an edge it spans the full height of the page, routes around
+        # every cluster, and out-shouts the teal cycle this page exists to show. The claim
+        # is load-bearing, so it moves into the cluster label; page_label_scope draws it.
+        with Cluster("Backblaze B2 — still the only durable store\n"
+                     "presigned browser ↔ B2, still never transits compute",
+                     graph_attr={**CLUSTER, "bgcolor": "#FFF5F5", "penwidth": "3"}):
+            artists = Custom("artists/{artist}/\nmasters + reference frames", B2)
+            kits = Custom("kits/{artist}/{song}/\nassets + embedded manifests", B2)
+
+        with Cluster("AI providers — via Genblaze",
+                     graph_attr={**CLUSTER, "bgcolor": "#FFFAF0"}):
+            gb = Custom("Genblaze Pipeline", GENBLAZE)
+            p1 = Custom("GMI Cloud\nvideo + image", GMI)
+            p2 = Custom("ElevenLabs\naudio", ELEVEN)
+
+        # ---- unchanged from the label-scope architecture --------------------
+        label >> Edge(color=PLAIN, label="HTTPS") >> web
+        web >> Edge(color=ASYNC, style="dashed", label="enqueue") >> q
+        q >> Edge(color=ASYNC, style="dashed") >> worker
+        worker >> Edge(color=PLAIN, style="dotted") >> ssm
+        artists >> Edge(color=PLAIN, style="dotted", label="masters + frames") >> worker
+        worker >> Edge(color=PLAIN) >> gb
+        gb >> Edge(color=PLAIN) >> [p1, p2]
+        worker >> Edge(color=HOT, penwidth="2.5", label="ObjectStorageSink") >> kits
+
+        # ---- retrieve: memory read BEFORE the model is called ---------------
+        # rights.source travels inside the ANN query rather than filtering its output.
+        # CLIP-SPEC rule 3 is a legal gate; a neighbour you may not publish is a trap,
+        # not a ranking problem.
+        corpus >> Edge(color=MEM, penwidth="3",
+                       label="Q1 / Q2 filtered ANN\nrights.source in the predicate") >> worker
+        ident >> Edge(color=MEM, penwidth="3",
+                      label="the mold\n+ learned negatives") >> worker
+
+        # ---- write back: the half that makes it memory ----------------------
+        worker >> Edge(color=MEM, style="dashed", penwidth="3",
+                       label="episode row\n+ Q3 likeness score") >> eps
+        label >> Edge(color=MEM, style="dashed", penwidth="2.5",
+                      label="human verdict", constraint="false") >> eps
+        eps >> Edge(color=MEM, style="dashed", penwidth="2.5",
+                    label="distil: repeated rejections\n→ identity_negative",
+                    constraint="false") >> ident
+
+        # ---- the agent ------------------------------------------------------
+        agent >> Edge(color=MEM, style="dotted", label="embeddings") >> corpus
+        label >> Edge(color=PLAIN, style="dotted", label="ask in English") >> agent
+        agent >> Edge(color=PLAIN, style="dotted", label="MCP server") >> cat
+
+    return out.with_suffix(".pdf")
+
+
+def page_memory_loop(out: Path) -> Path:
+    """The economics page, one layer up from page_economics.
+
+    That page amortises a generation bill across every fan. This one amortises an
+    onboarding cost across every video — and adds the claim that page could not make,
+    which is that the per-video cost *falls* rather than merely being spread.
+    """
+    title = ("The mold is the fixed cost — memory is what makes each pour cheaper\n"
+             "retrieve → generate → measure → judge → distil, and the cycle closes")
+    with Diagram(title, filename=str(out), outformat="pdf", show=False,
+                 direction="LR", graph_attr={**GRAPH, "ranksep": "2.2", "nodesep": "1.0"},
+                 node_attr=NODE, edge_attr=EDGE):
+
+        with Cluster("Once per ARTIST — the expensive step, paid at onboarding",
+                     graph_attr={**CLUSTER, "bgcolor": "#FFF5F5", "penwidth": "3"}):
+            shoot = Custom("reference frames\n5 setups + signed consent", B2)
+            mold = Custom("identity — the mold\nface VECTOR(512)", CRDB)
+            shoot >> Edge(color=PLAIN) >> mold
+
+        with Cluster("Once per VIDEO — and it gets cheaper each time",
+                     graph_attr={**CLUSTER, "bgcolor": "#F0FFF4", "penwidth": "3"}):
+            retrieve = Custom("retrieve\nmold + negatives + clips", CRDB)
+            gen = Batch("generate\nGenblaze · Fargate Spot")
+            measure = Bedrock("measure\ncheck_likeness — Q3")
+            judge = Custom("human verdict\napprove / reject", WWW)
+            retrieve >> Edge(color=MEM, penwidth="3") >> gen
+            gen >> Edge(color=PLAIN) >> measure
+            measure >> Edge(color=PLAIN) >> judge
+
+        with Cluster("What closes the cycle", graph_attr={**CLUSTER, "bgcolor": "#F5F0FF"}):
+            ep = Custom("episode\nprompt · score · verdict", CRDB)
+            distil = Custom("distil\n→ negatives + lessons", CRDB)
+            metric = Cloudwatch("attempts per approved still\nthe falsifiable metric")
+            ep >> Edge(color=MEM, style="dashed", penwidth="2.5") >> distil
+            ep >> Edge(color=PLAIN, style="dotted") >> metric
+
+        mold >> Edge(color=MEM, penwidth="3",
+                     label="amortised across\nevery video") >> retrieve
+        judge >> Edge(color=MEM, style="dashed", penwidth="3") >> ep
+
+        # The back-edge is the entire argument, so it is drawn even though it fights the
+        # left-to-right reading. constraint=false keeps it from dragging the ranks.
+        distil >> Edge(color=MEM, style="dashed", penwidth="3", constraint="false",
+                       label="next generation starts\nknowing what failed") >> retrieve
 
     return out.with_suffix(".pdf")
 
@@ -258,8 +410,13 @@ def main() -> None:
     tmp = HERE / ".build"
     tmp.mkdir(exist_ok=True)
 
-    # The one to build.
+    # The one to build, and the one that ships Aug 3. Not touched by the memory branch.
     bundle([page_label_scope(tmp / "00-label-scope")], HERE / "architecture.pdf")
+
+    # The branch taken after Aug 3 (MEMORY-SPEC.md). Adds the tier the file above drops.
+    bundle([page_memory_branch(tmp / "10-memory-branch"),
+            page_memory_loop(tmp / "11-memory-loop")],
+           HERE / "memory-branch.pdf")
 
     # Kept, not deleted — role 2 is sequenced, not cancelled (PRODUCT.md).
     bundle([page_system(tmp / "01-system"), page_economics(tmp / "02-economics")],

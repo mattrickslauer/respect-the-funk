@@ -30,7 +30,7 @@ variable "tags" {
 resource "aws_apigatewayv2_api" "this" {
   name          = "${var.name_prefix}-http"
   protocol_type = "HTTP"
-  description   = "RemixKit artist console. No authentication — see remixkit/auth/."
+  description   = "RemixKit artist console. Auth is in the app (RK_AUTH_BACKEND) — see remixkit/auth/."
 
   cors_configuration {
     allow_origins = ["*"]

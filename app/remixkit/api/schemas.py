@@ -12,6 +12,15 @@ from pydantic import BaseModel, Field
 from remixkit.domain.models import ApprovalState
 
 
+class RequestCodeIn(BaseModel):
+    email: str
+
+
+class VerifyCodeIn(BaseModel):
+    email: str
+    code: str
+
+
 class ArtistIn(BaseModel):
     name: str
     bio: str | None = None

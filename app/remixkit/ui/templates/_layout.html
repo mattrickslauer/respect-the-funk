@@ -24,6 +24,13 @@
       <a href="/">Roster</a>
       <a href="/verify">Verify</a>
       <a href="/docs">API</a>
+      {# `viewer` is the verified session cookie, injected by ui.routes._render, so this
+         cannot name someone whose token the next request would reject. Absent under
+         RK_AUTH_BACKEND=none, where there is nobody to name. #}
+      {% if viewer %}
+      <span class="whoami" title="{{ viewer.sub }}">{{ viewer.name }}</span>
+      <a href="/auth/logout">Sign out</a>
+      {% endif %}
     </nav>
   </div>
 </header>

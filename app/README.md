@@ -59,41 +59,81 @@ remixkit/
                        generator_genblaze · providers (mock | live) · mock_media
                        queue_inline · queue_sqs
   services/            artists · identities · songs · briefs · kits · delivery · verify
-  auth/                provider (Protocol) · anonymous  ← the seam; no auth today
+                       accounts  ← sign-in codes and sessions
+  auth/                provider (Protocol) · anonymous · otp
   api/v1.py            JSON API
   ui/                  Jinja + htmx components
   deps.py              the composition root — the only file that names an adapter
 ```
 
-Four axes, four environment variables:
+Five axes, five environment variables:
 
 | | dev default | production |
 |---|---|---|
 | `RK_STORAGE_BACKEND` | `local` | `b2` |
 | `RK_GENERATOR_BACKEND` | `mock` | `genblaze` |
 | `RK_QUEUE_BACKEND` | `inline` | `sqs` |
-| `RK_AUTH_BACKEND` | `none` | *(none today)* |
+| `RK_MAIL_BACKEND` | `console` | `zeptomail` |
+| `RK_AUTH_BACKEND` | `none` | `otp` |
 
 ---
 
-## Authentication: absent, and shaped
+## Authentication: passwordless email codes
 
-There is **no authentication**, per the current instruction. `AnonymousAuth` is a
-complete `AuthProvider` that admits everyone — not a stub that fails closed later.
+`RK_AUTH_BACKEND` selects a provider. `none` (the default) is `AnonymousAuth` — a
+complete implementation that admits everyone, so a fresh checkout has no login to get
+past. `otp` is the real one: a six-digit code by email, exchanged for a signed session.
 
-What is already paid for, because it is the expensive half to retrofit:
+```
+POST /api/v1/auth/request-code   {"email": "…"}          → emails a code
+POST /api/v1/auth/verify-code    {"email": …, "code": …} → {"token": "…"}
+GET  /api/v1/auth/me             Authorization: Bearer … → the principal
+```
 
-1. Every request resolves a `Principal` (`deps.current_principal`). No handler reads a
-   global or assumes a caller.
-2. Every document, object key, and job payload carries `tenant_id`, taken from that
-   principal. BUILD-SPEC §2b rule 6 calls multi-tenancy "near-impossible to retrofit".
+The console uses the same tokens through an httpOnly `rk_session` cookie set at
+`/auth/login`. One `AuthError` handler in `main.py` decides what a failure looks like:
+a browser is redirected to the login page with `?next=` preserved, an htmx request gets
+`HX-Redirect`, and a script gets 401 JSON. No route contains an auth branch.
 
-Adding auth is: write `auth/oidc.py`, return it from `deps._build_auth`. No service,
-route, template, or storage key changes shape. `Principal.can()` is the single place
-scope checks become real, and the call sites already exist.
+Turning it on:
 
-One guard: `RK_REQUIRE_AUTH=true` with `RK_AUTH_BACKEND=none` refuses to start.
-Shipping "no auth" is a decision; shipping it by accident is an incident.
+```bash
+RK_AUTH_BACKEND=otp
+RK_MAIL_BACKEND=zeptomail
+RK_ALLOWED_EMAILS=you@agfarms.dev,colleague@agfarms.dev   # this IS the user table
+RK_SESSION_SECRET=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')
+RK_ZEPTOMAIL_TOKEN=…                                      # = the SMTP password
+RK_MAIL_FROM=rtp@agfarms.dev                              # a verified ZeptoMail sender
+```
+
+Four choices worth knowing about, each with a defensible opposite — the reasoning is in
+`services/accounts.py`:
+
+* **Allowlist, no registration.** `RK_ALLOWED_EMAILS` decides who exists. It is checked
+  when a code is requested, when it is verified, *and* on every session read, so
+  removing someone ends their session at their next request rather than at its expiry.
+* **A refused address is told so**, rather than silently accepting. This leaks
+  membership, which is the right trade when the population is a handful of known
+  colleagues and the real failure is someone mistyping their own address.
+* **Sessions are stateless** — a signed token, not a row. So there is no revocation
+  before expiry; the TTL is a week, and the panic button is rotating
+  `RK_SESSION_SECRET`, which signs everyone out at once.
+* **Codes are stored hashed** (HMAC, keyed by email), single-use, ten-minute window,
+  five attempts, thirty-second resend floor.
+
+With no mailer configured the code goes to the server log and — *only* in `RK_ENV=dev` —
+back to the caller, so the whole flow is completable on a laptop with no credentials.
+Both conditions are required: either alone would be an authentication bypass on a
+misconfigured deployment.
+
+Two guards, both refusing to start rather than warning: `RK_REQUIRE_AUTH=true` with
+`RK_AUTH_BACKEND=none`, and `RK_REQUIRE_AUTH=true` with an empty `RK_SESSION_SECRET`
+(which would otherwise sign sessions with a key that changes every restart).
+
+What made this cheap: every request already resolved a `Principal`, and every document,
+object key, and job payload already carried its `tenant_id`. Adding auth was one
+provider, one service, one page, and one exception handler — no service, no existing
+template, and no storage key changed shape.
 
 ---
 

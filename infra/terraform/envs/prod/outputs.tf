@@ -1,6 +1,6 @@
 output "console_url" {
   value       = module.http_api.api_url
-  description = "The artist console. No authentication — see remixkit/auth/."
+  description = "The artist console. Sign-in is per RK_AUTH_BACKEND — see remixkit/auth/."
 }
 
 output "function_url" {

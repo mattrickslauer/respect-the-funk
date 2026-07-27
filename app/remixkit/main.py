@@ -10,21 +10,33 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from remixkit.api.v1 import router as api_router
+from remixkit.auth.provider import AuthError
 from remixkit.bootstrap import load_secrets
 from remixkit.deps import get_container
 from remixkit.services.errors import ServiceError
 from remixkit.settings import get_settings
-from remixkit.ui.routes import router as ui_router
+from remixkit.ui.routes import LOGIN_PATH, router as ui_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
 STATIC_DIR = Path(__file__).parent / "ui" / "static"
+
+
+def _wants_html(request: Request) -> bool:
+    """Is this a browser navigating, or a client calling the API?
+
+    `Accept` rather than the path, because `/docs` and `/healthz` are outside `/api` and
+    a `curl` against `/` should still get JSON rather than a login page it cannot use.
+    Browsers send `text/html` at the front of the list; `httpx` and `curl` do not.
+    """
+    return "text/html" in request.headers.get("accept", "")
 
 
 def create_app() -> FastAPI:
@@ -39,8 +51,10 @@ def create_app() -> FastAPI:
         description=(
             "Register an artist, build their identity once, attach songs, generate "
             "content designed to be imitated, and verify what came out.\n\n"
-            "**There is no authentication.** Every caller is the default tenant. See "
-            "`remixkit/auth/` for the seam this plugs into."
+            "Authentication is selected by `RK_AUTH_BACKEND`. With `otp`, sign in at "
+            "`POST /api/v1/auth/request-code` then `POST /api/v1/auth/verify-code`, and "
+            "send the returned token as `Authorization: Bearer <token>`. With `none` "
+            "(the default) every caller is the default tenant and no header is needed."
         ),
     )
 
@@ -53,6 +67,28 @@ def create_app() -> FastAPI:
         """A refusal is not a 500. JSON clients get a body; htmx callers get the
         component the UI routes already render for them."""
         return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+
+    @app.exception_handler(AuthError)
+    async def _auth_error(request: Request, exc: AuthError) -> Response:
+        """One raise, three correct answers — chosen by who is asking.
+
+        A person in a browser wants the login page, with the URL they were after
+        preserved so the sign-in lands them where they meant to go. An htmx fragment
+        request cannot be answered with a redirect (htmx would swap the login page into
+        a table cell), so it gets `HX-Redirect` and the browser navigates. A script
+        wants a 401 with a body it can read.
+
+        Doing this in one handler is why no route in the app has an auth branch in it.
+        """
+        if request.headers.get("hx-request") == "true":
+            return Response(status_code=204, headers={"HX-Redirect": LOGIN_PATH})
+        if _wants_html(request):
+            target = request.url.path
+            if request.url.query:
+                target = f"{target}?{request.url.query}"
+            suffix = "" if target == "/" else f"?next={quote(target, safe='')}"
+            return RedirectResponse(f"{LOGIN_PATH}{suffix}", status_code=303)
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
     @app.get("/healthz", tags=["ops"])
     def healthz():

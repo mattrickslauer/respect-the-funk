@@ -2,9 +2,16 @@
 
 Each test gets its own storage directory and its own container, so nothing leaks
 between tests through the module-level `lru_cache` on `get_container`.
+
+Nothing leaks in from the *developer* either — see `_hermetic_env`. A `Settings()` built
+with explicit keyword arguments still merges `app/.env` and `RK_*` from the environment
+for every field the test did not name, so without that fixture the suite's behaviour
+depends on whether the person running it happens to have auth turned on locally.
 """
 
 from __future__ import annotations
+
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,9 +21,25 @@ from remixkit.services.kits import JOB_TYPE
 from remixkit.settings import Settings, get_settings
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_env(monkeypatch):
+    """Strip ambient RemixKit configuration before any test builds `Settings`.
+
+    Autouse and unconditional: a test that reads the developer's `.env` passes or fails
+    for reasons that are invisible in the diff and absent from CI, which is the worst
+    shape a failure can have. Fields a test does not name now take their declared
+    defaults, everywhere.
+    """
+    for key in [k for k in os.environ if k.startswith("RK_")]:
+        monkeypatch.delenv(key, raising=False)
+
+
 @pytest.fixture
 def settings(tmp_path) -> Settings:
     return Settings(
+        # `_env_file=None` is the other half of `_hermetic_env`: it closes the file, as
+        # that closes the environment.
+        _env_file=None,
         env="dev",
         local_storage_dir=tmp_path / "data",
         storage_backend="local",

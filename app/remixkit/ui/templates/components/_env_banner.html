@@ -1,0 +1,15 @@
+{# What this process actually is.
+
+   A console running on mock providers must not be mistakable for one running against
+   GMI Cloud — for a hackathon judge, and for the label. So the warnings are rendered
+   at the top of every page rather than hidden behind a health endpoint. #}
+{% if env.warnings %}
+<div class="banner">
+  <div class="wrap banner-inner">
+    <span class="banner-tag">{{ env.env }}</span>
+    <ul>
+      {% for warning in env.warnings %}<li>{{ warning }}</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}

@@ -1,0 +1,41 @@
+{# Likeness rights.
+
+   PRODUCT.md gap #3, inverted for this use case. The `nate-test` build kept the
+   speaker's face out of all 22 frames because source rights were unknown. A label
+   generating content about its *own signed artists* wants the opposite: explicit,
+   auditable rights so the artist's face can be held invariant across a kit.
+
+   Withdrawal is as easy as granting, and it takes effect on the next kit rather than
+   retroactively — consent that cannot be revoked is not consent. #}
+<section class="panel" id="consent">
+  <div class="panel-head">
+    <h3>Likeness consent</h3>
+    <span class="badge {{ 'badge-approved' if artist.consent.granted else 'badge-blocked' }}">
+      {{ 'on file' if artist.consent.granted else 'missing' }}
+    </span>
+  </div>
+
+  <p class="small">
+    A kit holds this artist's face invariant across every shot. That needs recorded,
+    auditable rights — so generation is blocked until this is granted.
+  </p>
+
+  {% if artist.consent.granted %}
+    <dl class="kv">
+      <dt>Signed by</dt><dd>{{ artist.consent.signed_by or "—" }}</dd>
+      <dt>Recorded</dt><dd>{{ artist.consent.signed_at.strftime("%Y-%m-%d %H:%M UTC") if artist.consent.signed_at else "—" }}</dd>
+      {% if artist.consent.notes %}<dt>Notes</dt><dd>{{ artist.consent.notes }}</dd>{% endif %}
+    </dl>
+    <form hx-post="/ui/artists/{{ artist.id }}/consent" hx-target="#consent" hx-swap="outerHTML">
+      <input type="hidden" name="granted" value="false">
+      <button class="btn btn-danger btn-quiet" type="submit">Withdraw consent</button>
+    </form>
+  {% else %}
+    <form class="form" hx-post="/ui/artists/{{ artist.id }}/consent" hx-target="#consent" hx-swap="outerHTML">
+      <input type="hidden" name="granted" value="true">
+      <label>Signed by <input name="signed_by" required placeholder="Legal name on the release"></label>
+      <label>Notes <input name="notes" placeholder="Agreement reference, scope, expiry"></label>
+      <button class="btn btn-primary" type="submit">Record consent</button>
+    </form>
+  {% endif %}
+</section>

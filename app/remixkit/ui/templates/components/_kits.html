@@ -1,0 +1,38 @@
+{# Kits for this artist, plus the generate form. #}
+<section class="panel" id="kits">
+  <div class="panel-head"><h3>Kits</h3></div>
+  <p class="small">
+    A kit is one Genblaze run fanned out into a pack of templatable assets for one
+    release — vertical loops cut to the hook, lyric cards, an optional stinger. The
+    output is not the finished post; it is something a fan can obviously copy.
+  </p>
+
+  <div class="rows">
+    {% for kit in kits %}
+      {% include "components/_kit_row.html" %}
+    {% else %}
+      <p class="empty-line">No kits generated yet.</p>
+    {% endfor %}
+  </div>
+
+  {% if songs %}
+    <form class="form form-inline"
+          hx-post="/ui/kits"
+          hx-target="#kits"
+          hx-swap="outerHTML">
+      <input type="hidden" name="artist_id" value="{{ artist_id }}">
+      <label>Song
+        <select name="song_id" required>
+          {% for song in songs %}<option value="{{ song.id }}">{{ song.title }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Loops <input name="video_count" type="number" min="1" max="4" value="3"></label>
+      <label>Hook lines <span class="hint">one per line — each becomes a lyric card</span>
+        <textarea name="hook_lines" rows="2" placeholder="I've been losing sleep"></textarea>
+      </label>
+      <button class="btn btn-primary" type="submit">Generate kit</button>
+    </form>
+  {% else %}
+    <p class="empty-line">Attach a song before generating a kit.</p>
+  {% endif %}
+</section>

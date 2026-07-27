@@ -1,0 +1,49 @@
+{% extends "_layout.html" %}
+{% block title %}Verify — RemixKit{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">Provenance</p>
+  <h1>Verify an asset</h1>
+  <p class="lede">
+    Drop in any delivered asset or a manifest. This reads the Genblaze manifest —
+    from inside the media file where one is embedded — and checks its signature and
+    canonical hash against the recorded run.
+  </p>
+  <p class="small">
+    This is the whole disclosure argument in one operation: the record of which model
+    made a clip, from which prompt, for which release, travels inside the file. It
+    cannot be quietly stripped without this check failing.
+  </p>
+</section>
+
+<div class="split">
+  <div class="split-main">
+    <form class="panel form"
+          hx-post="/ui/verify"
+          hx-target="#report"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data">
+      <h3>Upload</h3>
+      <label>Asset or manifest <input type="file" name="file" required></label>
+      <button class="btn btn-primary" type="submit">Verify</button>
+    </form>
+    <div id="report">{% if report %}{% include "components/_verify_report.html" %}{% endif %}</div>
+  </div>
+  <aside class="split-side">
+    <section class="panel">
+      <div class="panel-head"><h3>What a pass means</h3></div>
+      <p class="small">
+        The manifest's signature and canonical hash match the run that produced it — so
+        the provider, model, and prompt recorded against this asset are the ones that
+        actually made it.
+      </p>
+      <p class="small">
+        A fail is not necessarily tampering. An asset re-encoded by a social platform
+        loses its embedded manifest, which is a known limit of embedding rather than
+        evidence of a forged claim.
+      </p>
+    </section>
+  </aside>
+</div>
+{% endblock %}

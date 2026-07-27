@@ -1,0 +1,13 @@
+{# The roster list. Returned whole by the create and delete routes, so the page and
+   the htmx response render from one definition. #}
+<div id="roster" class="grid">
+  {% for artist in artists %}
+    {% include "components/_artist_card.html" %}
+  {% else %}
+    <div class="empty">
+      <p>No artists yet.</p>
+      <p class="small">Register one to start. The artist is the entity everything else hangs off —
+        an identity, songs, and rights all belong to it.</p>
+    </div>
+  {% endfor %}
+</div>

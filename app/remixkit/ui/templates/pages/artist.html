@@ -1,0 +1,29 @@
+{% extends "_layout.html" %}
+{% block title %}{{ artist.name }} — RemixKit{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <p class="eyebrow"><a href="/">Roster</a> / {{ artist.slug }}</p>
+  <h1>{{ artist.name }}</h1>
+  {% if artist.bio %}<p class="lede">{{ artist.bio }}</p>{% endif %}
+  {% if artist.links %}
+    <p class="small links">
+      {% for label, url in artist.links.items() %}<a href="{{ url }}" rel="noopener">{{ label }}</a>{% endfor %}
+    </p>
+  {% endif %}
+</section>
+
+{# The order is the workflow: rights, then identity, then catalogue, then generation.
+   A label cannot skip a step by scrolling past it — generation is last because it is
+   the only one that spends money, and it is gated by the first. #}
+<div class="split">
+  <div class="split-main">
+    {% include "components/_identity.html" %}
+    {% include "components/_songs.html" %}
+    {% include "components/_kits.html" %}
+  </div>
+  <aside class="split-side">
+    {% include "components/_consent.html" %}
+  </aside>
+</div>
+{% endblock %}

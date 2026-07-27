@@ -1,0 +1,27 @@
+{# One song, with the hook window editable in place.
+
+   The hook window is Pillar 13's one supported free lever, so it is a first-class
+   control here rather than an advanced setting — it sets the loop length of every
+   video in the kit. #}
+<div class="row" id="song-{{ song.id }}">
+  <div class="row-main">
+    <h4>{{ song.title }}</h4>
+    <p class="small">
+      {% if song.bpm %}<strong>{{ song.bpm }} BPM</strong> — <span class="method">{{ song.bpm_method }}</span>
+      {% else %}<span class="unmeasured">Not measured</span>{% endif %}
+    </p>
+    {% if song.hook.duration_ms %}
+      <p class="small">Hook {{ "%.1f"|format(song.hook.start_ms / 1000) }}s → {{ "%.1f"|format(song.hook.end_ms / 1000) }}s
+        <span class="hint">({{ "%.1f"|format(song.hook.duration_ms / 1000) }}s loop)</span></p>
+    {% endif %}
+  </div>
+
+  <form class="form-inline tight"
+        hx-post="/ui/songs/{{ song.id }}/hook"
+        hx-target="#song-{{ song.id }}"
+        hx-swap="outerHTML">
+    <label>Hook start <span class="hint">ms</span><input name="start_ms" type="number" value="{{ song.hook.start_ms }}" required></label>
+    <label>end <span class="hint">ms</span><input name="end_ms" type="number" value="{{ song.hook.end_ms }}" required></label>
+    <button class="btn btn-quiet" type="submit">Set</button>
+  </form>
+</div>

@@ -65,3 +65,17 @@ Thumbs.db
 
 # Diagram build intermediates (infra/architecture.pdf is the committed deliverable).
 infra/.build/
+
+# ---------------------------------------------------------------- app
+app/.venv/
+app/.remixkit-data/
+app/**/__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# ---------------------------------------------------------------- terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+terraform.tfvars

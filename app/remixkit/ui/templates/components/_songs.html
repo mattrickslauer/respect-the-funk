@@ -1,0 +1,31 @@
+{# The artist's catalogue. #}
+<section class="panel" id="songs">
+  <div class="panel-head"><h3>Songs</h3></div>
+  <p class="small">
+    Measured once; the measurement is reused forever. A BPM is only accepted with the
+    method that produced it — the number without its provenance is how the real
+    bottleneck gets hidden instead of measured.
+  </p>
+
+  <div class="rows">
+    {% for song in songs %}
+      {% include "components/_song_row.html" %}
+    {% else %}
+      <p class="empty-line">No songs attached yet.</p>
+    {% endfor %}
+  </div>
+
+  <form class="form form-inline"
+        hx-post="/ui/artists/{{ artist_id }}/songs"
+        hx-target="#songs"
+        hx-swap="outerHTML"
+        hx-on::after-request="if(event.detail.successful) this.reset()">
+    <label>Title <input name="title" required placeholder="Losing Sleep"></label>
+    <label>BPM <input name="bpm" inputmode="decimal" placeholder="128"></label>
+    <label>Method <span class="hint">required if a BPM is given</span>
+      <input name="bpm_method" placeholder="measure_beat.py, onset autocorrelation, 4 bars from the drop">
+    </label>
+    <label>Spotify <input name="spotify_url" placeholder="https://open.spotify.com/track/…"></label>
+    <button class="btn btn-primary" type="submit">Attach song</button>
+  </form>
+</section>

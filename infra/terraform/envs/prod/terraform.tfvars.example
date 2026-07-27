@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+
+region    = "us-east-1"
+env       = "prod"
+tenant_id = "respect-the-funk"
+
+# The B2 bucket. Create it in the Backblaze console first — it is not managed here,
+# because Terraform destroying a bucket that holds every master and every kit is a
+# risk with no upside.
+b2_bucket = "remixkit-prod"

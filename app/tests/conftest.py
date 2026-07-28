@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from remixkit import deps
 from remixkit.domain.models import SectionRole
-from remixkit.ports.audio import AnalyzedSection, AudioAnalysis
+from remixkit.ports.audio import AnalyzedSection, AudioAnalysis, BarFeature
 from remixkit.services.analysis import JOB_TYPE as ANALYSIS_JOB_TYPE, AnalysisService
 from remixkit.services.errors import AnalysisUnavailable
 from remixkit.services.kits import JOB_TYPE
@@ -107,6 +107,39 @@ BEAT_MS = 480.0
 DROP_MS = 124_784
 
 
+BAR_MS = BEAT_MS * 4
+
+
+def _bars(count: int = 111) -> list[BarFeature]:
+    """A plausible per-bar curve for the fixture song.
+
+    Shaped rather than random: quiet and bright through the intro, bottom-heavy and tonal
+    through the choruses, near-silent under the breakdown, full from the drop on. The
+    console draws this, so a fixture of uniform bars would make every chart test pass
+    against a picture nobody would ship.
+    """
+    out: list[BarFeature] = []
+    for index in range(count):
+        at = index * BAR_MS
+        loud = at >= DROP_MS or 30_704 <= at < 61_424
+        gap = 61_424 <= at < DROP_MS
+        out.append(
+            BarFeature(
+                index=index,
+                start_ms=int(at),
+                sub=0.02 if gap else (0.46 if loud else 0.06),
+                low_mid=0.03 if gap else (0.28 if loud else 0.09),
+                presence=0.06 if gap else (0.17 if loud else 0.12),
+                air=0.04 if gap else (0.08 if loud else 0.07),
+                centroid_hz=2_600.0 if gap else (940.0 if loud else 1_800.0),
+                onsets=3.0 if gap else (12.0 if loud else 6.0),
+                rms_db=-12.3 if gap else (-4.8 if loud else -11.9),
+                tonal_mid=0.55 if gap else (0.72 if loud else 0.31),
+            )
+        )
+    return out
+
+
 def sample_analysis(**overrides) -> AudioAnalysis:
     fields = dict(
         method="fake: fixture measurement, not a real decode",
@@ -118,22 +151,55 @@ def sample_analysis(**overrides) -> AudioAnalysis:
         riser_beats=8,
         plateau_beats=28,
         bar_phase_confidence=0.83,
+        bars=_bars(),
+        # Short, but the same shape the adapter writes — the screens under test render
+        # this verbatim, so a fixture that skipped it would leave the panel untested.
+        sheet=(
+            "125.00 BPM · 4/4 assumed · 3:34.0 · 111 bars measured\n"
+            "The drop is at bar 65, 2:04.8 — confirmed as a bar line (83% of arrangement "
+            "changes agree).\n\nARRANGEMENT — bar numbers count from the measured downbeat\n"
+            "  bars      1–16  A  intro      0:00.0   30.7s\n"
+            "\nMEASURED BY  fake: fixture measurement, not a real decode"
+        ),
         sections=[
             AnalyzedSection(
                 role=SectionRole.INTRO, label="Intro 1", start_ms=0, end_ms=30_704,
                 beats=64, energy_low_band=6.1, energy_rms_db=-12.4,
+                bar_start=0, bar_end=16, segment_type="A",
+                band_mix=[0.18, 0.26, 0.35, 0.21], brightness_hz=1_800.0,
+                onset_density=6.0, tonal_mid=0.31,
+                evidence=["quiet (10%) and first in the track", "type A — this material appears once"],
+                entry="the track starts",
             ),
             AnalyzedSection(
                 role=SectionRole.CHORUS, label="Chorus 1", start_ms=30_704, end_ms=61_424,
                 beats=64, energy_low_band=54.2, energy_rms_db=-4.9,
+                bar_start=16, bar_end=32, segment_type="B",
+                band_mix=[0.46, 0.28, 0.17, 0.09], brightness_hz=940.0,
+                onset_density=12.0, tonal_mid=0.72,
+                evidence=["top energy tier — 95% of the track's 90th-percentile bar",
+                          "type B — the same material appears 2× here"],
+                entry="kick enters (+0.40 sub)",
             ),
             AnalyzedSection(
                 role=SectionRole.BREAKDOWN, label="Breakdown 1", start_ms=61_424,
                 end_ms=124_784, beats=132, energy_low_band=0.5, energy_rms_db=-12.3,
+                bar_start=32, bar_end=65, segment_type="C",
+                band_mix=[0.13, 0.20, 0.40, 0.27], brightness_hz=2_600.0,
+                onset_density=3.0, tonal_mid=0.55,
+                evidence=["quiet (1%) between two louder sections",
+                          "type C — this material appears once"],
+                entry="kick drops out (-0.44 sub)",
             ),
             AnalyzedSection(
                 role=SectionRole.DROP, label="Drop 1", start_ms=DROP_MS, end_ms=138_224,
                 beats=28, energy_low_band=58.8, energy_rms_db=-4.7,
+                bar_start=65, bar_end=72, segment_type="B", repeat_of="Chorus 1",
+                band_mix=[0.46, 0.28, 0.17, 0.09], brightness_hz=940.0,
+                onset_density=12.0, tonal_mid=0.72,
+                evidence=["starts at the measured kick re-entry",
+                          "type B — the same material appears 2× here"],
+                entry="kick enters (+0.44 sub)",
             ),
         ],
     )

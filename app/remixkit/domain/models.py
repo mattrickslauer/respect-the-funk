@@ -290,6 +290,15 @@ class SongSection(BaseModel):
     per-bar kick energy and loudness of this stretch, and they are what
     `services.recommendations` ranks on. A section a person drew by hand has neither, and
     therefore gets ranked on what *is* known about it rather than on a fabricated score.
+
+    The texture fields below carry the same rule one step further. `segment_type` says
+    which *other* sections are the same material, `evidence` says why this one is called
+    what it is called, and `band_mix`/`tonal_mid`/`brightness_hz`/`onset_density` say what
+    it is made of — which is the difference between a section a person can choose between
+    and a float they have to take on trust. All of them are `None` or empty on a
+    hand-drawn section for the same reason the energies are: the analyser is the only
+    thing that can know them, and inventing them would make a window somebody dragged look
+    like one somebody measured.
     """
 
     id: str = Field(default_factory=lambda: new_id("sec"))
@@ -306,6 +315,24 @@ class SongSection(BaseModel):
     energy_rms_db: float | None = None
     beats: int | None = None
 
+    # Where it sits on the bar grid — the unit a loop is allowed to be cut in.
+    bar_start: int | None = None
+    bar_end: int | None = None
+
+    # What it is made of. `band_mix` is sub / low-mid / presence / air as proportions of
+    # this section's energy; `tonal_mid` is the tonal share of the band a lead vocal sits
+    # in, and is a proxy rather than a vocal detector — see `ports.audio.BarFeature`.
+    band_mix: list[float] = Field(default_factory=list)
+    brightness_hz: float | None = None
+    onset_density: float | None = None
+    tonal_mid: float | None = None
+
+    # How it relates to the rest of the song, and why it is named what it is named.
+    segment_type: str | None = None
+    repeat_of: str | None = None
+    evidence: list[str] = Field(default_factory=list)
+    entry: str | None = None
+
     @property
     def duration_ms(self) -> int:
         return max(0, self.end_ms - self.start_ms)
@@ -321,6 +348,32 @@ class SongSection(BaseModel):
     @property
     def display_name(self) -> str:
         return self.label.strip() or self.role.value
+
+
+class SongBar(BaseModel):
+    """One bar of the measured song. The curve the console draws under the sections.
+
+    Stored per bar rather than summarised because a section boundary is an assertion about
+    a shape, and a screen that shows the boundary without the shape asks to be believed
+    instead of checked. A four-minute track is about 120 of these, which is a rounding
+    error next to the master they were measured from.
+    """
+
+    index: int
+    start_ms: int
+    sub: float
+    low_mid: float
+    presence: float
+    air: float
+    centroid_hz: float
+    onsets: float
+    rms_db: float
+    tonal_mid: float
+
+    @property
+    def total(self) -> float:
+        """Stacked height — the bar's energy on the shared scale the bands are on."""
+        return self.sub + self.low_mid + self.presence + self.air
 
 
 class SongAnalysis(BaseModel):
@@ -357,9 +410,21 @@ class SongAnalysis(BaseModel):
     bar_phase_confidence: float | None = None  # §2's residue test, as a fraction
     warnings: list[str] = Field(default_factory=list)
 
+    # The per-bar curve the sections were cut from, and the arrangement written out.
+    # `sheet` is assembled by the adapter from these numbers and nothing else — it is what
+    # gets handed to anything that reasons in language rather than in floats, and its
+    # whole value is that no model wrote a word of it. See `ports.audio`.
+    bars: list[SongBar] = Field(default_factory=list)
+    sheet: str | None = None
+
     @property
     def bar_ms(self) -> float | None:
         return self.beat_ms * 4 if self.beat_ms else None
+
+    @property
+    def peak_bar_energy(self) -> float:
+        """The tallest stacked bar, for a chart that needs a ceiling. Never zero."""
+        return max((bar.total for bar in self.bars), default=1.0) or 1.0
 
     @property
     def ran(self) -> bool:

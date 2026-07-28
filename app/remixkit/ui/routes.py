@@ -998,6 +998,23 @@ def ui_analysis_panel(
     return response
 
 
+@router.get("/ui/songs/{song_id}/arrangement", response_class=HTMLResponse)
+def ui_arrangement(request: Request, song_id: str, principal: CurrentPrincipal, songs: Songs):
+    """The picture of the song, re-read when a measurement lands.
+
+    Its own fragment rather than part of the analysis panel because the two live in
+    different columns and are different widths — the analysis is a sidebar summary, the
+    arrangement needs the full page to be legible at all. It listens for `rk:analysis-done`,
+    which the analysis poll fires when the job reaches a terminal state, so a measurement
+    finishing repaints the chart without the page being reloaded.
+    """
+    try:
+        song = songs.get(principal, song_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _render(request, "components/_arrangement.html", song=song)
+
+
 # ---------------------------------------------------------------- kit fragments
 @router.post("/ui/kits", response_class=HTMLResponse)
 def ui_create_kit(

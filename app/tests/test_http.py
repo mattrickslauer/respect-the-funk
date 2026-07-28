@@ -131,3 +131,41 @@ def test_artist_page_shows_the_consent_gate(client):
     assert "Likeness consent" in page.text
     assert "generation is blocked" in page.text
     assert "Identity" in page.text
+
+
+def test_the_artist_pages_forms_post_where_they_say_they_do(client):
+    """Every fragment route on this page was reachable; the page's own forms were not.
+
+    `artist.html` renders components that address their routes by `artist_id`, and the
+    handler passed only `artist` — so the markup went out with `hx-post="/ui/artists//
+    songs"`. Each fragment route had a passing test because those tests call the route
+    directly with an id, which is exactly the gap this closes: submit what the *page*
+    rendered, not what the route accepts.
+    """
+    import re
+
+    artist = client.post("/api/v1/artists", json={"name": "Nocturnal"}).json()
+    page = client.get(f"/console/artists/{artist['id']}").text
+
+    assert "/ui/artists//" not in page, "a form action with an empty path segment"
+
+    actions = re.findall(r'hx-post="(/ui/artists/[^"]+)"', page)
+    assert f"/ui/artists/{artist['id']}/songs" in actions
+    assert f"/ui/artists/{artist['id']}/identity" in actions
+
+    # And they are live, submitted exactly as the page addresses them.
+    assert client.post(
+        f"/ui/artists/{artist['id']}/songs", data={"title": "Losing Sleep"}
+    ).status_code == 200
+    assert client.post(
+        f"/ui/artists/{artist['id']}/identity", data={"structural_features": "sharp jaw"}
+    ).status_code == 200
+
+
+def test_the_artist_pages_kit_form_carries_its_artist(client):
+    """The hidden `artist_id` decides which kits the response lists back."""
+    artist = client.post("/api/v1/artists", json={"name": "Nocturnal"}).json()
+    # The generate form only renders once there is something to generate from.
+    client.post(f"/api/v1/artists/{artist['id']}/songs", json={"title": "Losing Sleep"})
+    page = client.get(f"/console/artists/{artist['id']}").text
+    assert f'name="artist_id" value="{artist["id"]}"' in page

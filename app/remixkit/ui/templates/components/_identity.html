@@ -18,6 +18,13 @@
     themselves — and why the second video costs a fraction of the first.
   </p>
 
+  {# The versioning rule travels with the form rather than sitting on one page that
+     happens to show it, because it is true wherever the form appears. #}
+  <p class="hint">
+    Saving creates a new version. Kits record the version they were built from, so an
+    edit in place would rewrite the provenance of kits already delivered.
+  </p>
+
   <form class="form"
         hx-post="/ui/artists/{{ artist_id }}/identity"
         hx-target="#identity"

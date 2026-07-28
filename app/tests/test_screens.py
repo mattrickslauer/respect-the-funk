@@ -155,6 +155,53 @@ def test_video_count_changes_the_estimate(client, song):
     assert one != four
 
 
+def test_what_is_priced_is_what_is_bought(client, container, principal, song):
+    """The screen's central claim, asserted end to end rather than per code path.
+
+    It was false: the page priced a lyric card built from the song title, and the queue
+    form submitted no `hook_lines` at all, so the kit that arrived had one shot fewer
+    than the table above the button. Both halves now read the same field.
+    """
+    import re
+
+    base = f"/console/artists/{song['artist_id']}/songs/{song['id']}/generate"
+    page = client.get(f"{base}?video_count=2&hook_lines=first+line%0Asecond+line").text
+
+    priced_rows = len(re.findall(r"<tr>\s*<td>\d+</td>", page))
+    shown = re.search(r'<p class="sha">\$([0-9.]+)</p>', page)
+    assert shown, "the estimate must be on the page to be compared against"
+
+    client.post(
+        "/ui/kits",
+        data={
+            "song_id": song["id"],
+            "artist_id": song["artist_id"],
+            "video_count": "2",
+            "hook_lines": "first line\nsecond line",
+        },
+    )
+    kit = container.kits.list(principal)[0]
+    assert kit.brief["shot_count"] == priced_rows
+    assert f"{kit.brief['estimate_cents'] / 100:.2f}" == shown.group(1)
+    # Two videos and one lyric card per hook line — the plan the table showed.
+    assert kit.brief["shot_count"] == 4
+
+
+def test_hook_lines_are_editable_and_default_to_the_title(client, song):
+    import re
+
+    def shot_rows(html: str) -> int:
+        return len(re.findall(r"<tr>\s*<td>\d+</td>", html))
+
+    base = f"/console/artists/{song['artist_id']}/songs/{song['id']}/generate"
+    first_load = client.get(base).text
+    assert 'name="hook_lines"' in first_load, "the field that decides the plan must be on the form"
+    assert shot_rows(first_load) == 4, "three videos and a lyric card from the title"
+
+    # An empty field is a real answer, not a missing one: two videos, no lyric cards.
+    assert shot_rows(client.get(f"{base}?video_count=2&hook_lines=").text) == 2
+
+
 def test_generate_is_blocked_without_consent(client):
     artist = client.post("/api/v1/artists", json={"name": "No Consent"}).json()
     song = client.post(
@@ -185,6 +232,36 @@ def test_identity_page_renders(client, artist):
     page = client.get(f"/console/artists/{artist['id']}/identity")
     assert page.status_code == 200
     assert "Reference frames" in page.text
+
+
+def test_the_identity_builder_carries_exactly_one_form_for_the_identity(client, artist):
+    """It carried two: a hand-rolled one, plus the component the save route returns.
+
+    They disagreed about the field format — the hand-rolled copy asked for wardrobe
+    "one per line" while `ui_save_identity` splits on commas, so a multi-line answer
+    was saved as a single item. One definition means they cannot disagree again.
+    """
+    page = client.get(f"/console/artists/{artist['id']}/identity").text
+
+    assert page.count('name="structural_features"') == 1
+    assert page.count('name="wardrobe"') == 1
+    assert "/ui/artists//" not in page, "a form action with an empty path segment"
+    assert f'hx-post="/ui/artists/{artist["id"]}/identity"' in page
+
+
+def test_the_builders_form_saves_multi_value_fields_as_written(client, container, principal, artist):
+    """The format the surviving form asks for is the format the handler parses."""
+    client.post(
+        f"/ui/artists/{artist['id']}/identity",
+        data={
+            "structural_features": "high cheekbones",
+            "wardrobe": "black leather jacket, silver chain",
+            "negatives": "extra fingers, warped face",
+        },
+    )
+    identity = container.identities.current(principal, artist["id"])
+    assert identity.wardrobe == ["black leather jacket", "silver chain"]
+    assert identity.negatives == ["extra fingers", "warped face"]
 
 
 def test_a_reference_frame_can_finally_be_uploaded(client, container, principal, artist):

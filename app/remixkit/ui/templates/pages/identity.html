@@ -33,37 +33,14 @@
 
 <div class="split">
   <div class="split-main">
-    <section class="panel">
-      <div class="panel-head">
-        <h3>Current identity</h3>
-        {% if identity %}<span class="version">v{{ identity.version }}</span>{% endif %}
-      </div>
+    {# One definition of the identity form, not two.
 
-      {# Saving creates a new version rather than editing in place: a kit records which
-         identity version it was generated from, so mutating one would silently rewrite
-         the provenance of every kit that already used it. #}
-      <p class="hint">
-        Saving creates a new version. Kits record the version they were built from, so
-        an edit in place would rewrite the provenance of kits already delivered.
-      </p>
-
-      <form class="form" hx-post="/ui/artists/{{ artist.id }}/identity"
-            hx-target="#identity" hx-swap="outerHTML">
-        <label>Structural features
-          <textarea name="structural_features" rows="3"
-            placeholder="Face structure held invariant across every shot">{{ identity.structural_features if identity else "" }}</textarea>
-        </label>
-        <label>Wardrobe <span class="hint">one per line</span>
-          <textarea name="wardrobe" rows="3">{{ identity.wardrobe|join("\n") if identity else "" }}</textarea>
-        </label>
-        <label>Negatives <span class="hint">one per line — what the model must not drift toward</span>
-          <textarea name="negatives" rows="3">{{ identity.negatives|join("\n") if identity else "" }}</textarea>
-        </label>
-        <button class="btn btn-primary" type="submit">Save as new version</button>
-      </form>
-
-      <div id="identity">{% include "components/_identity.html" %}</div>
-    </section>
+       This page used to hand-roll its own copy *and* include the component, so the
+       screen carried two forms for the same record — and the hand-rolled one asked for
+       wardrobe and negatives "one per line" while `ui_save_identity` splits on commas,
+       so a three-line answer was saved as a single item. The component is the form the
+       fragment route returns after a save, so it is the one that has to be right. #}
+    {% include "components/_identity.html" %}
 
     <section class="panel">
       <div class="panel-head"><h3>Reference frames</h3></div>

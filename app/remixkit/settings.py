@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     queue_backend: Literal["inline", "sqs"] = "inline"
     auth_backend: Literal["none", "otp"] = "none"
     mail_backend: Literal["console", "zeptomail"] = "console"
+    # There is no `mock` here on purpose. Every other backend has a zero-credential adapter
+    # that does the real thing badly; a fake measurement is a float that nothing downstream
+    # could ever tell from a real one. `auto` uses numpy if it is installed and refuses
+    # with the missing piece named if it is not — see adapters/audio_unavailable.py.
+    analysis_backend: Literal["auto", "none"] = "auto"
 
     # A deployment that declares itself authenticated must not be served by
     # AnonymousAuth. Startup fails loudly rather than quietly admitting everyone.
@@ -107,6 +112,11 @@ class Settings(BaseSettings):
     # Kits are capped because provider latency and quota are the named Layer-1 risk
     # (BUILD-SPEC §12). Small kits fail fast and cost little.
     max_shots_per_kit: int = 8
+
+    # ---- analysis --------------------------------------------------------------
+    # How much of a master to measure. Ten minutes covers any single and bounds the cost
+    # of a full-track comb fit on a file somebody uploaded by mistake.
+    analysis_window_s: float = 600.0
 
     # ---- secrets ---------------------------------------------------------------
     # Where `bootstrap.load_secrets` fetches credentials from. Declared here rather than

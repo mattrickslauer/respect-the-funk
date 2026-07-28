@@ -61,20 +61,23 @@ rather than a refactor.
 
 ```
 remixkit/
-  domain/models.py     Artist · Identity · Song · Kit · Asset — pure, no I/O
+  domain/models.py     Artist · Identity · Song · SongSection · Kit · Asset — pure, no I/O
   ports/               Protocols: Storage · DocumentRepository · Generator · JobQueue
+                       · AudioAnalyzer
   adapters/            storage_local · storage_b2 · repo_documents
                        generator_genblaze · providers (mock | live) · mock_media
                        queue_inline · queue_sqs
+                       audio_numpy · audio_unavailable
   services/            artists · identities · songs · briefs · kits · delivery · verify
                        accounts  ← sign-in codes and sessions
+                       analysis  ← measure a master  ·  recommendations ← which hook
   auth/                provider (Protocol) · anonymous · otp
   api/v1.py            JSON API
   ui/                  Jinja + htmx components, plus pages/landing.html — the site
   deps.py              the composition root — the only file that names an adapter
 ```
 
-Five axes, five environment variables:
+Six axes, six environment variables:
 
 | | dev default | production |
 |---|---|---|
@@ -83,6 +86,81 @@ Five axes, five environment variables:
 | `RK_QUEUE_BACKEND` | `inline` | `sqs` |
 | `RK_MAIL_BACKEND` | `console` | `zeptomail` |
 | `RK_AUTH_BACKEND` | `none` | `otp` |
+| `RK_ANALYSIS_BACKEND` | `auto` | `auto` |
+
+`analysis` is the one axis with no mock, and the one whose "real" value is a package
+rather than a credential. See below.
+
+---
+
+## Songs have as many hooks as they have
+
+A song used to carry one `hook` window, which said every track has exactly one loopable
+moment. `Song.sections` replaces that: a list of named stretches — intro, verse, chorus,
+drop, breakdown — of which any tagged hook, chorus or drop can be cut to. A kit may be cut
+to several, and each loop is the length of *its own* window. The videos are dealt
+round-robin across the chosen hooks rather than multiplied by them, so ticking a second
+hook does not double the invoice without the video count being changed too.
+
+One window is still the *primary* hook, mirrored onto `song.hook`, and it is what a kit
+cuts to when its brief names no section. Setting it on the old form moves the section, so
+the two surfaces cannot disagree about what will render.
+
+**Every section records where its window came from.** `measured` carries the analyser's
+method line; `manual` means somebody drew it. Moving a measured window makes it manual and
+keeps the old method as history — a window a person dragged still reading "measured" would
+be the provenance rule defeated by the edit form.
+
+## Measuring the master
+
+Upload an MP3 or WAV on the song page and the structure is measured from the audio:
+tempo, the drop, the riser, the plateau, and the sections. The bytes go browser→bucket
+(§2b rule 2) and the measurement runs as a queued job (§2b rule 3), inline on a laptop and
+on Batch in the deployment — `python worker.py --song-id sng_…`.
+
+The methods are not new. `content/RHYTHM-STUDY.md` measured one song to death and recorded
+which approaches work on this material and which do not, and `adapters/audio_numpy.py` is
+a port of the two tools that study validated:
+
+| | how, and why not the standard move |
+|---|---|
+| tempo | joint tempo+phase comb fit. Autocorrelation alone gives a good period and a phase that wanders. |
+| drop | largest positive step in sub-200 Hz energy. Foote checkerboard novelty ranked the study's measured drop 8th–79th, never 1st — a drop is a *re-entry*, which a checkerboard scores low. |
+| bar line | the residue mod 4 of the largest arrangement changes. On four-on-the-floor an accent comb has no signal: four phases within 5–9%, disagreeing about the winner. |
+| section end | the first bar whose kick falls past 3× the typical bar-to-bar movement. A mastered drop is limited, so RMS barely moves at a boundary while the low band falls off a cliff. |
+
+`tests/test_audio_numpy.py` runs it against the study's own master and asserts the study's
+own published numbers — 125 BPM, the drop at 124784 ms, an 8-beat riser, a 28-beat
+plateau, 5 of 6 changes sharing a residue. A port that does not reproduce the original's
+findings on the original's material is a different algorithm wearing its docstrings.
+
+**There is no mock analyser, and that asymmetry is deliberate.** Every other adapter has a
+zero-credential version that does the real thing badly; a mocked measurement is a float
+that nothing downstream — not the console, not a kit brief, not a person reading the song
+six months later — could distinguish from a measured one. So a process without numpy
+refuses and names what is missing, on the song page and in the `/healthz` warnings.
+
+```bash
+pip install -e '.[audio]'     # numpy; ffmpeg on PATH for anything but a WAV
+```
+
+## Recommendations, and what they are not
+
+The song page ranks the hooks and says why. It is **not** a predictor of what performs —
+BUILD-SPEC §7 lists that under what this project deliberately does not build, and nothing
+in `services/recommendations.py` came from a model.
+
+It is RHYTHM-STUDY §9's candidate rules, which that study wrote down and noted are "none of
+these is enforced today", applied to a measured song: a loop starts on a bar line, spans a
+whole number of bars, fits inside the measured plateau, and lands in the 3–10 s window the
+renderer will actually cut. Each rule reports pass, fail, or **not checkable** — the third
+state matters, because rendering "no measurement for this rule" as a failure sends someone
+to fix a window that may well be right.
+
+Every card carries its basis: the measurement the recommendation rests on. A song with
+nothing measured gets the list of what is missing instead of a ranking of guesses, and
+there is no weighted total anywhere — a single score would read as a quality judgement,
+which is exactly the claim §5 shows this material cannot support.
 
 ---
 

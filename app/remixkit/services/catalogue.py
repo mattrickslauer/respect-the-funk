@@ -137,7 +137,9 @@ class CatalogueService:
             song=song,
             artist=artist,
             measured=song.bpm is not None and bool(song.bpm_method),
-            has_hook=song.hook.duration_ms > 0,
+            # Either shape counts: the primary window, or a marked loopable section. A
+            # song whose hooks are all in the sections list is not missing a hook.
+            has_hook=song.has_hook,
             has_master=bool(song.master_key),
             # No artist record is treated as blocked rather than fine. A song whose
             # artist cannot be read is not a song anyone should generate from.

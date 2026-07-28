@@ -52,9 +52,13 @@
 
     <section class="panel">
       <div class="panel-head"><h3>Hook window</h3></div>
+      {# The primary hook — the window a kit cuts to when its brief names no section. It
+         is the same record as the section marked "hook of record" below: setting it here
+         moves that section, so the two surfaces cannot disagree about what a kit will
+         render. #}
       <p class="hint">
-        The loop length every kit cuts to. A loop that is not the length of the hook is
-        a loop a fan cannot cut to.
+        The loop length a kit cuts to by default. A loop that is not the length of the
+        hook is a loop a fan cannot cut to. Songs with several hooks mark them as sections.
       </p>
       <form class="form-inline" hx-post="/ui/songs/{{ song.id }}/hook-window"
             hx-target="#song-hook" hx-swap="outerHTML">
@@ -64,6 +68,8 @@
       </form>
       <div id="song-hook">{% include "components/_hook.html" %}</div>
     </section>
+
+    {% include "components/_hooks.html" %}
 
     <section class="panel">
       <div class="panel-head">
@@ -94,21 +100,11 @@
       </dl>
     </section>
 
-    <section class="panel">
-      <div class="panel-head"><h3>Master</h3></div>
-      {# Owned masters only, and the bytes never pass through the application — the
-         browser is presigned straight to the bucket (BUILD-SPEC §2b rule 2). That is
-         also why a 6 MB Lambda response limit is not a constraint on audio. #}
-      <p class="hint">
-        Owned masters only. Uploaded browser-to-bucket; the file never passes through
-        the application.
-      </p>
-      {% if song.master_key %}
-        <p class="small">Stored at <code class="sha">{{ song.master_key }}</code></p>
-      {% else %}
-        <p class="empty">No master uploaded.</p>
-      {% endif %}
-    </section>
+    {# Owned masters only, and the bytes never pass through the application — the browser
+       is presigned straight to the bucket (BUILD-SPEC §2b rule 2). That is also why a
+       6 MB Lambda response limit is not a constraint on audio. #}
+    {% include "components/_master.html" %}
+    {% include "components/_analysis.html" %}
   </aside>
 </div>
 {% endblock %}

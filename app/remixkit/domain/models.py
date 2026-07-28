@@ -64,6 +64,56 @@ class Modality(str, Enum):
     AUDIO = "audio"
 
 
+class SectionRole(str, Enum):
+    """What a stretch of the song is, in the vocabulary a label already speaks.
+
+    Three of these — `drop`, `chorus`, `breakdown` — are also what the analyser emits,
+    and it is worth being exact about what that emission is: an **energy tier**, not a
+    lyric- or structure-aware classification. `adapters.audio_numpy` measures kick energy
+    per bar and names the tiers; it does not know a chorus from a post-chorus and does not
+    claim to. The label is a suggestion a person may rename in one click; the numbers
+    under it — start, end, bars, low-band energy — are measured and carry their method.
+    """
+
+    INTRO = "intro"
+    VERSE = "verse"
+    PRE_CHORUS = "pre-chorus"
+    CHORUS = "chorus"
+    HOOK = "hook"
+    DROP = "drop"
+    BRIDGE = "bridge"
+    BREAKDOWN = "breakdown"
+    OUTRO = "outro"
+
+    @property
+    def is_hook_material(self) -> bool:
+        """Which roles a kit may cut a loop to.
+
+        A verse is a legitimate thing to mark and a poor thing to loop, so the roles are
+        split rather than the list being filtered by hand at every call site.
+        """
+        return self in (SectionRole.HOOK, SectionRole.CHORUS, SectionRole.DROP)
+
+
+class Provenance(str, Enum):
+    """Where a number came from. There is no third option, and that is the point.
+
+    Every measured quantity in this model is stored next to one of these plus a method
+    string. `MEASURED` without a method is refused in `services.songs`, for the same
+    reason a BPM is: a number whose origin is not recorded is a number nobody can check.
+    """
+
+    MANUAL = "manual"      # a person typed it
+    MEASURED = "measured"  # a tool produced it, and `method` says which and how
+
+
+class AnalysisStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
 class Base(BaseModel):
     """Everything is a tenant-scoped document with a creation stamp."""
 
@@ -210,7 +260,13 @@ class Identity(Base):
 
 
 class HookWindow(BaseModel):
-    """Pillar 13's one free lever, made a first-class input rather than an afterthought."""
+    """Pillar 13's one free lever, made a first-class input rather than an afterthought.
+
+    Retained now that `Song.sections` exists, because it is the *primary* hook — the one
+    window a kit cuts to when the brief names no section — and because every song already
+    stored in a bucket has one. `SongService.set_primary_section` keeps it identical to
+    the primary section's window, so the two can never disagree about what a kit will do.
+    """
 
     start_ms: int = 0
     end_ms: int = 0
@@ -220,11 +276,103 @@ class HookWindow(BaseModel):
         return max(0, self.end_ms - self.start_ms)
 
 
+class SongSection(BaseModel):
+    """One named stretch of the song. A song has many; several may be hooks.
+
+    A single `hook` window said a song has exactly one loopable moment, which is false of
+    every song with a chorus that comes back. The sections list is the fix, and it carries
+    the same discipline the BPM does: a section whose numbers came from the analyser
+    records `Provenance.MEASURED` and the method that produced it, and one a person typed
+    records `MANUAL`. A window with no stated origin is how a guess gets promoted to a
+    measurement between one screen and the next.
+
+    `energy_low_band` and `energy_rms_db` are only ever set by the analyser — they are the
+    per-bar kick energy and loudness of this stretch, and they are what
+    `services.recommendations` ranks on. A section a person drew by hand has neither, and
+    therefore gets ranked on what *is* known about it rather than on a fabricated score.
+    """
+
+    id: str = Field(default_factory=lambda: new_id("sec"))
+    role: SectionRole = SectionRole.HOOK
+    label: str = ""
+    start_ms: int = 0
+    end_ms: int = 0
+    source: Provenance = Provenance.MANUAL
+    method: str | None = None
+    notes: str | None = None
+
+    # Measured features. None on a hand-drawn section, and nothing invents them.
+    energy_low_band: float | None = None
+    energy_rms_db: float | None = None
+    beats: int | None = None
+
+    @property
+    def duration_ms(self) -> int:
+        return max(0, self.end_ms - self.start_ms)
+
+    @property
+    def window(self) -> HookWindow:
+        return HookWindow(start_ms=self.start_ms, end_ms=self.end_ms)
+
+    @property
+    def is_hook_material(self) -> bool:
+        return self.role.is_hook_material
+
+    @property
+    def display_name(self) -> str:
+        return self.label.strip() or self.role.value
+
+
+class SongAnalysis(BaseModel):
+    """What an analyser found in the master, and how.
+
+    Stored on the song rather than in a side collection because it is a property *of* the
+    song and is read on every screen that shows one — and because a measurement whose
+    method has to be joined in from somewhere else is a measurement the UI will eventually
+    render without it.
+
+    `status` is here for the same reason `KitStatus` is on a kit: analysis is a queued job
+    (§2b rule 3), so there is a window in which the song is being measured and the console
+    must be able to say so instead of showing an empty panel.
+    """
+
+    status: AnalysisStatus = AnalysisStatus.QUEUED
+    analyzer: str | None = None       # which adapter ran
+    method: str | None = None         # the one-line description of how, verbatim from it
+    source_key: str | None = None     # which master was analysed
+    source_sha256: str | None = None  # ...and exactly which bytes
+    requested_at: datetime = Field(default_factory=utcnow)
+    completed_at: datetime | None = None
+    error: str | None = None
+
+    # Findings. Every one of these is optional because an analyser is allowed to fail to
+    # find something and say so — a `None` here means "not measured", never "zero".
+    duration_ms: int | None = None
+    bpm: float | None = None
+    beat_ms: float | None = None
+    downbeat_ms: int | None = None
+    drop_ms: int | None = None
+    riser_beats: int | None = None    # RHYTHM-STUDY §3 — the track's own gain ramp
+    plateau_beats: int | None = None  # §4 — how long the drop holds full energy
+    bar_phase_confidence: float | None = None  # §2's residue test, as a fraction
+    warnings: list[str] = Field(default_factory=list)
+
+    @property
+    def bar_ms(self) -> float | None:
+        return self.beat_ms * 4 if self.beat_ms else None
+
+    @property
+    def ran(self) -> bool:
+        return self.status is AnalysisStatus.DONE
+
+
 class Song(Base):
     """One measured master. Measured once; the measurement is reused forever.
 
     FORMAT-SPEC requires the provenance of a BPM, not just the number — `bpm_method`
-    carries the justification, and the UI refuses to hide it.
+    carries the justification, and the UI refuses to hide it. `sections` extends that rule
+    from the tempo to the arrangement: a song has as many hooks as it has, each with its
+    own window and its own record of where that window came from.
     """
 
     id: str = Field(default_factory=lambda: new_id("sng"))
@@ -235,7 +383,11 @@ class Song(Base):
     bpm_method: str | None = None
     drop_ms: int | None = None
     hook: HookWindow = Field(default_factory=HookWindow)
+    sections: list[SongSection] = Field(default_factory=list)
+    primary_section_id: str | None = None
+    analysis: SongAnalysis | None = None
     master_key: str | None = None  # owned master in the bucket, private
+    master_content_type: str | None = None
     isrc: str | None = None
     spotify_url: str | None = None
     approval: ApprovalState = ApprovalState.DRAFT
@@ -244,6 +396,28 @@ class Song(Base):
     @classmethod
     def _slug_is_slug(cls, v: str) -> str:
         return slugify(v)
+
+    # -- reads over the sections list -------------------------------------------
+    def section(self, section_id: str) -> SongSection | None:
+        return next((s for s in self.sections if s.id == section_id), None)
+
+    @property
+    def ordered_sections(self) -> list[SongSection]:
+        return sorted(self.sections, key=lambda s: (s.start_ms, s.end_ms))
+
+    @property
+    def hook_sections(self) -> list[SongSection]:
+        """The loopable ones, in song order. What the generate screen offers."""
+        return [s for s in self.ordered_sections if s.is_hook_material and s.duration_ms > 0]
+
+    @property
+    def primary_section(self) -> SongSection | None:
+        return self.section(self.primary_section_id) if self.primary_section_id else None
+
+    @property
+    def has_hook(self) -> bool:
+        """Either shape counts: a primary window, or at least one loopable section."""
+        return self.hook.duration_ms > 0 or bool(self.hook_sections)
 
 
 class Asset(BaseModel):

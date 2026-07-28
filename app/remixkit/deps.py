@@ -30,11 +30,13 @@ from remixkit.auth.provider import AuthError, AuthProvider, Principal
 from remixkit.domain.models import Modality
 from remixkit.ports.mailer import Mailer
 from remixkit.services.accounts import AccountService
+from remixkit.services.analysis import JOB_TYPE as ANALYSIS_JOB_TYPE, AnalysisService
 from remixkit.services.artists import ArtistService
 from remixkit.services.catalogue import CatalogueService
 from remixkit.services.delivery import DeliveryService
 from remixkit.services.identities import IdentityService
 from remixkit.services.kits import JOB_TYPE, KitService
+from remixkit.services.recommendations import RecommendationService
 from remixkit.services.songs import SongService
 from remixkit.services.verify import VerifyService
 from remixkit.settings import Settings, get_settings
@@ -85,9 +87,13 @@ class Container:
             max_concurrency=settings.max_concurrency,
         )
 
+        self.analyzer = _build_analyzer(settings)
+
         self.artists = ArtistService(self.repo)
         self.identities = IdentityService(self.repo)
         self.songs = SongService(self.repo, self.storage, key_prefix=settings.key_prefix)
+        self.analysis = AnalysisService(self.songs, self.storage, self.queue, self.analyzer)
+        self.recommendations = RecommendationService()
         self.kits = KitService(
             self.repo,
             self.queue,
@@ -107,6 +113,10 @@ class Container:
             self.queue.register(
                 JOB_TYPE,
                 lambda payload: self.kits.run(payload["tenant_id"], payload["kit_id"]),
+            )
+            self.queue.register(
+                ANALYSIS_JOB_TYPE,
+                lambda payload: self.analysis.run(payload["tenant_id"], payload["song_id"]),
             )
 
     def describe(self) -> dict[str, Any]:
@@ -148,6 +158,10 @@ class Container:
             )
         if not getattr(self.queue, "can_execute", True):
             warnings.append(getattr(self.queue, "unavailable_reason", "The job queue cannot execute jobs."))
+        if not self.analysis.available:
+            # Not a mocked measurement — there is no such thing here. See
+            # `adapters/audio_unavailable.py` for why this is a refusal and not a stub.
+            warnings.append(f"Audio analysis is OFF — {self.analysis.unavailable_reason}")
         return {
             "env": self.settings.env,
             "tenant": self.settings.default_tenant_id,
@@ -156,6 +170,7 @@ class Container:
             "generator": self.generator.name,
             "queue": self.queue.name,
             "mail": self.mailer.name,
+            "analysis": self.analyzer.name,
             "warnings": warnings,
         }
 
@@ -224,6 +239,30 @@ def _build_storage(settings: Settings):
             region=settings.b2_region,
         )
     return LocalStorage(settings.local_storage_dir)
+
+
+def _build_analyzer(settings: Settings):
+    """The measurement adapter — real, or an honest refusal.
+
+    `analysis_backend=none` is for a process that should not be doing DSP at all (a web
+    Lambda whose worker does the measuring). `auto` builds the real one and lets *it*
+    report whether numpy is present, which is the only place that question can be answered
+    correctly: the package is an optional extra, so the same image can have it or not.
+    """
+    from remixkit.adapters.audio_unavailable import UnavailableAnalyzer
+
+    if settings.analysis_backend == "none":
+        return UnavailableAnalyzer(
+            "Audio analysis is switched off in this process (RK_ANALYSIS_BACKEND=none)."
+        )
+
+    from remixkit.adapters.audio_numpy import NumpyAnalyzer
+
+    analyzer = NumpyAnalyzer(window_s=settings.analysis_window_s)
+    if not analyzer.available:
+        log.warning("audio analysis unavailable: %s", analyzer.unavailable_reason)
+        return UnavailableAnalyzer(analyzer.unavailable_reason)
+    return analyzer
 
 
 def _build_queue(settings: Settings):
@@ -309,6 +348,14 @@ def get_catalogue() -> CatalogueService:
     return get_container().catalogue
 
 
+def get_analysis() -> AnalysisService:
+    return get_container().analysis
+
+
+def get_recommendations() -> RecommendationService:
+    return get_container().recommendations
+
+
 def get_delivery() -> DeliveryService:
     return get_container().delivery
 
@@ -323,3 +370,5 @@ Kits = Annotated[KitService, Depends(get_kits)]
 Verify = Annotated[VerifyService, Depends(get_verify)]
 Catalogue = Annotated[CatalogueService, Depends(get_catalogue)]
 Delivery = Annotated[DeliveryService, Depends(get_delivery)]
+Analysis = Annotated[AnalysisService, Depends(get_analysis)]
+Recommendations = Annotated[RecommendationService, Depends(get_recommendations)]

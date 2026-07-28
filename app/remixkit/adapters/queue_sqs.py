@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -91,8 +92,13 @@ class SQSQueue:
             )
             return
         try:
+            # Batch job names take letters, digits, hyphens and underscores only. The
+            # dedupe key is a job type plus a document id (`analyze-song:sng_ab12`), so it
+            # is sanitised rather than trusted — an invalid name is a rejected submission,
+            # which is a queue nobody drains.
+            name = re.sub(r"[^A-Za-z0-9_-]", "-", dedupe_key)[:100]
             job = self._batch.submit_job(
-                jobName=f"kit-{dedupe_key.replace('_', '-')[:100]}",
+                jobName=f"rk-{name}",
                 jobQueue=self._batch_job_queue,
                 jobDefinition=self._batch_job_definition,
             )

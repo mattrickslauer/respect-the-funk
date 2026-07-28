@@ -50,6 +50,24 @@
             <input name="video_count" type="number" min="0" max="8" value="{{ video_count }}">
           </label>
         </div>
+        {# Which hooks this kit is cut to. The videos are *dealt* across the chosen
+           sections rather than multiplied by them — every hook gets a loop before any
+           hook gets a second one — so ticking another box does not double the invoice
+           without the count above being changed too. #}
+        {% if song.hook_sections %}
+          <fieldset class="form-row sections-pick">
+            <legend>Hooks <span class="hint">each loop is the length of its own window;
+              none ticked means the hook of record</span></legend>
+            {% for section in song.hook_sections %}
+              <label class="tick">
+                <input type="checkbox" name="section_ids" value="{{ section.id }}"
+                       {{ "checked" if section.id in section_ids }}>
+                {{ section.display_name }}
+                <span class="hint">{{ "%.1f"|format(section.duration_ms / 1000) }}s</span>
+              </label>
+            {% endfor %}
+          </fieldset>
+        {% endif %}
         <label>Hook lines <span class="hint">one per line — each becomes a lyric card</span>
           <textarea name="hook_lines" rows="2"
                     placeholder="I've been losing sleep">{{ hook_lines }}</textarea>
@@ -59,14 +77,15 @@
 
       {% if shots %}
         <table class="table">
-          <thead><tr><th>#</th><th>Modality</th><th>Length</th><th>Prompt</th></tr></thead>
+          <thead><tr><th>#</th><th>Modality</th><th>Cut to</th><th>Length</th><th>Prompt</th></tr></thead>
           <tbody>
             {% for shot in shots %}
               <tr>
                 <td>{{ loop.index }}</td>
                 <td>{{ shot.modality.value }}</td>
+                <td class="small">{{ shot.label or "—" }}</td>
                 <td>{% if shot.seconds %}{{ "%.1f"|format(shot.seconds) }}s{% else %}—{% endif %}</td>
-                <td class="small">{{ shot.prompt|truncate(110) }}</td>
+                <td class="small">{{ shot.prompt|truncate(90) }}</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -97,8 +116,12 @@
         <input type="hidden" name="artist_id" value="{{ artist.id }}">
         <input type="hidden" name="video_count" value="{{ video_count }}">
         {# The same text the estimate was computed from. Without this the run bought a
-           different plan than the one on screen. #}
+           different plan than the one on screen. Same for the sections: the queue button
+           carries exactly the hooks that were priced. #}
         <textarea name="hook_lines" hidden>{{ hook_lines }}</textarea>
+        {% for section_id in section_ids %}
+          <input type="hidden" name="section_ids" value="{{ section_id }}">
+        {% endfor %}
         <button class="btn btn-primary" type="submit" {{ "disabled" if blocked }}>
           Queue this kit
         </button>
@@ -116,10 +139,13 @@
           {% if song.bpm %}{{ "%.2f"|format(song.bpm) }} <span class="method">{{ song.bpm_method }}</span>
           {% else %}<span class="err">unmeasured</span>{% endif %}
         </dd>
-        <dt>Hook window</dt>
+        <dt>Cut to</dt>
         <dd>
-          {% if song.hook.duration_ms %}{{ "%.1f"|format(song.hook.duration_ms / 1000) }}s
-          {% else %}<span class="hint">unset — loops default to 6s</span>{% endif %}
+          {% if windows %}
+            {% for name, window in windows %}
+              {{ name }} <span class="hint">{{ "%.1f"|format(window.duration_ms / 1000) }}s</span>{{ "" if loop.last else " · " }}
+            {% endfor %}
+          {% else %}<span class="hint">no hook set — loops default to 6s</span>{% endif %}
         </dd>
         <dt>Identity</dt>
         <dd>

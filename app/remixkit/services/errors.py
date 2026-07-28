@@ -20,6 +20,17 @@ class Conflict(ServiceError):
     status_code = 409
 
 
+class AnalysisUnavailable(ServiceError):
+    """This deployment cannot measure audio, and says which piece is missing.
+
+    Separate from `Conflict` because it is not a bad request — the same call would have
+    succeeded on a process with numpy installed and ffmpeg on PATH. 503 rather than 409
+    so a script retrying against a correctly-built worker is doing something sensible.
+    """
+
+    status_code = 503
+
+
 class RightsError(ServiceError):
     """Generation blocked because likeness consent is missing.
 

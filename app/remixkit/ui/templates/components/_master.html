@@ -1,0 +1,112 @@
+{# The master, and the only JavaScript in this console.
+
+   A presigned upload is a request the *browser* makes to the bucket — the whole point of
+   §2b rule 2 is that a 128 MB WAV never touches this process — so something in the page
+   has to ask for the URL, PUT the bytes, and then tell the app they landed. htmx cannot
+   do the middle step, so these ~30 lines exist and nothing else does.
+
+   Three requests, in order:
+     1. POST /ui/songs/…/master/upload-url  → { url, key }
+     2. PUT  <url>                          → the bucket, directly
+     3. POST /ui/songs/…/master             → records the key and queues the measurement #}
+<section class="panel" id="song-master">
+  <div class="panel-head"><h3>Master</h3></div>
+  <p class="hint">
+    Owned masters only. Uploaded browser-to-bucket; the file never passes through the
+    application. WAV, MP3, FLAC or M4A.
+  </p>
+
+  {% if song.master_key %}
+    <p class="small">Stored at <code class="sha">{{ song.master_key }}</code></p>
+  {% else %}
+    <p class="empty">No master uploaded. Nothing can be measured until there is one.</p>
+  {% endif %}
+
+  {% if note %}<p class="small unmeasured">{{ note }}</p>{% endif %}
+  {% if not analysis_available %}
+    <p class="small unmeasured">
+      This process cannot measure audio — {{ analysis_reason }} The upload still works; the
+      measurement runs where the analyser is installed.
+    </p>
+  {% endif %}
+
+  <form class="form-inline" id="master-form" data-song="{{ song.id }}">
+    <label>Audio file <input type="file" name="file" accept=".wav,.mp3,.flac,.m4a,audio/*" required></label>
+    <button class="btn btn-primary" type="submit">Upload and measure</button>
+  </form>
+  <p class="small" id="master-progress" hidden></p>
+</section>
+
+<script>
+// Bound to `document`, once, rather than to the form. This panel replaces itself with the
+// server's re-render when an upload completes, and a `<script>` that arrives inside
+// injected HTML does not execute — a listener on the form would be alive for exactly one
+// upload and silently dead for the second.
+if (!window.__rkMasterUpload) {
+  window.__rkMasterUpload = true;
+
+  // The browser's own type when it has one; otherwise the extension decides. A file picked
+  // on some platforms arrives with an empty `type`, and an upload presigned as
+  // `application/octet-stream` is one the service refuses — correctly, and unhelpfully.
+  const BY_EXT = {wav: "audio/wav", mp3: "audio/mpeg", flac: "audio/flac", m4a: "audio/mp4"};
+
+  const say = (text, bad) => {
+    const status = document.getElementById("master-progress");
+    if (!status) return;
+    status.hidden = false;
+    status.textContent = text;
+    status.className = bad ? "small unmeasured" : "small";
+  };
+
+  const detail = async (response, fallback) => {
+    try {
+      return (await response.json()).detail || fallback;
+    } catch (error) {
+      return fallback;
+    }
+  };
+
+  document.addEventListener("submit", async (event) => {
+    const form = event.target;
+    if (!form || form.id !== "master-form") return;
+    event.preventDefault();
+
+    const input = form.querySelector("input[type=file]");
+    const file = input && input.files[0];
+    if (!file) return;
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    const type = file.type || BY_EXT[ext] || "application/octet-stream";
+    const song = form.dataset.song;
+
+    try {
+      say(`Preparing ${file.name}…`);
+      const signed = await fetch(`/ui/songs/${song}/master/upload-url`, {
+        method: "POST",
+        body: new URLSearchParams({content_type: type}),
+      });
+      if (!signed.ok) throw new Error(await detail(signed, "could not presign the upload"));
+      const {url, key} = await signed.json();
+
+      say(`Uploading ${(file.size / 1048576).toFixed(1)} MB…`);
+      const put = await fetch(url, {method: "PUT", body: file, headers: {"Content-Type": type}});
+      if (!put.ok) throw new Error(`the bucket refused the upload (${put.status})`);
+
+      say("Uploaded. Measuring…");
+      const registered = await fetch(`/ui/songs/${song}/master`, {
+        method: "POST",
+        body: new URLSearchParams({key: key, content_type: type}),
+      });
+      // A refusal comes back as the error component, not this panel. Swapping it in would
+      // replace the upload form with the message and leave no way to retry without a page
+      // reload, so the message is reported in place instead.
+      if (!registered.ok) throw new Error(await detail(registered, "the master was refused"));
+      document.getElementById("song-master").outerHTML = await registered.text();
+      // The measurement is queued, not done. This wakes the analysis panel, which polls
+      // until the job settles and then wakes the sections panel in turn.
+      document.body.dispatchEvent(new CustomEvent("rk:analysis-started"));
+    } catch (error) {
+      say(`Upload failed: ${error.message}`, true);
+    }
+  });
+}
+</script>

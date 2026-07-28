@@ -17,19 +17,24 @@ from remixkit.api.schemas import (
     HookIn,
     IdentityIn,
     KitIn,
+    MasterIn,
     MeasurementIn,
     RequestCodeIn,
+    SectionIn,
+    SectionPatch,
     SongIn,
     UploadUrlIn,
     VerifyCodeIn,
 )
 from remixkit.deps import (
     Accounts,
+    Analysis,
     Artists,
     CurrentPrincipal,
     Delivery,
     Identities,
     Kits,
+    Recommendations,
     Songs,
     Verify,
     get_container,
@@ -193,6 +198,112 @@ def master_upload_url(song_id: str, body: UploadUrlIn, principal: CurrentPrincip
     return songs.master_upload_url(principal, song_id, content_type=body.content_type)
 
 
+@router.put("/songs/{song_id}/master")
+def register_master(song_id: str, body: MasterIn, principal: CurrentPrincipal, songs: Songs):
+    """Record a master after the bytes have landed. Refuses a key with nothing at it."""
+    return songs.register_master(
+        principal, song_id, key=body.key, content_type=body.content_type
+    )
+
+
+# ---------------------------------------------------------------- sections
+@router.get("/songs/{song_id}/sections")
+def list_sections(song_id: str, principal: CurrentPrincipal, songs: Songs):
+    song = songs.get(principal, song_id)
+    return {
+        "primary_section_id": song.primary_section_id,
+        "sections": song.ordered_sections,
+    }
+
+
+@router.post("/songs/{song_id}/sections", status_code=status.HTTP_201_CREATED)
+def add_section(song_id: str, body: SectionIn, principal: CurrentPrincipal, songs: Songs):
+    return songs.add_section(
+        principal,
+        song_id,
+        start_ms=body.start_ms,
+        end_ms=body.end_ms,
+        role=body.role,
+        label=body.label,
+        notes=body.notes,
+        make_primary=body.make_primary,
+    )
+
+
+@router.patch("/songs/{song_id}/sections/{section_id}")
+def update_section(
+    song_id: str, section_id: str, body: SectionPatch, principal: CurrentPrincipal, songs: Songs
+):
+    return songs.update_section(
+        principal,
+        song_id,
+        section_id,
+        start_ms=body.start_ms,
+        end_ms=body.end_ms,
+        role=body.role,
+        label=body.label,
+        notes=body.notes,
+    )
+
+
+@router.delete("/songs/{song_id}/sections/{section_id}")
+def delete_section(song_id: str, section_id: str, principal: CurrentPrincipal, songs: Songs):
+    return songs.remove_section(principal, song_id, section_id)
+
+
+@router.put("/songs/{song_id}/sections/{section_id}/primary")
+def set_primary_section(
+    song_id: str, section_id: str, principal: CurrentPrincipal, songs: Songs
+):
+    """Which hook a kit cuts to when its brief names none."""
+    return songs.set_primary_section(principal, song_id, section_id)
+
+
+# ---------------------------------------------------------------- analysis
+@router.post("/songs/{song_id}/analysis", status_code=status.HTTP_202_ACCEPTED)
+def analyse_song(song_id: str, principal: CurrentPrincipal, analysis: Analysis):
+    """202 — measuring a master is a queued job, not a request (§2b rule 3).
+
+    503 with the missing piece named if this process has no analyser; the song is not
+    marked as anything, because nothing was attempted.
+    """
+    song = analysis.request(principal, song_id)
+    return {"song_id": song.id, "analysis": song.analysis}
+
+
+@router.get("/songs/{song_id}/recommendations")
+def song_recommendations(
+    song_id: str, principal: CurrentPrincipal, songs: Songs, recommendations: Recommendations
+):
+    """Ranked hook windows with the rule each one passes or fails, and the basis for it.
+
+    `blocked_on` is non-empty and `candidates` empty when the song has not been measured —
+    which is the honest answer, not an empty list dressed up as "no good hooks".
+    """
+    song = songs.get(principal, song_id)
+    report = recommendations.recommend(song)
+    return {
+        "computed": report.computed,
+        "blocked_on": report.blocked_on,
+        "findings": report.findings,
+        "candidates": [
+            {
+                "section": candidate.section,
+                "basis": candidate.basis,
+                "rank_reason": candidate.rank_reason,
+                "ready": candidate.ready,
+                "checks": [
+                    {"rule": c.rule, "state": c.state, "detail": c.detail}
+                    for c in candidate.checks
+                ],
+                "suggested_start_ms": candidate.suggested_start_ms,
+                "suggested_end_ms": candidate.suggested_end_ms,
+            }
+            for candidate in report.candidates
+        ],
+    }
+
+
 # ---------------------------------------------------------------- kits
 @router.get("/kits")
 def list_kits(principal: CurrentPrincipal, kits: Kits, artist_id: str | None = None):
@@ -210,6 +321,7 @@ def request_kit(body: KitIn, principal: CurrentPrincipal, kits: Kits):
         hook_lines=body.hook_lines,
         tts_text=body.tts_text,
         budget_cents=body.budget_cents,
+        section_ids=body.section_ids,
     )
 
 

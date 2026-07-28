@@ -7,13 +7,17 @@ no headroom for cold start, provider retries, or the upload afterwards. It would
 by silent timeout on the most expensive path in the system. Batch has no such limit and
 still costs nothing at rest via `minvCpus: 0`.
 
-Two modes:
+Three modes:
 
     python worker.py --kit-id kit_abc123          # one kit, then exit (Batch job)
+    python worker.py --song-id sng_abc123         # measure one master, then exit
     python worker.py --poll                       # drain SQS until empty (long-running)
 
-Both go through `KitService.run`, which is idempotent on the kit id — a redelivered
-message costs nothing (§2b rule 4).
+Both jobs are idempotent on their document id — a redelivered message costs nothing
+(§2b rule 4). Analysis belongs here for the same reason generation does: decoding a master
+and fitting a beat comb over it is a minute of CPU on a long file, which is not work an
+HTTP request holds. It is also why the analysis extra is installed in the worker image and
+need not be in the web one — see `RK_ANALYSIS_BACKEND`.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ import sys
 
 from remixkit.bootstrap import export_for_libs, load_secrets
 from remixkit.deps import get_container
+from remixkit.services.analysis import JOB_TYPE as ANALYSIS_JOB_TYPE
 from remixkit.settings import get_settings
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -47,6 +52,39 @@ def run_one(tenant_id: str, kit_id: str) -> int:
     # Non-zero on failure so Batch records the attempt as failed and retries per the
     # job definition rather than reporting a green run that produced nothing.
     return 0 if kit.status.value == "ready" else 1
+
+
+def analyse_one(tenant_id: str, song_id: str) -> int:
+    container = get_container()
+    if not container.analysis.available:
+        # Loud and immediate. A worker image built without the audio extra would otherwise
+        # mark every song `failed` at a rate of one per message, and the reason would only
+        # be visible on the song document.
+        log.error("this worker cannot analyse audio: %s", container.analysis.unavailable_reason)
+        return 2
+    song = container.analysis.run(tenant_id, song_id)
+    analysis = song.analysis
+    log.info(
+        "song %s → %s (%d sections, %s BPM)",
+        song.id,
+        analysis.status.value if analysis else "unknown",
+        len(song.sections),
+        song.bpm,
+    )
+    if analysis and analysis.error:
+        log.error("song %s error: %s", song.id, analysis.error)
+    return 0 if analysis and analysis.ran else 1
+
+
+def _handle(job_type: str, payload: dict) -> int:
+    """One message → the service that owns it.
+
+    The job type is read from the body rather than inferred from which keys are present:
+    a payload-shape guess is the kind of dispatch that works until two jobs share a field.
+    """
+    if job_type == ANALYSIS_JOB_TYPE or "song_id" in payload:
+        return analyse_one(payload["tenant_id"], payload["song_id"])
+    return run_one(payload["tenant_id"], payload["kit_id"])
 
 
 def poll(max_messages: int = 10) -> int:
@@ -80,7 +118,7 @@ def poll(max_messages: int = 10) -> int:
             try:
                 body = json.loads(message["Body"])
                 payload = body.get("payload", body)
-                run_one(payload["tenant_id"], payload["kit_id"])
+                _handle(body.get("job_type", ""), payload)
             except Exception:
                 log.exception("message failed — leaving it for redelivery/DLQ")
                 continue
@@ -98,6 +136,7 @@ def main() -> int:
     export_for_libs(get_settings())
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kit-id", help="Run one kit and exit")
+    parser.add_argument("--song-id", help="Measure one song's master and exit")
     parser.add_argument("--tenant-id", help="Tenant (defaults to RK_DEFAULT_TENANT_ID)")
     parser.add_argument("--poll", action="store_true", help="Drain SQS until empty")
     args = parser.parse_args()
@@ -106,6 +145,8 @@ def main() -> int:
 
     if args.kit_id:
         return run_one(tenant_id, args.kit_id)
+    if args.song_id:
+        return analyse_one(tenant_id, args.song_id)
     if args.poll:
         return poll()
     parser.print_help()

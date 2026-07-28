@@ -174,10 +174,9 @@ def artist_detail(
         request,
         "pages/artist.html",
         artist=artist,
-        # The components this page includes address their own fragment routes by
-        # `artist_id` — the same name the fragment handlers pass when they re-render.
-        # Omitting it here rendered `hx-post="/ui/artists//songs"`: a form that looks
-        # right and 404s on submit, because Jinja resolves an undefined to empty.
+        # The components this page includes address their own routes by `artist_id` —
+        # that is their contract with the fragment handlers, which pass it explicitly.
+        # Omitting it here rendered `/ui/artists//songs`, a form that 404s on submit.
         artist_id=artist.id,
         identity=identities.current(principal, artist_id),
         identities=identities.list_for_artist(principal, artist_id),
@@ -307,6 +306,7 @@ def generate_page(
     identities: Identities,
     kits: Kits,
     video_count: int = 3,
+    hook_lines: str | None = None,
 ):
     """Cost *before* the button — wireframe gap #3.
 
@@ -315,6 +315,12 @@ def generate_page(
     building the same plan `KitService.request` builds and running it through the same
     `estimate_cents`. Two code paths that disagree about what a kit costs would be worse
     than no estimate, so there is only one.
+
+    `hook_lines` is a parameter rather than a constant for exactly that reason. It used
+    to be hard-coded to the song title here while the queue form submitted nothing, so
+    the page priced a lyric card the run never bought — the divergence this screen
+    exists to prevent. `None` means "first load": the title is the default, and the
+    queue button carries whatever value was priced.
     """
     try:
         artist = artists.get(principal, artist_id)
@@ -324,8 +330,11 @@ def generate_page(
 
     identity = identities.current(principal, artist_id)
     video_count = max(0, min(video_count, 8))
-    hook_lines = [line for line in (song.title,) if line]
-    shots = default_shot_plan(song, identity, video_count=video_count, hook_lines=hook_lines)
+    raw_hook_lines = song.title if hook_lines is None else hook_lines
+    # Split the same way `ui_create_kit` splits it, so the plan priced here and the plan
+    # bought there are built from an identical list.
+    lines = [line.strip() for line in raw_hook_lines.splitlines() if line.strip()]
+    shots = default_shot_plan(song, identity, video_count=video_count, hook_lines=lines)
 
     return _render(
         request,
@@ -335,6 +344,7 @@ def generate_page(
         identity=identity,
         shots=shots,
         video_count=video_count,
+        hook_lines=raw_hook_lines,
         estimate_cents=kits.estimate_cents(shots),
         blocked=artist.consent.blocks_generation,
     )

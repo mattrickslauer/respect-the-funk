@@ -40,9 +40,19 @@
       {# Re-pricing is a GET so the estimate is always the server's answer, not the
          browser's arithmetic. A client-side total would be a second opinion about
          cost, and the whole point of this screen is that there is only one. #}
-      <form class="form-inline" method="get">
-        <label>Videos
-          <input name="video_count" type="number" min="0" max="8" value="{{ video_count }}">
+      {# Every input that changes the plan lives in this form, so nothing can alter what
+         is bought without also changing what is priced. Editing the hook lines without
+         re-pricing leaves the old value on the queue button — which is the safe way
+         round: the button always buys the plan shown in the table below. #}
+      <form class="form" method="get">
+        <div class="form-row">
+          <label>Videos
+            <input name="video_count" type="number" min="0" max="8" value="{{ video_count }}">
+          </label>
+        </div>
+        <label>Hook lines <span class="hint">one per line — each becomes a lyric card</span>
+          <textarea name="hook_lines" rows="2"
+                    placeholder="I've been losing sleep">{{ hook_lines }}</textarea>
         </label>
         <button class="btn btn-quiet" type="submit">Re-price</button>
       </form>
@@ -86,6 +96,9 @@
         <input type="hidden" name="song_id" value="{{ song.id }}">
         <input type="hidden" name="artist_id" value="{{ artist.id }}">
         <input type="hidden" name="video_count" value="{{ video_count }}">
+        {# The same text the estimate was computed from. Without this the run bought a
+           different plan than the one on screen. #}
+        <textarea name="hook_lines" hidden>{{ hook_lines }}</textarea>
         <button class="btn btn-primary" type="submit" {{ "disabled" if blocked }}>
           Queue this kit
         </button>

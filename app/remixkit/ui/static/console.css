@@ -2,7 +2,13 @@
 
    Tokens are inherited verbatim from deck/remixkit-deck.html and web/index.html so the
    deck, the site, and the console read as one brand — web/README states that
-   inheritance as a rule, and breaking it here would cost more than the styling is worth. */
+   inheritance as a rule, and breaking it here would cost more than the styling is worth.
+
+   The layout, though, is the console's own. A console is not a document: it is looked at
+   on a laptop, where the vertical budget after browser chrome is about 750px, and every
+   row spent on a masthead is a row not spent on the thing being decided. So there is one
+   shape here, used by every page — a fixed identity bar carrying the numbers a decision
+   depends on, and beneath it a workspace whose regions scroll rather than the page. */
 
 :root{
   --bg:#14121a; --bg-2:#0e0c14; --panel:#1c1926; --panel-2:#232030;
@@ -13,130 +19,313 @@
   --display:"Futura","Avenir Next",system-ui,sans-serif;
   --body:"Avenir Next","Helvetica Neue",Helvetica,system-ui,sans-serif;
   --mono:ui-monospace,"SF Mono",Menlo,monospace;
-  --maxw:1180px;
+  /* Wide, because the content is tables, asset grids and rosters — none of which read
+     better in a 1180px column on a 1440px screen. Prose is held to `max-width` per
+     element instead, so widening the shell does not widen a paragraph. */
+  --maxw:1560px;
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--body);background:var(--bg);color:var(--ink-2);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
-.wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+body{font-family:var(--body);background:var(--bg);color:var(--ink-2);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
 h1,h2,h3,h4{font-family:var(--display);font-weight:500;color:var(--ink);letter-spacing:-0.01em}
-h1{font-size:clamp(30px,4vw,44px);line-height:1.08;margin-bottom:12px}
-h3{font-size:17px;margin-bottom:6px}
-h4{font-size:15px;margin-bottom:4px}
+h1{font-size:24px;line-height:1.1;margin:0}
+h3{font-size:16px;margin-bottom:5px}
+h4{font-size:14.5px;margin-bottom:3px}
 a{color:inherit}
 code{font-family:var(--mono);font-size:0.88em;color:var(--ink-3)}
-.small{font-size:14px;color:var(--ink-3)}
-.src,.hint{font-size:12.5px;color:var(--ink-3)}
+.small{font-size:13px;color:var(--ink-3)}
+.src,.hint{font-size:12px;color:var(--ink-3)}
 .hint{font-weight:400;text-transform:none;letter-spacing:0}
-.sub{margin-top:18px;margin-bottom:6px}
+.sub{margin-top:14px;margin-bottom:5px}
 .err{color:var(--err)}
+/* Prose is capped where it is written, not by the container. */
+.lede{font-size:14px;line-height:1.5;max-width:70ch;color:var(--ink-2)}
+.links{display:flex;gap:14px;flex-wrap:wrap}
 
 /* ---- chrome ---- */
 .topbar{border-bottom:1px solid var(--rule);background:var(--bg-2);position:sticky;top:0;z-index:20}
-.topbar-inner{display:flex;align-items:center;justify-content:space-between;height:60px}
-.brand{display:flex;align-items:baseline;gap:9px;font-family:var(--display);font-size:18px;color:var(--ink);text-decoration:none}
+.topbar-inner{display:flex;align-items:center;justify-content:space-between;height:50px}
+.brand{display:flex;align-items:baseline;gap:9px;font-family:var(--display);font-size:17px;color:var(--ink);text-decoration:none}
 .brand-mark{color:var(--gold)}
-.brand-sub{font-size:12px;letter-spacing:0.16em;text-transform:uppercase;color:var(--ink-3)}
-.topnav{display:flex;gap:22px;font-size:14px}
+.brand-sub{font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--ink-3)}
+.topnav{display:flex;gap:20px;font-size:13.5px;align-items:center}
 .topnav a{color:var(--ink-3);text-decoration:none}
 .topnav a:hover{color:var(--gold)}
+.whoami{color:var(--ink-3);border-left:1px solid var(--rule-2);padding-left:20px}
 
+/* The mocked-backend warning. It has to be on every page — a console running on mocks
+   must not be mistakable for one running against GMI Cloud — but it is context, not
+   content, so it gets one line and scrolls sideways rather than growing downwards. */
 .banner{background:rgba(201,133,0,0.09);border-bottom:1px solid rgba(245,185,64,0.22)}
-.banner-inner{display:flex;gap:14px;align-items:flex-start;padding:10px 28px;font-size:13px}
-.banner-tag{font-family:var(--display);font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold-dim);padding:2px 7px;border-radius:3px;flex:none}
-.banner ul{list-style:none;display:flex;flex-wrap:wrap;gap:6px 20px}
-.banner li{color:var(--ink-2)}
+.banner-inner{display:flex;gap:12px;align-items:center;padding:5px 24px;font-size:12.5px;
+  max-width:var(--maxw)}
+.banner-tag{font-family:var(--display);font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold-dim);padding:1px 6px;border-radius:3px;flex:none}
+/* The scroller is the list, not the row. Put `overflow` on the row and the warnings
+   simply paint over the link at the end of it — the list has to be the thing that
+   clips, so the tag and the link stay pinned at either end. */
+.banner ul{list-style:none;display:flex;gap:6px 18px;flex:1;min-width:0;
+  overflow-x:auto;scrollbar-width:none}
+.banner ul::-webkit-scrollbar{display:none}
+.banner li{color:var(--ink-2);white-space:nowrap}
+.banner-more{flex:none;color:var(--gold);text-decoration:none;font-size:12px}
+.banner-more:hover{text-decoration:underline}
 
-.hero{padding:52px 0 30px}
-.eyebrow{font-family:var(--display);font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--gold);margin-bottom:14px}
+.eyebrow{font-family:var(--display);font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--gold);margin:0}
 .eyebrow a{text-decoration:none}
-.lede{font-size:18px;line-height:1.5;max-width:64ch;color:var(--ink-2)}
-.links{display:flex;gap:16px;margin-top:8px}
 
-.footer{border-top:1px solid var(--rule-2);margin-top:70px;padding:26px 0 50px}
-.footer p{margin-bottom:6px}
+/* Rendered only by the pages that are still documents — which, since every console page
+   is a workspace, means the sign-in screen. Kept short for the same reason as the rest. */
+.footer{border-top:1px solid var(--rule-2);margin-top:36px;padding:16px 0 24px}
+.footer p{margin-bottom:4px}
 
-/* ---- layout ---- */
-.split{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:26px;align-items:start;padding-bottom:40px}
-.split-side{display:flex;flex-direction:column;gap:18px;position:sticky;top:80px}
-.split-main{display:flex;flex-direction:column;gap:18px;min-width:0}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
-@media (max-width:900px){.split{grid-template-columns:1fr}.split-side{position:static}}
+/* ---- the viewport-locked workspace ----
+   Every console page is this shape. The page stops being a document that scrolls and
+   becomes a workspace that fits: the topbar, the page's identity bar and the tab strip
+   are fixed furniture, and scrolling happens inside the regions that own it. What a
+   decision depends on therefore cannot scroll away from the control that acts on it.
+
+   `dvh` rather than `vh` so a mobile browser's collapsing chrome does not leave the
+   bottom row of the deck permanently under the address bar. */
+body.shell{height:100dvh;overflow:hidden;display:flex;flex-direction:column}
+body.shell .topbar{position:static;flex:none}
+body.shell .banner{flex:none}
+.shell-main{flex:1;min-height:0;display:flex;flex-direction:column;
+  width:100%;max-width:var(--maxw);margin:0 auto;padding:0 24px 14px}
+
+/* The bar that never scrolls: identity on the left, every number a decision depends on
+   in the middle, the one action this page exists to reach on the right. It replaces the
+   masthead each page used to open with — a 44px title over a paragraph of explanation,
+   costing ~130px of a 750px budget to say what the nav already said. */
+.pagebar{flex:none;display:flex;align-items:center;gap:10px 22px;flex-wrap:wrap;
+  padding:11px 0;border-bottom:1px solid var(--rule)}
+.pagebar-id{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0}
+.pagebar-id .eyebrow{margin:0}
+.pagebar-cta{margin-left:auto;flex:none;display:flex;gap:8px;align-items:center}
+
+.stats{display:flex;flex-wrap:wrap;gap:4px 0}
+.stat{padding:0 15px;border-left:1px solid var(--rule-2)}
+.stat:first-child{border-left:0;padding-left:0}
+.stat dt{font-family:var(--display);font-size:10px;letter-spacing:0.15em;
+  text-transform:uppercase;color:var(--ink-3)}
+.stat dd{font-size:14px;color:var(--ink);line-height:1.25;white-space:nowrap}
+.stat-sub{display:block;font-size:11px;color:var(--ink-3);line-height:1.3;font-style:normal}
+.stat a{color:var(--gold);text-decoration:none}
+
+/* The deck: one rail of standing facts, one work area. `.deck` puts the rail first
+   (the song console, where the master and the measurement are what you are editing
+   against); `.deck-r` puts it second, which is where every page that used to have a
+   right-hand sidebar keeps it. */
+.deck{flex:1;min-height:0;display:grid;grid-template-columns:312px minmax(0,1fr);
+  gap:16px;padding-top:13px}
+.deck-r{grid-template-columns:minmax(0,1fr) 336px}
+/* `min-height:0` on both, or a grid item refuses to shrink below its content and the
+   page grows a second scrollbar behind the one that is supposed to be doing the work. */
+.rail,.workarea{min-height:0;overflow-y:auto;overscroll-behavior:contain}
+.rail{display:flex;flex-direction:column;gap:12px;padding-right:6px}
+.rail .panel{padding:13px 14px}
+.rail .panel-head{margin-bottom:5px}
+.rail .kv{margin:6px 0}
+.rail .form-inline{padding-top:11px}
+/* The deployment line the footer used to carry. Which storage and generator are live is
+   exactly the context someone judging an upload or a kit needs, and a workspace has no
+   footer to put it in. */
+.rail-env{padding:2px 0 8px;line-height:1.5}
+.workarea{display:flex;flex-direction:column;padding-right:4px}
+
+/* ---- CSS-only tabs ----
+   Panes are separate sittings, and only ever one of them is the task at hand — so they
+   cost one row of tab strip instead of three screens of stacked panels.
+
+   Index-based rather than named, so any page can use them without new CSS: N radios in
+   `.workarea`, N labels in `.tabs`, panes classed `.pane-1`…`.pane-4`. The radios sit
+   ahead of `.panes` so the selected-tab state lives outside every htmx swap target —
+   `#song-hooks` replaces itself on each edit and would otherwise take the tab state
+   with it. The pane rule is a descendant selector for the same reason: a pane may be
+   nested inside a swap wrapper rather than being a direct child. */
+.tab-state{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.tabs{flex:none;display:flex;gap:5px;position:sticky;top:0;z-index:5;flex-wrap:wrap;
+  background:var(--bg);padding-bottom:10px}
+.tabs label{display:flex;flex-direction:row;align-items:center;gap:7px;cursor:pointer;
+  font-family:var(--display);font-size:13px;color:var(--ink-3);padding:6px 13px;
+  border:1px solid var(--rule);border-radius:6px;background:var(--panel);user-select:none}
+.tabs label:hover{color:var(--ink);border-color:var(--gold-dim)}
+.count{font-family:var(--body);font-size:11px;color:var(--ink-3);background:var(--bg-2);
+  border-radius:10px;padding:1px 7px;min-width:20px;text-align:center}
+.count-blocked{color:var(--warn)}
+
+.workarea>.tab-state:nth-of-type(1):checked~.tabs>label:nth-child(1),
+.workarea>.tab-state:nth-of-type(2):checked~.tabs>label:nth-child(2),
+.workarea>.tab-state:nth-of-type(3):checked~.tabs>label:nth-child(3),
+.workarea>.tab-state:nth-of-type(4):checked~.tabs>label:nth-child(4){
+  background:var(--gold);border-color:var(--gold);color:#0e0c14;font-weight:600}
+.workarea>.tab-state:nth-of-type(1):checked~.tabs>label:nth-child(1) .count,
+.workarea>.tab-state:nth-of-type(2):checked~.tabs>label:nth-child(2) .count,
+.workarea>.tab-state:nth-of-type(3):checked~.tabs>label:nth-child(3) .count,
+.workarea>.tab-state:nth-of-type(4):checked~.tabs>label:nth-child(4) .count{
+  background:rgba(0,0,0,0.20);color:#0e0c14}
+/* A tab reachable by keyboard has to be visibly reachable by keyboard: the radio is the
+   focus target but the label is what is on screen. */
+.workarea>.tab-state:nth-of-type(1):focus-visible~.tabs>label:nth-child(1),
+.workarea>.tab-state:nth-of-type(2):focus-visible~.tabs>label:nth-child(2),
+.workarea>.tab-state:nth-of-type(3):focus-visible~.tabs>label:nth-child(3),
+.workarea>.tab-state:nth-of-type(4):focus-visible~.tabs>label:nth-child(4){
+  outline:2px solid var(--gold-dim);outline-offset:2px}
+
+.panes{display:flex;flex-direction:column;gap:12px;padding-bottom:22px}
+.panes .pane-1,.panes .pane-2,.panes .pane-3,.panes .pane-4{display:none}
+.workarea>.tab-state:nth-of-type(1):checked~.panes .pane-1,
+.workarea>.tab-state:nth-of-type(2):checked~.panes .pane-2,
+.workarea>.tab-state:nth-of-type(3):checked~.panes .pane-3,
+.workarea>.tab-state:nth-of-type(4):checked~.panes .pane-4{display:block}
+
+/* An untabbed work area still wants the same rhythm as a tabbed one. */
+.stack{display:flex;flex-direction:column;gap:12px;padding-bottom:22px}
+
+/* ---- disclosures ----
+   The forms that change a value, folded under the value they change. Reading the list is
+   the common act; re-cutting a window is the rare one, and four always-open fields per
+   section is what made a six-section song taller than the screen. */
+.tweak{border-top:1px solid var(--rule-2);margin-top:9px;padding-top:8px}
+.tweak>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;
+  font-family:var(--display);font-size:12.5px;letter-spacing:0.03em;color:var(--ink-3)}
+.tweak>summary::-webkit-details-marker{display:none}
+.tweak>summary::before{content:"+";font-family:var(--mono);color:var(--gold);width:0.8em}
+.tweak[open]>summary::before{content:"−"}
+.tweak>summary:hover{color:var(--ink)}
+.tweak .form,.tweak .form-inline{margin-top:10px}
+.tweak .form-inline{border-top:0;padding-top:0}
+.tweak .hint{margin-top:7px}
+/* The row is `flex-wrap`, so the disclosure has to claim a whole line of it rather than
+   competing with the summary and the buttons for the same one. */
+.row-tweak{flex-basis:100%;width:100%;margin-top:7px}
+
+/* Below the width the two-column deck needs, the workspace is worse than the document it
+   replaced — two scroll regions side by side in 380px is nobody's idea of manageable. So
+   the shell unlocks and the page goes back to scrolling as one thing. The tabs stay:
+   they are a reduction in height at any width. */
+@media (max-width:1000px){
+  body.shell{height:auto;overflow:visible;display:block}
+  .shell-main{display:block;padding:0 20px 24px}
+  /* Stacked, not blocked: the work area goes first whichever side its rail was on.
+     The song console keeps its rail in the left column at full width because the master
+     and the measurement are what the sections are edited against — but read top to
+     bottom that becomes four panels of standing facts before the list you came for. */
+  .deck,.deck-r{display:flex;flex-direction:column;padding-top:12px}
+  .workarea{order:-1}
+  .rail,.workarea{overflow:visible;padding-right:0}
+  .rail{margin-top:14px}
+  .pagebar-cta{margin-left:0}
+  .stat:first-child{padding-left:0}
+  .tabs{position:static}
+}
+/* Under about 820px tall the rail and the work area are each a few rows of a scroll
+   region, which is worse than one honest scroll. Height, not width, is the constraint a
+   laptop actually imposes — a 13" screen in a browser with two toolbars is the case. */
+@media (max-height:560px){
+  body.shell{height:auto;overflow:visible;display:block}
+  .shell-main{display:block}
+  .rail,.workarea{overflow:visible}
+}
 
 /* ---- surfaces ---- */
-.panel,.card{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:18px}
-.card{display:flex;flex-direction:column;gap:8px}
-.panel-head,.card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.panel,.card{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:15px 16px}
+.card{display:flex;flex-direction:column;gap:7px}
+.panel-head,.card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}
 .card-head h3 a{text-decoration:none}
 .card-head h3 a:hover{color:var(--gold)}
-.card-foot{display:flex;gap:8px;margin-top:auto;padding-top:10px}
-.handle{font-size:13px}
-.empty,.empty-line{color:var(--ink-3);font-size:14px;padding:14px 0}
-.empty{grid-column:1/-1;background:var(--panel);border:1px dashed var(--rule);border-radius:8px;padding:26px;text-align:center}
+.card-foot{display:flex;gap:8px;margin-top:auto;padding-top:9px}
+/* `*{margin:0}` leaves consecutive paragraphs in a panel flush against each other and
+   against the form below them, which reads as one run-on block. Panels are the one
+   place that happens, so the rule lives here rather than on `p`. */
+.panel>p{margin-bottom:8px}
+.panel>p:last-child{margin-bottom:0}
+.handle{font-size:12.5px}
+.empty,.empty-line{color:var(--ink-3);font-size:13.5px;padding:11px 0}
+.empty{grid-column:1/-1;background:var(--panel);border:1px dashed var(--rule);border-radius:8px;padding:20px;text-align:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:13px}
 
-.rows{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
-.row{background:var(--panel-2);border:1px solid var(--rule-2);border-radius:6px;padding:13px 15px;display:flex;gap:14px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
+.rows{display:flex;flex-direction:column;gap:9px;margin-bottom:12px}
+.row{background:var(--panel-2);border:1px solid var(--rule-2);border-radius:6px;padding:11px 13px;display:flex;gap:12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
 .row-main{flex:1;min-width:0}
-.kit-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px}
+.kit-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
 .version{color:var(--gold);font-size:13px}
 .method{font-style:italic}
 .unmeasured{color:var(--warn)}
 
 /* ---- consent ---- */
-.consent-line{font-size:13px;padding:7px 10px;border-radius:5px;border:1px solid transparent}
+.consent-line{font-size:12.5px;padding:6px 9px;border-radius:5px;border:1px solid transparent}
 .consent-line.ok{color:#7fd3b3;background:rgba(25,158,112,0.10);border-color:rgba(25,158,112,0.28)}
 .consent-line.blocked{color:#f0a58a;background:rgba(217,89,38,0.10);border-color:rgba(217,89,38,0.30)}
 
 /* ---- badges ---- */
-.badge{font-family:var(--display);font-size:11px;letter-spacing:0.09em;text-transform:uppercase;padding:3px 8px;border-radius:3px;border:1px solid var(--rule);color:var(--ink-3);white-space:nowrap}
+.badge{font-family:var(--display);font-size:10.5px;letter-spacing:0.09em;text-transform:uppercase;padding:2px 7px;border-radius:3px;border:1px solid var(--rule);color:var(--ink-3);white-space:nowrap}
 .badge-approved,.badge-ready,.badge-verified{color:#7fd3b3;border-color:rgba(25,158,112,0.45);background:rgba(25,158,112,0.10)}
 .badge-published{color:#0e0c14;background:var(--gold);border-color:var(--gold)}
 .badge-running,.badge-queued{color:#f0cf8a;border-color:rgba(245,185,64,0.42);background:rgba(245,185,64,0.09)}
 .badge-failed,.badge-blocked{color:#f0a58a;border-color:rgba(217,89,38,0.45);background:rgba(217,89,38,0.10)}
 
 /* ---- forms ---- */
-.form{display:flex;flex-direction:column;gap:11px}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.form{display:flex;flex-direction:column;gap:10px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 /* flex-direction must be reset explicitly: these forms carry both `.form` and
    `.form-inline`, and `.form` sets column. Without this the fields wrap into a
    second column instead of sitting on one row. */
-.form-inline{display:flex;flex-direction:row;flex-wrap:wrap;gap:11px;align-items:flex-end;border-top:1px solid var(--rule-2);padding-top:14px}
+.form-inline{display:flex;flex-direction:row;flex-wrap:wrap;gap:10px;align-items:flex-end;border-top:1px solid var(--rule-2);padding-top:12px}
 .form-inline.tight{border:0;padding-top:0;gap:8px}
-.form-inline label{flex:1;min-width:130px}
-label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--ink-3)}
-input,textarea,select{font-family:var(--body);font-size:14px;color:var(--ink);background:var(--bg-2);border:1px solid var(--rule);border-radius:5px;padding:8px 10px;width:100%}
+/* Fields of unequal height on one row. `.form-inline` bottom-aligns them, which leaves a
+   one-line label floating level with the bottom of a two-line one; an explicit grid puts
+   each control in its own column and aligns the *controls*, not the labels. */
+.plan-row{display:grid;grid-template-columns:104px minmax(0,1fr) auto;gap:10px;align-items:end}
+@media (max-width:1000px){.plan-row{grid-template-columns:1fr}}
+.form-inline label{flex:1;min-width:126px}
+label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--ink-3)}
+input,textarea,select{font-family:var(--body);font-size:13.5px;color:var(--ink);background:var(--bg-2);border:1px solid var(--rule);border-radius:5px;padding:7px 9px;width:100%}
 input[type=number]{max-width:130px}
 textarea{resize:vertical;line-height:1.45}
 input:focus,textarea:focus,select:focus{outline:none;border-color:var(--gold-dim)}
 input::placeholder,textarea::placeholder{color:#5d5872}
 
-.btn{font-family:var(--display);font-size:13.5px;letter-spacing:0.02em;padding:8px 15px;border-radius:5px;border:1px solid var(--rule);background:var(--panel-2);color:var(--ink-2);cursor:pointer;text-decoration:none;display:inline-block}
+.btn{font-family:var(--display);font-size:13px;letter-spacing:0.02em;padding:7px 14px;border-radius:5px;border:1px solid var(--rule);background:var(--panel-2);color:var(--ink-2);cursor:pointer;text-decoration:none;display:inline-block;white-space:nowrap}
 .btn:hover{border-color:var(--gold-dim);color:var(--ink)}
 .btn-primary{background:var(--gold);border-color:var(--gold);color:#0e0c14;font-weight:600}
 .btn-primary:hover{background:#ffc95a;color:#0e0c14}
-.btn-quiet{font-size:13px;padding:6px 12px}
+.btn-quiet{font-size:12.5px;padding:5px 11px}
 .btn-danger:hover{border-color:var(--err);color:#f0a58a}
 
-.notice{border-radius:6px;padding:13px 15px;margin-bottom:14px;font-size:14px}
+.notice{border-radius:6px;padding:10px 13px;margin-bottom:11px;font-size:13.5px}
+/* A blocking notice sits between the identity bar and the deck, and must not scroll:
+   it is the reason the controls below it will refuse. `flex:none` so it costs its own
+   height and the deck absorbs the difference. */
+.shell-notice{flex:none;margin:11px 0 0}
 .notice-error{background:rgba(217,89,38,0.10);border:1px solid rgba(217,89,38,0.34);color:#f0a58a}
-.notice p{margin-top:4px}
+.notice p{margin-top:3px}
 
 /* ---- data ---- */
-.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 16px;font-size:13.5px;margin:10px 0}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px;margin:9px 0}
 .kv dt{color:var(--ink-3)}
 .kv dd{color:var(--ink-2)}
-.table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
-.table th{text-align:left;font-family:var(--display);font-weight:500;color:var(--ink-3);font-size:12px;letter-spacing:0.08em;text-transform:uppercase;padding:7px 10px;border-bottom:1px solid var(--rule)}
-.table td{padding:8px 10px;border-bottom:1px solid var(--rule-2);vertical-align:top}
+.table{width:100%;border-collapse:collapse;font-size:13px;margin-top:7px}
+/* The header stays put while the body scrolls, because the work area is what scrolls
+   now — a 40-row gaps table with its column names off screen is a table you have to
+   scroll back up to read. */
+.table th{text-align:left;font-family:var(--display);font-weight:500;color:var(--ink-3);font-size:11.5px;letter-spacing:0.08em;text-transform:uppercase;padding:6px 9px;border-bottom:1px solid var(--rule);
+  position:sticky;top:0;background:var(--panel);z-index:2}
+.table td{padding:6px 9px;border-bottom:1px solid var(--rule-2);vertical-align:top}
+.table tbody tr:hover{background:rgba(255,255,255,0.022)}
 .table .prompt{color:var(--ink-3);max-width:400px}
+/* Deliberately *not* wrapped in an `overflow-x` scroller. A wrapper would become the
+   nearest scroll container, and a sticky header inside a box that never scrolls
+   vertically does not stick — the work area is the scrollport, so a wide table scrolls
+   sideways there and the header keeps working. */
 
 /* ---- assets ---- */
-.assets,.frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:11px;margin-top:11px}
+.assets,.frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;margin-top:10px}
 .asset,.frames figure{background:var(--bg-2);border:1px solid var(--rule-2);border-radius:6px;overflow:hidden}
 .asset video,.asset img,.frames img{width:100%;aspect-ratio:9/16;object-fit:cover;display:block;background:#000}
-.asset audio{width:100%;padding:10px}
-.asset figcaption,.frames figcaption{padding:8px 9px;font-size:11.5px;color:var(--ink-3);display:flex;flex-direction:column;gap:2px}
-.asset .mod{font-family:var(--display);letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);font-size:10.5px}
+.asset audio{width:100%;padding:9px}
+.asset figcaption,.frames figcaption{padding:7px 8px;font-size:11px;color:var(--ink-3);display:flex;flex-direction:column;gap:2px}
+.asset .mod{font-family:var(--display);letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);font-size:10px}
 .asset .model{color:var(--ink-2)}
 .sha{font-size:10.5px}
 
@@ -145,22 +334,28 @@ input::placeholder,textarea::placeholder{color:#5d5872}
 .asset .dl:hover{text-decoration:underline}
 
 /* ---- compact kit (sidebar) ---- */
-.kit-summary{display:flex;flex-direction:column;gap:6px;background:var(--panel-2);border:1px solid var(--rule-2);border-radius:6px;padding:11px 13px;text-decoration:none}
+.kit-summary{display:flex;flex-direction:column;gap:5px;background:var(--panel-2);border:1px solid var(--rule-2);border-radius:6px;padding:9px 11px;text-decoration:none}
 .kit-summary:hover{border-color:var(--gold-dim)}
-.kit-summary-name{color:var(--ink);font-family:var(--display);font-size:14.5px}
+.kit-summary-name{color:var(--ink);font-family:var(--display);font-size:14px}
 .kit-summary-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
 /* ---- sign in ----
-   The one page a signed-out person sees, so it carries the same tokens as the rest of
-   the console rather than looking like a different product bolted on the front. */
-.auth-card{max-width:430px;margin:76px auto;padding:34px 32px 28px}
-.auth-card h1{font-size:27px;margin:0 0 12px}
-.auth-card .lede{margin-bottom:22px}
-.auth-card .hint{margin-top:20px;padding-top:16px;border-top:1px solid var(--rule-2)}
-.auth-card .form-inline{margin-top:12px}
+   The one page a signed-out person sees, and the one page that is still a document:
+   there is nothing here to lay out against, only a card. Same tokens as the rest, so it
+   does not look like a different product bolted on the front. */
+/* Centred in what is left of the viewport rather than pinned under the topbar, because
+   a 420px card with 76px of margin above it and the rest of a laptop screen empty below
+   is not a layout, it is a card that fell to the top. */
+body.auth{min-height:100dvh;display:flex;flex-direction:column}
+body.auth main{flex:1;display:flex;align-items:center;justify-content:center}
+body.auth .footer{margin-top:0}
+.auth-card{width:100%;max-width:420px;margin:24px auto;padding:28px 28px 24px}
+.auth-card h1{font-size:25px;margin:0 0 10px}
+.auth-card .lede{margin-bottom:18px}
+.auth-card .hint{margin-top:16px;padding-top:14px;border-top:1px solid var(--rule-2)}
+.auth-card .form-inline{margin-top:11px}
 /* Wide tracking so a six-digit code reads as six discrete digits, not a number. */
-.otp-input{font-family:var(--display);font-size:23px;letter-spacing:0.34em;text-align:center}
-.whoami{color:var(--ink-3);border-left:1px solid var(--rule-2);padding-left:22px}
+.otp-input{font-family:var(--display);font-size:22px;letter-spacing:0.34em;text-align:center}
 
 /* ---- sections, recommendations, analysis ----
    A song has as many hooks as it has. Three states have to be legible at a glance and
@@ -178,22 +373,29 @@ input::placeholder,textarea::placeholder{color:#5d5872}
 /* A rule is pass, fail, or NOT CHECKABLE — the third state is why this is a list and not
    a tick. Rendering "no measurement for this rule" as a failure would send someone to fix
    a window that may well be right. */
-.checks{list-style:none;margin:8px 0 0;display:flex;flex-direction:column;gap:3px}
-.check{font-size:13px;color:var(--ink-3);display:flex;gap:7px;align-items:baseline}
+.checks{list-style:none;margin:7px 0 0;display:flex;flex-direction:column;gap:3px}
+.check{font-size:12.5px;color:var(--ink-3);display:flex;gap:7px;align-items:baseline}
 .check strong{color:var(--ink-2);font-weight:500}
 .check-mark{font-family:var(--mono);width:1em}
 .check-pass .check-mark{color:var(--ok)}
 .check-fail .check-mark{color:var(--err)}
 .check-unknown .check-mark{color:var(--ink-3)}
-.blocked{list-style:none;margin:8px 0;display:flex;flex-direction:column;gap:5px}
-.blocked li{font-size:13.5px;color:var(--warn);padding-left:14px;position:relative}
+.blocked{list-style:none;margin:7px 0;display:flex;flex-direction:column;gap:5px}
+.blocked li{font-size:13px;color:var(--warn);padding-left:14px;position:relative}
 .blocked li::before{content:"→";position:absolute;left:0;color:var(--ink-3)}
 .finding{border-left:2px solid var(--rule)}
 
-.sections-pick{border:1px solid var(--rule-2);border-radius:6px;padding:10px 12px;display:flex;
-  flex-wrap:wrap;gap:6px 18px}
-.sections-pick legend{font-size:12.5px;color:var(--ink-3);padding:0 4px}
-.tick{display:flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink-2)}
+/* A `role="group"` with a paragraph rather than a `<fieldset><legend>`: a legend is laid
+   out inside the border, and this one is a sentence long, so it cut the top edge of the
+   box open across its whole width. Each checkbox carries its own label either way. */
+.sections-pick{border:1px solid var(--rule-2);border-radius:6px;padding:9px 11px;display:flex;
+  flex-wrap:wrap;gap:6px 18px;align-items:center}
+.pick-note{flex-basis:100%;margin:0 0 1px}
+/* `flex-direction` explicitly, for the same reason `.tabs label` sets it: the base
+   `label` rule stacks its children, which put each checkbox on a line above its own
+   name. */
+.tick{display:flex;flex-direction:row;align-items:center;gap:6px;font-size:13px;
+  color:var(--ink-2);white-space:nowrap}
 .tick input{accent-color:var(--gold)}
 .spin{color:var(--gold)}
 .danger:hover{border-color:var(--err);color:#f0a58a}

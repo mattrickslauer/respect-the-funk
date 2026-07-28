@@ -11,7 +11,17 @@
 <script src="/static/htmx.min.js" defer></script>
 <link rel="stylesheet" href="/static/console.css">
 </head>
-<body>
+{# `body_class` is the opt-in to the viewport-locked shell. A page that sets it to
+   `shell` stops being a document that scrolls and becomes a workspace that fits: the
+   topbar and the page's own header are fixed furniture, and scrolling happens inside
+   the regions that own it.
+
+   Every console page takes it. The console is looked at on a laptop, where the vertical
+   budget after browser chrome is about 750px; as documents these pages opened with a
+   masthead and a paragraph and then scrolled, so the numbers a decision depends on were
+   never on screen at the same time as the control that acts on them. The sign-in screen
+   is the exception, being a card with nothing to lay out against. #}
+<body class="{% block body_class %}{% endblock %}">
 
 <header class="topbar">
   <div class="wrap topbar-inner">
@@ -39,10 +49,16 @@
 
 {% include "components/_env_banner.html" %}
 
-<main class="wrap">
+<main class="{% block main_class %}wrap{% endblock %}">
   {% block content %}{% endblock %}
 </main>
 
+{# Overridable so a shell page can drop it: a footer inside a viewport-locked layout is
+   either always on screen stealing rows, or in a scroll region nobody reaches. Every
+   console page drops it and reprints the deployment line at the foot of its rail
+   (components/_rail_env.html), which leaves the sign-in screen as the only page that
+   still renders this. #}
+{% block footer %}
 <footer class="footer">
   <div class="wrap">
     <p class="small">
@@ -58,6 +74,7 @@
     </p>
   </div>
 </footer>
+{% endblock %}
 
 </body>
 </html>

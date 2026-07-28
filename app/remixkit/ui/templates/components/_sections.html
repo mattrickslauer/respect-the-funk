@@ -4,7 +4,10 @@
    `measured` with the analyser's method behind it, or `manual` because somebody drew it.
    The two are never rendered identically — that distinction is the same discipline the
    BPM's method line is, applied to the arrangement. #}
-<section class="panel" id="song-sections">
+{# `pane-1` is the song console's first tab. It is set here rather than on the include,
+   because this element arrives inside `#song-hooks` on every htmx swap and the class has
+   to survive the swap. #}
+<section class="panel pane-1" id="song-sections">
   <div class="panel-head">
     <h3>Sections</h3>
     {% if song.primary_section %}
@@ -45,24 +48,6 @@
             </p>
           </div>
 
-          <form class="form-inline tight"
-                hx-post="/ui/songs/{{ song.id }}/sections/{{ section.id }}"
-                hx-target="#song-hooks" hx-swap="outerHTML">
-            <label>Start <span class="hint">ms</span>
-              <input name="start_ms" type="number" value="{{ section.start_ms }}" required></label>
-            <label>End <span class="hint">ms</span>
-              <input name="end_ms" type="number" value="{{ section.end_ms }}" required></label>
-            <label>Role
-              <select name="role">
-                {% for role in roles %}
-                  <option value="{{ role.value }}" {{ "selected" if role == section.role }}>{{ role.value }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            <label>Name <input name="label" value="{{ section.label }}" placeholder="{{ section.role.value }}"></label>
-            <button class="btn btn-quiet" type="submit">Save</button>
-          </form>
-
           <div class="row-actions">
             {% if section.is_hook_material and not primary %}
               <button class="btn btn-quiet"
@@ -74,6 +59,31 @@
                     hx-confirm="Remove {{ section.display_name }}?"
                     hx-target="#song-hooks" hx-swap="outerHTML">Remove</button>
           </div>
+
+          {# Folded away, because reading the list is the common act and re-cutting a
+             window is the rare one. Four always-open fields per section is what made
+             a six-section song taller than the screen. It reopens closed after a save,
+             which is right: the row above it is the new answer. #}
+          <details class="tweak row-tweak">
+            <summary>Edit window</summary>
+            <form class="form-inline tight"
+                  hx-post="/ui/songs/{{ song.id }}/sections/{{ section.id }}"
+                  hx-target="#song-hooks" hx-swap="outerHTML">
+              <label>Start <span class="hint">ms</span>
+                <input name="start_ms" type="number" value="{{ section.start_ms }}" required></label>
+              <label>End <span class="hint">ms</span>
+                <input name="end_ms" type="number" value="{{ section.end_ms }}" required></label>
+              <label>Role
+                <select name="role">
+                  {% for role in roles %}
+                    <option value="{{ role.value }}" {{ "selected" if role == section.role }}>{{ role.value }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>Name <input name="label" value="{{ section.label }}" placeholder="{{ section.role.value }}"></label>
+              <button class="btn btn-quiet" type="submit">Save</button>
+            </form>
+          </details>
         </div>
       {% endfor %}
     </div>
@@ -83,20 +93,25 @@
     </p>
   {% endif %}
 
-  <form class="form form-inline"
-        hx-post="/ui/songs/{{ song.id }}/sections"
-        hx-target="#song-hooks" hx-swap="outerHTML"
-        hx-on::after-request="if(event.detail.successful) this.reset()">
-    <label>Start <span class="hint">ms</span><input name="start_ms" type="number" required placeholder="124784"></label>
-    <label>End <span class="hint">ms</span><input name="end_ms" type="number" required placeholder="131184"></label>
-    <label>Role
-      <select name="role">
-        {% for role in roles %}
-          <option value="{{ role.value }}" {{ "selected" if role.value == "hook" }}>{{ role.value }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Name <input name="label" placeholder="Chorus 2"></label>
-    <button class="btn btn-primary" type="submit">Mark section</button>
-  </form>
+  {# Open when there is nothing to read yet — on a song with no sections, marking one is
+     the only thing to do here, and hiding it behind a click would be a puzzle. #}
+  <details class="tweak" {{ "open" if not song.sections }}>
+    <summary>Mark a section</summary>
+    <form class="form form-inline"
+          hx-post="/ui/songs/{{ song.id }}/sections"
+          hx-target="#song-hooks" hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful) this.reset()">
+      <label>Start <span class="hint">ms</span><input name="start_ms" type="number" required placeholder="124784"></label>
+      <label>End <span class="hint">ms</span><input name="end_ms" type="number" required placeholder="131184"></label>
+      <label>Role
+        <select name="role">
+          {% for role in roles %}
+            <option value="{{ role.value }}" {{ "selected" if role.value == "hook" }}>{{ role.value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Name <input name="label" placeholder="Chorus 2"></label>
+      <button class="btn btn-primary" type="submit">Mark section</button>
+    </form>
+  </details>
 </section>

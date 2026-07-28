@@ -1,21 +1,56 @@
+{# Who is on the label.
+
+   The page opened with a masthead and a paragraph explaining what a roster is, which is
+   a thing you read once and then scroll past every day after. The empty state says the
+   same sentence to the only person who has not read it, so the header is now the counts
+   and the registration form is the rail. #}
 {% extends "_layout.html" %}
 {% block title %}Roster — RemixKit{% endblock %}
+{% block body_class %}shell{% endblock %}
+{% block main_class %}shell-main{% endblock %}
+{% block footer %}{% endblock %}
 
 {% block content %}
-<section class="hero">
-  <p class="eyebrow">{{ env.tenant }}</p>
-  <h1>Roster</h1>
-  <p class="lede">
-    Register an artist, build their identity once, attach songs, and generate content
-    designed to be imitated. The identity is the reason the second video is cheap.
-  </p>
-</section>
-
-<div class="split">
-  <div class="split-main">
-    {% include "components/_roster.html" %}
+<header class="pagebar">
+  <div class="pagebar-id">
+    <p class="eyebrow">{{ env.tenant }}</p>
+    <h1>Roster</h1>
   </div>
-  <aside class="split-side">
+
+  {# Blocked artists are counted here rather than left to be found by scanning the cards:
+     an artist with no likeness consent cannot be generated for at all, so it is the one
+     number on this page that decides whether the day's work is possible. #}
+  {% set blocked = artists|rejectattr("consent.granted")|list %}
+  <dl class="stats">
+    <div class="stat">
+      <dt>Artists</dt>
+      <dd>{{ artists|length }}</dd>
+    </div>
+    <div class="stat">
+      <dt>Generatable</dt>
+      <dd>{{ artists|length - blocked|length }}
+        {% if blocked %}<span class="stat-sub unmeasured">{{ blocked|length }} blocked on consent</span>
+        {% else %}<span class="stat-sub">consent on file for all</span>{% endif %}</dd>
+    </div>
+    <div class="stat">
+      <dt>Recent kits</dt>
+      <dd>{{ kits|length }}</dd>
+    </div>
+  </dl>
+
+  <div class="pagebar-cta">
+    <a class="btn" href="/console/catalogue">What needs work →</a>
+  </div>
+</header>
+
+<div class="deck deck-r">
+  <div class="workarea">
+    <div class="stack">
+      {% include "components/_roster.html" %}
+    </div>
+  </div>
+
+  <aside class="rail">
     {% include "components/_artist_form.html" %}
 
     {% if kits %}
@@ -26,6 +61,8 @@
         </div>
       </section>
     {% endif %}
+
+    {% include "components/_rail_env.html" %}
   </aside>
 </div>
 {% endblock %}

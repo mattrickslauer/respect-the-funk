@@ -6,6 +6,10 @@
    from what the server actually accepted rather than from what was typed. #}
 {% extends "_layout.html" %}
 {% block title %}Sign in — RemixKit{% endblock %}
+{# Not the workspace shell — there is nothing here to lay out against, only a card. It
+   gets `auth` instead, which centres that card in the viewport rather than leaving it
+   at the top of an empty screen. #}
+{% block body_class %}auth{% endblock %}
 
 {% block content %}
 <section class="auth-card panel">

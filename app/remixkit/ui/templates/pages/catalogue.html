@@ -3,96 +3,138 @@
    can answer it.
 
    Blocked rows sort first (CatalogueService.gaps), because a screen whose purpose is
-   "what needs attention" must not put the work below the fold. #}
+   "what needs attention" must not put the work below the fold. That was the argument for
+   the sort order and it is the argument for this layout: the four gap counts used to be
+   a row of cards *above* the table they described, so on a laptop the answer to "what
+   needs attention" was four numbers and the top two rows of the list. The counts are in
+   the header bar now, the table owns the rest of the screen, and its header stays put
+   while the rows scroll under it. #}
 {% extends "_layout.html" %}
 {% block title %}Catalogue — RemixKit{% endblock %}
+{% block body_class %}shell{% endblock %}
+{% block main_class %}shell-main{% endblock %}
+{% block footer %}{% endblock %}
 
 {% block content %}
-<section class="hero">
-  <p class="eyebrow">{{ env.tenant }}</p>
-  <h1>Catalogue</h1>
-  <p class="lede">
-    What is missing. A song can only be generated from once it has a measurement, a hook
-    window, a master, and an artist whose likeness consent is on file — four preconditions
-    living on three different records.
-  </p>
-</section>
-
-<div class="grid">
-  {% for label, value, hint in [
-      ("No measurement",   catalogue.unmeasured,       "bpm and method both required"),
-      ("No hook window",   catalogue.no_hook,          "duration is zero"),
-      ("No approved kit",  catalogue.no_approved_kit,  "generated but never cleared"),
-      ("Blocked artists",  catalogue.blocked_artists,  "likeness consent not recorded"),
-    ] %}
-    <div class="card">
-      <div class="card-head"><h3>{{ label }}</h3></div>
-      <p class="sha">{{ value }}</p>
-      <p class="hint">{{ hint }}</p>
-    </div>
-  {% endfor %}
-</div>
-
-<section class="panel">
-  <div class="panel-head">
-    <h3>Gaps</h3>
-    <span class="hint">{{ catalogue.ready }} of {{ catalogue.rows|length }} ready to generate</span>
+<header class="pagebar">
+  <div class="pagebar-id">
+    <p class="eyebrow">{{ env.tenant }}</p>
+    <h1>Catalogue</h1>
   </div>
 
-  {# Filtering is a GET so the filtered view is a URL someone can send to a colleague. #}
-  <form class="form-inline" method="get" action="/console/catalogue">
-    <select name="artist_id">
-      <option value="">Every artist</option>
-      {% for a in artists %}
-        <option value="{{ a.id }}" {{ "selected" if a.id == artist_id }}>{{ a.name }}</option>
-      {% endfor %}
-    </select>
-    <button class="btn btn-quiet" type="submit">Filter</button>
-    {% if artist_id %}<a class="btn btn-quiet" href="/console/catalogue">Clear</a>{% endif %}
-  </form>
+  <dl class="stats">
+    <div class="stat">
+      <dt>Ready</dt>
+      <dd>{{ catalogue.ready }} <span class="stat-sub">of {{ catalogue.rows|length }} songs</span></dd>
+    </div>
+    <div class="stat">
+      <dt>No measurement</dt>
+      <dd>{{ catalogue.unmeasured }} <span class="stat-sub">bpm and method both required</span></dd>
+    </div>
+    <div class="stat">
+      <dt>No hook window</dt>
+      <dd>{{ catalogue.no_hook }} <span class="stat-sub">duration is zero</span></dd>
+    </div>
+    <div class="stat">
+      <dt>No approved kit</dt>
+      <dd>{{ catalogue.no_approved_kit }} <span class="stat-sub">generated but never cleared</span></dd>
+    </div>
+    <div class="stat">
+      <dt>Blocked artists</dt>
+      <dd>{{ catalogue.blocked_artists }} <span class="stat-sub">likeness consent not recorded</span></dd>
+    </div>
+  </dl>
+</header>
 
-  {% if not catalogue.rows %}
-    <p class="empty">No songs yet. Attach one from an artist's page.</p>
-  {% else %}
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Song</th><th>Artist</th><th>Measured</th><th>Hook</th>
-          <th>Master</th><th>Consent</th><th>Kits</th><th>Blocked on</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in catalogue.rows %}
-          <tr {% if not row.ready %}class="unmeasured"{% endif %}>
-            <td><a href="/console/songs/{{ row.song.id }}">{{ row.song.title }}</a></td>
-            <td>
-              {% if row.artist %}
-                <a href="/console/artists/{{ row.artist.id }}">{{ row.artist.name }}</a>
-              {% else %}<span class="hint">—</span>{% endif %}
-            </td>
-            {# ✓/· rather than words: eight columns of "yes"/"no" is unreadable, and the
-               eye needs to find the gaps, not read them. #}
-            <td>{% if row.measured %}✓{% else %}<span class="err">·</span>{% endif %}</td>
-            <td>{% if row.has_hook %}✓{% else %}<span class="err">·</span>{% endif %}</td>
-            <td>{% if row.has_master %}✓{% else %}<span class="err">·</span>{% endif %}</td>
-            <td>{% if row.consent_ok %}✓{% else %}<span class="err">·</span>{% endif %}</td>
-            <td>
-              {{ row.kit_count }}
-              {% if row.approved_kit %}<span class="badge badge-approved">approved</span>{% endif %}
-            </td>
-            <td class="small">
-              {% if row.blocked_on %}
-                {{ row.blocked_on|join(", ") }}
-              {% elif row.approved_kit %}
-                <span class="hint">complete</span>
-              {% else %}
-                <a href="/console/artists/{{ row.song.artist_id }}/songs/{{ row.song.id }}/generate">Generate →</a>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
-</section>
+<div class="deck deck-r">
+  <div class="workarea">
+    <div class="stack">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Gaps</h3>
+          <span class="hint">
+            {% if artist_id %}filtered · {% endif %}blocked rows first
+          </span>
+        </div>
+
+        {% if not catalogue.rows %}
+          <p class="empty">No songs yet. Attach one from an artist's page.</p>
+        {% else %}
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Song</th><th>Artist</th><th>Measured</th><th>Hook</th>
+                  <th>Master</th><th>Consent</th><th>Kits</th><th>Blocked on</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in catalogue.rows %}
+                  <tr {% if not row.ready %}class="unmeasured"{% endif %}>
+                    <td><a href="/console/songs/{{ row.song.id }}">{{ row.song.title }}</a></td>
+                    <td>
+                      {% if row.artist %}
+                        <a href="/console/artists/{{ row.artist.id }}">{{ row.artist.name }}</a>
+                      {% else %}<span class="hint">—</span>{% endif %}
+                    </td>
+                    {# ✓/· rather than words: eight columns of "yes"/"no" is unreadable, and the
+                       eye needs to find the gaps, not read them. #}
+                    <td>{% if row.measured %}✓{% else %}<span class="err">·</span>{% endif %}</td>
+                    <td>{% if row.has_hook %}✓{% else %}<span class="err">·</span>{% endif %}</td>
+                    <td>{% if row.has_master %}✓{% else %}<span class="err">·</span>{% endif %}</td>
+                    <td>{% if row.consent_ok %}✓{% else %}<span class="err">·</span>{% endif %}</td>
+                    <td>
+                      {{ row.kit_count }}
+                      {% if row.approved_kit %}<span class="badge badge-approved">approved</span>{% endif %}
+                    </td>
+                    <td class="small">
+                      {% if row.blocked_on %}
+                        {{ row.blocked_on|join(", ") }}
+                      {% elif row.approved_kit %}
+                        <span class="hint">complete</span>
+                      {% else %}
+                        <a href="/console/artists/{{ row.song.artist_id }}/songs/{{ row.song.id }}/generate">Generate →</a>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+
+  <aside class="rail">
+    <section class="panel">
+      <div class="panel-head"><h3>Filter</h3></div>
+      {# Filtering is a GET so the filtered view is a URL someone can send to a colleague. #}
+      <form class="form" method="get" action="/console/catalogue">
+        <label>Artist
+          <select name="artist_id">
+            <option value="">Every artist</option>
+            {% for a in artists %}
+              <option value="{{ a.id }}" {{ "selected" if a.id == artist_id }}>{{ a.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="links">
+          <button class="btn btn-primary" type="submit">Filter</button>
+          {% if artist_id %}<a class="btn btn-quiet" href="/console/catalogue">Clear</a>{% endif %}
+        </div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h3>What "ready" means</h3></div>
+      <p class="small">
+        A song can only be generated from once it has a measurement, a hook window, a
+        master, and an artist whose likeness consent is on file — four preconditions
+        living on three different records. The <strong>Blocked on</strong> column names
+        whichever are still missing.
+      </p>
+    </section>
+
+    {% include "components/_rail_env.html" %}
+  </aside>
+</div>
 {% endblock %}

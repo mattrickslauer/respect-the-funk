@@ -1,79 +1,117 @@
-{# Deployment. The footer already names which backends are live; this says what each
-   one would need in order to be real, so "why is generation mocked" is answerable
-   without reading deps.describe().
+{# Deployment. Every page carries a one-line banner naming which backends are mocked;
+   this is the same information with the gap spelled out, so "why is generation mocked"
+   is answerable without reading deps.describe().
 
    Read-only on purpose. These are process-level settings read once at startup —
    `get_settings()` is lru_cached, so a form here would write a value the running
    process would never see, which is worse than no form. #}
 {% extends "_layout.html" %}
 {% block title %}Deployment — RemixKit{% endblock %}
+{% block body_class %}shell{% endblock %}
+{% block main_class %}shell-main{% endblock %}
+{% block footer %}{% endblock %}
 
 {% block content %}
-<section class="hero">
-  <p class="eyebrow">{{ env.tenant }}</p>
-  <h1>Deployment</h1>
-  <p class="lede">
-    Five axes, each independently real or mocked. Every page carries a banner naming
-    which are live; this is the same information with the gap spelled out.
-  </p>
-</section>
-
-{% if env.warnings %}
-  <div class="notice">
-    <strong>{{ env.warnings|length }} axis{{ "" if env.warnings|length == 1 else "es" }} not live.</strong>
-    Nothing here is broken — each is a deliberate default that runs with no credentials.
-  </div>
-{% endif %}
-
-<section class="panel">
-  <div class="panel-head"><h3>Backends</h3></div>
-  <table class="table">
-    <thead>
-      <tr><th>Axis</th><th>Variable</th><th>Now</th><th>Live value</th><th>What that needs</th></tr>
-    </thead>
-    <tbody>
-      {% for label, var, current, live, needs in axes %}
-        <tr>
-          <td>{{ label }}</td>
-          <td><code>{{ var }}</code></td>
-          <td>
-            {% if current == live %}
-              <span class="badge badge-approved">{{ current }}</span>
-            {% else %}
-              <span class="badge">{{ current }}</span>
-            {% endif %}
-          </td>
-          <td><code>{{ live }}</code></td>
-          <td class="small">
-            {% if current == live %}<span class="hint">— already live</span>{% else %}{{ needs }}{% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
-
-<div class="split">
-  <div class="split-main">
-    <section class="panel">
-      <div class="panel-head"><h3>This process</h3></div>
-      <dl class="kv">
-        {% for key, value in described.items() if key != "warnings" %}
-          <dt>{{ key }}</dt><dd><code>{{ value }}</code></dd>
-        {% endfor %}
-      </dl>
-      <p class="small">
-        The same object is served as JSON at <a href="/healthz"><code>/healthz</code></a>,
-        which is what the load balancer polls.
-      </p>
-    </section>
+<header class="pagebar">
+  <div class="pagebar-id">
+    <p class="eyebrow">{{ env.tenant }}</p>
+    <h1>Deployment</h1>
+    <span class="badge">{{ env.env }}</span>
   </div>
 
-  <aside class="split-side">
+  {# Five axes, each independently real or mocked. The count is the headline because it
+     is the one number that says how much of this console is standing on real providers.
+     Counted from `axes` rather than from `env.warnings`, which is a different list and
+     need not be one entry per mocked axis. #}
+  {% set ns = namespace(live=0) %}
+  {% for _label, _var, current, live_value, _needs in axes %}
+    {% if current == live_value %}{% set ns.live = ns.live + 1 %}{% endif %}
+  {% endfor %}
+  <dl class="stats">
+    <div class="stat">
+      <dt>Live axes</dt>
+      <dd>{{ ns.live }} of {{ axes|length }}
+        <span class="stat-sub">each independently real or mocked</span></dd>
+    </div>
+    <div class="stat">
+      <dt>Storage</dt>
+      <dd>{{ env.storage }}</dd>
+    </div>
+    <div class="stat">
+      <dt>Generator</dt>
+      <dd>{{ env.generator }}</dd>
+    </div>
+    <div class="stat">
+      <dt>Queue</dt>
+      <dd>{{ env.queue }}</dd>
+    </div>
+    <div class="stat">
+      <dt>Auth</dt>
+      <dd>{{ env.auth }}</dd>
+    </div>
+  </dl>
+
+  <div class="pagebar-cta">
+    <a class="btn" href="/healthz">/healthz →</a>
+  </div>
+</header>
+
+<div class="deck deck-r">
+  <div class="workarea">
+    <div class="stack">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>Backends</h3>
+          <span class="hint">nothing here is broken — each is a default that runs with no credentials</span>
+        </div>
+        <table class="table">
+          <thead>
+            <tr><th>Axis</th><th>Variable</th><th>Now</th><th>Live value</th><th>What that needs</th></tr>
+          </thead>
+          <tbody>
+            {% for label, var, current, live, needs in axes %}
+              <tr>
+                <td>{{ label }}</td>
+                <td><code>{{ var }}</code></td>
+                <td>
+                  {% if current == live %}
+                    <span class="badge badge-approved">{{ current }}</span>
+                  {% else %}
+                    <span class="badge">{{ current }}</span>
+                  {% endif %}
+                </td>
+                <td><code>{{ live }}</code></td>
+                <td class="small">
+                  {% if current == live %}<span class="hint">— already live</span>{% else %}{{ needs }}{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h3>This process</h3>
+          <span class="hint">served as JSON at <a href="/healthz"><code>/healthz</code></a>, which is what the load balancer polls</span>
+        </div>
+        <dl class="kv">
+          {% for key, value in described.items() if key != "warnings" %}
+            <dt>{{ key }}</dt><dd><code>{{ value }}</code></dd>
+          {% endfor %}
+        </dl>
+      </section>
+    </div>
+  </div>
+
+  <aside class="rail">
     <section class="panel">
-      <div class="panel-head"><h3>Warnings</h3></div>
+      <div class="panel-head">
+        <h3>Warnings</h3>
+        {% if env.warnings %}<span class="badge badge-queued">{{ env.warnings|length }}</span>{% endif %}
+      </div>
       {% if env.warnings %}
-        <ul class="small">
+        <ul class="blocked">
           {% for w in env.warnings %}<li>{{ w }}</li>{% endfor %}
         </ul>
       {% else %}
@@ -90,6 +128,7 @@
         next deploy.
       </p>
     </section>
+    {# No `_rail_env` here: this page is that line, expanded. #}
   </aside>
 </div>
 {% endblock %}

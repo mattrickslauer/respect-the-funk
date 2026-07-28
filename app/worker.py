@@ -9,9 +9,10 @@ still costs nothing at rest via `minvCpus: 0`.
 
 Three modes:
 
-    python worker.py --kit-id kit_abc123          # one kit, then exit (Batch job)
-    python worker.py --song-id sng_abc123         # measure one master, then exit
-    python worker.py --poll                       # drain SQS until empty (long-running)
+    python worker.py --kit-id kit_abc123               # one kit, then exit (Batch job)
+    python worker.py --song-id sng_abc123              # measure one master, then exit
+    python worker.py --transcribe-song-id sng_abc123   # hear one master's lyric, then exit
+    python worker.py --poll                            # drain SQS until empty (long-running)
 
 Both jobs are idempotent on their document id — a redelivered message costs nothing
 (§2b rule 4). Analysis belongs here for the same reason generation does: decoding a master
@@ -30,6 +31,7 @@ import sys
 from remixkit.bootstrap import export_for_libs, load_secrets
 from remixkit.deps import get_container
 from remixkit.services.analysis import JOB_TYPE as ANALYSIS_JOB_TYPE
+from remixkit.services.transcription import JOB_TYPE as TRANSCRIPTION_JOB_TYPE
 from remixkit.settings import get_settings
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -76,12 +78,42 @@ def analyse_one(tenant_id: str, song_id: str) -> int:
     return 0 if analysis and analysis.ran else 1
 
 
+def transcribe_one(tenant_id: str, song_id: str) -> int:
+    container = get_container()
+    if not container.transcription.available:
+        # Loud and immediate, exactly as `analyse_one` is: a worker image built without a
+        # credentialed transcriber would otherwise mark every song `failed` at a rate of
+        # one per message, with the reason visible only on the song document.
+        log.error(
+            "this worker cannot transcribe audio: %s",
+            container.transcription.unavailable_reason,
+        )
+        return 2
+    song = container.transcription.run(tenant_id, song_id)
+    lyrics = song.lyrics
+    log.info(
+        "song %s → %s (%d lyric lines, language %s)",
+        song.id,
+        lyrics.status.value if lyrics else "unknown",
+        len(lyrics.lines) if lyrics else 0,
+        (lyrics.language if lyrics else None) or "undetected",
+    )
+    if lyrics and lyrics.error:
+        log.error("song %s error: %s", song.id, lyrics.error)
+    return 0 if lyrics and lyrics.ran else 1
+
+
 def _handle(job_type: str, payload: dict) -> int:
     """One message → the service that owns it.
 
     The job type is read from the body rather than inferred from which keys are present:
-    a payload-shape guess is the kind of dispatch that works until two jobs share a field.
+    a payload-shape guess is the kind of dispatch that works until two jobs share a field —
+    which is now literally true, since analysis and transcription carry the same
+    `song_id`. The `song_id` fallback below stays for messages enqueued before this job
+    type existed, and means analysis, because that is all it could have meant.
     """
+    if job_type == TRANSCRIPTION_JOB_TYPE:
+        return transcribe_one(payload["tenant_id"], payload["song_id"])
     if job_type == ANALYSIS_JOB_TYPE or "song_id" in payload:
         return analyse_one(payload["tenant_id"], payload["song_id"])
     return run_one(payload["tenant_id"], payload["kit_id"])
@@ -137,6 +169,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kit-id", help="Run one kit and exit")
     parser.add_argument("--song-id", help="Measure one song's master and exit")
+    parser.add_argument("--transcribe-song-id", help="Transcribe one song's master and exit")
     parser.add_argument("--tenant-id", help="Tenant (defaults to RK_DEFAULT_TENANT_ID)")
     parser.add_argument("--poll", action="store_true", help="Drain SQS until empty")
     args = parser.parse_args()
@@ -147,6 +180,8 @@ def main() -> int:
         return run_one(tenant_id, args.kit_id)
     if args.song_id:
         return analyse_one(tenant_id, args.song_id)
+    if args.transcribe_song_id:
+        return transcribe_one(tenant_id, args.transcribe_song_id)
     if args.poll:
         return poll()
     parser.print_help()

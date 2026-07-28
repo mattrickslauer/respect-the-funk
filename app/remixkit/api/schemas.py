@@ -92,6 +92,32 @@ class SectionPatch(BaseModel):
     notes: str | None = None
 
 
+class LyricLineIn(BaseModel):
+    """One line of the lyric, typed by a person.
+
+    No `source` field and no `confidence`, for the reason `SectionIn` has no `source`:
+    anything arriving through this route is a person saying so, and a caller able to
+    declare its own line `measured` — with a certainty of its own choosing — would make
+    both flags meaningless. Only `services.songs.apply_transcript` writes those.
+    """
+
+    text: str
+    start_ms: int = 0
+    end_ms: int = 0
+
+
+class LyricLinePatch(BaseModel):
+    text: str | None = None
+    start_ms: int | None = None
+    end_ms: int | None = None
+
+
+class LyricsTextIn(BaseModel):
+    """The whole lyric as a block — one line of text per line of the song."""
+
+    text: str
+
+
 class UploadUrlIn(BaseModel):
     content_type: str = "audio/wav"
 

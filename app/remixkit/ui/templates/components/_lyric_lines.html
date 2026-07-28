@@ -1,0 +1,127 @@
+{# The song's words, line by line, every one of them editable.
+
+   A transcript is a model's guess at language, which is a different kind of claim from a
+   measurement of energy — so this pane is built around correcting it rather than reading
+   it. Each line carries where it came from (`heard` with the transcriber's method behind
+   it, or `by hand` because somebody typed it) and, when a transcriber produced it, how
+   sure it was. The uncertain ones are flagged rather than hidden: they are the list of
+   lines to play back, and burying them would make a transcript look finished when the
+   whole point of the confidence number is that it is not.
+
+   `pane-4` is the song console's fourth tab. It is set here rather than on the include
+   because this element arrives inside `#song-lyric-lines` on every htmx swap and the class
+   has to survive the swap. #}
+{% set lyrics = song.lyrics %}
+<section class="panel pane-4" id="song-lyric-lines"
+         hx-get="/ui/songs/{{ song.id }}/lyrics"
+         hx-trigger="rk:lyrics-done from:body"
+         hx-swap="outerHTML">
+  <div class="panel-head">
+    <h3>Lyrics</h3>
+    {% if lyrics and lyrics.lines %}
+      <span class="small">{{ lyrics.lines|length }} line(s){% if lyrics.uncertain_lines %},
+        <strong>{{ lyrics.uncertain_lines|length }}</strong> worth checking{% endif %}</span>
+    {% endif %}
+  </div>
+  <p class="hint">
+    Every line is editable, and editing one records that a person did. A line somebody
+    corrected stops carrying the transcriber's confidence — the number described words the
+    model chose, not the sentence you decided it was.
+  </p>
+
+  {% if lyrics and lyrics.lines %}
+    <div class="rows">
+      {% for line in lyrics.ordered_lines %}
+        <div class="row lyric-row{{ ' is-uncertain' if line.is_uncertain }}">
+          <div class="row-main">
+            <p class="lyric-text">{{ line.text }}</p>
+            <p class="small">
+              {% if line.duration_ms %}
+                {{ "%.2f"|format(line.start_ms / 1000) }}s → {{ "%.2f"|format(line.end_ms / 1000) }}s
+              {% else %}
+                <span class="unmeasured">no timing</span>
+              {% endif %}
+              {% if line.source.value == "measured" %}
+                <span class="method" title="{{ line.method }}">heard</span>
+                {% if line.confidence is not none %}
+                  <span class="hint">{{ "%.0f"|format(line.confidence * 100) }}% confident</span>
+                {% endif %}
+                {% if line.is_uncertain %}
+                  <span class="badge badge-uncertain">check by ear</span>
+                {% endif %}
+              {% else %}
+                <span class="unmeasured">by hand</span>
+                {% if line.method %}<span class="hint">{{ line.method }}</span>{% endif %}
+              {% endif %}
+            </p>
+          </div>
+
+          <div class="row-actions">
+            <button class="btn btn-quiet danger"
+                    hx-delete="/ui/songs/{{ song.id }}/lyrics/lines/{{ line.id }}"
+                    hx-confirm="Remove this line?"
+                    hx-target="#song-lyric-lines" hx-swap="outerHTML">Remove</button>
+          </div>
+
+          {# Folded, like the section rows: reading the lyric is the common act and
+             re-cutting one line is the rare one. It reopens closed after a save, which is
+             right — the line above it is the new answer. #}
+          <details class="tweak row-tweak">
+            <summary>Edit line</summary>
+            <form class="form-inline tight"
+                  hx-post="/ui/songs/{{ song.id }}/lyrics/lines/{{ line.id }}"
+                  hx-target="#song-lyric-lines" hx-swap="outerHTML">
+              <label class="grow">Words
+                <input name="text" value="{{ line.text }}" required></label>
+              <label>Start <span class="hint">ms</span>
+                <input name="start_ms" type="number" value="{{ line.start_ms }}" required></label>
+              <label>End <span class="hint">ms</span>
+                <input name="end_ms" type="number" value="{{ line.end_ms }}" required></label>
+              <button class="btn btn-quiet" type="submit">Save</button>
+            </form>
+          </details>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">
+      No lyric yet. Transcribe the master from the panel on the left, or write one below —
+      a deployment with no transcriber is not a deployment that cannot hold a lyric.
+    </p>
+  {% endif %}
+
+  {# The edit that actually gets used. Fixing a chorus the model heard as gibberish is one
+     paste, not eight round trips through the per-line form above. #}
+  <details class="tweak">
+    <summary>Edit the whole lyric</summary>
+    <p class="hint">
+      One line of text per line of the song. Timings are kept by position, so correcting
+      words leaves them where they were sung — inserting or deleting a line shifts every
+      window after it, and the panel says so when that happens.
+    </p>
+    <form class="form"
+          hx-post="/ui/songs/{{ song.id }}/lyrics/text"
+          hx-target="#song-lyric-lines" hx-swap="outerHTML">
+      <label>Lyric
+        <textarea name="text" rows="14"
+                  placeholder="One line per line of the song">{{ lyrics.text if lyrics else "" }}</textarea>
+      </label>
+      <button class="btn btn-primary" type="submit">Save lyric</button>
+    </form>
+  </details>
+
+  {# Open when there is nothing to read yet — on a song with no lyric, writing one is the
+     only thing to do here, and hiding it behind a click would be a puzzle. #}
+  <details class="tweak" {{ "open" if not (lyrics and lyrics.lines) }}>
+    <summary>Add a line</summary>
+    <form class="form form-inline"
+          hx-post="/ui/songs/{{ song.id }}/lyrics/lines"
+          hx-target="#song-lyric-lines" hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful) this.reset()">
+      <label class="grow">Words <input name="text" required placeholder="Say it back to me"></label>
+      <label>Start <span class="hint">ms</span><input name="start_ms" type="number" value="0"></label>
+      <label>End <span class="hint">ms</span><input name="end_ms" type="number" value="0"></label>
+      <button class="btn btn-primary" type="submit">Add line</button>
+    </form>
+  </details>
+</section>

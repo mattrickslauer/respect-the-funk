@@ -17,6 +17,9 @@ from remixkit.api.schemas import (
     HookIn,
     IdentityIn,
     KitIn,
+    LyricLineIn,
+    LyricLinePatch,
+    LyricsTextIn,
     MasterIn,
     MeasurementIn,
     RequestCodeIn,
@@ -36,6 +39,7 @@ from remixkit.deps import (
     Kits,
     Recommendations,
     Songs,
+    Transcription,
     Verify,
     get_container,
 )
@@ -293,6 +297,106 @@ def analyse_song(song_id: str, principal: CurrentPrincipal, analysis: Analysis):
     """
     song = analysis.request(principal, song_id)
     return {"song_id": song.id, "analysis": song.analysis}
+
+
+# ---------------------------------------------------------------- lyrics
+@router.post("/songs/{song_id}/transcription", status_code=status.HTTP_202_ACCEPTED)
+def transcribe_song(
+    song_id: str,
+    principal: CurrentPrincipal,
+    transcription: Transcription,
+    force: bool = False,
+):
+    """202 — hearing a master is a queued job, not a request (§2b rule 3).
+
+    503 with the missing piece named if this process has no transcriber; the song is not
+    marked as anything, because nothing was attempted. 409 when the lyric already carries
+    hand-corrected lines and `force` was not passed — a re-run replaces the whole
+    transcript, and losing somebody's corrections to a query parameter they did not type
+    is not a thing this route will do quietly.
+    """
+    song = transcription.request(principal, song_id, force=force)
+    return {"song_id": song.id, "lyrics": song.lyrics}
+
+
+@router.get("/songs/{song_id}/lyrics")
+def get_lyrics(song_id: str, principal: CurrentPrincipal, songs: Songs):
+    """The lyric as records — every line with its window, its source and its confidence."""
+    song = songs.get(principal, song_id)
+    if song.lyrics is None:
+        return {"song_id": song.id, "lyrics": None, "lines": []}
+    return {
+        "song_id": song.id,
+        "lyrics": song.lyrics,
+        "lines": song.lyrics.ordered_lines,
+    }
+
+
+@router.get("/songs/{song_id}/lyrics.txt", response_class=Response)
+def lyrics_text(song_id: str, principal: CurrentPrincipal, songs: Songs):
+    """The lyric as text — the sibling of `/sheet`, and meant for the same consumer.
+
+    `/sheet` is the arrangement written out for something assembling a prompt; this is the
+    words. Both are `text/plain` for the same reason: the useful unit downstream is a
+    block, not a tree the caller has to re-render into prose itself — which is exactly the
+    step where a line nobody transcribed gets introduced.
+
+    404 rather than an empty body on a song with no lyric, so a prompt built around a
+    blank one fails where it is assembled rather than three services downstream.
+    """
+    song = songs.get(principal, song_id)
+    text = song.lyrics.text if song.lyrics else ""
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This song has no lyric. Transcribe the master or write one by hand.",
+        )
+    return Response(content=text, media_type="text/plain; charset=utf-8")
+
+
+@router.post("/songs/{song_id}/lyrics/lines", status_code=status.HTTP_201_CREATED)
+def add_lyric_line(
+    song_id: str, body: LyricLineIn, principal: CurrentPrincipal, songs: Songs
+):
+    return songs.add_lyric_line(
+        principal, song_id, text=body.text, start_ms=body.start_ms, end_ms=body.end_ms
+    )
+
+
+@router.patch("/songs/{song_id}/lyrics/lines/{line_id}")
+def update_lyric_line(
+    song_id: str,
+    line_id: str,
+    body: LyricLinePatch,
+    principal: CurrentPrincipal,
+    songs: Songs,
+):
+    """Correct one line. It becomes `manual` and loses the provider's confidence."""
+    return songs.update_lyric_line(
+        principal,
+        song_id,
+        line_id,
+        text=body.text,
+        start_ms=body.start_ms,
+        end_ms=body.end_ms,
+    )
+
+
+@router.delete("/songs/{song_id}/lyrics/lines/{line_id}")
+def delete_lyric_line(song_id: str, line_id: str, principal: CurrentPrincipal, songs: Songs):
+    return songs.remove_lyric_line(principal, song_id, line_id)
+
+
+@router.put("/songs/{song_id}/lyrics/text")
+def set_lyrics_text(
+    song_id: str, body: LyricsTextIn, principal: CurrentPrincipal, songs: Songs
+):
+    """Rewrite the whole lyric at once, keeping the windows already known.
+
+    See `services.songs.set_lyrics_text` for how lines are paired to windows and what
+    happens when the count changes.
+    """
+    return songs.set_lyrics_text(principal, song_id, body.text)
 
 
 @router.get("/songs/{song_id}/recommendations")

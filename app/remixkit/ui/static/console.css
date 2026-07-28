@@ -138,7 +138,7 @@ body.shell .banner{flex:none}
    cost one row of tab strip instead of three screens of stacked panels.
 
    Index-based rather than named, so any page can use them without new CSS: N radios in
-   `.workarea`, N labels in `.tabs`, panes classed `.pane-1`…`.pane-4`. The radios sit
+   `.workarea`, N labels in `.tabs`, panes classed `.pane-1`…`.pane-5`. The radios sit
    ahead of `.panes` so the selected-tab state lives outside every htmx swap target —
    `#song-hooks` replaces itself on each edit and would otherwise take the tab state
    with it. The pane rule is a descendant selector for the same reason: a pane may be
@@ -157,27 +157,31 @@ body.shell .banner{flex:none}
 .workarea>.tab-state:nth-of-type(1):checked~.tabs>label:nth-child(1),
 .workarea>.tab-state:nth-of-type(2):checked~.tabs>label:nth-child(2),
 .workarea>.tab-state:nth-of-type(3):checked~.tabs>label:nth-child(3),
-.workarea>.tab-state:nth-of-type(4):checked~.tabs>label:nth-child(4){
+.workarea>.tab-state:nth-of-type(4):checked~.tabs>label:nth-child(4),
+.workarea>.tab-state:nth-of-type(5):checked~.tabs>label:nth-child(5){
   background:var(--gold);border-color:var(--gold);color:#0e0c14;font-weight:600}
 .workarea>.tab-state:nth-of-type(1):checked~.tabs>label:nth-child(1) .count,
 .workarea>.tab-state:nth-of-type(2):checked~.tabs>label:nth-child(2) .count,
 .workarea>.tab-state:nth-of-type(3):checked~.tabs>label:nth-child(3) .count,
-.workarea>.tab-state:nth-of-type(4):checked~.tabs>label:nth-child(4) .count{
+.workarea>.tab-state:nth-of-type(4):checked~.tabs>label:nth-child(4) .count,
+.workarea>.tab-state:nth-of-type(5):checked~.tabs>label:nth-child(5) .count{
   background:rgba(0,0,0,0.20);color:#0e0c14}
 /* A tab reachable by keyboard has to be visibly reachable by keyboard: the radio is the
    focus target but the label is what is on screen. */
 .workarea>.tab-state:nth-of-type(1):focus-visible~.tabs>label:nth-child(1),
 .workarea>.tab-state:nth-of-type(2):focus-visible~.tabs>label:nth-child(2),
 .workarea>.tab-state:nth-of-type(3):focus-visible~.tabs>label:nth-child(3),
-.workarea>.tab-state:nth-of-type(4):focus-visible~.tabs>label:nth-child(4){
+.workarea>.tab-state:nth-of-type(4):focus-visible~.tabs>label:nth-child(4),
+.workarea>.tab-state:nth-of-type(5):focus-visible~.tabs>label:nth-child(5){
   outline:2px solid var(--gold-dim);outline-offset:2px}
 
 .panes{display:flex;flex-direction:column;gap:12px;padding-bottom:22px}
-.panes .pane-1,.panes .pane-2,.panes .pane-3,.panes .pane-4{display:none}
+.panes .pane-1,.panes .pane-2,.panes .pane-3,.panes .pane-4,.panes .pane-5{display:none}
 .workarea>.tab-state:nth-of-type(1):checked~.panes .pane-1,
 .workarea>.tab-state:nth-of-type(2):checked~.panes .pane-2,
 .workarea>.tab-state:nth-of-type(3):checked~.panes .pane-3,
-.workarea>.tab-state:nth-of-type(4):checked~.panes .pane-4{display:block}
+.workarea>.tab-state:nth-of-type(4):checked~.panes .pane-4,
+.workarea>.tab-state:nth-of-type(5):checked~.panes .pane-5{display:block}
 
 /* An untabbed work area still wants the same rhythm as a tabbed one. */
 .stack{display:flex;flex-direction:column;gap:12px;padding-bottom:22px}
@@ -369,6 +373,25 @@ body.auth .footer{margin-top:0}
 .badge-drop,.badge-chorus,.badge-hook{color:#f0cf8a;border-color:rgba(245,185,64,0.42)}
 .basis{color:var(--ink-3)}
 .basis .hint{text-transform:uppercase;letter-spacing:0.08em}
+
+/* ---- lyrics ----
+   The words get the body face at reading size, not the 13px the rest of a row is set in:
+   this is the one panel in the console somebody reads a sentence in rather than scanning,
+   and a lyric set in metadata type is a lyric nobody proofreads.
+
+   `.is-uncertain` marks the lines the transcriber was least sure of, in the same warn
+   colour `.unmeasured` uses — deliberately the same visual language, because "the model
+   was unsure" and "nobody measured this" are the same instruction to the reader: check it
+   before anything downstream depends on it. It is a left edge rather than a fill, so a run
+   of flagged lines stays readable as a lyric. */
+.lyric-row{align-items:flex-start}
+.lyric-row.is-uncertain{border-left:2px solid var(--warn)}
+.lyric-text{font-size:15px;line-height:1.5;color:var(--ink);margin-bottom:3px}
+.badge-uncertain{color:#f0cf8a;border-color:rgba(245,185,64,0.42);background:rgba(245,185,64,0.09)}
+/* The words are the field worth the room on a row of four; the two timestamps beside them
+   are three digits each. Without this they all take an equal third and the line being
+   corrected is the one in the smallest box. */
+.form-inline label.grow{flex:4 1 240px}
 
 /* A rule is pass, fail, or NOT CHECKABLE — the third state is why this is a list and not
    a tick. Rendering "no measurement for this rule" as a failure would send someone to fix

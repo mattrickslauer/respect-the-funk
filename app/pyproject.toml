@@ -27,6 +27,11 @@ queue = ["boto3>=1.34"]
 # content/RHYTHM-STUDY.md establishes that the standard segmentation moves do not work on
 # this material, so the methods here are the two tools in content/bin, ported.
 audio = ["numpy>=1.26"]
+# Reading the words off a master. The ElevenLabs SDK direct rather than through Genblaze:
+# `genblaze-elevenlabs` ships providers for *generating* speech, and Scribe is the other
+# direction — there is no generator step to hang a transcription on. The key is the same
+# one `adapters/providers.py` already reads for TTS.
+lyrics = ["elevenlabs>=2.0"]
 dev = ["pytest>=8.2", "httpx>=0.27"]
 
 [build-system]

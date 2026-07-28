@@ -19,9 +19,14 @@ from fastapi.testclient import TestClient
 from remixkit import deps
 from remixkit.domain.models import SectionRole
 from remixkit.ports.audio import AnalyzedSection, AudioAnalysis, BarFeature
+from remixkit.ports.lyrics import TranscribedLine, Transcription
 from remixkit.services.analysis import JOB_TYPE as ANALYSIS_JOB_TYPE, AnalysisService
-from remixkit.services.errors import AnalysisUnavailable
+from remixkit.services.errors import AnalysisUnavailable, TranscriptionUnavailable
 from remixkit.services.kits import JOB_TYPE
+from remixkit.services.transcription import (
+    JOB_TYPE as TRANSCRIPTION_JOB_TYPE,
+    TranscriptionService,
+)
 from remixkit.settings import Settings, get_settings
 
 
@@ -73,12 +78,18 @@ def container(settings, monkeypatch) -> deps.Container:
     built = deps.Container(settings)
     built.enqueued = []  # type: ignore[attr-defined]
     built.queue._handlers.clear()
-    for job_type in (JOB_TYPE, ANALYSIS_JOB_TYPE):
+    for job_type in (JOB_TYPE, ANALYSIS_JOB_TYPE, TRANSCRIPTION_JOB_TYPE):
         built.queue.register(job_type, lambda payload: built.enqueued.append(payload))  # type: ignore[attr-defined]
     # Measurement is the one adapter with no zero-credential real implementation — numpy
     # is an optional extra — so tests drive a fake one explicitly rather than depending on
     # whether the machine running them happens to have it installed.
     built.analysis = AnalysisService(built.songs, built.storage, built.queue, FakeAnalyzer())
+    # Transcription has the same problem one step worse: it needs a *credential*, so on a
+    # developer's machine with a real key in the environment the suite would call
+    # ElevenLabs. Substituting the fake here is what keeps the tests offline.
+    built.transcription = TranscriptionService(
+        built.songs, built.storage, built.queue, FakeTranscriber()
+    )
     monkeypatch.setattr(deps, "get_container", lambda: built)
     get_settings.cache_clear()
     return built
@@ -235,6 +246,56 @@ class FakeAnalyzer:
         return self._analysis or sample_analysis()
 
 
+# ---------------------------------------------------------------- transcription
+# Timed against the same fixture song, so a line and the section containing it can be
+# compared without either side converting anything: two lines land inside Chorus 1
+# (30704–61424) and one inside Drop 1 (124784–138224). The third is deliberately
+# low-confidence — `LyricLine.is_uncertain` is a threshold with a screen hanging off it,
+# and a fixture where every line is certain would leave that path untested.
+def sample_transcription(**overrides) -> Transcription:
+    fields = dict(
+        method="fake: fixture transcript, no provider was called",
+        language="en",
+        language_confidence=0.98,
+        duration_ms=214_000,
+        lines=[
+            TranscribedLine(text="Say it back to me", start_ms=30_704, end_ms=33_100, confidence=0.94),
+            TranscribedLine(text="I'm losing sleep again", start_ms=33_400, end_ms=36_800, confidence=0.88),
+            TranscribedLine(text="Something under the mix", start_ms=124_784, end_ms=127_900, confidence=0.41),
+        ],
+    )
+    fields.update(overrides)
+    return Transcription(**fields)
+
+
+class FakeTranscriber:
+    """A transcriber under a test's control — never a plausible default.
+
+    The same argument as `FakeAnalyzer`, and a stronger one: there is no mock transcriber
+    in the app because a fabricated lyric is words attributed to an artist (see
+    `adapters/lyrics_unavailable.py`). A test gets one only because a test knows what it
+    put in.
+    """
+
+    name = "fake-scribe"
+
+    def __init__(self, transcription: Transcription | None = None, *, available: bool = True,
+                 raises: Exception | None = None) -> None:
+        self._transcription = transcription
+        self._raises = raises
+        self.available = available
+        self.unavailable_reason = "" if available else "no transcriber is credentialed in this test"
+        self.calls: list[dict] = []
+
+    def transcribe(self, data: bytes, *, filename: str = "", language: str | None = None):
+        self.calls.append({"bytes": len(data), "filename": filename, "language": language})
+        if not self.available:
+            raise TranscriptionUnavailable(self.unavailable_reason)
+        if self._raises:
+            raise self._raises
+        return self._transcription or sample_transcription()
+
+
 @pytest.fixture
 def measured_song(container, principal):
     """An artist, a song, an uploaded master, and one analysis already applied."""
@@ -244,6 +305,12 @@ def measured_song(container, principal):
     container.storage.put(key, b"RIFF-not-really-audio", content_type="audio/wav")
     container.songs.register_master(principal, song.id, key=key, content_type="audio/wav")
     return container.analysis.run(principal.tenant_id, song.id)
+
+
+@pytest.fixture
+def transcribed_song(container, principal, measured_song):
+    """The measured song, with one transcript already applied on top of it."""
+    return container.transcription.run(principal.tenant_id, measured_song.id)
 
 
 @pytest.fixture

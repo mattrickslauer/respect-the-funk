@@ -61,23 +61,26 @@ rather than a refactor.
 
 ```
 remixkit/
-  domain/models.py     Artist · Identity · Song · SongSection · Kit · Asset — pure, no I/O
+  domain/models.py     Artist · Identity · Song · SongSection · LyricLine · Kit · Asset
+                       — pure, no I/O
   ports/               Protocols: Storage · DocumentRepository · Generator · JobQueue
-                       · AudioAnalyzer
+                       · AudioAnalyzer · Transcriber
   adapters/            storage_local · storage_b2 · repo_documents
                        generator_genblaze · providers (mock | live) · mock_media
                        queue_inline · queue_sqs
                        audio_numpy · audio_unavailable
+                       lyrics_elevenlabs · lyrics_unavailable
   services/            artists · identities · songs · briefs · kits · delivery · verify
                        accounts  ← sign-in codes and sessions
                        analysis  ← measure a master  ·  recommendations ← which hook
+                       transcription ← read the words off it
   auth/                provider (Protocol) · anonymous · otp
   api/v1.py            JSON API
   ui/                  Jinja + htmx components, plus pages/landing.html — the site
   deps.py              the composition root — the only file that names an adapter
 ```
 
-Six axes, six environment variables:
+Seven axes, seven environment variables:
 
 | | dev default | production |
 |---|---|---|
@@ -87,9 +90,11 @@ Six axes, six environment variables:
 | `RK_MAIL_BACKEND` | `console` | `zeptomail` |
 | `RK_AUTH_BACKEND` | `none` | `otp` |
 | `RK_ANALYSIS_BACKEND` | `auto` | `auto` |
+| `RK_TRANSCRIPTION_BACKEND` | `auto` | `auto` |
 
-`analysis` is the one axis with no mock, and the one whose "real" value is a package
-rather than a credential. See below.
+`analysis` and `transcription` are the two axes with no mock — the only two where a
+zero-credential fake would produce output nothing downstream could tell from the real
+thing. See below.
 
 ---
 
@@ -142,6 +147,49 @@ refuses and names what is missing, on the song page and in the `/healthz` warnin
 
 ```bash
 pip install -e '.[audio]'     # numpy; ffmpeg on PATH for anything but a WAV
+```
+
+## Reading the words off it
+
+The other question the same master answers. Analysis says *where the hooks are*;
+transcription says *what is being sung in them* — and it runs the same way, as a queued job
+over the stored bytes: `python worker.py --transcribe-song-id sng_…`, inline on a laptop,
+Batch in the deployment.
+
+ElevenLabs Scribe, direct rather than through Genblaze: `genblaze-elevenlabs` generates
+speech and this is the other direction, with no generator step to hang it on. The key is
+the one `adapters/providers.py` already reads for TTS, so a keyed deployment gains this
+without gaining a vendor.
+
+**A lyric is a guess at language, and the console never pretends otherwise.** The provider
+returns words; a lyric is lines, so `adapters/lyrics_elevenlabs.py` groups them on three
+stated thresholds — a 900 ms gap, 42 characters, sentence-final punctuation — and every one
+of them is in the `method` line stored on the song. Each line carries the geometric mean of
+its words' probabilities, and the ones below 0.6 are flagged **check by ear** rather than
+hidden: they are the list of lines to play back, and burying them would make a transcript
+look finished when the whole point of the number is that it is not.
+
+**Every line is editable, and editing one records that a person did.** Same rule as a
+section window: a transcribed line somebody rewrote becomes `manual`, keeps the old method
+as history, and *loses the confidence* — a machine's doubt attached to a sentence a human
+decided would be the provenance rule defeated by the edit form. Fixing a chorus the model
+heard as gibberish is one textarea, not eight round trips: the bulk edit keeps the windows
+already known by pairing lines positionally, leaves untouched lines measured, and says so
+when the line count moves and the pairing becomes a guess.
+
+Re-transcribing **replaces** the lyric — a lyric is one continuous reading, so interleaving
+old corrections with new lines produces a transcript that is neither. A song with
+hand-corrected lines therefore refuses the second run and says how many would be lost;
+`force` is the caller saying yes anyway, and the console asks before sending it.
+
+**There is no mock transcriber**, for a sharper version of the analyser's argument. A
+fabricated measurement is a wrong number; a fabricated lyric is *words attributed to an
+artist* — stored as the song's own, offered to the generate form as hook lines, and burned
+into a clip published under the label's name. A lyric can still be typed by hand on a
+process with no credentials, which is what a label with the sheet already wants anyway.
+
+```bash
+pip install -e '.[lyrics]'    # the ElevenLabs SDK; ELEVENLABS_API_KEY to actually run
 ```
 
 ## Recommendations, and what they are not

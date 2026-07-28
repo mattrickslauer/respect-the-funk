@@ -37,6 +37,7 @@ from remixkit.deps import (
     MaybePrincipal,
     Recommendations,
     Songs,
+    Transcription,
     Verify,
     get_container,
 )
@@ -238,6 +239,7 @@ def song_detail(
     kits: Kits,
     recommendations: Recommendations,
     analysis: Analysis,
+    transcription: Transcription,
 ):
     try:
         song = songs.get(principal, song_id)
@@ -254,6 +256,8 @@ def song_detail(
         roles=list(SectionRole),
         analysis_available=analysis.available,
         analysis_reason=analysis.unavailable_reason,
+        transcription_available=transcription.available,
+        transcription_reason=transcription.unavailable_reason,
     )
 
 
@@ -1013,6 +1017,165 @@ def ui_arrangement(request: Request, song_id: str, principal: CurrentPrincipal, 
     except ServiceError as exc:
         return _error_fragment(request, exc)
     return _render(request, "components/_arrangement.html", song=song)
+
+
+# ---------------------------------------------------------------- lyric fragments
+def _lyrics_panel(
+    request: Request, song, transcription: Transcription, note: str = ""
+) -> HTMLResponse:
+    """The rail panel: what heard this song, and how far along it is."""
+    return _render(
+        request,
+        "components/_lyrics.html",
+        song=song,
+        transcription_available=transcription.available,
+        transcription_reason=transcription.unavailable_reason,
+        note=note,
+    )
+
+
+@router.post("/ui/songs/{song_id}/transcription", response_class=HTMLResponse)
+def ui_request_transcription(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    transcription: Transcription,
+    force: str = Form(""),
+):
+    """Queue a transcription.
+
+    `force` arrives as a form field rather than being inferred from "there are edits, they
+    must have meant it": the refusal exists precisely because somebody clicking a button
+    labelled "Re-transcribe" has usually forgotten what it costs, and a flag the console
+    sets on their behalf is not a decision they made.
+    """
+    try:
+        song = transcription.request(principal, song_id, force=bool(force.strip()))
+    except ServiceError as exc:
+        # The panel comes back with the refusal on it rather than as a bare error card:
+        # the "you would lose N corrections" message is only actionable next to the button
+        # that would do it anyway.
+        try:
+            song = songs.get(principal, song_id)
+        except ServiceError:
+            return _error_fragment(request, exc)
+        return _lyrics_panel(request, song, transcription, note=str(exc))
+    return _lyrics_panel(request, song, transcription)
+
+
+@router.get("/ui/songs/{song_id}/transcription", response_class=HTMLResponse)
+def ui_transcription_panel(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    transcription: Transcription,
+):
+    """The htmx poll target while a transcription is running.
+
+    Same 3-second cadence as the analysis panel and the kit rows, for the same reason
+    (§2b defers websockets). When the job reaches a terminal state this fires
+    `rk:lyrics-done` so the lyric pane re-reads itself — the lines it is showing were
+    just replaced.
+    """
+    try:
+        song = songs.get(principal, song_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    response = _lyrics_panel(request, song, transcription)
+    settled = song.lyrics is None or song.lyrics.status in (
+        AnalysisStatus.DONE,
+        AnalysisStatus.FAILED,
+    )
+    if settled:
+        response.headers["HX-Trigger"] = "rk:lyrics-done"
+    return response
+
+
+def _lyrics_fragment(request: Request, song) -> HTMLResponse:
+    return _render(request, "components/_lyric_lines.html", song=song)
+
+
+@router.get("/ui/songs/{song_id}/lyrics", response_class=HTMLResponse)
+def ui_lyrics(request: Request, song_id: str, principal: CurrentPrincipal, songs: Songs):
+    """Re-read the lyric pane. The transcription poll fires this when a run lands."""
+    try:
+        song = songs.get(principal, song_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _lyrics_fragment(request, song)
+
+
+@router.post("/ui/songs/{song_id}/lyrics/lines", response_class=HTMLResponse)
+def ui_add_lyric_line(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    text: str = Form(...),
+    start_ms: int = Form(0),
+    end_ms: int = Form(0),
+):
+    try:
+        song = songs.add_lyric_line(
+            principal, song_id, text=text, start_ms=start_ms, end_ms=end_ms
+        )
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _lyrics_fragment(request, song)
+
+
+@router.post("/ui/songs/{song_id}/lyrics/lines/{line_id}", response_class=HTMLResponse)
+def ui_update_lyric_line(
+    request: Request,
+    song_id: str,
+    line_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    text: str = Form(...),
+    start_ms: int = Form(...),
+    end_ms: int = Form(...),
+):
+    try:
+        song = songs.update_lyric_line(
+            principal, song_id, line_id, text=text, start_ms=start_ms, end_ms=end_ms
+        )
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _lyrics_fragment(request, song)
+
+
+@router.delete("/ui/songs/{song_id}/lyrics/lines/{line_id}", response_class=HTMLResponse)
+def ui_delete_lyric_line(
+    request: Request, song_id: str, line_id: str, principal: CurrentPrincipal, songs: Songs
+):
+    try:
+        song = songs.remove_lyric_line(principal, song_id, line_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _lyrics_fragment(request, song)
+
+
+@router.post("/ui/songs/{song_id}/lyrics/text", response_class=HTMLResponse)
+def ui_set_lyrics_text(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    text: str = Form(""),
+):
+    """The whole lyric in one textarea — how a transcript actually gets fixed.
+
+    Line-by-line editing is right for one wrong word and unusable for a chorus the model
+    heard as gibberish, which is the common failure. `set_lyrics_text` keeps the windows
+    that are already known and says so when the line count moves.
+    """
+    try:
+        song = songs.set_lyrics_text(principal, song_id, text)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _lyrics_fragment(request, song)
 
 
 # ---------------------------------------------------------------- kit fragments

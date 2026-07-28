@@ -170,7 +170,9 @@ def test_what_is_priced_is_what_is_bought(client, container, principal, song):
     page = client.get(f"{base}?video_count=2&hook_lines=first+line%0Asecond+line").text
 
     priced_rows = len(re.findall(r"<tr>\s*<td>\d+</td>", page))
-    shown = re.search(r'<p class="sha">\$([0-9.]+)</p>', page)
+    # Matched on `data-estimate` rather than on a styling class, so re-laying-out the page
+    # cannot break the assertion that the price shown is the price charged.
+    shown = re.search(r"data-estimate>\$([0-9.]+)<", page)
     assert shown, "the estimate must be on the page to be compared against"
 
     client.post(

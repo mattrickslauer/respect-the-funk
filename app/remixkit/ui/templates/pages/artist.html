@@ -1,29 +1,100 @@
+{# One roster member.
+
+   The order used to be the workflow — rights, identity, catalogue, generation, stacked
+   so a label could not skip a step by scrolling past it. Three full panels of it, which
+   on a laptop meant the songs list started below the fold and the kits list was two
+   screens down. The gate is kept where it actually bites: consent is in the rail, always
+   on screen, and generation is refused by the service anyway. The three sittings become
+   three tabs, because attaching a song, reviewing kits and writing an identity are never
+   the same visit. #}
 {% extends "_layout.html" %}
 {% block title %}{{ artist.name }} — RemixKit{% endblock %}
+{% block body_class %}shell{% endblock %}
+{% block main_class %}shell-main{% endblock %}
+{% block footer %}{% endblock %}
 
 {% block content %}
-<section class="hero">
-  <p class="eyebrow"><a href="/console">Roster</a> / {{ artist.slug }}</p>
-  <h1>{{ artist.name }}</h1>
-  {% if artist.bio %}<p class="lede">{{ artist.bio }}</p>{% endif %}
-  {% if artist.links %}
-    <p class="small links">
-      {% for label, url in artist.links.items() %}<a href="{{ url }}" rel="noopener">{{ label }}</a>{% endfor %}
-    </p>
-  {% endif %}
-</section>
-
-{# The order is the workflow: rights, then identity, then catalogue, then generation.
-   A label cannot skip a step by scrolling past it — generation is last because it is
-   the only one that spends money, and it is gated by the first. #}
-<div class="split">
-  <div class="split-main">
-    {% include "components/_identity.html" %}
-    {% include "components/_songs.html" %}
-    {% include "components/_kits.html" %}
+<header class="pagebar">
+  <div class="pagebar-id">
+    <p class="eyebrow"><a href="/console">Roster</a> / {{ artist.slug }}</p>
+    <h1>{{ artist.name }}</h1>
+    {% with state = artist.approval %}{% include "components/_badge.html" %}{% endwith %}
   </div>
-  <aside class="split-side">
+
+  <dl class="stats">
+    <div class="stat">
+      <dt>Consent</dt>
+      <dd>{% if artist.consent.granted %}on file
+            <span class="stat-sub">{{ artist.consent.signed_by or "recorded" }}</span>
+          {% else %}<span class="unmeasured">missing</span>
+            <span class="stat-sub">generation blocked</span>{% endif %}</dd>
+    </div>
+    <div class="stat">
+      <dt>Identity</dt>
+      <dd>{% if identity %}v{{ identity.version }}
+            <span class="stat-sub">{{ identity.reference_frames|length }} reference frame{{ "" if identity.reference_frames|length == 1 else "s" }}</span>
+          {% else %}<span class="unmeasured">none</span>
+            <span class="stat-sub">shots will not hold a face</span>{% endif %}</dd>
+    </div>
+    <div class="stat">
+      <dt>Songs</dt>
+      <dd>{{ songs|length }}
+        <span class="stat-sub">{{ songs|selectattr("bpm")|list|length }} measured</span></dd>
+    </div>
+    <div class="stat">
+      <dt>Kits</dt>
+      <dd>{{ kits|length }}</dd>
+    </div>
+  </dl>
+
+  <div class="pagebar-cta">
+    <a class="btn" href="/console/artists/{{ artist.id }}/identity">Identity builder →</a>
+  </div>
+</header>
+
+<div class="deck deck-r">
+  <div class="workarea">
+    {# The pane classes sit on wrappers rather than on the components, because `_songs`,
+       `_kits` and `_identity` each replace themselves by `outerHTML` on save and are
+       included by other pages at other tab positions. The wrapper is what survives the
+       swap and what is allowed to differ per page. #}
+    <input type="radio" name="rk-pane" id="pane-1" class="tab-state" checked>
+    <input type="radio" name="rk-pane" id="pane-2" class="tab-state">
+    <input type="radio" name="rk-pane" id="pane-3" class="tab-state">
+
+    <nav class="tabs">
+      <label for="pane-1">Songs <span class="count">{{ songs|length }}</span></label>
+      <label for="pane-2">Kits <span class="count">{{ kits|length }}</span></label>
+      <label for="pane-3">Identity
+        {% if identity %}<span class="count">v{{ identity.version }}</span>
+        {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
+    </nav>
+
+    <div class="panes">
+      <div class="pane-1">{% include "components/_songs.html" %}</div>
+      <div class="pane-2">{% include "components/_kits.html" %}</div>
+      <div class="pane-3">{% include "components/_identity.html" %}</div>
+    </div>
+  </div>
+
+  <aside class="rail">
+    {# Rights first, and always on screen rather than at the top of a scroll: this is the
+       one fact on the page that decides whether anything else on it can be acted on. #}
     {% include "components/_consent.html" %}
+
+    {% if artist.bio or artist.links %}
+      <section class="panel">
+        <div class="panel-head"><h3>About</h3></div>
+        {% if artist.bio %}<p class="small">{{ artist.bio }}</p>{% endif %}
+        {% if artist.links %}
+          <p class="small links">
+            {% for label, url in artist.links.items() %}<a href="{{ url }}" rel="noopener">{{ label }}</a>{% endfor %}
+          </p>
+        {% endif %}
+      </section>
+    {% endif %}
+
+    {% include "components/_rail_env.html" %}
   </aside>
 </div>
 {% endblock %}

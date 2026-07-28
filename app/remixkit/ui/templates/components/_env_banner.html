@@ -2,7 +2,12 @@
 
    A console running on mock providers must not be mistakable for one running against
    GMI Cloud — for a hackathon judge, and for the label. So the warnings are rendered
-   at the top of every page rather than hidden behind a health endpoint. #}
+   at the top of every page rather than hidden behind a health endpoint.
+
+   One line, though, not a wrapping list. This is context for the page below it, not
+   content, and on a laptop a four-warning banner that wrapped to three rows was taking
+   more of the screen than the thing it was warning about. The row scrolls sideways and
+   the deployment page carries the same warnings with the fix for each spelled out. #}
 {% if env.warnings %}
 <div class="banner">
   <div class="wrap banner-inner">
@@ -10,6 +15,7 @@
     <ul>
       {% for warning in env.warnings %}<li>{{ warning }}</li>{% endfor %}
     </ul>
+    <a class="banner-more" href="/console/settings">what these need →</a>
   </div>
 </div>
 {% endif %}

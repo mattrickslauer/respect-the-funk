@@ -4,78 +4,126 @@
    create one, so the identity is text-only in practice."
 
    The identity is the reason the second video is cheap: hold the face structure
-   invariant once, and every subsequent kit reuses it instead of re-describing it. #}
+   invariant once, and every subsequent kit reuses it instead of re-describing it. That
+   argument used to be the page's opening paragraph; it is now the hint on the form that
+   makes the claim, where it is read by someone about to act on it. #}
 {% extends "_layout.html" %}
 {% block title %}Identity — {{ artist.name }}{% endblock %}
+{% block body_class %}shell{% endblock %}
+{% block main_class %}shell-main{% endblock %}
+{% block footer %}{% endblock %}
 
 {% block content %}
-<section class="hero">
-  <p class="eyebrow">
-    <a href="/console">Roster</a> /
-    <a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a> / identity
-  </p>
-  <h1>Identity builder</h1>
-  <p class="lede">
-    Held invariant across every kit. Structure and wardrobe describe what must stay the
-    same; negatives describe the drift to push against.
-  </p>
-</section>
+<header class="pagebar">
+  <div class="pagebar-id">
+    <p class="eyebrow">
+      <a href="/console">Roster</a> /
+      <a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a>
+    </p>
+    <h1>Identity</h1>
+    {% if identity %}
+      {% with state = identity.approval %}{% include "components/_badge.html" %}{% endwith %}
+    {% endif %}
+  </div>
+
+  <dl class="stats">
+    <div class="stat">
+      <dt>Version</dt>
+      <dd>{% if identity %}v{{ identity.version }}
+            <span class="stat-sub">{{ identities|length }} in history</span>
+          {% else %}<span class="unmeasured">none yet</span>{% endif %}</dd>
+    </div>
+    <div class="stat">
+      <dt>Reference frames</dt>
+      <dd>{% if identity %}{{ identity.reference_frames|length }}{% else %}0{% endif %}
+        <span class="stat-sub">what the model is shown</span></dd>
+    </div>
+    <div class="stat">
+      <dt>Consent</dt>
+      <dd>{% if artist.consent.blocks_generation %}<span class="unmeasured">missing</span>
+          {% else %}on file{% endif %}</dd>
+    </div>
+  </dl>
+
+  <div class="pagebar-cta">
+    <a class="btn" href="/console/artists/{{ artist.id }}">← {{ artist.name }}</a>
+  </div>
+</header>
 
 {% if artist.consent.blocks_generation %}
   {# Stated here as well as on the artist page, because this is the screen where someone
      uploads photographs of a person's face. #}
-  <div class="notice notice-error">
+  <div class="notice notice-error shell-notice">
     <strong>No likeness consent on file.</strong>
     An identity holds this artist's face invariant, which needs auditable rights.
     <a href="/console/artists/{{ artist.id }}">Record consent →</a>
   </div>
 {% endif %}
 
-<div class="split">
-  <div class="split-main">
-    {# One definition of the identity form, not two.
+<div class="deck deck-r">
+  <div class="workarea">
+    <input type="radio" name="rk-pane" id="pane-1" class="tab-state" checked>
+    <input type="radio" name="rk-pane" id="pane-2" class="tab-state">
 
-       This page used to hand-roll its own copy *and* include the component, so the
-       screen carried two forms for the same record — and the hand-rolled one asked for
-       wardrobe and negatives "one per line" while `ui_save_identity` splits on commas,
-       so a three-line answer was saved as a single item. The component is the form the
-       fragment route returns after a save, so it is the one that has to be right. #}
-    {% include "components/_identity.html" %}
+    <nav class="tabs">
+      <label for="pane-1">Description</label>
+      <label for="pane-2">Reference frames
+        <span class="count">{{ identity.reference_frames|length if identity else 0 }}</span></label>
+    </nav>
 
-    <section class="panel">
-      <div class="panel-head"><h3>Reference frames</h3></div>
-      <p class="hint">
-        Stills the generator matches against. Lighting is recorded because a face lit
-        three different ways is three different references, not one.
-      </p>
+    <div class="panes">
+      {# One definition of the identity form, not two.
 
-      {% if identity %}
-        <form class="form" hx-post="/ui/identities/{{ identity.id }}/frames"
-              hx-target="#frames" hx-swap="outerHTML" hx-encoding="multipart/form-data">
-          <div class="form-row">
-            <label>Image <input name="file" type="file" accept="image/*" required></label>
-            <label>Lighting
-              <select name="lighting">
-                {% for l in ("neutral", "warm", "hard-flash", "backlit", "low-key") %}
-                  <option value="{{ l }}">{{ l }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            <label>Caption <input name="caption" type="text" placeholder="optional"></label>
-          </div>
-          <button class="btn btn-primary" type="submit">Add reference frame</button>
-        </form>
+         This page used to hand-roll its own copy *and* include the component, so the
+         screen carried two forms for the same record — and the hand-rolled one asked for
+         wardrobe and negatives "one per line" while `ui_save_identity` splits on commas,
+         so a three-line answer was saved as a single item. The component is the form the
+         fragment route returns after a save, so it is the one that has to be right. #}
+      <div class="pane-1">{% include "components/_identity.html" %}</div>
 
-        <div id="frames">{% include "components/_frames.html" %}</div>
-      {% else %}
-        <p class="empty">Save an identity first — frames attach to a version.</p>
-      {% endif %}
-    </section>
+      <div class="pane-2">
+        <section class="panel">
+          <div class="panel-head"><h3>Reference frames</h3></div>
+          <p class="hint">
+            Stills the generator matches against. Lighting is recorded because a face lit
+            three different ways is three different references, not one.
+          </p>
+
+          {% if identity %}
+            <form class="form" hx-post="/ui/identities/{{ identity.id }}/frames"
+                  hx-target="#frames" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+              <div class="form-row">
+                <label>Image <input name="file" type="file" accept="image/*" required></label>
+                <label>Lighting
+                  <select name="lighting">
+                    {% for l in ("neutral", "warm", "hard-flash", "backlit", "low-key") %}
+                      <option value="{{ l }}">{{ l }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label>Caption <input name="caption" type="text" placeholder="optional"></label>
+              </div>
+              <button class="btn btn-primary" type="submit">Add reference frame</button>
+            </form>
+
+            <div id="frames">{% include "components/_frames.html" %}</div>
+          {% else %}
+            <p class="empty">Save an identity first — frames attach to a version.</p>
+          {% endif %}
+        </section>
+      </div>
+    </div>
   </div>
 
-  <aside class="split-side">
+  <aside class="rail">
     <section class="panel">
-      <div class="panel-head"><h3>Version history</h3></div>
+      {# The rule about why saving mints a version travels with the form, in
+         _identity.html — it belongs next to the button that does it, and repeating it
+         here just made two paragraphs of the same sentence face each other. #}
+      <div class="panel-head">
+        <h3>Version history</h3>
+        <span class="hint">{{ identities|length }}</span>
+      </div>
       {% if identities %}
         <div class="rows">
           {% for v in identities|sort(attribute="version", reverse=true) %}
@@ -96,6 +144,8 @@
         <p class="empty">No versions yet.</p>
       {% endif %}
     </section>
+
+    {% include "components/_rail_env.html" %}
   </aside>
 </div>
 {% endblock %}

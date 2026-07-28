@@ -1,35 +1,96 @@
 {# One measured master. Measurement and hook window are set here once and reused by
    every kit built from this song — which is why they belong on the song rather than
-   on the generate form. #}
+   on the generate form.
+
+   This page carries more functionality than any other in the console, and it is the one
+   the workspace layout was worked out on — a fixed identity bar of the numbers a
+   decision depends on, a rail of standing facts, and one tabbed work area. Every console
+   page is that shape now; this one keeps the rail on the left, because the master and
+   the measurement are what the work area is being edited against.
+
+   Nothing was removed. What moved is when you see it: forms that are only used once a
+   value is wrong sit behind a disclosure, so the list of what *is* stays readable. #}
 {% extends "_layout.html" %}
 {% block title %}{{ song.title }} — RemixKit{% endblock %}
+{% block body_class %}shell{% endblock %}
+{% block main_class %}shell-main{% endblock %}
+{% block footer %}{% endblock %}
 
 {% block content %}
-<section class="hero">
-  <p class="eyebrow">
-    <a href="/console">Roster</a> /
-    <a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a> /
-    {{ song.slug }}
-  </p>
-  <h1>{{ song.title }}</h1>
-  {% with state = song.approval %}{% include "components/_badge.html" %}{% endwith %}
-</section>
+{# ---- identity bar: who this is, and every number that gates a decision ---- #}
+<header class="pagebar">
+  <div class="pagebar-id">
+    <p class="eyebrow">
+      <a href="/console">Roster</a> /
+      <a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a>
+    </p>
+    <h1>{{ song.title }}</h1>
+    {% with state = song.approval %}{% include "components/_badge.html" %}{% endwith %}
+  </div>
 
-<div class="split">
-  <div class="split-main">
+  {# The five facts that decide whether an edit on this page is safe to make. They were
+     previously spread across three panels and a sidebar; a wrong tempo is much easier
+     to notice when it is next to the hook length it would mis-cut. #}
+  <dl class="stats">
+    <div class="stat">
+      <dt>Tempo</dt>
+      <dd>{% if song.bpm %}{{ "%.2f"|format(song.bpm) }}
+            <span class="stat-sub method">{{ song.bpm_method }}</span>
+          {% else %}<span class="unmeasured">unmeasured</span>{% endif %}</dd>
+    </div>
+    <div class="stat">
+      <dt>Hook</dt>
+      <dd>{% if song.hook.duration_ms %}{{ "%.1f"|format(song.hook.duration_ms / 1000) }}s
+            <span class="stat-sub">{{ song.hook.start_ms }}–{{ song.hook.end_ms }}ms</span>
+          {% else %}<span class="unmeasured">unset</span>{% endif %}</dd>
+    </div>
+    <div class="stat">
+      <dt>Cuts to</dt>
+      <dd>{% if song.primary_section %}{{ song.primary_section.display_name }}
+            <span class="stat-sub">hook of record</span>
+          {% else %}<span class="unmeasured">nothing marked</span>{% endif %}</dd>
+    </div>
+    <div class="stat">
+      <dt>Master</dt>
+      <dd>{% if song.master_key %}stored
+            <span class="stat-sub">{% if song.analysis %}{{ song.analysis.status.value }}{% else %}not measured{% endif %}</span>
+          {% else %}<span class="unmeasured">none</span>{% endif %}</dd>
+    </div>
+    <div class="stat">
+      <dt>Kits</dt>
+      <dd>{{ kits|length }}</dd>
+    </div>
+  </dl>
+
+  <div class="pagebar-cta">
+    <a class="btn btn-primary"
+       href="/console/artists/{{ artist.id }}/songs/{{ song.id }}/generate">Generate a kit</a>
+  </div>
+</header>
+
+<div class="deck">
+  {# ---- rail: the standing facts, and the forms that change them ---- #}
+  <aside class="rail">
+    {# Owned masters only, and the bytes never pass through the application — the browser
+       is presigned straight to the bucket (BUILD-SPEC §2b rule 2). That is also why a
+       6 MB Lambda response limit is not a constraint on audio. #}
+    {% include "components/_master.html" %}
+    {% include "components/_analysis.html" %}
 
     <section class="panel">
       <div class="panel-head"><h3>Measurement</h3></div>
+      <div id="song-measurement">{% include "components/_measurement.html" %}</div>
       {# A tempo with no method is refused by SongService.set_measurement. A number
          somebody typed and a number a detector produced are not the same claim, and a
          kit cut to a wrong tempo is a kit no fan can dance to. #}
-      <p class="hint">
-        A tempo without a method is refused. Record how it was measured, not just what
-        the number is.
-      </p>
-      <form class="form" hx-post="/ui/songs/{{ song.id }}/measurement"
-            hx-target="#song-measurement" hx-swap="outerHTML">
-        <div class="form-row">
+      <details class="tweak">
+        <summary>Set by hand</summary>
+        <p class="hint">
+          A tempo without a method is refused. Record how it was measured, not just what
+          the number is.
+        </p>
+        <form class="form" hx-post="/ui/songs/{{ song.id }}/measurement"
+              hx-target="#song-measurement" hx-swap="outerHTML">
           <label>BPM
             <input name="bpm" type="number" step="0.01" value="{{ song.bpm or '' }}" required>
           </label>
@@ -44,54 +105,36 @@
           <label>Drop (ms)
             <input name="drop_ms" type="number" value="{{ song.drop_ms or '' }}">
           </label>
-        </div>
-        <button class="btn btn-primary" type="submit">Save measurement</button>
-      </form>
-      <div id="song-measurement">{% include "components/_measurement.html" %}</div>
+          <button class="btn btn-primary" type="submit">Save measurement</button>
+        </form>
+      </details>
     </section>
 
     <section class="panel">
       <div class="panel-head"><h3>Hook window</h3></div>
-      {# The primary hook — the window a kit cuts to when its brief names no section. It
-         is the same record as the section marked "hook of record" below: setting it here
-         moves that section, so the two surfaces cannot disagree about what a kit will
-         render. #}
-      <p class="hint">
-        The loop length a kit cuts to by default. A loop that is not the length of the
-        hook is a loop a fan cannot cut to. Songs with several hooks mark them as sections.
-      </p>
-      <form class="form-inline" hx-post="/ui/songs/{{ song.id }}/hook-window"
-            hx-target="#song-hook" hx-swap="outerHTML">
-        <label>Start (ms) <input name="start_ms" type="number" value="{{ song.hook.start_ms }}"></label>
-        <label>End (ms) <input name="end_ms" type="number" value="{{ song.hook.end_ms }}"></label>
-        <button class="btn btn-primary" type="submit">Set hook</button>
-      </form>
       <div id="song-hook">{% include "components/_hook.html" %}</div>
+      {# The primary hook — the window a kit cuts to when its brief names no section. It
+         is the same record as the section marked "hook of record" in the work area:
+         setting it here moves that section, so the two surfaces cannot disagree about
+         what a kit will render. #}
+      <details class="tweak">
+        <summary>Set by hand</summary>
+        <p class="hint">
+          The loop length a kit cuts to by default. A loop that is not the length of the
+          hook is a loop a fan cannot cut to. Songs with several hooks mark them as sections.
+        </p>
+        <form class="form" hx-post="/ui/songs/{{ song.id }}/hook-window"
+              hx-target="#song-hook" hx-swap="outerHTML">
+          <label>Start (ms) <input name="start_ms" type="number" value="{{ song.hook.start_ms }}"></label>
+          <label>End (ms) <input name="end_ms" type="number" value="{{ song.hook.end_ms }}"></label>
+          <button class="btn btn-primary" type="submit">Set hook</button>
+        </form>
+      </details>
     </section>
 
-    {% include "components/_hooks.html" %}
-
-    <section class="panel">
-      <div class="panel-head">
-        <h3>Kits</h3>
-        <a class="btn btn-primary"
-           href="/console/artists/{{ artist.id }}/songs/{{ song.id }}/generate">Generate a kit</a>
-      </div>
-      {% if kits %}
-        <div class="rows">
-          {% for kit in kits %}{% include "components/_kit_row.html" %}{% endfor %}
-        </div>
-      {% else %}
-        <p class="empty">Nothing generated from this song yet.</p>
-      {% endif %}
-    </section>
-  </div>
-
-  <aside class="split-side">
     <section class="panel">
       <div class="panel-head"><h3>Song</h3></div>
       <dl class="kv">
-        <dt>Title</dt><dd>{{ song.title }}</dd>
         <dt>Slug</dt><dd><code>{{ song.slug }}</code></dd>
         <dt>ISRC</dt><dd>{{ song.isrc or "—" }}</dd>
         <dt>Spotify</dt>
@@ -100,11 +143,53 @@
       </dl>
     </section>
 
-    {# Owned masters only, and the bytes never pass through the application — the browser
-       is presigned straight to the bucket (BUILD-SPEC §2b rule 2). That is also why a
-       6 MB Lambda response limit is not a constraint on audio. #}
-    {% include "components/_master.html" %}
-    {% include "components/_analysis.html" %}
+    {% include "components/_rail_env.html" %}
   </aside>
+
+  {# ---- work area ----
+     CSS-only tabs. The radios are siblings of `.panes` rather than of the panels
+     themselves, so htmx can keep swapping `#song-hooks` (sections and recommendations
+     are one target — see components/_hooks.html) without the swap ever landing on the
+     element holding the selected-tab state. No JavaScript is involved, which matters:
+     the only script in this console is the presigned upload, and it earns its place.
+
+     The radio ids and the `pane-N` classes are the console's shared tab vocabulary, not
+     this page's: the CSS matches the Nth radio to the Nth label and the Nth pane, so a
+     page adds tabs without adding stylesheet. Which is also why `pane-2` is set on
+     `_recommendations.html` rather than here — it lives inside the swap wrapper. #}
+  <div class="workarea">
+    <input type="radio" name="rk-pane" id="pane-1" class="tab-state" checked>
+    <input type="radio" name="rk-pane" id="pane-2" class="tab-state">
+    <input type="radio" name="rk-pane" id="pane-3" class="tab-state">
+
+    <nav class="tabs">
+      <label for="pane-1">Sections
+        <span class="count">{{ song.sections|length }}</span></label>
+      <label for="pane-2">Recommendations
+        {% if report.computed %}<span class="count">{{ report.candidates|length }}</span>
+        {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
+      <label for="pane-3">Kits
+        <span class="count">{{ kits|length }}</span></label>
+    </nav>
+
+    <div class="panes">
+      {% include "components/_hooks.html" %}
+
+      <section class="panel pane-3">
+        <div class="panel-head">
+          <h3>Kits</h3>
+          <a class="btn btn-quiet"
+             href="/console/artists/{{ artist.id }}/songs/{{ song.id }}/generate">Generate a kit</a>
+        </div>
+        {% if kits %}
+          <div class="rows">
+            {% for kit in kits %}{% include "components/_kit_row.html" %}{% endfor %}
+          </div>
+        {% else %}
+          <p class="empty">Nothing generated from this song yet.</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
 </div>
 {% endblock %}

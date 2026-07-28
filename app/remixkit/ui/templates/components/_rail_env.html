@@ -1,0 +1,13 @@
+{# The deployment line the footer used to carry.
+
+   Every console page is a viewport-locked workspace now, and a workspace has no footer:
+   a footer inside one is either always on screen stealing rows, or in a scroll region
+   nobody reaches. But which storage and generator are live is exactly the context
+   someone judging an upload or a kit needs, so it is reprinted at the foot of the rail,
+   where it costs one line and sits below the panels rather than above them. #}
+<p class="small rail-env">
+  storage <code>{{ env.storage }}</code> ·
+  generator <code>{{ env.generator }}</code> ·
+  queue <code>{{ env.queue }}</code> ·
+  <a href="/console/settings">deployment →</a>
+</p>

@@ -6,106 +6,152 @@
 
    The shot list below is not an illustration. It is the exact plan `KitService.request`
    will build for these inputs, priced by the same `estimate_cents`, so what is shown
-   and what is bought cannot diverge. #}
+   and what is bought cannot diverge.
+
+   Which is why the estimate is now in the identity bar as well as beside the button.
+   The whole argument of this screen is that the price is on screen *before* the spend,
+   and an estimate that scrolls out of view while someone edits the plan underneath it
+   is an estimate they are no longer reading. #}
 {% extends "_layout.html" %}
 {% block title %}Generate — {{ song.title }}{% endblock %}
+{% block body_class %}shell{% endblock %}
+{% block main_class %}shell-main{% endblock %}
+{% block footer %}{% endblock %}
 
 {% block content %}
-<section class="hero">
-  <p class="eyebrow">
-    <a href="/console">Roster</a> /
-    <a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a> /
-    <a href="/console/songs/{{ song.id }}">{{ song.title }}</a> / generate
-  </p>
-  <h1>Generate a kit</h1>
-  <p class="lede">
-    A pack of vertical, remix-ready templates cut to this song's hook. Priced before it
-    is queued.
-  </p>
-</section>
+<header class="pagebar">
+  <div class="pagebar-id">
+    <p class="eyebrow">
+      <a href="/console">Roster</a> /
+      <a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a> /
+      <a href="/console/songs/{{ song.id }}">{{ song.title }}</a>
+    </p>
+    <h1>Generate a kit</h1>
+  </div>
+
+  <dl class="stats">
+    <div class="stat">
+      <dt>Estimate</dt>
+      <dd>{{ "$%.2f"|format(estimate_cents / 100) }}
+        <span class="stat-sub">{{ shots|length }} shot{{ "" if shots|length == 1 else "s" }} · {{ env.generator }}</span></dd>
+    </div>
+    <div class="stat">
+      <dt>Consent</dt>
+      <dd>{% if blocked %}<span class="unmeasured">missing</span>
+            <span class="stat-sub">queueing is refused</span>
+          {% else %}on file{% endif %}</dd>
+    </div>
+    <div class="stat">
+      <dt>Tempo</dt>
+      <dd>{% if song.bpm %}{{ "%.2f"|format(song.bpm) }}
+            <span class="stat-sub method">{{ song.bpm_method }}</span>
+          {% else %}<span class="unmeasured">unmeasured</span>{% endif %}</dd>
+    </div>
+    <div class="stat">
+      <dt>Cut to</dt>
+      <dd>{% if windows %}{{ windows|length }} hook{{ "" if windows|length == 1 else "s" }}
+            <span class="stat-sub">{% for name, window in windows %}{{ name }} {{ "%.1f"|format(window.duration_ms / 1000) }}s{{ "" if loop.last else " · " }}{% endfor %}</span>
+          {% else %}<span class="unmeasured">no hook set</span>
+            <span class="stat-sub">loops default to 6s</span>{% endif %}</dd>
+    </div>
+    <div class="stat">
+      <dt>Identity</dt>
+      <dd>{% if identity %}v{{ identity.version }}
+          {% else %}<span class="unmeasured">none</span>
+            <span class="stat-sub">shots will not hold a face</span>{% endif %}</dd>
+    </div>
+  </dl>
+</header>
 
 {% if blocked %}
-  <div class="notice notice-error">
+  <div class="notice notice-error shell-notice">
     <strong>{{ artist.name }} has no recorded likeness consent.</strong>
     A kit holds the artist's face invariant, and that needs auditable rights.
     <a href="/console/artists/{{ artist.id }}">Record consent →</a>
   </div>
 {% endif %}
 
-<div class="split">
-  <div class="split-main">
-    <section class="panel">
-      <div class="panel-head"><h3>What this will buy</h3></div>
-
-      {# Re-pricing is a GET so the estimate is always the server's answer, not the
-         browser's arithmetic. A client-side total would be a second opinion about
-         cost, and the whole point of this screen is that there is only one. #}
-      {# Every input that changes the plan lives in this form, so nothing can alter what
-         is bought without also changing what is priced. Editing the hook lines without
-         re-pricing leaves the old value on the queue button — which is the safe way
-         round: the button always buys the plan shown in the table below. #}
-      <form class="form" method="get">
-        <div class="form-row">
-          <label>Videos
-            <input name="video_count" type="number" min="0" max="8" value="{{ video_count }}">
-          </label>
+<div class="deck deck-r">
+  <div class="workarea">
+    <div class="stack">
+      <section class="panel">
+        <div class="panel-head">
+          <h3>What this will buy</h3>
+          <span class="hint">the exact plan the button submits, priced by the same code</span>
         </div>
-        {# Which hooks this kit is cut to. The videos are *dealt* across the chosen
-           sections rather than multiplied by them — every hook gets a loop before any
-           hook gets a second one — so ticking another box does not double the invoice
-           without the count above being changed too. #}
-        {% if song.hook_sections %}
-          <fieldset class="form-row sections-pick">
-            <legend>Hooks <span class="hint">each loop is the length of its own window;
-              none ticked means the hook of record</span></legend>
-            {% for section in song.hook_sections %}
-              <label class="tick">
-                <input type="checkbox" name="section_ids" value="{{ section.id }}"
-                       {{ "checked" if section.id in section_ids }}>
-                {{ section.display_name }}
-                <span class="hint">{{ "%.1f"|format(section.duration_ms / 1000) }}s</span>
-              </label>
-            {% endfor %}
-          </fieldset>
-        {% endif %}
-        <label>Hook lines <span class="hint">one per line — each becomes a lyric card</span>
-          <textarea name="hook_lines" rows="2"
-                    placeholder="I've been losing sleep">{{ hook_lines }}</textarea>
-        </label>
-        <button class="btn btn-quiet" type="submit">Re-price</button>
-      </form>
 
-      {% if shots %}
-        <table class="table">
-          <thead><tr><th>#</th><th>Modality</th><th>Cut to</th><th>Length</th><th>Prompt</th></tr></thead>
-          <tbody>
-            {% for shot in shots %}
-              <tr>
-                <td>{{ loop.index }}</td>
-                <td>{{ shot.modality.value }}</td>
-                <td class="small">{{ shot.label or "—" }}</td>
-                <td>{% if shot.seconds %}{{ "%.1f"|format(shot.seconds) }}s{% else %}—{% endif %}</td>
-                <td class="small">{{ shot.prompt|truncate(90) }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% else %}
-        <p class="empty">No shots at this count. Raise the video count above zero.</p>
-      {% endif %}
-    </section>
+        {# Re-pricing is a GET so the estimate is always the server's answer, not the
+           browser's arithmetic. A client-side total would be a second opinion about
+           cost, and the whole point of this screen is that there is only one. #}
+        {# Every input that changes the plan lives in this form, so nothing can alter what
+           is bought without also changing what is priced. Editing the hook lines without
+           re-pricing leaves the old value on the queue button — which is the safe way
+           round: the button always buys the plan shown in the table below. #}
+        <form class="form" method="get">
+          <div class="plan-row">
+            <label>Videos
+              <input name="video_count" type="number" min="0" max="8" value="{{ video_count }}">
+            </label>
+            <label>Hook lines <span class="hint">one per line — each becomes a lyric card</span>
+              <textarea name="hook_lines" rows="2"
+                        placeholder="I've been losing sleep">{{ hook_lines }}</textarea>
+            </label>
+            <button class="btn btn-quiet" type="submit">Re-price</button>
+          </div>
+          {# Which hooks this kit is cut to. The videos are *dealt* across the chosen
+             sections rather than multiplied by them — every hook gets a loop before any
+             hook gets a second one — so ticking another box does not double the invoice
+             without the count above being changed too. #}
+          {% if song.hook_sections %}
+            <div class="sections-pick" role="group" aria-label="Hooks this kit is cut to">
+              <p class="hint pick-note">Hooks — each loop is the length of its own window;
+                none ticked means the hook of record</p>
+              {% for section in song.hook_sections %}
+                <label class="tick">
+                  <input type="checkbox" name="section_ids" value="{{ section.id }}"
+                         {{ "checked" if section.id in section_ids }}>
+                  {{ section.display_name }}
+                  <span class="hint">{{ "%.1f"|format(section.duration_ms / 1000) }}s</span>
+                </label>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </form>
+
+        {% if shots %}
+          <table class="table">
+            <thead><tr><th>#</th><th>Modality</th><th>Cut to</th><th>Length</th><th>Prompt</th></tr></thead>
+            <tbody>
+              {% for shot in shots %}
+                <tr>
+                  <td>{{ loop.index }}</td>
+                  <td>{{ shot.modality.value }}</td>
+                  <td class="small">{{ shot.label or "—" }}</td>
+                  <td>{% if shot.seconds %}{{ "%.1f"|format(shot.seconds) }}s{% else %}—{% endif %}</td>
+                  <td class="small prompt">{{ shot.prompt|truncate(90) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty">No shots at this count. Raise the video count above zero.</p>
+        {% endif %}
+      </section>
+    </div>
   </div>
 
-  <aside class="split-side">
+  <aside class="rail">
     <section class="panel">
-      <div class="panel-head"><h3>Estimate</h3></div>
-      <p class="sha">{{ "$%.2f"|format(estimate_cents / 100) }}</p>
-      <p class="hint">
-        {{ shots|length }} shot{{ "" if shots|length == 1 else "s" }} ·
-        {{ env.generator }}
-      </p>
+      <div class="panel-head">
+        <h3>Queue</h3>
+        {# `data-estimate` is the machine-readable copy of the figure, next to the button
+           that spends it. test_screens asserts the number on the page equals the number
+           the kit is charged, and it should not have to know which class this element is
+           styled with to do that. #}
+        <strong data-estimate>{{ "$%.2f"|format(estimate_cents / 100) }}</strong>
+      </div>
       {% if "mock" in env.generator %}
-        <p class="small">
+        <p class="hint">
           Generation is mocked, so this run costs nothing. The figure is what the same
           plan would cost against a live provider.
         </p>
@@ -153,8 +199,13 @@
           {% else %}<span class="hint">none — shots will not hold a face</span>{% endif %}
         </dd>
       </dl>
-      <p class="small"><a href="/console/artists/{{ artist.id }}/identity">Edit identity →</a></p>
+      <div class="links">
+        <a class="small" href="/console/artists/{{ artist.id }}/identity">Edit identity →</a>
+        <a class="small" href="/console/songs/{{ song.id }}">Edit hooks →</a>
+      </div>
     </section>
+
+    {% include "components/_rail_env.html" %}
   </aside>
 </div>
 {% endblock %}

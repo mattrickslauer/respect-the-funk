@@ -1,0 +1,159 @@
+{# The song as a picture: what is where, what it is made of, and what repeats.
+
+   Three rows on one shared horizontal axis, and each answers a different question that
+   the numbers alone answer badly:
+
+     ARRANGEMENT  where the sections are and how long they run
+     BANDS        what each bar is made of — the curve the boundaries were cut from
+     REPEATS      which sections are the same material
+
+   The third row is the one that could not be drawn before. A section used to be a
+   duration and a kick-energy float, so "these two are the same chorus" was not a claim
+   the analyser could make; it now measures segment types, and a lane per type puts the
+   song's own form on screen in one glance.
+
+   Deliberately no colour-coded categories. The console has one accent hue, and inventing
+   six more to key section types would (a) collide with the status colours, which mean
+   failed and blocked, and (b) put identity in colour alone. So one hue does one job —
+   magnitude, on the ordered frequency bands, light to dark — and identity is carried by
+   direct labels and the repeats lanes. That is also why the band stack has a 2px gap
+   between its segments: adjacent steps of a sequential ramp are close by construction,
+   and the gap, the legend and the table below are what keep them separable.
+
+   Every number rendered here is measured. There is nothing on this screen that a person
+   typed and nothing a model produced. #}
+{% set analysis = song.analysis %}
+{% set busy = analysis and analysis.status.value in ("queued", "running") %}
+{% set bars = analysis.bars if analysis else [] %}
+{% set measured = song.ordered_sections | selectattr("bar_start", "ne", None) | list %}
+<section class="panel" id="song-arrangement"
+         hx-get="/ui/songs/{{ song.id }}/arrangement"
+         hx-trigger="{% if busy %}every 3s{% else %}rk:analysis-done from:body{% endif %}"
+         hx-swap="outerHTML">
+  <div class="panel-head">
+    <h3>Arrangement</h3>
+    {% if bars %}
+      <span class="small">{{ bars | length }} bars measured{% if analysis.bpm %} ·
+        {{ "%.2f"|format(analysis.bpm) }} BPM{% endif %}</span>
+    {% endif %}
+  </div>
+
+  {% if not measured or not bars %}
+    <p class="empty">
+      {% if busy %}
+        <span class="spin">◐</span> Measuring — the arrangement appears when the job lands.
+      {% elif song.master_key %}
+        Measure the master and the song's own structure is drawn here.
+      {% else %}
+        Upload a master. The arrangement is read from the audio, not from the metadata.
+      {% endif %}
+    </p>
+  {% else %}
+    {% set total_ms = (bars | map(attribute="start_ms") | max) + (analysis.bar_ms or 2000) %}
+    {% set peak = analysis.peak_bar_energy %}
+
+    {# ---- row 1: the sections, width proportional to their duration ---- #}
+    <div class="arr-row arr-sections" role="list">
+      {% for section in measured %}
+        {% set primary = song.primary_section_id == section.id %}
+        <div class="arr-seg{{ ' is-primary' if primary }}" role="listitem"
+             style="flex-grow:{{ section.duration_ms }}"
+             title="{{ section.display_name }} — bars {{ section.bar_start + 1 }}–{{ section.bar_end }}, {{ "%.1f"|format(section.duration_ms / 1000) }}s&#10;{{ section.evidence | join('&#10;') }}">
+          <span class="arr-type">{{ section.segment_type or "?" }}</span>
+          <span class="arr-name">{{ section.role.value }}</span>
+          <span class="arr-bars">{{ section.bar_start + 1 }}–{{ section.bar_end }}</span>
+        </div>
+      {% endfor %}
+    </div>
+
+    {# ---- row 2: what every bar is made of ----
+       Stacked top-down so the DOM order is air → sub and the sub band sits on the
+       baseline, which is where the ear puts it. Height is a share of the loudest bar,
+       so the tallest column is the track's own peak rather than an absolute level that
+       would mean nothing between two differently mastered songs. #}
+    <div class="bandchart" aria-hidden="true">
+      {% for bar in bars %}
+        <div class="bandbar"
+             title="bar {{ bar.index + 1 }} · {{ "%.1f"|format(bar.start_ms / 1000) }}s&#10;sub {{ "%.2f"|format(bar.sub) }} · low-mid {{ "%.2f"|format(bar.low_mid) }} · presence {{ "%.2f"|format(bar.presence) }} · air {{ "%.2f"|format(bar.air) }}&#10;centroid {{ "%.0f"|format(bar.centroid_hz) }} Hz · {{ "%.0f"|format(bar.onsets) }} onsets · tonal mid {{ "%.2f"|format(bar.tonal_mid) }}">
+          <i class="seg seg-air" style="height:{{ "%.2f"|format(bar.air / peak * 100) }}%"></i>
+          <i class="seg seg-presence" style="height:{{ "%.2f"|format(bar.presence / peak * 100) }}%"></i>
+          <i class="seg seg-lowmid" style="height:{{ "%.2f"|format(bar.low_mid / peak * 100) }}%"></i>
+          <i class="seg seg-sub" style="height:{{ "%.2f"|format(bar.sub / peak * 100) }}%"></i>
+        </div>
+      {% endfor %}
+      {% if analysis.drop_ms is not none %}
+        <span class="arr-drop" style="left:{{ "%.3f"|format(analysis.drop_ms / total_ms * 100) }}%"
+              title="drop at {{ analysis.drop_ms }}ms"></span>
+      {% endif %}
+    </div>
+    <div class="arr-legend">
+      <span class="key"><i class="swatch seg-sub"></i>sub · 20–120 Hz</span>
+      <span class="key"><i class="swatch seg-lowmid"></i>low-mid · 120–500</span>
+      <span class="key"><i class="swatch seg-presence"></i>presence · 500–4k</span>
+      <span class="key"><i class="swatch seg-air"></i>air · 4k+</span>
+      {% if analysis.drop_ms is not none %}<span class="key"><i class="swatch swatch-drop"></i>drop</span>{% endif %}
+    </div>
+
+    {# ---- row 3: which sections are the same material ---- #}
+    {% set letters = measured | map(attribute="segment_type") | reject("none") | unique | sort | list %}
+    {% if letters | length > 1 %}
+      <div class="arr-repeats">
+        {% for letter in letters %}
+          {% set instances = measured | selectattr("segment_type", "equalto", letter) | list %}
+          <div class="arr-lane">
+            <span class="arr-lane-key">{{ letter }}</span>
+            <div class="arr-lane-track">
+              {% for section in measured %}
+                <span class="arr-tick{{ ' on' if section.segment_type == letter }}"
+                      style="flex-grow:{{ section.duration_ms }}"></span>
+              {% endfor %}
+            </div>
+            <span class="arr-lane-count">
+              {{ instances | length }}×
+              <span class="hint">{{ instances[0].display_name }}</span>
+            </span>
+          </div>
+        {% endfor %}
+      </div>
+      <p class="hint">
+        Sections on one lane measured as the same material — feature distance under
+        {{ "%.0f"|format(0.6 * 100) }}% of this track's median pairwise distance. Two
+        instances of one lane are the same music, so choosing between them is a question
+        about the window, not about the sound.
+      </p>
+    {% endif %}
+
+    {# The numbers behind the picture. A chart without its table is something to be
+       believed rather than checked, and every figure in here is one the console is
+       already claiming elsewhere. #}
+    <details class="tweak">
+      <summary>The numbers behind this</summary>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Section</th><th>Bars</th><th>Type</th><th>Kick</th>
+            <th>Tonal mid</th><th>Centroid</th><th>Onsets/bar</th><th>Enters</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for section in measured %}
+            <tr>
+              <td>{{ section.display_name }}</td>
+              <td>{{ section.bar_start + 1 }}–{{ section.bar_end }}</td>
+              <td>{{ section.segment_type or "—" }}{% if section.repeat_of %}
+                  <span class="hint">= {{ section.repeat_of }}</span>{% endif %}</td>
+              <td>{{ "%.1f"|format(section.energy_low_band) if section.energy_low_band is not none else "—" }}</td>
+              <td>{{ "%.2f"|format(section.tonal_mid) if section.tonal_mid is not none else "—" }}</td>
+              <td>{{ "%.0f Hz"|format(section.brightness_hz) if section.brightness_hz is not none else "—" }}</td>
+              <td>{{ "%.1f"|format(section.onset_density) if section.onset_density is not none else "—" }}</td>
+              <td class="prompt">{{ section.entry or "—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="small basis"><span class="hint">tonal mid:</span> the tonal share of
+        300–3400 Hz, where a lead vocal sits. A proxy for "something is being sung or
+        played on top" — not a vocal detector, and not to be read as one.</p>
+    </details>
+  {% endif %}
+</section>

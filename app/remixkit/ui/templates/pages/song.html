@@ -156,11 +156,16 @@
      The radio ids and the `pane-N` classes are the console's shared tab vocabulary, not
      this page's: the CSS matches the Nth radio to the Nth label and the Nth pane, so a
      page adds tabs without adding stylesheet. Which is also why `pane-2` is set on
-     `_recommendations.html` rather than here — it lives inside the swap wrapper. #}
+     `_recommendations.html` rather than here — it lives inside the swap wrapper.
+
+     A pane's position in `.panes` is irrelevant; its class is what selects it. That is
+     what lets Arrangement sit third in the tab strip — next to the sections it explains —
+     while `_hooks.html` keeps emitting panes 1 and 2 as one htmx target. #}
   <div class="workarea">
     <input type="radio" name="rk-pane" id="pane-1" class="tab-state" checked>
     <input type="radio" name="rk-pane" id="pane-2" class="tab-state">
     <input type="radio" name="rk-pane" id="pane-3" class="tab-state">
+    <input type="radio" name="rk-pane" id="pane-4" class="tab-state">
 
     <nav class="tabs">
       <label for="pane-1">Sections
@@ -168,14 +173,28 @@
       <label for="pane-2">Recommendations
         {% if report.computed %}<span class="count">{{ report.candidates|length }}</span>
         {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
-      <label for="pane-3">Kits
+      <label for="pane-3">Arrangement
+        {% if song.analysis and song.analysis.bars %}
+          <span class="count">{{ song.analysis.bars|length }}</span>
+        {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
+      <label for="pane-4">Kits
         <span class="count">{{ kits|length }}</span></label>
     </nav>
 
     <div class="panes">
       {% include "components/_hooks.html" %}
 
-      <section class="panel pane-3">
+      {# The picture of the song and the same measurement written out, in one sitting:
+         the chart is what the boundaries were cut from, and the sheet is that reading in
+         the form a brief or an agent is handed. Looking at one without the other was
+         never the task. The wrapper carries the pane class because `_arrangement.html`
+         replaces itself by `outerHTML` when a measurement lands. #}
+      <div class="pane-3">
+        {% include "components/_arrangement.html" %}
+        {% include "components/_sheet.html" %}
+      </div>
+
+      <section class="panel pane-4">
         <div class="panel-head">
           <h3>Kits</h3>
           <a class="btn btn-quiet"

@@ -25,6 +25,7 @@ from remixkit.domain.models import (
     SectionRole,
     Song,
     SongAnalysis,
+    SongBar,
     SongSection,
     slugify,
     utcnow,
@@ -384,6 +385,16 @@ class SongService:
                 energy_low_band=item.energy_low_band,
                 energy_rms_db=item.energy_rms_db,
                 beats=item.beats,
+                bar_start=item.bar_start,
+                bar_end=item.bar_end,
+                band_mix=list(item.band_mix),
+                brightness_hz=item.brightness_hz,
+                onset_density=item.onset_density,
+                tonal_mid=item.tonal_mid,
+                segment_type=item.segment_type,
+                repeat_of=item.repeat_of,
+                evidence=list(item.evidence),
+                entry=item.entry or None,
             )
             for item in analysis.sections
             if item.end_ms > item.start_ms
@@ -430,6 +441,8 @@ class SongService:
             plateau_beats=analysis.plateau_beats,
             bar_phase_confidence=analysis.bar_phase_confidence,
             warnings=warnings,
+            bars=[SongBar(**vars(bar)) for bar in analysis.bars],
+            sheet=analysis.sheet or None,
         )
         song.touch()
         self._repo.put(principal.tenant_id, COLLECTION, song.id, song)
@@ -462,9 +475,15 @@ def _check_window(start_ms: int, end_ms: int) -> None:
 def _became_manual(section: SongSection) -> None:
     """A measured window somebody moved is a manual one, and says what it used to be.
 
-    The features go with it. `services.recommendations` ranks on measured energy, and a
-    figure that no longer describes the window it is attached to would let a section a
-    person dragged rank as though the analyser still vouched for it.
+    The features go with it — all of them. `services.recommendations` ranks on measured
+    energy, and a figure that no longer describes the window it is attached to would let a
+    section a person dragged rank as though the analyser still vouched for it. The same
+    applies to the texture: `evidence` reading "top energy tier" under a window that has
+    been moved somewhere quiet is worse than no evidence at all, because it is a sentence
+    asserting a measurement of a stretch of audio nobody measured.
+
+    `bar_start`/`bar_end` go too. A dragged window is at whatever millisecond somebody
+    typed, and a bar number implies it is on the grid.
     """
     if section.source is not Provenance.MEASURED:
         return
@@ -473,6 +492,16 @@ def _became_manual(section: SongSection) -> None:
     section.energy_low_band = None
     section.energy_rms_db = None
     section.beats = None
+    section.bar_start = None
+    section.bar_end = None
+    section.band_mix = []
+    section.brightness_hz = None
+    section.onset_density = None
+    section.tonal_mid = None
+    section.segment_type = None
+    section.repeat_of = None
+    section.evidence = []
+    section.entry = None
 
 
 def _make_primary(song: Song, section: SongSection) -> None:

@@ -17,6 +17,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from remixkit import deps
+from remixkit.domain.models import SectionRole
+from remixkit.ports.audio import AnalyzedSection, AudioAnalysis
+from remixkit.services.analysis import JOB_TYPE as ANALYSIS_JOB_TYPE, AnalysisService
+from remixkit.services.errors import AnalysisUnavailable
 from remixkit.services.kits import JOB_TYPE
 from remixkit.settings import Settings, get_settings
 
@@ -69,7 +73,12 @@ def container(settings, monkeypatch) -> deps.Container:
     built = deps.Container(settings)
     built.enqueued = []  # type: ignore[attr-defined]
     built.queue._handlers.clear()
-    built.queue.register(JOB_TYPE, lambda payload: built.enqueued.append(payload))  # type: ignore[attr-defined]
+    for job_type in (JOB_TYPE, ANALYSIS_JOB_TYPE):
+        built.queue.register(job_type, lambda payload: built.enqueued.append(payload))  # type: ignore[attr-defined]
+    # Measurement is the one adapter with no zero-credential real implementation — numpy
+    # is an optional extra — so tests drive a fake one explicitly rather than depending on
+    # whether the machine running them happens to have it installed.
+    built.analysis = AnalysisService(built.songs, built.storage, built.queue, FakeAnalyzer())
     monkeypatch.setattr(deps, "get_container", lambda: built)
     get_settings.cache_clear()
     return built
@@ -87,6 +96,88 @@ def inline_container(settings, monkeypatch) -> deps.Container:
 @pytest.fixture
 def principal(container):
     return container.auth._principal  # the anonymous dev principal
+
+
+# ---------------------------------------------------------------- measurement
+# The numbers below are `losing-sleep`'s, from content/RHYTHM-STUDY.md: 125 BPM (beat
+# 480ms, bar 1920ms), the drop at 124784ms, a 2-bar riser and a 7-bar plateau. Using a
+# real song's real measurement rather than round numbers means the fixture exercises the
+# same awkward arithmetic the console will meet — 6.4-second hooks, not 6-second ones.
+BEAT_MS = 480.0
+DROP_MS = 124_784
+
+
+def sample_analysis(**overrides) -> AudioAnalysis:
+    fields = dict(
+        method="fake: fixture measurement, not a real decode",
+        duration_ms=214_000,
+        bpm=125.0,
+        beat_ms=BEAT_MS,
+        downbeat_ms=DROP_MS,
+        drop_ms=DROP_MS,
+        riser_beats=8,
+        plateau_beats=28,
+        bar_phase_confidence=0.83,
+        sections=[
+            AnalyzedSection(
+                role=SectionRole.INTRO, label="Intro 1", start_ms=0, end_ms=30_704,
+                beats=64, energy_low_band=6.1, energy_rms_db=-12.4,
+            ),
+            AnalyzedSection(
+                role=SectionRole.CHORUS, label="Chorus 1", start_ms=30_704, end_ms=61_424,
+                beats=64, energy_low_band=54.2, energy_rms_db=-4.9,
+            ),
+            AnalyzedSection(
+                role=SectionRole.BREAKDOWN, label="Breakdown 1", start_ms=61_424,
+                end_ms=124_784, beats=132, energy_low_band=0.5, energy_rms_db=-12.3,
+            ),
+            AnalyzedSection(
+                role=SectionRole.DROP, label="Drop 1", start_ms=DROP_MS, end_ms=138_224,
+                beats=28, energy_low_band=58.8, energy_rms_db=-4.7,
+            ),
+        ],
+    )
+    fields.update(overrides)
+    return AudioAnalysis(**fields)
+
+
+class FakeAnalyzer:
+    """An analyser under a test's control — never a plausible default.
+
+    It returns whatever the test handed it, which is the opposite of the mock generator's
+    job. There is no "mock analyser" in the app for the reason spelled out in
+    `adapters/audio_unavailable.py`: a fabricated BPM is a float that nothing downstream
+    could distinguish from a measured one.
+    """
+
+    name = "fake"
+
+    def __init__(self, analysis: AudioAnalysis | None = None, *, available: bool = True,
+                 raises: Exception | None = None) -> None:
+        self._analysis = analysis
+        self._raises = raises
+        self.available = available
+        self.unavailable_reason = "" if available else "numpy is not installed in this test"
+        self.calls: list[dict] = []
+
+    def analyze(self, data: bytes, *, filename: str = "", drop_ms: int | None = None):
+        self.calls.append({"bytes": len(data), "filename": filename, "drop_ms": drop_ms})
+        if not self.available:
+            raise AnalysisUnavailable(self.unavailable_reason)
+        if self._raises:
+            raise self._raises
+        return self._analysis or sample_analysis()
+
+
+@pytest.fixture
+def measured_song(container, principal):
+    """An artist, a song, an uploaded master, and one analysis already applied."""
+    artist = container.artists.create(principal, name="Hallow Youth")
+    song = container.songs.create(principal, artist.id, title="Losing Sleep")
+    key = f"remixkit/masters/{principal.tenant_id}/{song.id}.wav"
+    container.storage.put(key, b"RIFF-not-really-audio", content_type="audio/wav")
+    container.songs.register_master(principal, song.id, key=key, content_type="audio/wav")
+    return container.analysis.run(principal.tenant_id, song.id)
 
 
 @pytest.fixture

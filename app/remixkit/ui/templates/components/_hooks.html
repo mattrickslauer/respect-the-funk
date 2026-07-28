@@ -1,0 +1,12 @@
+{# Sections and recommendations, as one swap target.
+
+   They are one thought: every recommendation is about a section, and marking, renaming or
+   re-pointing one changes both. Splitting them into two targets would mean two round
+   trips and, in between, a ranking of a list it no longer matches. #}
+<div id="song-hooks"
+     hx-get="/ui/songs/{{ song.id }}/hooks"
+     hx-trigger="rk:analysis-done from:body"
+     hx-swap="outerHTML">
+  {% include "components/_sections.html" %}
+  {% include "components/_recommendations.html" %}
+</div>

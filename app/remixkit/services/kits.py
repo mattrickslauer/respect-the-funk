@@ -26,7 +26,7 @@ from remixkit.ports.generator import GenerationRequest, Generator, ShotSpec
 from remixkit.ports.queue import JobQueue
 from remixkit.ports.repository import DocumentRepository
 from remixkit.services.artists import ArtistService
-from remixkit.services.briefs import default_shot_plan
+from remixkit.services.briefs import default_shot_plan, hook_windows
 from remixkit.services.errors import Conflict, NotFound, RightsError
 from remixkit.services.identities import IdentityService
 from remixkit.services.songs import SongService
@@ -89,6 +89,7 @@ class KitService:
         hook_lines: list[str] | None = None,
         tts_text: str | None = None,
         budget_cents: int | None = None,
+        section_ids: list[str] | None = None,
     ) -> Kit:
         """Validate, persist a queued kit, enqueue. Must stay well under 200 ms."""
         song = self._songs.get(principal, song_id)
@@ -102,6 +103,10 @@ class KitService:
             )
 
         identity = self._identities.current(principal, artist.id)
+        # Sections are resolved against the song *now*, so a brief cannot record the id of
+        # a section that was deleted before the request. The worker re-plans from the same
+        # stored ids, and `briefs.hook_windows` drops any that have gone since.
+        section_ids = [sid for sid in (section_ids or []) if song.section(sid)]
         shots = default_shot_plan(
             song,
             identity,
@@ -109,6 +114,7 @@ class KitService:
             hook_lines=hook_lines,
             tts_text=tts_text,
             max_shots=self._max_shots,
+            section_ids=section_ids,
         )
         if not shots:
             raise Conflict("That brief produces no shots. Ask for at least one video or lyric card.")
@@ -135,6 +141,15 @@ class KitService:
                 "video_count": video_count,
                 "hook_lines": hook_lines or [],
                 "tts_text": tts_text,
+                "section_ids": section_ids,
+                # The windows as they were when the kit was bought. The ids alone would
+                # let an edited section change what a finished kit claims it was cut to,
+                # and the whole provenance argument is that a delivered asset's record
+                # does not move under it.
+                "hook_windows": [
+                    {"name": name, "start_ms": window.start_ms, "end_ms": window.end_ms}
+                    for name, window in hook_windows(song, section_ids)
+                ],
                 "shot_count": len(shots),
                 "estimate_cents": estimate,
                 "identity_id": identity.id if identity else None,
@@ -181,6 +196,7 @@ class KitService:
                 hook_lines=list(kit.brief.get("hook_lines") or []),
                 tts_text=kit.brief.get("tts_text"),
                 max_shots=self._max_shots,
+                section_ids=list(kit.brief.get("section_ids") or []),
             )
 
             result = self._generator.generate(

@@ -1,0 +1,90 @@
+{# Which hook to cut to, and the rule behind every line of it.
+
+   Not a prediction of what performs — BUILD-SPEC §7 lists that under what this project
+   deliberately does not build. These are RHYTHM-STUDY §9's candidate rules, which that
+   study wrote down and noted were "none of these is enforced today", applied to a
+   measured song. Every card shows its basis, and a song with nothing measured gets the
+   list of what is missing instead of a ranking of guesses. #}
+<section class="panel" id="song-recommendations">
+  <div class="panel-head"><h3>Recommendations</h3></div>
+
+  {% if not report.computed %}
+    <p class="hint">
+      Recommendations are arithmetic over a measurement. Without one there is nothing to
+      compute, and a ranking of unmeasured windows would be a guess wearing a number.
+    </p>
+    <ul class="blocked">
+      {% for reason in report.blocked_on %}<li>{{ reason }}</li>{% endfor %}
+    </ul>
+  {% else %}
+    <p class="hint">
+      Ranked by rules passed, then by measured kick energy. No weighted score: the track is
+      flat across its drop, so there is no dynamics curve to read a preference off
+      (RHYTHM-STUDY §5).
+    </p>
+
+    <div class="rows">
+      {% for candidate in report.candidates %}
+        <div class="row rec-row{{ ' is-ready' if candidate.ready }}">
+          <div class="row-main">
+            <h4>
+              {{ loop.index }}. {{ candidate.section.display_name }}
+              {% if candidate.ready %}<span class="badge badge-ok">cuts as it stands</span>{% endif %}
+            </h4>
+            <p class="small">{{ candidate.rank_reason }}</p>
+            <p class="small basis"><span class="hint">basis:</span> {{ candidate.basis }}</p>
+            <ul class="checks">
+              {% for check in candidate.checks %}
+                <li class="check check-{{ check.state }}">
+                  <span class="check-mark">{{ {"pass": "✓", "fail": "✗", "unknown": "?"}[check.state] }}</span>
+                  <strong>{{ check.rule }}</strong> — {{ check.detail }}
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+
+          <div class="row-actions">
+            {% if candidate.has_suggestion %}
+              <form hx-post="/ui/songs/{{ song.id }}/sections/{{ candidate.section.id }}/primary"
+                    hx-target="#song-hooks" hx-swap="outerHTML">
+                <input type="hidden" name="start_ms" value="{{ candidate.suggested_start_ms }}">
+                <input type="hidden" name="end_ms" value="{{ candidate.suggested_end_ms }}">
+                <button class="btn btn-primary" type="submit">
+                  Snap to {{ candidate.suggested_start_ms }}–{{ candidate.suggested_end_ms }}ms
+                  and use
+                </button>
+              </form>
+              <p class="small hint">
+                {{ "%.1f"|format(candidate.suggested_duration_ms / 1000) }}s, whole bars from
+                the bar line
+              </p>
+            {% elif song.primary_section_id != candidate.section.id %}
+              <button class="btn btn-quiet"
+                      hx-post="/ui/songs/{{ song.id }}/sections/{{ candidate.section.id }}/primary"
+                      hx-target="#song-hooks" hx-swap="outerHTML">Use as hook</button>
+            {% else %}
+              <span class="badge badge-primary">hook of record</span>
+            {% endif %}
+          </div>
+        </div>
+      {% else %}
+        <p class="empty">No loopable section to rank. Tag one hook, chorus or drop.</p>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if report.findings %}
+    <h4 class="sub">What the measurement says about the song</h4>
+    <div class="rows">
+      {% for finding in report.findings %}
+        <div class="row finding">
+          <div class="row-main">
+            <h4>{{ finding.headline }}</h4>
+            <p class="small basis"><span class="hint">basis:</span> {{ finding.basis }}</p>
+            {% if finding.detail %}<p class="small">{{ finding.detail }}</p>{% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>

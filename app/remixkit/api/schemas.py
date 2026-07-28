@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from remixkit.domain.models import ApprovalState
+from remixkit.domain.models import ApprovalState, SectionRole
 
 
 class RequestCodeIn(BaseModel):
@@ -68,8 +68,39 @@ class HookIn(BaseModel):
     end_ms: int
 
 
+class SectionIn(BaseModel):
+    """One hook (or verse, or breakdown) marked by hand.
+
+    No `source` field: anything arriving through this route is a person saying so, and
+    letting a caller declare its own window `measured` would make the provenance flag
+    meaningless. Only `services.songs.apply_analysis` writes that.
+    """
+
+    start_ms: int
+    end_ms: int
+    role: SectionRole = SectionRole.HOOK
+    label: str = ""
+    notes: str | None = None
+    make_primary: bool = False
+
+
+class SectionPatch(BaseModel):
+    start_ms: int | None = None
+    end_ms: int | None = None
+    role: SectionRole | None = None
+    label: str | None = None
+    notes: str | None = None
+
+
 class UploadUrlIn(BaseModel):
     content_type: str = "audio/wav"
+
+
+class MasterIn(BaseModel):
+    """The key the browser just PUT to. Checked against the song before it is recorded."""
+
+    key: str
+    content_type: str | None = None
 
 
 class KitIn(BaseModel):
@@ -79,3 +110,6 @@ class KitIn(BaseModel):
     hook_lines: list[str] = Field(default_factory=list)
     tts_text: str | None = None
     budget_cents: int | None = None
+    # Which hooks this kit is cut to. Empty means the song's primary hook window, which is
+    # what every kit meant before a song could have several.
+    section_ids: list[str] = Field(default_factory=list)

@@ -20,24 +20,28 @@ import hashlib
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Form, HTTPException, Request, Response, UploadFile, File
+from typing import Annotated
+
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from remixkit.deps import (
     Accounts,
+    Analysis,
     Artists,
     Catalogue,
     CurrentPrincipal,
     Identities,
     Kits,
     MaybePrincipal,
+    Recommendations,
     Songs,
     Verify,
     get_container,
 )
-from remixkit.domain.models import ApprovalState, ReferenceFrame
-from remixkit.services.briefs import default_shot_plan
+from remixkit.domain.models import AnalysisStatus, ApprovalState, ReferenceFrame, SectionRole
+from remixkit.services.briefs import default_shot_plan, hook_windows
 from remixkit.services.errors import Conflict, ServiceError
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -232,6 +236,8 @@ def song_detail(
     songs: Songs,
     artists: Artists,
     kits: Kits,
+    recommendations: Recommendations,
+    analysis: Analysis,
 ):
     try:
         song = songs.get(principal, song_id)
@@ -244,6 +250,10 @@ def song_detail(
         song=song,
         artist=artist,
         kits=[k for k in kits.list(principal) if k.song_id == song.id],
+        report=recommendations.recommend(song),
+        roles=list(SectionRole),
+        analysis_available=analysis.available,
+        analysis_reason=analysis.unavailable_reason,
     )
 
 
@@ -307,6 +317,7 @@ def generate_page(
     kits: Kits,
     video_count: int = 3,
     hook_lines: str | None = None,
+    section_ids: Annotated[list[str], Query()] = [],
 ):
     """Cost *before* the button — wireframe gap #3.
 
@@ -334,7 +345,12 @@ def generate_page(
     # Split the same way `ui_create_kit` splits it, so the plan priced here and the plan
     # bought there are built from an identical list.
     lines = [line.strip() for line in raw_hook_lines.splitlines() if line.strip()]
-    shots = default_shot_plan(song, identity, video_count=video_count, hook_lines=lines)
+    # Same filter the kit service applies, for the same reason: a section deleted between
+    # loading this page and pricing it must not show up in the plan as a window.
+    chosen = [sid for sid in section_ids if song.section(sid)]
+    shots = default_shot_plan(
+        song, identity, video_count=video_count, hook_lines=lines, section_ids=chosen
+    )
 
     return _render(
         request,
@@ -345,6 +361,8 @@ def generate_page(
         shots=shots,
         video_count=video_count,
         hook_lines=raw_hook_lines,
+        section_ids=chosen,
+        windows=hook_windows(song, chosen),
         estimate_cents=kits.estimate_cents(shots),
         blocked=artist.consent.blocks_generation,
     )
@@ -374,6 +392,10 @@ def settings_page(request: Request, principal: CurrentPrincipal):
              "A ZeptoMail send token and a verified sender domain."),
             ("Sign-in", "RK_AUTH_BACKEND", settings.auth_backend, "otp",
              "A session secret and an allowlist — no external service needed."),
+            # The only axis whose "real" value is a package rather than a credential, and
+            # the only one with no mock: see adapters/audio_unavailable.py.
+            ("Analysis", "RK_ANALYSIS_BACKEND", container.analyzer.name, "numpy",
+             "numpy (pip install -e '.[audio]') and ffmpeg on PATH for anything but a WAV."),
         ],
     )
 
@@ -734,6 +756,248 @@ def ui_set_hook_window(
     return _render(request, "components/_hook.html", song=song)
 
 
+# ---------------------------------------------------------------- section fragments
+def _hooks_fragment(request: Request, song, recommendations: Recommendations) -> HTMLResponse:
+    """The sections list and the recommendations, as one swap.
+
+    They are rendered together because they are one thought: every recommendation is about
+    a section, and marking, renaming or re-pointing one changes both panels. Two targets
+    would mean two round trips and, between them, a screen showing a ranking of a list it
+    no longer matches.
+    """
+    return _render(
+        request,
+        "components/_hooks.html",
+        song=song,
+        report=recommendations.recommend(song),
+        roles=list(SectionRole),
+    )
+
+
+@router.get("/ui/songs/{song_id}/hooks", response_class=HTMLResponse)
+def ui_hooks(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    recommendations: Recommendations,
+):
+    """Re-read the panel. The analysis poll fires this when a measurement lands."""
+    try:
+        song = songs.get(principal, song_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _hooks_fragment(request, song, recommendations)
+
+
+@router.post("/ui/songs/{song_id}/sections", response_class=HTMLResponse)
+def ui_add_section(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    recommendations: Recommendations,
+    start_ms: int = Form(...),
+    end_ms: int = Form(...),
+    role: str = Form("hook"),
+    label: str = Form(""),
+):
+    try:
+        song = songs.add_section(
+            principal, song_id, start_ms=start_ms, end_ms=end_ms, role=role, label=label
+        )
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _hooks_fragment(request, song, recommendations)
+
+
+@router.post("/ui/songs/{song_id}/sections/{section_id}", response_class=HTMLResponse)
+def ui_update_section(
+    request: Request,
+    song_id: str,
+    section_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    recommendations: Recommendations,
+    start_ms: int = Form(...),
+    end_ms: int = Form(...),
+    role: str = Form(""),
+    label: str = Form(""),
+):
+    try:
+        song = songs.update_section(
+            principal,
+            song_id,
+            section_id,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            role=role or None,
+            label=label,
+        )
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _hooks_fragment(request, song, recommendations)
+
+
+@router.delete("/ui/songs/{song_id}/sections/{section_id}", response_class=HTMLResponse)
+def ui_delete_section(
+    request: Request,
+    song_id: str,
+    section_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    recommendations: Recommendations,
+):
+    try:
+        song = songs.remove_section(principal, song_id, section_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _hooks_fragment(request, song, recommendations)
+
+
+@router.post("/ui/songs/{song_id}/sections/{section_id}/primary", response_class=HTMLResponse)
+def ui_set_primary_section(
+    request: Request,
+    song_id: str,
+    section_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    recommendations: Recommendations,
+    start_ms: str = Form(""),
+    end_ms: str = Form(""),
+):
+    """Make this section the hook a kit cuts to — optionally at a recommended window.
+
+    The two are one button on purpose. "Apply the suggestion" and "use this hook" arriving
+    as separate clicks is how a person ends up with the hook pointed at a section whose
+    window they meant to snap first, and the console cannot tell the difference afterwards.
+    """
+    try:
+        if start_ms.strip() and end_ms.strip():
+            songs.update_section(
+                principal,
+                song_id,
+                section_id,
+                start_ms=int(start_ms),
+                end_ms=int(end_ms),
+            )
+        song = songs.set_primary_section(principal, song_id, section_id)
+    except ValueError:
+        return _error_fragment(request, Conflict("A window is a whole number of milliseconds."))
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _hooks_fragment(request, song, recommendations)
+
+
+# ---------------------------------------------------------------- master + analysis
+@router.post("/ui/songs/{song_id}/master/upload-url")
+def ui_master_upload_url(
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    content_type: str = Form(...),
+):
+    """Step one of the upload: where the browser should PUT the bytes.
+
+    JSON rather than a fragment, and the one console route that is not htmx — a presigned
+    upload is a request the *browser* makes to the bucket, so something has to hand it the
+    URL. §2b rule 2 is the reason it is worth the small amount of JavaScript: a master is
+    tens or hundreds of megabytes and must never pass through this process.
+    """
+    return songs.master_upload_url(principal, song_id, content_type=content_type)
+
+
+@router.post("/ui/songs/{song_id}/master", response_class=HTMLResponse)
+def ui_complete_master(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    analysis: Analysis,
+    key: str = Form(...),
+    content_type: str = Form(""),
+):
+    """Step two: the bytes have landed, so record them and start measuring.
+
+    Analysis is queued here rather than behind a second button because an uploaded master
+    that nobody measured is the state this whole feature exists to remove. A process that
+    cannot analyse still records the master — the upload was real — and the panel says
+    what is missing instead of failing the upload for it.
+    """
+    try:
+        song = songs.register_master(principal, song_id, key=key, content_type=content_type)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+
+    note = ""
+    try:
+        song = analysis.request(principal, song.id)
+    except ServiceError as exc:
+        note = str(exc)
+    return _render(
+        request,
+        "components/_master.html",
+        song=song,
+        analysis_available=analysis.available,
+        analysis_reason=analysis.unavailable_reason,
+        note=note,
+    )
+
+
+@router.post("/ui/songs/{song_id}/analysis", response_class=HTMLResponse)
+def ui_request_analysis(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    analysis: Analysis,
+):
+    try:
+        song = analysis.request(principal, song_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _render(
+        request,
+        "components/_analysis.html",
+        song=song,
+        analysis_available=analysis.available,
+        analysis_reason=analysis.unavailable_reason,
+    )
+
+
+@router.get("/ui/songs/{song_id}/analysis", response_class=HTMLResponse)
+def ui_analysis_panel(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    analysis: Analysis,
+):
+    """The htmx poll target while a measurement is running.
+
+    Polling for the same reason kit rows do (§2b defers websockets), and on the same
+    3-second cadence. When the job reaches a terminal state this fires `rk:analysis-done`
+    so the hooks panel re-reads itself — the sections it is showing were just replaced.
+    """
+    try:
+        song = songs.get(principal, song_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    response = _render(
+        request,
+        "components/_analysis.html",
+        song=song,
+        analysis_available=analysis.available,
+        analysis_reason=analysis.unavailable_reason,
+    )
+    settled = song.analysis is None or song.analysis.status in (
+        AnalysisStatus.DONE,
+        AnalysisStatus.FAILED,
+    )
+    if settled:
+        response.headers["HX-Trigger"] = "rk:analysis-done"
+    return response
+
+
 # ---------------------------------------------------------------- kit fragments
 @router.post("/ui/kits", response_class=HTMLResponse)
 def ui_create_kit(
@@ -744,6 +1008,7 @@ def ui_create_kit(
     artist_id: str = Form(...),
     video_count: int = Form(3),
     hook_lines: str = Form(""),
+    section_ids: list[str] = Form(default=[]),
 ):
     try:
         kits.request(
@@ -751,6 +1016,7 @@ def ui_create_kit(
             song_id=song_id,
             video_count=video_count,
             hook_lines=[line.strip() for line in hook_lines.splitlines() if line.strip()],
+            section_ids=section_ids,
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)
@@ -798,6 +1064,34 @@ async def ui_verify(request: Request, verify: Verify, file: UploadFile = File(..
 
 
 # ---------------------------------------------------------------- local file serving
+@router.put("/files/{key:path}")
+async def receive_local_file(key: str, request: Request, principal: CurrentPrincipal):
+    """The other half of `presign_put` when storage is a filesystem.
+
+    On B2 the browser PUTs straight to the bucket and this route is never reached — which
+    is the whole point of §2b rule 2. On a laptop `presign_put` degrades to `/files/…`, and
+    without a handler behind it the console's upload succeeded in the browser and wrote
+    nothing, which is the worst kind of working demo.
+
+    It is bounded exactly as the GET is: local storage only, never under `tenants/`, and
+    behind a principal. Masters land under `masters/<tenant>/…`, and the key is checked
+    against *this* caller's tenant so a signed-in user cannot write into another one's
+    prefix — the presigned URL is generated per tenant, but the route has to enforce that
+    rather than assume the browser only ever sends back what it was given.
+    """
+    container = get_container()
+    if container.settings.storage_backend != "local":
+        raise HTTPException(status_code=404, detail="Not available on this storage backend")
+    prefix = f"{container.settings.key_prefix}/masters/{principal.tenant_id}/"
+    if not key.startswith(prefix):
+        raise HTTPException(status_code=403, detail="That key is not writable")
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty upload")
+    container.storage.put(key, data, content_type=request.headers.get("content-type"))
+    return Response(status_code=200)
+
+
 @router.get("/files/{key:path}")
 def serve_local_file(key: str, principal: CurrentPrincipal):
     """Dev-only asset serving for `storage_backend=local`.

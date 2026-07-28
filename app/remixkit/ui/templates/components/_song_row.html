@@ -14,6 +14,10 @@
       <p class="small">Hook {{ "%.1f"|format(song.hook.start_ms / 1000) }}s → {{ "%.1f"|format(song.hook.end_ms / 1000) }}s
         <span class="hint">({{ "%.1f"|format(song.hook.duration_ms / 1000) }}s loop)</span></p>
     {% endif %}
+    {% if song.hook_sections|length > 1 %}
+      <p class="small"><a href="/console/songs/{{ song.id }}">{{ song.hook_sections|length }} hooks marked</a>
+        <span class="hint">a kit can be cut to several</span></p>
+    {% endif %}
   </div>
 
   <form class="form-inline tight"

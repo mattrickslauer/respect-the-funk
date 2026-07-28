@@ -161,3 +161,39 @@ input::placeholder,textarea::placeholder{color:#5d5872}
 /* Wide tracking so a six-digit code reads as six discrete digits, not a number. */
 .otp-input{font-family:var(--display);font-size:23px;letter-spacing:0.34em;text-align:center}
 .whoami{color:var(--ink-3);border-left:1px solid var(--rule-2);padding-left:22px}
+
+/* ---- sections, recommendations, analysis ----
+   A song has as many hooks as it has. Three states have to be legible at a glance and
+   they are the same three the services enforce: measured (the analyser, with its method),
+   marked by hand, and the one hook of record a kit cuts to by default. */
+.section-row.is-primary,.rec-row.is-ready{border-color:var(--gold-dim)}
+.section-row h4,.rec-row h4{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row-actions{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.badge-primary{color:#0e0c14;background:var(--gold);border-color:var(--gold)}
+.badge-ok{color:#7fd3b3;border-color:rgba(25,158,112,0.45);background:rgba(25,158,112,0.10)}
+.badge-drop,.badge-chorus,.badge-hook{color:#f0cf8a;border-color:rgba(245,185,64,0.42)}
+.basis{color:var(--ink-3)}
+.basis .hint{text-transform:uppercase;letter-spacing:0.08em}
+
+/* A rule is pass, fail, or NOT CHECKABLE — the third state is why this is a list and not
+   a tick. Rendering "no measurement for this rule" as a failure would send someone to fix
+   a window that may well be right. */
+.checks{list-style:none;margin:8px 0 0;display:flex;flex-direction:column;gap:3px}
+.check{font-size:13px;color:var(--ink-3);display:flex;gap:7px;align-items:baseline}
+.check strong{color:var(--ink-2);font-weight:500}
+.check-mark{font-family:var(--mono);width:1em}
+.check-pass .check-mark{color:var(--ok)}
+.check-fail .check-mark{color:var(--err)}
+.check-unknown .check-mark{color:var(--ink-3)}
+.blocked{list-style:none;margin:8px 0;display:flex;flex-direction:column;gap:5px}
+.blocked li{font-size:13.5px;color:var(--warn);padding-left:14px;position:relative}
+.blocked li::before{content:"→";position:absolute;left:0;color:var(--ink-3)}
+.finding{border-left:2px solid var(--rule)}
+
+.sections-pick{border:1px solid var(--rule-2);border-radius:6px;padding:10px 12px;display:flex;
+  flex-wrap:wrap;gap:6px 18px}
+.sections-pick legend{font-size:12.5px;color:var(--ink-3);padding:0 4px}
+.tick{display:flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink-2)}
+.tick input{accent-color:var(--gold)}
+.spin{color:var(--gold)}
+.danger:hover{border-color:var(--err);color:#f0a58a}

@@ -35,7 +35,12 @@ COPY pyproject.toml ./
 COPY remixkit ./remixkit
 COPY worker.py ./
 
-RUN pip install --no-cache-dir ".[b2,queue]"
+# `audio` goes in the shared base rather than only in the worker, even though only the
+# worker measures anything. The API process checks whether an analyser exists so it can
+# refuse an upload's measurement up front with the reason named, instead of queueing a job
+# that fails in a container nobody is watching — and one image with two entrypoints is the
+# premise of this file, so the two cannot answer that question differently.
+RUN pip install --no-cache-dir ".[b2,queue,audio]"
 
 # ---------------------------------------------------------------- api
 FROM base AS api

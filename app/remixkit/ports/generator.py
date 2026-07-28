@@ -24,6 +24,10 @@ class ShotSpec:
     seconds: float | None = None
     aspect_ratio: str = "9:16"
     model: str | None = None  # None → the adapter's configured default for this modality
+    # What this shot is *for*, in one phrase — the mood and the hook it was cut to. Not
+    # sent to any provider: it exists so the cost screen can show which hook each video in
+    # the plan belongs to, which is the only way to read a multi-hook brief.
+    label: str = ""
 
 
 @dataclass

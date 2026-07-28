@@ -1,0 +1,75 @@
+{# What measured this song, and how.
+
+   The method line is shown in full rather than tucked behind a tooltip, for the same
+   reason `_measurement.html` shows the BPM's: the number and its method together are the
+   claim. A section list with no visible provenance is how a guess gets promoted to a
+   measurement between one screen and the next.
+
+   Polls itself while the job is queued or running — 3 seconds, like a kit row, because
+   §2b defers websockets and a measurement takes a minute at most. #}
+{% set analysis = song.analysis %}
+{% set busy = analysis and analysis.status.value in ("queued", "running") %}
+<section class="panel" id="song-analysis"
+         hx-get="/ui/songs/{{ song.id }}/analysis"
+         hx-trigger="{% if busy %}every 3s{% else %}rk:analysis-started from:body{% endif %}"
+         hx-swap="outerHTML">
+  <div class="panel-head">
+    <h3>Analysis</h3>
+    {% if song.master_key and analysis_available and not busy %}
+      <button class="btn btn-quiet"
+              hx-post="/ui/songs/{{ song.id }}/analysis"
+              hx-target="#song-analysis" hx-swap="outerHTML">
+        {{ "Re-measure" if analysis else "Measure the master" }}
+      </button>
+    {% endif %}
+  </div>
+
+  {% if not analysis %}
+    {% if song.master_key %}
+      <p class="empty">The master has not been measured yet.</p>
+    {% else %}
+      <p class="empty">Upload a master and its structure is measured from the audio.</p>
+    {% endif %}
+    {% if not analysis_available %}
+      <p class="small unmeasured">{{ analysis_reason }}</p>
+    {% endif %}
+  {% elif busy %}
+    <p class="small">
+      <span class="spin">◐</span> {{ analysis.status.value }} — measuring the master.
+      This runs on the queue, not in this request.
+    </p>
+  {% elif analysis.status.value == "failed" %}
+    <p class="small unmeasured">Measurement failed: {{ analysis.error }}</p>
+  {% else %}
+    <dl class="kv">
+      <dt>Tempo</dt>
+      <dd>{% if analysis.bpm %}{{ "%.2f"|format(analysis.bpm) }} BPM
+          <span class="hint">beat {{ "%.0f"|format(analysis.beat_ms) }}ms · bar {{ "%.0f"|format(analysis.bar_ms) }}ms</span>
+          {% else %}not measured{% endif %}</dd>
+      <dt>Drop</dt>
+      <dd>{% if analysis.drop_ms is not none %}{{ analysis.drop_ms }} ms
+          {% if analysis.downbeat_ms is not none %}<span class="hint">confirmed as a bar line</span>{% endif %}
+          {% else %}<span class="unmeasured">no clear kick re-entry</span>{% endif %}</dd>
+      <dt>Riser</dt>
+      <dd>{% if analysis.riser_beats %}{{ analysis.riser_beats }} beats
+          <span class="hint">({{ "%.2g"|format(analysis.riser_beats / 4) }} bars of pre-roll)</span>
+          {% else %}—{% endif %}</dd>
+      <dt>Plateau</dt>
+      <dd>{% if analysis.plateau_beats %}{{ analysis.plateau_beats }} beats
+          <span class="hint">({{ analysis.plateau_beats // 4 }} bars of full energy)</span>
+          {% else %}—{% endif %}</dd>
+      <dt>Length</dt>
+      <dd>{% if analysis.duration_ms %}{{ "%.1f"|format(analysis.duration_ms / 1000) }}s{% else %}—{% endif %}</dd>
+    </dl>
+    <p class="small basis"><span class="hint">method:</span> {{ analysis.method }}</p>
+    {% if analysis.source_sha256 %}
+      <p class="small"><span class="hint">bytes:</span>
+        <code class="sha">{{ analysis.source_sha256[:16] }}</code></p>
+    {% endif %}
+    {% if analysis.warnings %}
+      <ul class="blocked">
+        {% for warning in analysis.warnings %}<li>{{ warning }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+  {% endif %}
+</section>

@@ -1,0 +1,102 @@
+{# Every hook the song has, not the one it was allowed before.
+
+   A song has as many hooks as it has, and each row carries where its window came from:
+   `measured` with the analyser's method behind it, or `manual` because somebody drew it.
+   The two are never rendered identically — that distinction is the same discipline the
+   BPM's method line is, applied to the arrangement. #}
+<section class="panel" id="song-sections">
+  <div class="panel-head">
+    <h3>Sections</h3>
+    {% if song.primary_section %}
+      <span class="small">Kits cut to <strong>{{ song.primary_section.display_name }}</strong>
+        by default</span>
+    {% endif %}
+  </div>
+  <p class="hint">
+    Mark as many as the song has. Any section tagged hook, chorus or drop can be cut to —
+    a kit picks one or several, and every loop is the length of its own window.
+  </p>
+
+  {% if song.sections %}
+    <div class="rows">
+      {% for section in song.ordered_sections %}
+        {% set primary = song.primary_section_id == section.id %}
+        <div class="row section-row{{ ' is-primary' if primary }}">
+          <div class="row-main">
+            <h4>
+              {{ section.display_name }}
+              <span class="badge badge-{{ section.role.value | replace('-', '') }}">{{ section.role.value }}</span>
+              {% if primary %}<span class="badge badge-primary">hook of record</span>{% endif %}
+            </h4>
+            <p class="small">
+              {{ "%.2f"|format(section.start_ms / 1000) }}s → {{ "%.2f"|format(section.end_ms / 1000) }}s
+              <span class="hint">({{ "%.1f"|format(section.duration_ms / 1000) }}s{% if section.beats %}, {{ section.beats }} beats{% endif %})</span>
+            </p>
+            <p class="small">
+              {% if section.source.value == "measured" %}
+                <span class="method" title="{{ section.method }}">measured</span>
+                {% if section.energy_low_band is not none %}
+                  <span class="hint">kick {{ "%.1f"|format(section.energy_low_band) }}{% if section.energy_rms_db is not none %} · {{ "%.1f"|format(section.energy_rms_db) }} dB{% endif %}</span>
+                {% endif %}
+              {% else %}
+                <span class="unmeasured">marked by hand</span>
+                {% if section.method %}<span class="hint">{{ section.method }}</span>{% endif %}
+              {% endif %}
+            </p>
+          </div>
+
+          <form class="form-inline tight"
+                hx-post="/ui/songs/{{ song.id }}/sections/{{ section.id }}"
+                hx-target="#song-hooks" hx-swap="outerHTML">
+            <label>Start <span class="hint">ms</span>
+              <input name="start_ms" type="number" value="{{ section.start_ms }}" required></label>
+            <label>End <span class="hint">ms</span>
+              <input name="end_ms" type="number" value="{{ section.end_ms }}" required></label>
+            <label>Role
+              <select name="role">
+                {% for role in roles %}
+                  <option value="{{ role.value }}" {{ "selected" if role == section.role }}>{{ role.value }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Name <input name="label" value="{{ section.label }}" placeholder="{{ section.role.value }}"></label>
+            <button class="btn btn-quiet" type="submit">Save</button>
+          </form>
+
+          <div class="row-actions">
+            {% if section.is_hook_material and not primary %}
+              <button class="btn btn-quiet"
+                      hx-post="/ui/songs/{{ song.id }}/sections/{{ section.id }}/primary"
+                      hx-target="#song-hooks" hx-swap="outerHTML">Make hook</button>
+            {% endif %}
+            <button class="btn btn-quiet danger"
+                    hx-delete="/ui/songs/{{ song.id }}/sections/{{ section.id }}"
+                    hx-confirm="Remove {{ section.display_name }}?"
+                    hx-target="#song-hooks" hx-swap="outerHTML">Remove</button>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">
+      No sections yet. Upload the master to have them measured, or mark one below.
+    </p>
+  {% endif %}
+
+  <form class="form form-inline"
+        hx-post="/ui/songs/{{ song.id }}/sections"
+        hx-target="#song-hooks" hx-swap="outerHTML"
+        hx-on::after-request="if(event.detail.successful) this.reset()">
+    <label>Start <span class="hint">ms</span><input name="start_ms" type="number" required placeholder="124784"></label>
+    <label>End <span class="hint">ms</span><input name="end_ms" type="number" required placeholder="131184"></label>
+    <label>Role
+      <select name="role">
+        {% for role in roles %}
+          <option value="{{ role.value }}" {{ "selected" if role.value == "hook" }}>{{ role.value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Name <input name="label" placeholder="Chorus 2"></label>
+    <button class="btn btn-primary" type="submit">Mark section</button>
+  </form>
+</section>

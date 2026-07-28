@@ -1,0 +1,27 @@
+{# The song sheet — the arrangement written out, and the one artefact on this page that
+   is meant to be read by something other than a person.
+
+   It is here rather than buried in an API because of what it is: the whole measurement in
+   the form a brief, a prompt, or a person in a hurry can consume. `adapters.audio_numpy`
+   assembles it by formatting measured numbers, so every line of it is traceable to the
+   method string at the bottom — which is exactly the property that makes it safe to paste
+   somewhere a model will read it. Shown, not hidden, for the same reason the BPM's method
+   is shown: text that is going to be relied on downstream should be visible to the person
+   accountable for it. #}
+{% set analysis = song.analysis %}
+{% if analysis and analysis.sheet %}
+  <section class="panel" id="song-sheet">
+    <div class="panel-head">
+      <h3>Song sheet</h3>
+      <a class="btn btn-quiet" href="/api/v1/songs/{{ song.id }}/sheet" download="{{ song.slug }}.txt">
+        Download
+      </a>
+    </div>
+    <p class="hint">
+      The measurement as text — what a brief or an agent is handed instead of a float.
+      Generated from the numbers by code, not written by a model: nothing in it is a claim
+      the analyser did not make.
+    </p>
+    <pre class="sheet">{{ analysis.sheet }}</pre>
+  </section>
+{% endif %}

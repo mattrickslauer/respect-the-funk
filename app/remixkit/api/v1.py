@@ -7,7 +7,7 @@ later, and it can change shape without dragging the console with it.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, File, Response, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 
 from remixkit.api.schemas import (
     ApprovalIn,
@@ -204,6 +204,30 @@ def register_master(song_id: str, body: MasterIn, principal: CurrentPrincipal, s
     return songs.register_master(
         principal, song_id, key=body.key, content_type=body.content_type
     )
+
+
+@router.get("/songs/{song_id}/sheet", response_class=Response)
+def song_sheet(song_id: str, principal: CurrentPrincipal, songs: Songs):
+    """The arrangement as text — the one endpoint meant to be read by a language model.
+
+    `text/plain` rather than JSON on purpose. Everything else on this router returns the
+    document so a caller can pick fields out of it; this returns the *whole measurement in
+    one string*, because the consumer is something assembling a prompt and the useful unit
+    there is a paragraph, not a tree it has to re-render into prose itself — which is
+    exactly the step where a claim the analyser never made gets introduced.
+
+    404 rather than an empty body when the song has not been measured. A prompt built
+    around a blank sheet is a prompt about nothing, and it should fail where it is
+    assembled rather than three services downstream.
+    """
+    song = songs.get(principal, song_id)
+    sheet = song.analysis.sheet if song.analysis else None
+    if not sheet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This song has not been measured. Upload a master and run the analysis.",
+        )
+    return Response(content=sheet, media_type="text/plain; charset=utf-8")
 
 
 # ---------------------------------------------------------------- sections

@@ -197,3 +197,75 @@ input::placeholder,textarea::placeholder{color:#5d5872}
 .tick input{accent-color:var(--gold)}
 .spin{color:var(--gold)}
 .danger:hover{border-color:var(--err);color:#f0a58a}
+
+/* ---- the arrangement ----
+   One hue does one job. The four band steps are a SEQUENTIAL ramp over an ordered
+   quantity — frequency, low to high — so they are one hue getting lighter, not four
+   categories. Nothing here is keyed by colour alone: sections carry their type letter and
+   their name as direct labels, and the repeats lanes carry identity on their own row.
+
+   The steps are spaced for the console's own panel surface (#1c1926): all four clear 3:1
+   against it, and the ramp is monotonic in lightness. Adjacent steps of any sequential
+   ramp sit close together by construction, which is what the 2px gap between stacked
+   segments, the legend, and the table under the chart are for. */
+:root{
+  --band-sub:#9c6410; --band-lowmid:#cf9020; --band-presence:#f2bf55; --band-air:#ffe8c4;
+}
+
+.arr-row{display:flex;gap:2px;margin:12px 0 0}
+.arr-seg{flex:1 1 0;min-width:0;background:var(--panel-2);border:1px solid var(--rule-2);
+  border-radius:4px;padding:7px 8px;display:flex;flex-direction:column;gap:1px;overflow:hidden}
+/* The hook of record is the one section a kit cuts to by default, and it is marked the
+   same way it is marked in the sections list — the two surfaces describe one fact. */
+.arr-seg.is-primary{border-color:var(--gold-dim);background:rgba(245,185,64,0.07)}
+.arr-type{font-family:var(--display);font-size:11px;letter-spacing:0.14em;color:var(--gold)}
+.arr-name{font-size:12.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arr-bars{font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+
+/* No gap between adjacent bars, a 2px gap inside each stack. A four-minute track is 100+
+   columns, and at that density a 1px column gap crosshatches with the stack gaps into
+   something that reads as a rendering fault. Gapless columns turn the chart into the
+   stacked *area* it should be at this many points, and the stack gaps then read as clean
+   horizontal band separators running the width of the song — which is the comparison
+   somebody is actually making. */
+.bandchart{position:relative;display:flex;align-items:flex-end;height:96px;
+  margin-top:10px;padding-top:4px;border-bottom:1px solid var(--rule)}
+.bandbar{flex:1 1 0;min-width:1px;height:100%;display:flex;flex-direction:column;
+  justify-content:flex-end;row-gap:2px}
+.bandbar:hover{outline:1px solid var(--gold-dim);outline-offset:1px}
+.seg{display:block;width:100%;border-radius:1px}
+/* Rounded only at the top of the stack: the data-end is the top of the column, and the
+   segments below it are interior joins, which a radius would turn into pills. */
+.bandbar .seg:first-child{border-radius:2px 2px 1px 1px}
+.seg-sub{background:var(--band-sub)}
+.seg-lowmid{background:var(--band-lowmid)}
+.seg-presence{background:var(--band-presence)}
+.seg-air{background:var(--band-air)}
+.arr-drop{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);opacity:0.62;
+  pointer-events:none}
+
+.arr-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:8px;font-size:12px;color:var(--ink-3)}
+.key{display:flex;align-items:center;gap:6px}
+.swatch{width:10px;height:10px;border-radius:2px;display:inline-block;flex:none}
+.swatch-drop{width:2px;height:12px;border-radius:0;background:var(--ink);opacity:0.62}
+
+.arr-repeats{display:flex;flex-direction:column;gap:4px;margin-top:14px}
+.arr-lane{display:flex;align-items:center;gap:9px}
+.arr-lane-key{font-family:var(--display);font-size:11px;letter-spacing:0.14em;color:var(--gold);
+  width:1.4em;flex:none}
+.arr-lane-track{flex:1;display:flex;gap:2px;height:9px}
+.arr-tick{flex:1 1 0;border-radius:2px;background:var(--rule-2)}
+.arr-tick.on{background:var(--ink-3)}
+.arr-lane-count{font-size:12px;color:var(--ink-3);white-space:nowrap;flex:none}
+
+.sheet{font-family:var(--mono);font-size:11.5px;line-height:1.5;color:var(--ink-2);
+  background:var(--bg-2);border:1px solid var(--rule-2);border-radius:6px;padding:14px;
+  margin-top:10px;overflow-x:auto;white-space:pre}
+
+/* A dense chart is unreadable below about 640px, and a squashed one is worse than an
+   honest scroll. The section row keeps its labels; the bar chart keeps its bar width. */
+@media (max-width:640px){
+  .bandchart,.arr-row{overflow-x:auto}
+  .bandbar{min-width:3px}
+  .arr-seg{min-width:96px}
+}

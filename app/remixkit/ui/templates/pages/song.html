@@ -76,6 +76,10 @@
        6 MB Lambda response limit is not a constraint on audio. #}
     {% include "components/_master.html" %}
     {% include "components/_analysis.html" %}
+    {# The other thing the master can be asked. `_analysis.html` answers "where are the
+       hooks"; this answers "what is being sung in them", and both are read off the same
+       bytes by a queued job that says how it heard. #}
+    {% include "components/_lyrics.html" %}
 
     <section class="panel">
       <div class="panel-head"><h3>Measurement</h3></div>
@@ -166,6 +170,7 @@
     <input type="radio" name="rk-pane" id="pane-2" class="tab-state">
     <input type="radio" name="rk-pane" id="pane-3" class="tab-state">
     <input type="radio" name="rk-pane" id="pane-4" class="tab-state">
+    <input type="radio" name="rk-pane" id="pane-5" class="tab-state">
 
     <nav class="tabs">
       <label for="pane-1">Sections
@@ -177,7 +182,15 @@
         {% if song.analysis and song.analysis.bars %}
           <span class="count">{{ song.analysis.bars|length }}</span>
         {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
-      <label for="pane-4">Kits
+      {# The count is the lines to check, not the lines there are, when there is anything
+         to check. A transcript's line count is not news; the number of lines the model was
+         unsure of is the only thing on this tab worth interrupting somebody for. #}
+      <label for="pane-4">Lyrics
+        {% if song.lyrics and song.lyrics.uncertain_lines %}
+          <span class="count count-blocked">{{ song.lyrics.uncertain_lines|length }}</span>
+        {% elif song.has_lyrics %}<span class="count">{{ song.lyrics.lines|length }}</span>
+        {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
+      <label for="pane-5">Kits
         <span class="count">{{ kits|length }}</span></label>
     </nav>
 
@@ -194,7 +207,12 @@
         {% include "components/_sheet.html" %}
       </div>
 
-      <section class="panel pane-4">
+      {# The words, and every one of them editable. Its own tab rather than a strip under
+         the sections because a transcript is read top to bottom and corrected in place,
+         which is a full-width act. #}
+      {% include "components/_lyric_lines.html" %}
+
+      <section class="panel pane-5">
         <div class="panel-head">
           <h3>Kits</h3>
           <a class="btn btn-quiet"

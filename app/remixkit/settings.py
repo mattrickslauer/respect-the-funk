@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # could ever tell from a real one. `auto` uses numpy if it is installed and refuses
     # with the missing piece named if it is not — see adapters/audio_unavailable.py.
     analysis_backend: Literal["auto", "none"] = "auto"
+    # And no `mock` here either, for a sharper version of the same reason. A fabricated
+    # measurement is a wrong number; a fabricated lyric is words attributed to an artist,
+    # rendered as the song's own and offered to the generate form. See
+    # adapters/lyrics_unavailable.py.
+    transcription_backend: Literal["auto", "none"] = "auto"
 
     # A deployment that declares itself authenticated must not be served by
     # AnonymousAuth. Startup fails loudly rather than quietly admitting everyone.
@@ -117,6 +122,21 @@ class Settings(BaseSettings):
     # How much of a master to measure. Ten minutes covers any single and bounds the cost
     # of a full-track comb fit on a file somebody uploaded by mistake.
     analysis_window_s: float = 600.0
+
+    # ---- transcription ---------------------------------------------------------
+    transcription_model: str = "scribe_v1"
+    # ISO-639 code, or empty to let the provider detect it. Worth setting for a catalogue
+    # that is all one language: detection is the weakest step on a processed vocal, and a
+    # wrong detection is a whole transcript of plausible words in the wrong language.
+    transcription_language: str = ""
+    # A provider round trip on a whole master, not a local decode — so this is a network
+    # ceiling, and it is generous because the job runs on Batch where nothing is waiting.
+    transcription_timeout_s: float = 600.0
+    # Where a line ends. Both are the adapter's grouping thresholds, hoisted here because
+    # a catalogue of dense rap and one of sparse ballads want different answers and
+    # neither is a code change. See adapters/lyrics_elevenlabs.py.
+    transcription_gap_ms: int = 900
+    transcription_line_chars: int = 42
 
     # ---- secrets ---------------------------------------------------------------
     # Where `bootstrap.load_secrets` fetches credentials from. Declared here rather than

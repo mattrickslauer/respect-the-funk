@@ -31,6 +31,19 @@ class AnalysisUnavailable(ServiceError):
     status_code = 503
 
 
+class TranscriptionUnavailable(ServiceError):
+    """This deployment cannot transcribe a vocal, and says which piece is missing.
+
+    Separate from `AnalysisUnavailable` because the missing pieces are different — one is
+    numpy and ffmpeg on PATH, the other is a credentialed provider — and a process is
+    routinely able to do one and not the other. Collapsing them would produce a message
+    telling somebody to install numpy when what they need is an API key. 503 for the same
+    reason: the same call succeeds on a correctly-configured worker.
+    """
+
+    status_code = 503
+
+
 class RightsError(ServiceError):
     """Generation blocked because likeness consent is missing.
 

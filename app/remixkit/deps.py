@@ -38,6 +38,10 @@ from remixkit.services.identities import IdentityService
 from remixkit.services.kits import JOB_TYPE, KitService
 from remixkit.services.recommendations import RecommendationService
 from remixkit.services.songs import SongService
+from remixkit.services.transcription import (
+    JOB_TYPE as TRANSCRIPTION_JOB_TYPE,
+    TranscriptionService,
+)
 from remixkit.services.verify import VerifyService
 from remixkit.settings import Settings, get_settings
 
@@ -88,11 +92,19 @@ class Container:
         )
 
         self.analyzer = _build_analyzer(settings)
+        self.transcriber = _build_transcriber(settings)
 
         self.artists = ArtistService(self.repo)
         self.identities = IdentityService(self.repo)
         self.songs = SongService(self.repo, self.storage, key_prefix=settings.key_prefix)
         self.analysis = AnalysisService(self.songs, self.storage, self.queue, self.analyzer)
+        self.transcription = TranscriptionService(
+            self.songs,
+            self.storage,
+            self.queue,
+            self.transcriber,
+            language=settings.transcription_language,
+        )
         self.recommendations = RecommendationService()
         self.kits = KitService(
             self.repo,
@@ -117,6 +129,10 @@ class Container:
             self.queue.register(
                 ANALYSIS_JOB_TYPE,
                 lambda payload: self.analysis.run(payload["tenant_id"], payload["song_id"]),
+            )
+            self.queue.register(
+                TRANSCRIPTION_JOB_TYPE,
+                lambda payload: self.transcription.run(payload["tenant_id"], payload["song_id"]),
             )
 
     def describe(self) -> dict[str, Any]:
@@ -162,6 +178,13 @@ class Container:
             # Not a mocked measurement — there is no such thing here. See
             # `adapters/audio_unavailable.py` for why this is a refusal and not a stub.
             warnings.append(f"Audio analysis is OFF — {self.analysis.unavailable_reason}")
+        if not self.transcription.available:
+            # And no mocked lyric either, for the sharper version of the same reason —
+            # see `adapters/lyrics_unavailable.py`. A lyric can still be typed by hand on
+            # the song page, which is why this is a warning and not a startup failure.
+            warnings.append(
+                f"Lyric transcription is OFF — {self.transcription.unavailable_reason}"
+            )
         return {
             "env": self.settings.env,
             "tenant": self.settings.default_tenant_id,
@@ -171,6 +194,7 @@ class Container:
             "queue": self.queue.name,
             "mail": self.mailer.name,
             "analysis": self.analyzer.name,
+            "lyrics": self.transcriber.name,
             "warnings": warnings,
         }
 
@@ -265,6 +289,36 @@ def _build_analyzer(settings: Settings):
     return analyzer
 
 
+def _build_transcriber(settings: Settings):
+    """The lyric adapter — real, or an honest refusal.
+
+    Same shape as `_build_analyzer` and the same two questions, answered in the adapter
+    because it is the only place that can tell them apart: is the package installed, and
+    is the key set. `transcription_backend=none` is for a process that should not be
+    calling a provider at all — a web Lambda whose worker does the transcribing.
+    """
+    from remixkit.adapters.lyrics_unavailable import UnavailableTranscriber
+
+    if settings.transcription_backend == "none":
+        return UnavailableTranscriber(
+            "Lyric transcription is switched off in this process "
+            "(RK_TRANSCRIPTION_BACKEND=none)."
+        )
+
+    from remixkit.adapters.lyrics_elevenlabs import ElevenLabsTranscriber
+
+    transcriber = ElevenLabsTranscriber(
+        model_id=settings.transcription_model,
+        gap_ms=settings.transcription_gap_ms,
+        max_chars=settings.transcription_line_chars,
+        timeout_s=settings.transcription_timeout_s,
+    )
+    if not transcriber.available:
+        log.warning("lyric transcription unavailable: %s", transcriber.unavailable_reason)
+        return UnavailableTranscriber(transcriber.unavailable_reason)
+    return transcriber
+
+
 def _build_queue(settings: Settings):
     if settings.queue_backend == "sqs":
         from remixkit.adapters.queue_sqs import SQSQueue
@@ -352,6 +406,10 @@ def get_analysis() -> AnalysisService:
     return get_container().analysis
 
 
+def get_transcription() -> TranscriptionService:
+    return get_container().transcription
+
+
 def get_recommendations() -> RecommendationService:
     return get_container().recommendations
 
@@ -371,4 +429,5 @@ Verify = Annotated[VerifyService, Depends(get_verify)]
 Catalogue = Annotated[CatalogueService, Depends(get_catalogue)]
 Delivery = Annotated[DeliveryService, Depends(get_delivery)]
 Analysis = Annotated[AnalysisService, Depends(get_analysis)]
+Transcription = Annotated[TranscriptionService, Depends(get_transcription)]
 Recommendations = Annotated[RecommendationService, Depends(get_recommendations)]

@@ -1,0 +1,95 @@
+{# What heard this song, and how.
+
+   The rail sibling of `_analysis.html`, and the same argument: the method line is shown in
+   full rather than tucked behind a tooltip, because the words and how they were heard
+   together are the claim. A lyric with no visible provenance is how a model's guess gets
+   promoted to the artist's words between one screen and the next.
+
+   Polls itself while the job is queued or running — 3 seconds, like the analysis panel and
+   the kit rows, because §2b defers websockets and a provider round trip is under a minute. #}
+{% set lyrics = song.lyrics %}
+{% set busy = lyrics and lyrics.status.value in ("queued", "running") %}
+{% set edited = lyrics.edited_lines if lyrics else [] %}
+<section class="panel" id="song-lyrics"
+         hx-get="/ui/songs/{{ song.id }}/transcription"
+         hx-trigger="{% if busy %}every 3s{% else %}rk:transcription-started from:body{% endif %}"
+         hx-swap="outerHTML">
+  <div class="panel-head">
+    <h3>Lyrics</h3>
+    {% if song.master_key and transcription_available and not busy %}
+      <button class="btn btn-quiet"
+              hx-post="/ui/songs/{{ song.id }}/transcription"
+              hx-target="#song-lyrics" hx-swap="outerHTML">
+        {{ "Re-transcribe" if lyrics and lyrics.transcriber else "Transcribe the master" }}
+      </button>
+    {% endif %}
+  </div>
+
+  {# A refusal from the service, rendered next to the button that caused it. The one that
+     matters is "this would discard N corrections" — which is only actionable beside the
+     control that does it anyway, so the override lives here rather than in an error card
+     somewhere else on the page. #}
+  {% if note %}
+    <p class="small unmeasured">{{ note }}</p>
+    {% if edited %}
+      <form hx-post="/ui/songs/{{ song.id }}/transcription"
+            hx-target="#song-lyrics" hx-swap="outerHTML"
+            hx-confirm="Re-transcribe and discard {{ edited|length }} corrected line(s)?">
+        <input type="hidden" name="force" value="1">
+        <button class="btn btn-quiet danger" type="submit">Re-transcribe anyway</button>
+      </form>
+    {% endif %}
+  {% endif %}
+
+  {% if not lyrics %}
+    {% if song.master_key %}
+      <p class="empty">The master has not been transcribed yet.</p>
+    {% else %}
+      <p class="empty">Upload a master and its words are read off the audio.</p>
+    {% endif %}
+    {% if not transcription_available %}
+      <p class="small unmeasured">{{ transcription_reason }}</p>
+      <p class="hint">A lyric can still be written by hand on the Lyrics tab.</p>
+    {% endif %}
+  {% elif busy %}
+    <p class="small">
+      <span class="spin">◐</span> {{ lyrics.status.value }} — listening to the master.
+      This runs on the queue, not in this request.
+    </p>
+  {% elif lyrics.status.value == "failed" %}
+    <p class="small unmeasured">Transcription failed: {{ lyrics.error }}</p>
+  {% else %}
+    <dl class="kv">
+      <dt>Lines</dt>
+      <dd>{{ lyrics.lines|length }}
+        {% if edited %}<span class="hint">{{ edited|length }} corrected by hand</span>{% endif %}</dd>
+      <dt>Language</dt>
+      <dd>{% if lyrics.language %}{{ lyrics.language }}
+            {% if lyrics.language_confidence is not none %}
+              <span class="hint">{{ "%.0f"|format(lyrics.language_confidence * 100) }}% confident</span>
+            {% endif %}
+          {% else %}<span class="unmeasured">not reported</span>{% endif %}</dd>
+      <dt>To check</dt>
+      {# The count that decides whether this transcript is usable as it stands. Low
+         confidence is not a failure — it is the list of lines to play back. #}
+      <dd>{% if lyrics.uncertain_lines %}
+            {{ lyrics.uncertain_lines|length }} uncertain line(s)
+          {% elif lyrics.lines %}<span class="hint">nothing flagged</span>
+          {% else %}—{% endif %}</dd>
+    </dl>
+    {% if lyrics.method %}
+      <p class="small basis"><span class="hint">method:</span> {{ lyrics.method }}</p>
+    {% else %}
+      <p class="small"><span class="unmeasured">written by hand</span> — no transcriber ran.</p>
+    {% endif %}
+    {% if lyrics.source_sha256 %}
+      <p class="small"><span class="hint">bytes:</span>
+        <code class="sha">{{ lyrics.source_sha256[:16] }}</code></p>
+    {% endif %}
+    {% if lyrics.warnings %}
+      <ul class="blocked">
+        {% for warning in lyrics.warnings %}<li>{{ warning }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+  {% endif %}
+</section>

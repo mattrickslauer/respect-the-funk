@@ -431,6 +431,129 @@ class SongAnalysis(BaseModel):
         return self.status is AnalysisStatus.DONE
 
 
+class LyricLine(BaseModel):
+    """One line of the song's words, and where it is heard.
+
+    Same provenance discipline as `SongSection`, applied to language instead of energy:
+    `MEASURED` means a transcriber heard it and `method` says which one, `MANUAL` means a
+    person typed or corrected it. The difference matters more here than anywhere else in
+    the model — these words get attributed to the artist, and a screen that renders a
+    model's guess and a person's correction identically is a screen that launders one into
+    the other.
+
+    `confidence` is the transcriber's, 0–1, and only ever survives on a `MEASURED` line.
+    A line somebody edited has no confidence, because the number described audio the
+    provider heard and not the sentence a person decided it was.
+    """
+
+    id: str = Field(default_factory=lambda: new_id("lyr"))
+    text: str = ""
+    start_ms: int = 0
+    end_ms: int = 0
+    source: Provenance = Provenance.MANUAL
+    method: str | None = None
+    confidence: float | None = None
+
+    @property
+    def duration_ms(self) -> int:
+        return max(0, self.end_ms - self.start_ms)
+
+    @property
+    def is_uncertain(self) -> bool:
+        """Worth checking by ear. The console flags these rather than hiding them.
+
+        0.6 is a threshold, not a measurement, and it is here rather than in a template so
+        that "which lines did we flag" is one answer the whole app agrees on. Sung vocal
+        over a loud mix sits lower than speech does, so this is deliberately generous —
+        the cost of flagging a correct line is a glance, and the cost of not flagging a
+        wrong one is a wrong lyric on a released clip.
+        """
+        return self.source is Provenance.MEASURED and self.confidence is not None and self.confidence < 0.6
+
+
+class SongLyrics(BaseModel):
+    """What a transcriber heard in the master, and how — plus every correction since.
+
+    Stored on the song for the same reason `SongAnalysis` is: it is a property of the song,
+    read on every screen that shows one, and a claim whose method has to be joined in from
+    elsewhere is a claim the UI will eventually render without it.
+
+    `status` reuses `AnalysisStatus` rather than declaring a parallel enum with identical
+    members. Transcription is a queued job with exactly the same four states, and two
+    enums that must stay in lockstep are one enum with a maintenance burden.
+    """
+
+    status: AnalysisStatus = AnalysisStatus.QUEUED
+    transcriber: str | None = None      # which adapter ran
+    method: str | None = None           # its one-line description of how, verbatim
+    source_key: str | None = None       # which master was heard
+    source_sha256: str | None = None    # ...and exactly which bytes
+    requested_at: datetime = Field(default_factory=utcnow)
+    completed_at: datetime | None = None
+    error: str | None = None
+
+    language: str | None = None
+    language_confidence: float | None = None
+    warnings: list[str] = Field(default_factory=list)
+    lines: list[LyricLine] = Field(default_factory=list)
+
+    def line(self, line_id: str) -> LyricLine | None:
+        return next((line for line in self.lines if line.id == line_id), None)
+
+    @property
+    def ordered_lines(self) -> list[LyricLine]:
+        """Song order — which is not quite the same as sorting by start time.
+
+        `SongSection.ordered_sections` can sort on the window alone because every section
+        has one. A lyric line is allowed not to: a line typed off a sheet has no timing,
+        and sorting those by `start_ms` puts every one of them at 0 — so a line somebody
+        appended to the last chorus jumps to the top of the song, above the intro.
+
+        So an untimed line inherits the position of the last timed line before it in list
+        order, and the list index breaks the tie. A line added after the drop stays after
+        the drop, a lyric with no timings at all keeps the order it was typed in, and a
+        timed lyric sorts by its windows exactly as before.
+        """
+        carried = 0
+        keyed: list[tuple[int, int, LyricLine]] = []
+        for index, line in enumerate(self.lines):
+            if line.start_ms or line.end_ms:
+                carried = line.start_ms
+            keyed.append((carried, index, line))
+        return [line for _, _, line in sorted(keyed, key=lambda item: item[:2])]
+
+    @property
+    def text(self) -> str:
+        """The lyric as one block — what a brief or a prompt is handed."""
+        return "\n".join(line.text for line in self.ordered_lines if line.text.strip())
+
+    @property
+    def ran(self) -> bool:
+        return self.status is AnalysisStatus.DONE
+
+    @property
+    def edited_lines(self) -> list[LyricLine]:
+        """Lines a person owns. Re-transcribing discards these, so it asks first."""
+        return [line for line in self.lines if line.source is Provenance.MANUAL]
+
+    @property
+    def uncertain_lines(self) -> list[LyricLine]:
+        return [line for line in self.ordered_lines if line.is_uncertain]
+
+    def lines_in(self, start_ms: int, end_ms: int) -> list[LyricLine]:
+        """The words inside a window — what a kit cutting to that section would be over.
+
+        Overlap rather than containment: a line that starts before the section and runs
+        into it is audible in the cut, and a hook whose first word is clipped is a fact
+        about the window worth seeing on the screen where the window is chosen.
+        """
+        return [
+            line
+            for line in self.ordered_lines
+            if line.end_ms > start_ms and line.start_ms < end_ms
+        ]
+
+
 class Song(Base):
     """One measured master. Measured once; the measurement is reused forever.
 
@@ -451,6 +574,7 @@ class Song(Base):
     sections: list[SongSection] = Field(default_factory=list)
     primary_section_id: str | None = None
     analysis: SongAnalysis | None = None
+    lyrics: SongLyrics | None = None
     master_key: str | None = None  # owned master in the bucket, private
     master_content_type: str | None = None
     isrc: str | None = None
@@ -483,6 +607,17 @@ class Song(Base):
     def has_hook(self) -> bool:
         """Either shape counts: a primary window, or at least one loopable section."""
         return self.hook.duration_ms > 0 or bool(self.hook_sections)
+
+    # -- reads over the lyric ----------------------------------------------------
+    @property
+    def has_lyrics(self) -> bool:
+        return bool(self.lyrics and self.lyrics.lines)
+
+    def lyrics_for(self, section: SongSection) -> list[LyricLine]:
+        """The words a kit cut to this section would be over. Empty if none are known."""
+        if not self.lyrics:
+            return []
+        return self.lyrics.lines_in(section.start_ms, section.end_ms)
 
 
 class Asset(BaseModel):

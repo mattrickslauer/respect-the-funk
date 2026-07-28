@@ -21,16 +21,19 @@ from remixkit.domain.models import (
     AnalysisStatus,
     ApprovalState,
     HookWindow,
+    LyricLine,
     Provenance,
     SectionRole,
     Song,
     SongAnalysis,
     SongBar,
+    SongLyrics,
     SongSection,
     slugify,
     utcnow,
 )
 from remixkit.ports.audio import AudioAnalysis
+from remixkit.ports.lyrics import Transcription
 from remixkit.ports.repository import DocumentRepository
 from remixkit.ports.storage import Storage
 from remixkit.services.errors import Conflict, NotFound
@@ -448,6 +451,239 @@ class SongService:
         self._repo.put(principal.tenant_id, COLLECTION, song.id, song)
         return song
 
+    # ---------------------------------------------------------------- lyrics
+    def mark_transcription(
+        self,
+        principal: Principal,
+        song_id: str,
+        status: AnalysisStatus,
+        *,
+        transcriber: str | None = None,
+        error: str | None = None,
+    ) -> Song:
+        """Move the transcription through its states, so a screen can say which one it is in.
+
+        The mirror of `mark_analysis`, down to preserving the lines already there: a
+        re-transcription that is queued and then fails must leave the previous transcript
+        readable, because the alternative is a person losing a lyric they had corrected to
+        a provider outage they had nothing to do with.
+        """
+        song = self.get(principal, song_id)
+        current = song.lyrics or SongLyrics()
+        current.status = status
+        current.error = error
+        if transcriber:
+            current.transcriber = transcriber
+        if status is AnalysisStatus.QUEUED:
+            current.requested_at = utcnow()
+            current.completed_at = None
+        elif status in (AnalysisStatus.DONE, AnalysisStatus.FAILED):
+            current.completed_at = utcnow()
+        song.lyrics = current
+        song.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, song.id, song)
+        return song
+
+    def apply_transcript(
+        self,
+        principal: Principal,
+        song_id: str,
+        transcription: Transcription,
+        *,
+        transcriber: str,
+        source_key: str | None = None,
+        source_sha256: str | None = None,
+    ) -> Song:
+        """Write what the transcriber heard onto the song.
+
+        The one place this deliberately differs from `apply_analysis`: **hand-edited lines
+        do not survive.** Sections are independent claims about separate stretches of a
+        song, so a measured list and a hand-drawn one merge cleanly. A lyric is one
+        continuous reading of the same vocal, and interleaving a corrected line from the
+        old transcript with fresh lines from the new one produces a lyric that is neither —
+        duplicated phrases, overlapping windows, and no way to tell which pass said what.
+
+        So a re-run replaces the transcript, `services.transcription.request` refuses to
+        start one that would discard corrections unless the caller says to anyway, and the
+        count that was discarded is recorded here in `warnings` rather than only in a log
+        line the person who lost the work will never read.
+        """
+        song = self.get(principal, song_id)
+        previous = song.lyrics
+        warnings = list(transcription.warnings)
+        discarded = len(previous.edited_lines) if previous else 0
+        if discarded:
+            warnings.append(
+                f"This transcript replaced {discarded} hand-corrected line(s) from the "
+                "previous run. Corrections are not carried across a re-transcription."
+            )
+
+        song.lyrics = SongLyrics(
+            status=AnalysisStatus.DONE,
+            transcriber=transcriber,
+            method=transcription.method,
+            source_key=source_key,
+            source_sha256=source_sha256,
+            requested_at=(previous.requested_at if previous else utcnow()),
+            completed_at=utcnow(),
+            language=transcription.language,
+            language_confidence=transcription.language_confidence,
+            warnings=warnings,
+            lines=[
+                LyricLine(
+                    text=line.text,
+                    start_ms=line.start_ms,
+                    end_ms=line.end_ms,
+                    source=Provenance.MEASURED,
+                    method=transcription.method,
+                    confidence=line.confidence,
+                )
+                for line in transcription.lines
+                if line.text.strip()
+            ],
+        )
+        song.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, song.id, song)
+        return song
+
+    def add_lyric_line(
+        self, principal: Principal, song_id: str, *, text: str, start_ms: int, end_ms: int
+    ) -> Song:
+        """Type a line the transcriber missed — or write the lyric with no transcriber at all.
+
+        Works on a song that has never been transcribed, which is the point: a label that
+        already has the lyric sheet should not have to run a provider to get it into the
+        console, and a deployment with no credentials is not a deployment that cannot hold
+        a lyric.
+        """
+        text = text.strip()
+        if not text:
+            raise Conflict("A lyric line needs words.")
+        _check_lyric_window(start_ms, end_ms)
+        song = self.get(principal, song_id)
+        lyrics = song.lyrics or SongLyrics(status=AnalysisStatus.DONE, method=None)
+        # A song whose lyric is entirely hand-written has nothing queued and nothing
+        # running — saying `done` is what makes the panel read as a lyric rather than as a
+        # job that never finished.
+        if lyrics.status is AnalysisStatus.QUEUED and not lyrics.transcriber:
+            lyrics.status = AnalysisStatus.DONE
+        lyrics.lines.append(
+            LyricLine(text=text, start_ms=start_ms, end_ms=end_ms, source=Provenance.MANUAL)
+        )
+        song.lyrics = lyrics
+        song.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, song.id, song)
+        return song
+
+    def update_lyric_line(
+        self,
+        principal: Principal,
+        song_id: str,
+        line_id: str,
+        *,
+        text: str | None = None,
+        start_ms: int | None = None,
+        end_ms: int | None = None,
+    ) -> Song:
+        """Correct a line — and record that a person did.
+
+        Same rule as `update_section`, and it bites harder here. A transcribed line that
+        somebody rewrote is no longer the provider's claim, so the source flips to `MANUAL`
+        and the confidence goes with it: a 0.42 next to words a person is certain of would
+        be a machine's doubt about a sentence it never produced.
+        """
+        song = self.get(principal, song_id)
+        lyrics = song.lyrics
+        line = lyrics.line(line_id) if lyrics else None
+        if lyrics is None or line is None:
+            raise NotFound(f"No lyric line {line_id!r} on {song.title!r}")
+
+        changed = False
+        if text is not None and text.strip() != line.text:
+            if not text.strip():
+                raise Conflict("A lyric line needs words. Remove the line to delete it.")
+            line.text, changed = text.strip(), True
+        if start_ms is not None and start_ms != line.start_ms:
+            line.start_ms, changed = start_ms, True
+        if end_ms is not None and end_ms != line.end_ms:
+            line.end_ms, changed = end_ms, True
+        _check_lyric_window(line.start_ms, line.end_ms)
+
+        if changed:
+            _line_became_manual(line)
+        song.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, song.id, song)
+        return song
+
+    def remove_lyric_line(self, principal: Principal, song_id: str, line_id: str) -> Song:
+        song = self.get(principal, song_id)
+        lyrics = song.lyrics
+        if lyrics is None or lyrics.line(line_id) is None:
+            raise NotFound(f"No lyric line {line_id!r} on {song.title!r}")
+        lyrics.lines = [line for line in lyrics.lines if line.id != line_id]
+        song.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, song.id, song)
+        return song
+
+    def set_lyrics_text(self, principal: Principal, song_id: str, text: str) -> Song:
+        """Rewrite the whole lyric as a block of text — the way a person actually fixes one.
+
+        Correcting a transcript line by line is right for one bad word and wrong for a
+        chorus the model heard as gibberish, which is the common case. So this takes the
+        lyric as text and re-pairs it with the windows already known:
+
+        * the Nth new line inherits the Nth old line's window, because fixing words does
+          not move when they were sung;
+        * a line whose text is unchanged keeps its provenance and its confidence — nobody
+          edited it, and marking it `manual` would erase a real measurement by association;
+        * a line with no counterpart gets a zero window, which every screen renders as
+          "no timing" rather than as a line at the start of the song.
+
+        When the line *count* changes the pairing is a guess after the first insertion, and
+        that is recorded as a warning rather than left for somebody to discover in a kit.
+        """
+        song = self.get(principal, song_id)
+        previous = song.lyrics.ordered_lines if song.lyrics else []
+        fresh = [line.strip() for line in text.splitlines()]
+        fresh = [line for line in fresh if line]
+
+        lines: list[LyricLine] = []
+        for index, body in enumerate(fresh):
+            old = previous[index] if index < len(previous) else None
+            if old is not None and old.text == body:
+                lines.append(old)
+                continue
+            lines.append(
+                LyricLine(
+                    text=body,
+                    start_ms=old.start_ms if old else 0,
+                    end_ms=old.end_ms if old else 0,
+                    source=Provenance.MANUAL,
+                    method=(
+                        f"hand-edited (was: {old.method})"
+                        if old and old.method
+                        else "hand-written"
+                    ),
+                )
+            )
+
+        lyrics = song.lyrics or SongLyrics(status=AnalysisStatus.DONE)
+        if lyrics.status is AnalysisStatus.QUEUED and not lyrics.transcriber:
+            lyrics.status = AnalysisStatus.DONE
+        if previous and len(fresh) != len(previous):
+            lyrics.warnings = [
+                w for w in lyrics.warnings if not w.startswith("The line count changed")
+            ] + [
+                f"The line count changed from {len(previous)} to {len(fresh)}. Windows are "
+                "paired by position, so timings after the first inserted or deleted line "
+                "may no longer match the audio."
+            ]
+        lyrics.lines = lines
+        song.lyrics = lyrics
+        song.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, song.id, song)
+        return song
+
     def set_approval(self, principal: Principal, song_id: str, state: ApprovalState) -> Song:
         song = self.get(principal, song_id)
         song.approval = state
@@ -470,6 +706,24 @@ def _check_window(start_ms: int, end_ms: int) -> None:
         raise Conflict("A section cannot start before the song does.")
     if end_ms <= start_ms:
         raise Conflict("A section must end after it starts.")
+
+
+def _check_lyric_window(start_ms: int, end_ms: int) -> None:
+    """A lyric window, which unlike a section's is allowed to be unknown.
+
+    `0–0` means "these are the words, nobody has said when" — the state a lyric typed off
+    a sheet is in, and a legitimate one: the words are still correct and still usable. What
+    is refused is a window that is *stated and impossible*, because that is a typo rather
+    than an absence, and every screen renders the two differently.
+    """
+    if start_ms == 0 and end_ms == 0:
+        return
+    if start_ms < 0:
+        raise Conflict("A lyric line cannot start before the song does.")
+    if end_ms <= start_ms:
+        raise Conflict(
+            "A lyric line must end after it starts. Leave both at 0 if the timing is unknown."
+        )
 
 
 def _became_manual(section: SongSection) -> None:
@@ -502,6 +756,21 @@ def _became_manual(section: SongSection) -> None:
     section.repeat_of = None
     section.evidence = []
     section.entry = None
+
+
+def _line_became_manual(line: LyricLine) -> None:
+    """A transcribed line somebody changed is a manual one, and says what it used to be.
+
+    The confidence goes with it, for the same reason `_became_manual` drops a section's
+    measured energies: the number described the provider's certainty about words it chose,
+    and leaving it attached to a sentence a person wrote makes a human decision look like a
+    machine's — with a doubt attached that nobody expressed.
+    """
+    if line.source is not Provenance.MEASURED:
+        return
+    line.source = Provenance.MANUAL
+    line.method = f"hand-edited (was: {line.method})" if line.method else "hand-edited"
+    line.confidence = None
 
 
 def _make_primary(song: Song, section: SongSection) -> None:

@@ -174,6 +174,11 @@ def artist_detail(
         request,
         "pages/artist.html",
         artist=artist,
+        # The components this page includes address their own fragment routes by
+        # `artist_id` — the same name the fragment handlers pass when they re-render.
+        # Omitting it here rendered `hx-post="/ui/artists//songs"`: a form that looks
+        # right and 404s on submit, because Jinja resolves an undefined to empty.
+        artist_id=artist.id,
         identity=identities.current(principal, artist_id),
         identities=identities.list_for_artist(principal, artist_id),
         songs=songs.list_for_artist(principal, artist_id),
@@ -285,6 +290,7 @@ def identity_page(
         request,
         "pages/identity.html",
         artist=artist,
+        artist_id=artist.id,
         identity=identities.current(principal, artist_id),
         identities=identities.list_for_artist(principal, artist_id),
     )

@@ -8,6 +8,8 @@ visible only after generating.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 
@@ -247,6 +249,56 @@ def test_settings_page_names_every_axis_and_its_gap(client):
         assert var in page.text
     # On the dev defaults it must say what generation would need, not just that it is mocked.
     assert "GMI Cloud" in page.text or "GCP_PROJECT" in page.text
+
+
+# ------------------------------------------------------- fragment URL wiring
+# A page that includes a component owes it every variable the component addresses its
+# own routes with. Jinja renders an undefined as empty rather than raising, so getting
+# this wrong produces a page that looks correct and a form that 404s on submit — which
+# is exactly how `/ui/artists//songs` shipped.
+def _hx_post_targets(html: str) -> list[str]:
+    return re.findall(r'hx-post="([^"]+)"', html)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/console/artists/{artist_id}",
+        "/console/artists/{artist_id}/identity",
+    ],
+)
+def test_no_page_renders_a_url_with_an_empty_path_segment(client, consented, path):
+    page = client.get(path.format(artist_id=consented["id"]))
+    assert page.status_code == 200
+
+    targets = _hx_post_targets(page.text)
+    assert targets, "expected at least one htmx form on this page"
+    for target in targets:
+        assert "//" not in target, f"{target} has an empty path segment on {path}"
+
+
+def test_the_artist_page_addresses_its_fragment_routes_by_the_real_id(client, consented):
+    page = client.get(f"/console/artists/{consented['id']}")
+
+    assert f'hx-post="/ui/artists/{consented["id"]}/songs"' in page.text
+    assert f'hx-post="/ui/artists/{consented["id"]}/identity"' in page.text
+
+
+def test_attaching_a_song_works_through_the_form_the_page_actually_rendered(client, consented):
+    """The end-to-end the 404 broke: submit the URL the page put in the form."""
+    page = client.get(f"/console/artists/{consented['id']}")
+    target = next(t for t in _hx_post_targets(page.text) if t.endswith("/songs"))
+
+    response = client.post(target, data={"title": "Losing Sleep", "bpm": "", "bpm_method": ""})
+    assert response.status_code == 200, f"the rendered form posts to {target}"
+    assert "Losing Sleep" in response.text
+
+
+def test_the_kit_form_carries_the_artist_id_it_submits(client, consented, song):
+    """`_kits.html` passes the id as a hidden field rather than in the path, so an empty
+    one is a 422 from the form body instead of a 404 from the route — same cause."""
+    page = client.get(f"/console/artists/{consented['id']}")
+    assert f'name="artist_id" value="{consented["id"]}"' in page.text
 
 
 # ------------------------------------------------------------------ navigation

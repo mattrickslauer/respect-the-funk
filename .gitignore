@@ -58,6 +58,16 @@ content/.cache/
 # 38MB standalone; fetch it rather than carry it.
 content/bin/yt-dlp
 
+# ---------------------------------------------------------------- agent worktrees
+# `git worktree add` puts a checkout here, and a checkout inside a checkout is a repo
+# inside a repo: `git add .` at the root stages it as a gitlink to a commit no clone can
+# resolve, and the outer repo then carries a submodule nobody declared. Ignored rather
+# than remembered — the failure is silent at `add` time and confusing forever after.
+#
+# Only `worktrees/`, not all of `.claude/`: settings, skills and agent definitions under
+# it are authored files and belong in git by the rule at the top of this file.
+.claude/worktrees/
+
 # ---------------------------------------------------------------- os noise
 .DS_Store
 ._*

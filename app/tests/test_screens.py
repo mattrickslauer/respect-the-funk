@@ -8,6 +8,8 @@ visible only after generating.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 
@@ -324,6 +326,34 @@ def test_settings_page_names_every_axis_and_its_gap(client):
         assert var in page.text
     # On the dev defaults it must say what generation would need, not just that it is mocked.
     assert "GMI Cloud" in page.text or "GCP_PROJECT" in page.text
+
+
+# ------------------------------------------------------- fragment URL wiring
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/console/artists/{artist_id}",
+        "/console/artists/{artist_id}/identity",
+    ],
+)
+def test_no_page_renders_a_form_action_with_an_empty_path_segment(client, consented, path):
+    """The general form of the `/ui/artists//songs` defect, swept over every page that
+    includes a component.
+
+    A page that includes a component owes it every variable the component addresses its
+    own routes with, and Jinja renders a missing one as empty rather than raising — so
+    the failure is always a page that looks right and a form that 404s. `test_http.py`
+    asserts the artist page's specific URLs; this asserts the shape, on every page that
+    can grow the same hole. The identity builder is here because it is the other page
+    that includes `_identity.html`, and it had the same omission.
+    """
+    page = client.get(path.format(artist_id=consented["id"]))
+    assert page.status_code == 200
+
+    targets = re.findall(r'hx-post="([^"]+)"', page.text)
+    assert targets, "expected at least one htmx form on this page"
+    for target in targets:
+        assert "//" not in target, f"{target} has an empty path segment on {path}"
 
 
 # ------------------------------------------------------------------ navigation

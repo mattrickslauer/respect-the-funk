@@ -552,9 +552,20 @@ def ui_create_artist(
 
 
 @router.delete("/ui/artists/{artist_id}", response_class=HTMLResponse)
-def ui_delete_artist(request: Request, artist_id: str, principal: CurrentPrincipal, artists: Artists):
+def ui_delete_artist(
+    request: Request,
+    artist_id: str,
+    principal: CurrentPrincipal,
+    artists: Artists,
+    cascade: bool = False,
+):
+    """Refuses if songs, identities or kits still point here, naming what is in the way.
+
+    The card asks first (`/ui/artists/{id}/dependents`) so the confirm prompt can say
+    "3 songs, 1 kit" rather than a generic warning, and only then offers cascade.
+    """
     try:
-        artists.delete(principal, artist_id)
+        artists.delete(principal, artist_id, cascade=cascade)
     except ServiceError as exc:
         return _error_fragment(request, exc)
     return _render(request, "components/_roster.html", artists=artists.list(principal))
@@ -1233,6 +1244,121 @@ def ui_approve_kit(
     except ServiceError as exc:
         return _error_fragment(request, exc)
     return _render(request, "components/_kit_row.html", kit=kit)
+
+
+# ---------------------------------------------------------------- destroy
+@router.get("/ui/artists/{artist_id}/dependents", response_class=HTMLResponse)
+def ui_artist_dependents(
+    request: Request, artist_id: str, principal: CurrentPrincipal, artists: Artists
+):
+    """A one-line summary of what a cascade would take, for the confirm prompt."""
+    try:
+        counts = artists.dependents(principal, artist_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    detail = ", ".join(f"{n} {name}" for name, n in counts.items() if n)
+    return HTMLResponse(detail or "nothing else")
+
+
+@router.post("/ui/artists/{artist_id}", response_class=HTMLResponse)
+def ui_update_artist(
+    request: Request,
+    artist_id: str,
+    principal: CurrentPrincipal,
+    artists: Artists,
+    name: str = Form(...),
+    bio: str = Form(""),
+):
+    try:
+        artist = artists.update(principal, artist_id, name=name, bio=bio)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _render(request, "components/_artist_head.html", artist=artist)
+
+
+@router.post("/ui/songs/{song_id}", response_class=HTMLResponse)
+def ui_update_song(
+    request: Request,
+    song_id: str,
+    principal: CurrentPrincipal,
+    songs: Songs,
+    title: str = Form(...),
+):
+    """Title only — every other field on a song is measured and owns its `method`."""
+    try:
+        song = songs.update(principal, song_id, title=title)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _render(request, "components/_song_head.html", song=song)
+
+
+@router.delete("/ui/songs/{song_id}", response_class=HTMLResponse)
+def ui_delete_song(
+    request: Request, song_id: str, principal: CurrentPrincipal, songs: Songs, kits: Kits
+):
+    """Refuses while kits still reference it — a kit whose song vanished cannot be
+    re-planned, and its brief names section ids that no longer resolve."""
+    try:
+        song = songs.get(principal, song_id)
+        existing = [k for k in kits.list(principal) if k.song_id == song_id]
+        if existing:
+            raise Conflict(
+                f"{len(existing)} kit(s) were generated from {song.title!r}. Delete them first."
+            )
+        artist_id = song.artist_id
+        songs.delete(principal, song_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    response = _render(
+        request, "components/_songs.html", songs=songs.list_for_artist(principal, artist_id),
+        artist_id=artist_id,
+    )
+    # The song page is gone, so a delete issued from it has nowhere to swap into.
+    response.headers["HX-Redirect"] = f"/console/artists/{artist_id}"
+    return response
+
+
+@router.delete("/ui/identities/{identity_id}", response_class=HTMLResponse)
+def ui_delete_identity(
+    request: Request, identity_id: str, principal: CurrentPrincipal, identities: Identities
+):
+    try:
+        identity = identities.get(principal, identity_id)
+        artist_id = identity.artist_id
+        identities.delete(principal, identity_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    response = HTMLResponse("")
+    response.headers["HX-Redirect"] = f"/console/artists/{artist_id}/identity"
+    return response
+
+
+@router.delete("/ui/kits/{kit_id}", response_class=HTMLResponse)
+def ui_delete_kit(
+    request: Request,
+    kit_id: str,
+    principal: CurrentPrincipal,
+    kits: Kits,
+    force: bool = False,
+):
+    """Removes the kit and the assets and manifest it owns in the bucket.
+
+    Refuses on an approved or still-running kit unless `force` — approval is the record
+    that a human decided this was publishable, and something publishable may already be
+    published.
+    """
+    try:
+        kit = kits.get(principal, kit_id)
+        artist_id = kit.artist_id
+        kits.delete(principal, kit_id, force=force)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _render(
+        request,
+        "components/_kits.html",
+        kits=kits.list(principal, artist_id=artist_id),
+        artist_id=artist_id,
+    )
 
 
 # ---------------------------------------------------------------- verify fragment

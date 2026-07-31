@@ -1,0 +1,35 @@
+{# The song's editable header — the title, and nothing else.
+
+   Every other field on a song is *measured* and carries a `method` recording where it
+   came from: the BPM, the drop, the section windows, each lyric line. Those are edited
+   through their own surfaces, which rewrite provenance honestly (a measured window a
+   person drags becomes `manual` and keeps the old method as history). A general edit
+   form over them would be exactly how a measured number turns into an unsourced one. #}
+<div class="panel" id="song-head">
+  <div class="panel-head"><h2>{{ song.title }}</h2></div>
+
+  <details class="tight">
+    <summary class="small">Rename</summary>
+    <form class="form form-inline"
+          hx-post="/ui/songs/{{ song.id }}"
+          hx-target="#song-head"
+          hx-swap="outerHTML">
+      <label>Title <input name="title" value="{{ song.title }}" required></label>
+      <button class="btn btn-quiet" type="submit">Save</button>
+    </form>
+    <p class="hint">
+      BPM, sections and lyrics are measured — edit them where they are shown, so the
+      change is recorded against the measurement it replaces.
+    </p>
+  </details>
+
+  <div class="card-foot">
+    <button class="btn btn-danger btn-quiet"
+            hx-delete="/ui/songs/{{ song.id }}"
+            hx-target="#song-head"
+            hx-swap="outerHTML"
+            hx-confirm="Delete {{ song.title }}? The uploaded master is deleted with it. Kits generated from this song must be removed first.">
+      Delete song
+    </button>
+  </div>
+</div>

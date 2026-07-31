@@ -16,6 +16,8 @@ are different claims that a screen must not render identically.
 
 from __future__ import annotations
 
+import logging
+
 from remixkit.auth.provider import Principal
 from remixkit.domain.models import (
     AnalysisStatus,
@@ -37,6 +39,8 @@ from remixkit.ports.lyrics import Transcription
 from remixkit.ports.repository import DocumentRepository
 from remixkit.ports.storage import Storage
 from remixkit.services.errors import Conflict, NotFound
+
+log = logging.getLogger(__name__)
 
 COLLECTION = "songs"
 
@@ -683,6 +687,42 @@ class SongService:
         song.touch()
         self._repo.put(principal.tenant_id, COLLECTION, song.id, song)
         return song
+
+    def update(self, principal: Principal, song_id: str, *, title: str | None = None) -> Song:
+        """Rename. Deliberately narrow: everything else about a song is *measured*.
+
+        BPM, the drop, the sections and the lyric all carry a `method` recording where
+        they came from, and a free-text edit form over them is exactly how a measured
+        number turns into an unsourced one. Those have their own methods, each of which
+        rewrites provenance honestly. A title is the one field with no measurement behind
+        it, so it is the one field this edits.
+        """
+        song = self.get(principal, song_id)
+        if title is not None:
+            title = title.strip()
+            if not title:
+                raise Conflict("A song needs a title.")
+            song.title = title
+        song.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, song.id, song)
+        return song
+
+    def delete(self, principal: Principal, song_id: str) -> None:
+        """Remove a song and the master in the bucket that belongs to it.
+
+        The master is the largest object this product stores — a whole uploaded WAV — so
+        leaving it behind on delete is the most expensive orphan available. Callers that
+        need to refuse when kits still point here do that check first; this is the
+        unconditional removal.
+        """
+        song = self.get(principal, song_id)
+        if song.master_key:
+            try:
+                self._storage.delete(song.master_key)
+            except Exception as exc:
+                log.warning("song %s: could not delete master %s (%s)", song_id, song.master_key, exc)
+        self._repo.delete(principal.tenant_id, COLLECTION, song_id)
+        log.info("song %s deleted", song_id)
 
     def set_approval(self, principal: Principal, song_id: str, state: ApprovalState) -> Song:
         song = self.get(principal, song_id)

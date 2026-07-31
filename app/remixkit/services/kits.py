@@ -26,6 +26,7 @@ from remixkit.domain.models import ApprovalState, Kit, KitStatus, Modality
 from remixkit.ports.generator import GenerationRequest, Generator, ShotSpec
 from remixkit.ports.queue import JobQueue
 from remixkit.ports.repository import DocumentRepository
+from remixkit.ports.storage import Storage
 from remixkit.services.artists import ArtistService
 from remixkit.services.briefs import default_shot_plan, hook_windows
 from remixkit.services.errors import Conflict, NotFound, RightsError
@@ -55,6 +56,7 @@ class KitService:
         artists: ArtistService,
         identities: IdentityService,
         songs: SongService,
+        storage: Storage,
         *,
         max_shots: int = 8,
     ) -> None:
@@ -64,6 +66,7 @@ class KitService:
         self._artists = artists
         self._identities = identities
         self._songs = songs
+        self._storage = storage
         self._max_shots = max_shots
 
     # -- reads ------------------------------------------------------------------
@@ -252,6 +255,57 @@ class KitService:
         kit.touch()
         self._repo.put(tenant_id, COLLECTION, kit.id, kit)
         return kit
+
+    # -- destroy ----------------------------------------------------------------
+    def delete(self, principal: Principal, kit_id: str, *, force: bool = False) -> None:
+        """Remove a kit, and the bytes it put in the bucket.
+
+        Deleting the document alone would be the cheap implementation and the wrong one.
+        A kit owns generated assets and a manifest in B2; orphaning them leaves the label
+        paying storage for objects no screen can reach, which is the one failure mode a
+        bucket-as-database makes invisible. So the objects go with the row.
+
+        **An approved kit refuses.** Approval is the editorial gate — it is the record
+        that a human decided this was publishable, and something publishable may already
+        be published. `force` is the caller saying yes anyway, which the console asks
+        before sending, exactly as re-transcription does.
+
+        Deleting the stored manifest does not weaken any provenance claim already made.
+        A delivered asset carries its manifest *inside the file*, and `/verify` reads it
+        from the bytes with nothing to look up — that is the whole point of embedding on
+        delivery rather than referencing.
+        """
+        kit = self.get(principal, kit_id)
+
+        if kit.approval is not ApprovalState.DRAFT and not force:
+            raise Conflict(
+                f"{kit.name!r} is {kit.approval.value} — a kit somebody approved may already "
+                "have been published. Send force to delete it anyway."
+            )
+        if kit.status is KitStatus.RUNNING and not force:
+            raise Conflict(
+                f"{kit.name!r} is still running. Deleting it now would leave the provider "
+                "generating assets nothing will collect. Send force to delete it anyway."
+            )
+
+        for key in self._owned_keys(kit):
+            try:
+                self._storage.delete(key)
+            except Exception as exc:
+                # A missing object is the normal case for a failed kit, and one
+                # unreachable object must not strand the row it belongs to.
+                log.warning("kit %s: could not delete %s (%s)", kit_id, key, exc)
+
+        self._repo.delete(principal.tenant_id, COLLECTION, kit_id)
+        log.info("kit %s deleted", kit_id)
+
+    @staticmethod
+    def _owned_keys(kit: Kit) -> list[str]:
+        """Every object in the bucket this kit is responsible for."""
+        keys = [asset.key for asset in kit.assets if asset.key]
+        if kit.manifest_key:
+            keys.append(kit.manifest_key)
+        return keys
 
     # -- editorial --------------------------------------------------------------
     def set_approval(self, principal: Principal, kit_id: str, state: ApprovalState) -> Kit:

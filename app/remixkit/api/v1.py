@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 
+from remixkit.services.errors import Conflict
 from remixkit.api.schemas import (
+    SongPatch,
     ApprovalIn,
     ArtistIn,
     ArtistPatch,
@@ -116,9 +118,18 @@ def update_artist(artist_id: str, body: ArtistPatch, principal: CurrentPrincipal
     return artists.update(principal, artist_id, name=body.name, bio=body.bio, links=body.links)
 
 
+@router.get("/artists/{artist_id}/dependents")
+def artist_dependents(artist_id: str, principal: CurrentPrincipal, artists: Artists):
+    """What deleting this artist would take with it. The console asks before it asks."""
+    return artists.dependents(principal, artist_id)
+
+
 @router.delete("/artists/{artist_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_artist(artist_id: str, principal: CurrentPrincipal, artists: Artists):
-    artists.delete(principal, artist_id)
+def delete_artist(
+    artist_id: str, principal: CurrentPrincipal, artists: Artists, cascade: bool = False
+):
+    """Refuses with 409 if songs, identities or kits still point here, unless cascade."""
+    artists.delete(principal, artist_id, cascade=cascade)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -161,6 +172,12 @@ def approve_identity(
 
 
 # ---------------------------------------------------------------- songs
+@router.delete("/identities/{identity_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_identity(identity_id: str, principal: CurrentPrincipal, identities: Identities):
+    identities.delete(principal, identity_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/artists/{artist_id}/songs")
 def list_songs(artist_id: str, principal: CurrentPrincipal, songs: Songs):
     return songs.list_for_artist(principal, artist_id)
@@ -182,6 +199,24 @@ def create_song(artist_id: str, body: SongIn, principal: CurrentPrincipal, songs
 @router.get("/songs/{song_id}")
 def get_song(song_id: str, principal: CurrentPrincipal, songs: Songs):
     return songs.get(principal, song_id)
+
+
+@router.patch("/songs/{song_id}")
+def update_song(song_id: str, body: SongPatch, principal: CurrentPrincipal, songs: Songs):
+    return songs.update(principal, song_id, title=body.title)
+
+
+@router.delete("/songs/{song_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_song(song_id: str, principal: CurrentPrincipal, songs: Songs, kits: Kits):
+    """Refuses while kits still reference the song — a kit whose song vanished cannot be
+    re-planned, and its brief names section ids that no longer resolve."""
+    existing = [k for k in kits.list(principal) if k.song_id == song_id]
+    if existing:
+        raise Conflict(
+            f"{len(existing)} kit(s) were generated from this song. Delete them first."
+        )
+    songs.delete(principal, song_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/songs/{song_id}/measurement")
@@ -461,6 +496,18 @@ def get_kit(kit_id: str, principal: CurrentPrincipal, kits: Kits):
 @router.put("/kits/{kit_id}/approval")
 def approve_kit(kit_id: str, body: ApprovalIn, principal: CurrentPrincipal, kits: Kits):
     return kits.set_approval(principal, kit_id, body.state)
+
+
+@router.delete("/kits/{kit_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_kit(kit_id: str, principal: CurrentPrincipal, kits: Kits, force: bool = False):
+    """Removes the kit and the assets and manifest it owns in the bucket.
+
+    Refuses on an approved or still-running kit unless `force`: approval is the record
+    that a human decided this was publishable, and a running kit would leave the provider
+    generating assets nothing will collect.
+    """
+    kits.delete(principal, kit_id, force=force)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/kits/{kit_id}/assets/{asset_id}/download")

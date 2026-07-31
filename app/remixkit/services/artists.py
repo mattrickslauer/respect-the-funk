@@ -6,10 +6,25 @@ rights, rather than a string on a song.
 
 from __future__ import annotations
 
+import logging
+
+from typing import Callable
+
 from remixkit.auth.provider import Principal
-from remixkit.domain.models import Artist, ApprovalState, LikenessConsent, slugify, utcnow
+from remixkit.domain.models import (
+    ApprovalState,
+    Artist,
+    Identity,
+    Kit,
+    LikenessConsent,
+    Song,
+    slugify,
+    utcnow,
+)
 from remixkit.ports.repository import DocumentRepository
 from remixkit.services.errors import Conflict, NotFound
+
+log = logging.getLogger(__name__)
 
 COLLECTION = "artists"
 
@@ -17,6 +32,15 @@ COLLECTION = "artists"
 class ArtistService:
     def __init__(self, repo: DocumentRepository) -> None:
         self._repo = repo
+        # Set by the composition root. Cascading has to delete songs, identities and kits
+        # through *their* services so each cleans up its own bucket objects — but those
+        # services import this one, so importing them back would be a cycle. A callback
+        # injected by `deps` keeps the dependency pointing one way.
+        self._cascade: Callable[[Principal, str], None] | None = None
+
+    def on_cascade(self, fn: "Callable[[Principal, str], None]") -> None:
+        """Register how to remove an artist's dependents. See `deps.Container`."""
+        self._cascade = fn
 
     def list(self, principal: Principal) -> list[Artist]:
         artists = self._repo.list(principal.tenant_id, COLLECTION, Artist)
@@ -108,6 +132,54 @@ class ArtistService:
         self._repo.put(principal.tenant_id, COLLECTION, artist.id, artist)
         return artist
 
-    def delete(self, principal: Principal, artist_id: str) -> None:
-        self.get(principal, artist_id)  # 404 rather than a silent no-op
+    def dependents(self, principal: Principal, artist_id: str) -> dict[str, int]:
+        """What else would be orphaned by deleting this artist.
+
+        Read through the repository rather than through `SongService`/`KitService`,
+        because those import this module and the reverse import would be a cycle. The
+        collection names are literals for the same reason; they are asserted against the
+        services' own constants in `tests/test_crud`.
+        """
+        tenant = principal.tenant_id
+        return {
+            "songs": sum(
+                1 for s in self._repo.list(tenant, "songs", Song) if s.artist_id == artist_id
+            ),
+            "identities": sum(
+                1 for i in self._repo.list(tenant, "identities", Identity) if i.artist_id == artist_id
+            ),
+            "kits": sum(
+                1 for k in self._repo.list(tenant, "kits", Kit) if k.artist_id == artist_id
+            ),
+        }
+
+    def delete(self, principal: Principal, artist_id: str, *, cascade: bool = False) -> dict[str, int]:
+        """Remove an artist, refusing by default if anything still points at them.
+
+        The old implementation deleted the row and nothing else, which left songs and kits
+        referencing an artist that no longer existed — a roster that looks clean while
+        `kits.request` 404s on the artist lookup and the catalogue page counts songs
+        nobody can open. Silent orphaning is the worst of the three options.
+
+        So: refuse, and say what is in the way. `cascade` is the caller saying delete it
+        all, which the console asks about by name and count rather than behind a generic
+        "are you sure". Cascading goes through the owning services so that each dependent
+        cleans up its own bucket objects — masters, frames, generated assets, manifests.
+        """
+        artist = self.get(principal, artist_id)  # 404 rather than a silent no-op
+        counts = self.dependents(principal, artist_id)
+        total = sum(counts.values())
+
+        if total and not cascade:
+            detail = ", ".join(f"{n} {name}" for name, n in counts.items() if n)
+            raise Conflict(
+                f"{artist.name} still has {detail}. Deleting the artist would leave those "
+                "pointing at nobody. Delete them first, or send cascade to remove them together."
+            )
+
+        if cascade and self._cascade is not None:
+            self._cascade(principal, artist_id)
+
         self._repo.delete(principal.tenant_id, COLLECTION, artist_id)
+        log.info("artist %s deleted (cascade=%s, dependents=%s)", artist_id, cascade, counts)
+        return counts

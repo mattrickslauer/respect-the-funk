@@ -9,17 +9,23 @@ makes the run unreproducible.
 
 from __future__ import annotations
 
+import logging
+
 from remixkit.auth.provider import Principal
 from remixkit.domain.models import ApprovalState, Identity, ReferenceFrame
 from remixkit.ports.repository import DocumentRepository
+from remixkit.ports.storage import Storage
 from remixkit.services.errors import NotFound
+
+log = logging.getLogger(__name__)
 
 COLLECTION = "identities"
 
 
 class IdentityService:
-    def __init__(self, repo: DocumentRepository) -> None:
+    def __init__(self, repo: DocumentRepository, storage: Storage) -> None:
         self._repo = repo
+        self._storage = storage
 
     def list_for_artist(self, principal: Principal, artist_id: str) -> list[Identity]:
         identities = [
@@ -80,6 +86,27 @@ class IdentityService:
         identity.touch()
         self._repo.put(principal.tenant_id, COLLECTION, identity.id, identity)
         return identity
+
+    def delete(self, principal: Principal, identity_id: str) -> None:
+        """Remove an identity version and its reference frames.
+
+        Frames are uploaded images in the bucket, and an identity is the one entity a
+        label makes several versions of — so orphaned frames accumulate faster here than
+        anywhere else. Deleting a version does not touch kits already generated from it:
+        their manifests record the identity id and version they used, and that record is
+        supposed to outlive the thing it describes.
+        """
+        identity = self.get(principal, identity_id)
+        for frame in identity.reference_frames:
+            key = getattr(frame, "key", None)
+            if not key:
+                continue
+            try:
+                self._storage.delete(key)
+            except Exception as exc:
+                log.warning("identity %s: could not delete frame %s (%s)", identity_id, key, exc)
+        self._repo.delete(principal.tenant_id, COLLECTION, identity_id)
+        log.info("identity %s deleted", identity_id)
 
     def set_approval(self, principal: Principal, identity_id: str, state: ApprovalState) -> Identity:
         identity = self.get(principal, identity_id)

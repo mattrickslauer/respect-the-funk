@@ -1,0 +1,19 @@
+{# The artist's editable header. Swapped in place by the rename form, so the form and
+   its result are the same fragment — there is no page reload and no second template
+   that could disagree about what an artist looks like. #}
+<div class="panel" id="artist-head">
+  <div class="panel-head"><h2>{{ artist.name }}</h2></div>
+  {% if artist.bio %}<p class="small">{{ artist.bio }}</p>{% endif %}
+
+  <details class="tight">
+    <summary class="small">Edit details</summary>
+    <form class="form"
+          hx-post="/ui/artists/{{ artist.id }}"
+          hx-target="#artist-head"
+          hx-swap="outerHTML">
+      <label>Name <input name="name" value="{{ artist.name }}" required></label>
+      <label>Bio <textarea name="bio" rows="2">{{ artist.bio or "" }}</textarea></label>
+      <button class="btn btn-quiet" type="submit">Save</button>
+    </form>
+  </details>
+</div>

@@ -81,6 +81,7 @@
     {# Rights first, and always on screen rather than at the top of a scroll: this is the
        one fact on the page that decides whether anything else on it can be acted on. #}
     {% include "components/_consent.html" %}
+    {% include "components/_artist_head.html" %}
 
     {% if artist.bio or artist.links %}
       <section class="panel">

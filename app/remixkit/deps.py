@@ -96,7 +96,7 @@ class Container:
         self.transcriber = _build_transcriber(settings)
 
         self.artists = ArtistService(self.repo)
-        self.identities = IdentityService(self.repo)
+        self.identities = IdentityService(self.repo, self.storage)
         self.songs = SongService(self.repo, self.storage, key_prefix=settings.key_prefix)
         self.analysis = AnalysisService(self.songs, self.storage, self.queue, self.analyzer)
         self.transcription = TranscriptionService(
@@ -114,8 +114,23 @@ class Container:
             self.artists,
             self.identities,
             self.songs,
+            self.storage,
             max_shots=settings.max_shots_per_kit,
         )
+        # Cascading an artist delete has to go through the owning services so each
+        # cleans up its own bucket objects — a song's master, an identity's frames, a
+        # kit's assets and manifest. Those services import ArtistService, so the wiring
+        # is a callback registered here rather than an import back the other way.
+        def _cascade_artist(principal, artist_id: str) -> None:
+            for kit in self.kits.list(principal, artist_id=artist_id):
+                self.kits.delete(principal, kit.id, force=True)
+            for song in self.songs.list_for_artist(principal, artist_id):
+                self.songs.delete(principal, song.id)
+            for identity in self.identities.list_for_artist(principal, artist_id):
+                self.identities.delete(principal, identity.id)
+
+        self.artists.on_cascade(_cascade_artist)
+
         self.delivery = DeliveryService(self.storage, self.kits)
         self.catalogue = CatalogueService(artists=self.artists, songs=self.songs, kits=self.kits)
         self.verify = VerifyService()

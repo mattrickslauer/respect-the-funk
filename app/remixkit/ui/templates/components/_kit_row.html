@@ -49,4 +49,19 @@
       <button class="btn btn-quiet" type="submit">Set</button>
     </form>
   {% endif %}
+
+  {# Deleting takes the generated assets and the manifest out of the bucket with the
+     row. An approved kit is refused unless forced — approval is the record that a human
+     decided this was publishable, and something publishable may already be published.
+     A delivered asset is unaffected either way: its manifest is embedded in the file,
+     so `/verify` still reads provenance from the bytes with nothing to look up. #}
+  <div class="card-foot">
+    <button class="btn btn-danger btn-quiet"
+            hx-delete="/ui/kits/{{ kit.id }}{% if kit.approval.value != 'draft' %}?force=true{% endif %}"
+            hx-target="#kits"
+            hx-swap="outerHTML"
+            hx-confirm="{% if kit.approval.value != 'draft' %}{{ kit.name }} is {{ kit.approval.value }} and may already have been published. Delete it and its {{ kit.assets|length }} asset(s) anyway?{% else %}Delete {{ kit.name }} and its {{ kit.assets|length }} asset(s) from the bucket?{% endif %}">
+      Delete
+    </button>
+  </div>
 </div>

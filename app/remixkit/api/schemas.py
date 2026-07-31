@@ -57,6 +57,13 @@ class SongIn(BaseModel):
     spotify_url: str | None = None
 
 
+class SongPatch(BaseModel):
+    """Only the title. Every other field on a song is measured and carries a `method`;
+    a free-text edit over those is how a measured number becomes an unsourced one."""
+
+    title: str | None = None
+
+
 class MeasurementIn(BaseModel):
     bpm: float | None = None
     bpm_method: str | None = None

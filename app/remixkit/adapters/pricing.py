@@ -47,7 +47,7 @@ PRICED_ON = "2026-07-31"
 # Rates that have never been reconciled against an actual invoice. Named rather than
 # silently blended in, because the whole point of this module is that an unverified
 # number should not read like a measured one.
-UNVERIFIED = frozenset({"seedance-2-0-260128", "seedance-1-0-pro-fast-251015"})
+UNVERIFIED = frozenset({"seedance-1-0-pro-fast-251015", "Kling-Text2Video-V2.1-Master"})
 
 # Fallback used when a model has no registered rate. Deliberately not zero: an unknown
 # price that prices as free is how the incident above stayed invisible. This is a
@@ -86,6 +86,39 @@ def per_call(rate_usd: float):
     return strategy
 
 
+# ---------------------------------------------------------------- the audio trap
+#
+# Some video models generate a synchronised audio track, and for this product that is
+# not a feature — it is a failure mode with two separate costs.
+#
+# `seedance-2-0-260128` failed four times on 2026-07-31, and GMI's own API gave the
+# reason that Genblaze discarded:
+#
+#     error_code: OutputAudioSensitiveContentDetected.PolicyViolation
+#     "The request failed because the output audio may be related to copyright
+#      restrictions."
+#
+# The model invented an audio bed, its own safety filter judged that audio possibly
+# infringing, and the whole generation was rejected after the compute was already spent.
+# Genblaze surfaced this as `"Video generation failed"` with `error_code="unknown"`,
+# throwing away a completely actionable message — and because the code was `unknown`
+# rather than `MODEL_ERROR`, the `fallback_models` chain never engaged either. Four
+# charges, no output, no fallback, no usable diagnosis.
+#
+# RemixKit wants **silent** video. The loop is cut over the label's own master; that is
+# the entire premise of `services/briefs`. A model that writes its own soundtrack is
+# wrong for the use case before it is ever a billing problem. Prefer text-to-video models
+# that emit no audio (the Kling t2v family) over ones that do (seedance-2, Veo3, Sora 2).
+MODELS_THAT_GENERATE_AUDIO = frozenset({
+    "seedance-2-0-260128",
+    "Veo3",
+    "Veo3-fast",
+    "veo-3.0-generate-001",
+    "sora-2",
+    "sora-2-pro",
+})
+
+
 # ---------------------------------------------------------------- the book
 # model_id -> (strategy, note). The note is what a person reading the ledger needs in
 # order to know how much to trust the number.
@@ -94,10 +127,11 @@ def per_call(rate_usd: float):
 # every boot — four lines of noise in the prod log for no reason.
 PRICE_BOOK: dict[str, tuple[Any, str]] = {
     # -- video (per second of output) ------------------------------------------------
-    # Measured, not quoted: two failed 6s runs on 2026-07-31 moved the GMI balance by
-    # more than $2 combined, which is the only hard datapoint here. Held deliberately
-    # high until an invoice is read — under-pricing video is what caused the incident.
-    "seedance-2-0-260128": (per_second(0.20), f"~$1.20/6s, measured {PRICED_ON}, UNVERIFIED"),
+    # Reconciled against the GMI invoice on 2026-07-31: 4 units of `seedance-2-0-260128`
+    # billed $2.44, i.e. $0.61 for a 6s clip. All four *failed* — see the note below on
+    # audio — and were charged in full, which is the hard evidence behind this module's
+    # premise that a submitted step is a billed step.
+    "seedance-2-0-260128": (per_second(0.1017), f"$0.61/6s, invoice-reconciled {PRICED_ON}"),
     "seedance-1-0-pro-fast-251015": (per_second(0.09), f"fast tier, list {PRICED_ON}, UNVERIFIED"),
     "Kling-Text2Video-V2.1-Master": (per_second(0.09), f"list {PRICED_ON}"),
     "Kling-Image2Video-V2.1-Master": (per_second(0.09), f"list {PRICED_ON}"),
@@ -108,7 +142,7 @@ PRICE_BOOK: dict[str, tuple[Any, str]] = {
     "sora-2-pro": (per_second(0.30), f"OpenAI list {PRICED_ON}"),
     # -- image (per output) ----------------------------------------------------------
     "gpt-image-1": (per_call(0.19), f"OpenAI list, high quality 1024x1536, {PRICED_ON}"),
-    "seedream-5.0-lite": (per_call(0.03), f"list {PRICED_ON}"),
+    "seedream-5.0-lite": (per_call(0.04), f"invoice-reconciled {PRICED_ON}"),
     "imagen-4.0-generate-001": (per_call(0.04), f"Vertex list {PRICED_ON}"),
     # -- audio -----------------------------------------------------------------------
     "eleven_multilingual_v2": (per_call(0.02), f"est. per short TTS clip, {PRICED_ON}"),

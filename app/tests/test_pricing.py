@@ -62,8 +62,39 @@ def test_the_old_flat_rate_would_have_underquoted_seedance_two():
 # ------------------------------------------------------------------ honesty flags
 def test_measured_but_unreconciled_rates_are_marked_unverified():
     """A rate nobody has checked against an invoice must not read like a measured one."""
-    assert not pricing.is_verified("seedance-2-0-260128")
-    assert "UNVERIFIED" in pricing.note_for("seedance-2-0-260128")
+    assert pricing.UNVERIFIED, "the honesty flag is pointless if nothing is ever flagged"
+    for model_id in pricing.UNVERIFIED:
+        assert not pricing.is_verified(model_id)
+
+
+def test_an_invoice_reconciled_rate_is_verified():
+    """`seedance-2` is the one rate read off a real bill: 4 units, $2.44, $0.61 per 6s."""
+    assert pricing.is_verified("seedance-2-0-260128")
+    assert "invoice-reconciled" in pricing.note_for("seedance-2-0-260128")
+    # 6 seconds at the reconciled per-second rate is the observed per-call charge.
+    assert pricing.estimate_cents(Modality.VIDEO, "seedance-2-0-260128", 6.0) == 61
+
+
+# ------------------------------------------------------------------ the audio trap
+def test_models_that_generate_audio_are_named():
+    """The product wants silent video — the loop is cut over the label's own master.
+
+    `seedance-2` failed four times and billed in full because it invented an audio bed
+    that its own filter then judged possibly copyright-infringing
+    (`OutputAudioSensitiveContentDetected.PolicyViolation`). Knowing which models do that
+    is a product fact, not trivia.
+    """
+    assert "seedance-2-0-260128" in pricing.MODELS_THAT_GENERATE_AUDIO
+    assert "sora-2" in pricing.MODELS_THAT_GENERATE_AUDIO
+    # Kling text-to-video emits no audio, which is why it is the safe default here.
+    assert "Kling-Text2Video-V2.1-Master" not in pricing.MODELS_THAT_GENERATE_AUDIO
+
+
+def test_every_audio_generating_model_is_priced():
+    """These are the expensive ones to get wrong — an unpriced audio-generating video
+    model is the exact combination that produced the incident."""
+    for model_id in pricing.MODELS_THAT_GENERATE_AUDIO:
+        assert model_id in pricing.PRICE_BOOK, model_id
 
 
 def test_every_priced_model_carries_a_note():

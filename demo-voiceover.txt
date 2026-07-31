@@ -1,0 +1,43 @@
+Every record label is running the same experiment, and almost none of them are counting the results.
+
+We started Respect the Funk as a label with one song and one goal — a hundred thousand streams on Losing Sleep. Before we wrote a line of product code, we ran the research. Thirteen parallel pillars. Around twenty-four hundred sourced claims. Every number linked to a primary source, and every dead end written down instead of quietly skipped.
+
+Five of the six questions we cared about came back worse than we hoped.
+
+You cannot buy your way to a hundred thousand streams. Paid traffic costs twenty to twenty-five thousand dollars for volume that pays back three to five hundred. That is a fifty-to-one loss by construction, not by execution.
+
+You cannot measure whether the ads worked. Spotify is a third party. The best event anyone can capture is a click. Facebook ran six hundred and sixty-three randomized trials against this exact problem, and what they shipped afterward is a predictive model, not a measurement.
+
+You cannot advertise film-clip creative. That is a written rule at TikTok and an enforced one at Meta.
+
+And fan-made content — the thing everyone points to — is a lottery. The top ten percent of songs take ninety-six percent of the creations. Breakout is a sub-one-percent event.
+
+Those findings do not describe an optimization problem. They describe a portfolio problem. When outcomes are lottery-shaped, the winning move is not a better ticket. It is more tickets, at lower cost, with the plumbing correct so that a win actually pays. More releases beat more spend. Many songs — not many accounts.
+
+That is why RemixKit exists.
+
+RemixKit is the artist console for a label. You register an artist. You build that artist's identity once — how they look and read on screen, across several lighting setups and wardrobe variants, with signed likeness consent recorded and auditable, because a label generating content about its own artists needs rights it can prove. You attach songs, and each master is measured once: tempo, the drop, the sections, the hook windows. No tempo is ever accepted without the method that produced it.
+
+Then you generate. Not finished ads — templates. Content designed to be imitated, so that a fan who encounters one immediately understands what their own version would look like. The song is the substrate. The template is the product.
+
+And because the identity is built once and reused, the second video for an artist is cheap. That is the entire economic argument. Cost per attempt is the only lever the research left standing.
+
+Now — how it runs.
+
+AWS runs the logic. Backblaze B2 holds the bytes and the provenance. That split is the reason this system has no database tier at all.
+
+What a label actually stores is documents, not rows. An artist. An identity. A song's measurements. A generated kit. So we store documents — plain text alongside content-addressed media, in a B2 bucket. Dropping the relational tier took eleven services down to five, and the realistic idle cost of the whole platform is under a dollar a month. Scale to zero was a hard requirement from day one, and B2 at six dollars a terabyte is most of what's left.
+
+B2 does four jobs here.
+
+It is the upload path. A master goes browser straight to bucket over a presigned URL. The bytes never touch the application server.
+
+It is the catalog. Every generation run writes under runs, tenant, date, run ID — the tenant is a path component, so the bucket layout, the documents, and the manifests all share one tenant axis. The index lands as Parquet in the same bucket, queryable directly by Athena. No server. No warehouse. The analytics artifact and the catalog are the same object.
+
+It is the record of what was made. Every asset lands beside a manifest naming the provider, the model, and the prompt of every step. That manifest is verified before a kit is allowed to go ready — an unverified manifest fails the kit rather than shipping a claim we cannot back.
+
+And it is the provenance itself. When you download an asset, the manifest is embedded inside the media file. The object in the bucket stays byte-identical to what the provider returned — that is what makes the content hash mean anything — so disclosure is written on delivery and travels with the file after it leaves us. Anyone can drop that file into our public verify endpoint and read back exactly how it was made. Nothing is looked up. The proof is in the bytes.
+
+That's RemixKit. A portfolio machine for record labels, built on a finding we would rather not have confirmed: you cannot buy a hit. You can only lower the cost of trying — and be honest about what came out.
+
+Bring us one artist and one song.

@@ -1,7 +1,7 @@
 ---
 title: "RemixKit — the artist console"
 subtitle: "The application PRODUCT.md describes: register an artist, build their identity once, attach songs, generate content designed to be imitated, and verify what came out."
-status: "BUILT — runs end-to-end with zero credentials. AWS deploy is written and validated but unapplied."
+status: "LIVE — deployed on AWS with real generation, real B2, and real auth. Also runs end-to-end with zero credentials."
 date: "2026-07-27"
 ---
 
@@ -215,37 +215,74 @@ which is exactly the claim §5 shows this material cannot support.
 ## Which provider actually runs
 
 `RK_GENERATOR_BACKEND=genblaze` selects the live path; *which* provider serves each
-modality is then decided by what is installed **and actually keyed**:
+modality is then decided by what is installed, what is actually keyed, and any pin.
 
-| Modality | First choice | Fallback |
+| Modality | Deployed today | Order when unpinned |
 |---|---|---|
-| Video | GMI Cloud (`GMI_API_KEY`) | Google **Veo** (`GCP_PROJECT`, Vertex ADC) |
-| Image | GMI Cloud (`GMI_API_KEY`) | Google **Imagen** (`GCP_PROJECT`, Vertex ADC) |
-| Audio | ElevenLabs (`ELEVENLABS_API_KEY`) | — skipped |
+| Video | **Sora** (`sora-2`) — pinned | GMI Cloud → OpenAI → Google |
+| Image | **GMI Cloud** (`seedream-5.0-lite`) | GMI Cloud → OpenAI → Google |
+| Audio | **ElevenLabs** (`eleven_multilingual_v2`) | ElevenLabs → OpenAI |
 
 A modality nobody serves is skipped with a warning rather than failing the run, because
 a partial provider set is the normal state.
 
+**Video is pinned, and the pin is the point.** `RK_VIDEO_PROVIDER=openai` moves video to
+Sora even though GMI is keyed and would otherwise win. On 2026-07-31 GMI's `seedance-2`
+failed twice after ~174s and billed for output it never produced; the fix had to be a
+deploy-time setting rather than an edit, because a provider misbehaving in production is
+an operational event, not a code change. Image stayed on GMI, which is cheap and works.
+A pin naming an unavailable vendor logs a warning and falls through to the order above —
+a typo in an environment variable should degrade, not silently delete video from a kit.
+
+**The model follows the provider, not the config.** `RK_VIDEO_MODEL` and friends default
+to empty; each provider names the model it actually serves in
+`adapters/providers.DEFAULT_MODELS`. They used to default to GMI slugs, which was correct
+only while GMI was the only live provider — the moment anything else answered, a
+`seedance-…` id was being sent to Sora or Veo, which is a guaranteed 404. Set one to pin
+a model, and it applies to whoever answers.
+
 **"Keyed" excludes the placeholder.** Terraform seeds each SSM parameter with a literal
 `PLACEHOLDER …` string so the slot exists before anyone has a key — Terraform must never
 hold the value itself, or it lands in state in plaintext. `providers._keyed()` treats
-that string as unset. This is not fussiness: `GMICloudVideoProvider()` constructs
-happily with no credential, so without the check a placeholder deployment reports a
-**live** generator and then fails at generate time with a provider auth error. Reporting
-`mock` would be more honest than that; the banner exists precisely to stop it.
+that string as unset, because `GMICloudVideoProvider()` constructs happily with no
+credential and would otherwise report a **live** generator that fails at generate time.
 
-The Google path exists because it needs no new credential — Vertex authenticates with
-Application Default Credentials against `GCP_PROJECT`/`GCP_LOCATION`, which this repo
-already uses for `content/bin/vertex.py`. Express-mode API keys were withdrawn and 400
-now; ADC is the path that works.
-
-> **Prod caveat.** ADC is a laptop credential — there is no `gcloud auth` on Lambda. The
-> Google fallback therefore works in development and **not** in the deployed function
-> until a service-account key is put in SSM and surfaced as
-> `GOOGLE_APPLICATION_CREDENTIALS`. `GCP_PROJECT`/`GCP_LOCATION` are plumbed through
-> Terraform; the credential is not. Prod still wants a real `GMI_API_KEY`.
+**Providers are baked into the image, not installed at deploy.** `Dockerfile` installs
+`.[b2,queue,audio,gmicloud,openai,elevenlabs,lyrics]`. This is stated because getting it
+wrong is invisible: the image once shipped with `.[b2,queue,audio]` only, so
+`live_providers()` returned `{}` and every shot was skipped — and because the Dockerfile
+set `RK_GENERATOR_BACKEND=genblaze` while the Lambda environment overrode it to `mock`,
+the missing dependency read as a credentials problem for weeks. `google` is deliberately
+excluded: Vertex authenticates with Application Default Credentials, which do not exist
+in Lambda or a Fargate task, so shipping it would add weight for a provider that cannot
+authenticate there.
 
 ---
+
+## What a run costs, and why that is a module
+
+`adapters/pricing.py` is one dated price book, registered into Genblaze's own
+`ModelRegistry`. It exists because both of the numbers this app used to show were wrong,
+in opposite directions, and neither was a bug in the ordinary sense:
+
+* Genblaze registers **no prices of its own** — "the SDK ships zero hardcoded prices as
+  of 0.3.0" — so `step.cost_usd` is `None` for every unregistered model. The generator
+  coerced that to `0`, and a multi-dollar run reported a `$0.00` ledger.
+* A separate flat table priced a *modality* rather than a *model* and ignored duration,
+  so every video cost 42¢ regardless. A three-video kit quoted $1.26 and charged several
+  dollars.
+
+One registered book fixes all three: `Pipeline.estimated_cost()` becomes real, the ledger
+becomes real, and the two cannot drift because they read the same rates. A model with no
+registered price estimates at `UNKNOWN_CALL_USD` rather than free — unknown pricing as
+zero is exactly how the original problem stayed invisible — and `cost_cents` is now
+`int | None`, so "unknown" and "free" are different claims on the ledger.
+
+`RK_MAX_RUN_CENTS` refuses a run whose estimate exceeds the ceiling, **before** anything
+is submitted. Genblaze documents no spend guardrail, and says nothing about whether a
+failed step is billed; the observed answer is that it is. So the only safe assumption is
+that a submitted step is a charged step, and the only safe place to refuse is before
+submission.
 
 ## Two front doors
 

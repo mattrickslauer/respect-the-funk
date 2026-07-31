@@ -19,6 +19,10 @@ dependencies = [
 # end-to-end with none of these installed — see adapters/generator_mock.py.
 b2 = ["genblaze-s3>=0.3"]
 gmicloud = ["genblaze-gmicloud"]
+# Sora (video), gpt-image-1 (image), and TTS. The one provider whose credential is a
+# plain API key, so it is the only fallback that authenticates inside Lambda — Vertex
+# below wants Application Default Credentials, which a deployed function does not have.
+openai = ["genblaze-openai"]
 google = ["genblaze-google"]
 elevenlabs = ["genblaze-elevenlabs"]
 queue = ["boto3>=1.34"]

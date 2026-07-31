@@ -89,6 +89,7 @@ class Container:
             },
             timeout_s=settings.generation_timeout_s,
             max_concurrency=settings.max_concurrency,
+            max_run_cents=settings.max_run_cents,
         )
 
         self.analyzer = _build_analyzer(settings)

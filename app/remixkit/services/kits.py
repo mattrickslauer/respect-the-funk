@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 
+from remixkit.adapters import pricing
 from remixkit.auth.provider import Principal
 from remixkit.domain.models import ApprovalState, Kit, KitStatus, Modality
 from remixkit.ports.generator import GenerationRequest, Generator, ShotSpec
@@ -36,9 +37,13 @@ log = logging.getLogger(__name__)
 COLLECTION = "kits"
 JOB_TYPE = "run-kit"
 
-# Illustrative planning prices, dated and editable — "price it, date it" (BUILD-SPEC §6).
-# Estimates only; the ledger records what the provider actually reported.
-ESTIMATE_CENTS: dict[Modality, int] = {Modality.VIDEO: 42, Modality.IMAGE: 3, Modality.AUDIO: 2}
+# Planning prices now come from `adapters/pricing`, which is the same book registered
+# into Genblaze's own `ModelRegistry`. There used to be a flat table here — 42¢ a video,
+# regardless of model or length — and it was wrong in the way that matters: it quoted a
+# three-video kit at $1.26 while the actual charge was several dollars, because it priced
+# a modality rather than a model and ignored duration entirely. One book means the number
+# an operator is shown before the button and the number on the ledger after it cannot
+# disagree.
 
 
 class KitService:
@@ -74,9 +79,17 @@ class KitService:
             raise NotFound(f"No kit {kit_id!r}")
         return kit
 
-    @staticmethod
-    def estimate_cents(shots: list[ShotSpec]) -> int:
-        return sum(ESTIMATE_CENTS.get(s.modality, 0) for s in shots)
+    def estimate_cents(self, shots: list[ShotSpec]) -> int:
+        """What this brief will cost, priced per model and per second.
+
+        The model is resolved the same way the generator resolves it, so the quote is for
+        the provider that will actually run. An unpriced model deliberately estimates
+        high (`pricing.UNKNOWN_CALL_USD`) rather than free — the budget gate exists to
+        refuse surprises, and a zero for "we don't know" is the surprise.
+        """
+        models = getattr(self._generator, "model_plan", None)
+        planned = models(shots) if callable(models) else [(s.modality, s.model, s.seconds) for s in shots]
+        return sum(pricing.estimate_cents(m, model, secs) for m, model, secs in planned)
 
     # -- the fast path ----------------------------------------------------------
     def request(

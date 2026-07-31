@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from remixkit.adapters import pricing
 from remixkit.adapters import providers as provider_table
 from remixkit.domain.models import Asset, Modality
 from remixkit.ports.generator import GenerationRequest, GenerationResult
@@ -50,6 +51,7 @@ class GenblazeGenerator:
         models: dict[Modality, str] | None = None,
         timeout_s: float = 900.0,
         max_concurrency: int = 4,
+        max_run_cents: int = 0,
     ) -> None:
         self.name = f"genblaze:{backend}"
         self._storage = storage
@@ -58,6 +60,7 @@ class GenblazeGenerator:
         self._models = models or {}
         self._timeout = timeout_s
         self._max_concurrency = max_concurrency
+        self._max_run_cents = max_run_cents
 
     # -- sink -------------------------------------------------------------------
     def _build_sink(self):
@@ -69,6 +72,27 @@ class GenblazeGenerator:
             prefix=self._prefix,
             key_strategy=KeyStrategy.HIERARCHICAL,
         )
+
+    # -- planning ---------------------------------------------------------------
+    def model_plan(self, shots: Any) -> list[tuple[Modality, str | None, float | None]]:
+        """Which model each shot would actually run on, without running anything.
+
+        The budget gate needs this before a kit is queued, and it has to resolve models
+        the *same* way `generate` does or the quote is for a different run than the one
+        that executes. Resolution depends on which providers are keyed right now, so this
+        cannot be a static table.
+        """
+        table = provider_table.resolve(self._backend)
+        plan: list[tuple[Modality, str | None, float | None]] = []
+        for shot in shots:
+            provider = table.get(shot.modality)
+            model = (
+                shot.model
+                or self._models.get(shot.modality)
+                or (provider_table.default_model(provider, shot.modality) if provider else None)
+            )
+            plan.append((shot.modality, model, shot.seconds))
+        return plan
 
     # -- prompt shaping ---------------------------------------------------------
     @staticmethod
@@ -105,7 +129,7 @@ class GenblazeGenerator:
             max_concurrency=self._max_concurrency,
         )
 
-        planned: list[tuple[Modality, str, str]] = []  # (modality, model, prompt)
+        planned: list[tuple[Modality, str, str, float | None]] = []  # + seconds
         skipped: list[str] = []
 
         for shot in request.shots:
@@ -114,7 +138,24 @@ class GenblazeGenerator:
                 skipped.append(shot.modality.value)
                 continue
 
-            model = shot.model or self._models.get(shot.modality) or "default"
+            # Explicit shot > operator override > the model this provider actually
+            # serves. The last step is not a nicety: provider selection happens at
+            # runtime, so a single configured id would be sent to whichever provider
+            # answered — a GMI slug to Sora, which 404s. `"default"` used to sit here
+            # and was never a real model id on any provider.
+            model = (
+                shot.model
+                or self._models.get(shot.modality)
+                or provider_table.default_model(provider, shot.modality)
+            )
+            if not model:
+                skipped.append(shot.modality.value)
+                log.warning(
+                    "no model known for %s on %s — skipping shot",
+                    shot.modality.value,
+                    type(provider).__name__,
+                )
+                continue
             prompt = self._compose_prompt(request, shot.prompt)
 
             params: dict[str, Any] = {}
@@ -144,7 +185,7 @@ class GenblazeGenerator:
                 kwargs["negative_prompt"] = negatives
 
             pipeline = pipeline.step(provider, **kwargs)
-            planned.append((shot.modality, model, prompt))
+            planned.append((shot.modality, model, prompt, shot.seconds))
 
         if not planned:
             return GenerationResult(
@@ -152,6 +193,41 @@ class GenblazeGenerator:
                 assets=[],
                 error=f"No provider available for any requested modality ({', '.join(sorted(set(skipped)))}).",
             )
+
+        # The spend ceiling, applied before anything is submitted.
+        #
+        # This is the guard the incident on 2026-07-31 did not have. A fallback chain
+        # across four video models was submitted from one call; two steps failed, produced
+        # no asset, and were billed anyway. Nothing in Genblaze stops that — its README
+        # documents no budget or spend guardrail, and a failed step's billing behaviour is
+        # not specified at all. So the only safe assumption is that a *submitted* step is a
+        # charged step, and the only safe place to refuse is before submission.
+        estimate = pipeline.estimated_cost()
+        estimate_cents = int(round(float(estimate) * 100)) if estimate is not None else None
+        if estimate_cents is None:
+            # Unpriced means unknown, and unknown must not price as free — that is exactly
+            # how the incident stayed invisible in the ledger.
+            estimate_cents = sum(
+                pricing.estimate_cents(modality, model, seconds)
+                for modality, model, _prompt, seconds in planned
+            )
+        if self._max_run_cents and estimate_cents > self._max_run_cents:
+            return GenerationResult(
+                run_id=None,
+                assets=[],
+                error=(
+                    f"Refusing to run: estimated {estimate_cents}¢ exceeds the "
+                    f"{self._max_run_cents}¢ ceiling for a single run "
+                    f"(RK_MAX_RUN_CENTS). {len(planned)} shot(s) planned."
+                ),
+            )
+        log.info(
+            "kit %s: %d shot(s), estimated %d¢ (ceiling %s¢)",
+            request.kit_id,
+            len(planned),
+            estimate_cents,
+            self._max_run_cents or "none",
+        )
 
         sink = self._build_sink()
         try:
@@ -172,7 +248,14 @@ class GenblazeGenerator:
         assets: list[Asset] = []
 
         for step in result.succeeded_steps():
-            cost_cents = int(round(float(step.cost_usd or 0.0) * 100))
+            # `or 0.0` used to sit here and it was the whole bug: an unpriced model
+            # recorded as free. None now travels as None so the console can say
+            # "unknown" instead of "$0.00".
+            model_id = str(step.model)
+            cost_cents = (
+                int(round(float(step.cost_usd) * 100)) if step.cost_usd is not None else None
+            )
+            cost_note = pricing.note_for(model_id)
             for gb_asset in step.assets or []:
                 url = getattr(gb_asset, "url", None)
                 assets.append(
@@ -185,6 +268,7 @@ class GenblazeGenerator:
                         url=url,
                         sha256=getattr(gb_asset, "sha256", None),
                         cost_cents=cost_cents,
+                        cost_note=cost_note,
                         params=dict(step.params or {}),
                     )
                 )

@@ -109,14 +109,32 @@ class Settings(BaseSettings):
     key_prefix: str = "remixkit"
 
     # ---- generation ------------------------------------------------------------
-    video_model: str = "seedance-2-0-260128"
-    image_model: str = "seedream-5.0-lite"
-    audio_model: str = "tts"
+    # Empty means "ask whichever provider resolved for the model it actually serves"
+    # (`adapters/providers.DEFAULT_MODELS`). These were GMI slugs, which was correct only
+    # while GMI was the only live provider: the provider is chosen at runtime from what is
+    # keyed, so a hardcoded `seedance-…` was being handed to Sora or Veo the moment GMI
+    # was unkeyed. Set one of these to pin a model, and it applies to whoever answers.
+    video_model: str = ""
+    image_model: str = ""
+    audio_model: str = ""
     generation_timeout_s: float = 900.0
     max_concurrency: int = 4
     # Kits are capped because provider latency and quota are the named Layer-1 risk
     # (BUILD-SPEC §12). Small kits fail fast and cost little.
     max_shots_per_kit: int = 8
+    # Hard ceiling on the estimated cost of a single run, in cents. 0 disables it.
+    # This exists because Genblaze ships no spend guardrail of its own and a failed step
+    # is still a billed step: on 2026-07-31 a four-model video fallback chain was
+    # submitted from one call and charged for output it never produced. 500¢ is roughly
+    # a full eight-shot kit on the priced models in `adapters/pricing`.
+    max_run_cents: int = 500
+    # Pin a vendor per modality: "gmicloud" | "openai" | "google" | "elevenlabs".
+    # Empty is the preference order in `adapters/providers.VENDOR_ORDER`. These exist so
+    # that "video goes to Sora, not seedance" is a deploy-time setting rather than a code
+    # change — which is what it needs to be when a provider starts failing in production.
+    video_provider: str = ""
+    image_provider: str = ""
+    audio_provider: str = ""
 
     # ---- analysis --------------------------------------------------------------
     # How much of a master to measure. Ten minutes covers any single and bounds the cost

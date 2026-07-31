@@ -17,6 +17,7 @@ import logging
 import os
 from typing import Any
 
+from remixkit.adapters import pricing
 from remixkit.domain.models import Modality
 
 log = logging.getLogger(__name__)
@@ -115,6 +116,31 @@ def mock_media_available() -> bool:
     return mock_media.ffmpeg_available()
 
 
+# Which model each provider is asked for, per modality. This table exists because a
+# model id is *provider-specific* and provider selection is a runtime decision: with GMI
+# unkeyed, video falls to Sora or Veo, and sending them `seedance-2-0-260128` is a
+# guaranteed 404. Settings still override (see `deps.py`), but they now default to empty
+# so the operator opts in rather than silently pinning a GMI id onto whoever answers.
+DEFAULT_MODELS: dict[str, dict[Modality, str]] = {
+    "GMICloudVideoProvider": {Modality.VIDEO: "seedance-2-0-260128"},
+    "GMICloudImageProvider": {Modality.IMAGE: "seedream-5.0-lite"},
+    "SoraProvider": {Modality.VIDEO: "sora-2"},
+    "DalleProvider": {Modality.IMAGE: "gpt-image-1"},
+    "OpenAITTSProvider": {Modality.AUDIO: "gpt-4o-mini-tts"},
+    "VeoProvider": {Modality.VIDEO: "veo-3.0-generate-001"},
+    "ImagenProvider": {Modality.IMAGE: "imagen-4.0-generate-001"},
+    "ElevenLabsTTSProvider": {Modality.AUDIO: "eleven_multilingual_v2"},
+    "MockVideoProvider": {Modality.VIDEO: "mock-video"},
+    "MockProvider": {Modality.IMAGE: "mock-image"},
+    "MockAudioProvider": {Modality.AUDIO: "mock-audio"},
+}
+
+
+def default_model(provider: Any, modality: Modality) -> str | None:
+    """The model this particular provider should be asked for, or None if unknown."""
+    return DEFAULT_MODELS.get(type(provider).__name__, {}).get(modality)
+
+
 def _keyed(name: str) -> bool:
     """Is this credential actually set, as opposed to present-but-placeholder?
 
@@ -132,31 +158,58 @@ def _keyed(name: str) -> bool:
     return bool(value) and not value.startswith("PLACEHOLDER")
 
 
-def live_providers() -> dict[Modality, Any]:
-    """Whatever is installed *and* actually keyed — BUILD-SPEC §2's multi-provider story.
+# Vendor names accepted by `RK_VIDEO_PROVIDER` / `RK_IMAGE_PROVIDER` /
+# `RK_AUDIO_PROVIDER`, and the order they are preferred in when none is pinned.
+#
+# GMI first by BUILD-SPEC §2 intent, then OpenAI, then Google. OpenAI sits ahead of
+# Google for a deployment reason rather than a quality one: an API key authenticates
+# anywhere, whereas Vertex resolves Application Default Credentials — a laptop
+# credential that does not exist inside Lambda or a Batch task. Ordering Google higher
+# would mean prod resolving a provider that cannot authenticate.
+VENDOR_ORDER: dict[Modality, tuple[str, ...]] = {
+    Modality.VIDEO: ("gmicloud", "openai", "google"),
+    Modality.IMAGE: ("gmicloud", "openai", "google"),
+    Modality.AUDIO: ("elevenlabs", "openai"),
+}
 
-    Each provider is guarded independently; a modality with nobody to serve it is
-    skipped at build time with a warning rather than failing the run. Order is
-    preference: the first provider to claim a modality keeps it.
 
-    GMI Cloud is still first by intent. Google (Veo for video, Imagen for image) is the
-    fallback that makes this work on credentials the project already has — it
-    authenticates with Vertex ADC via `GCP_PROJECT`/`GCP_LOCATION`, so there is no
-    additional key to obtain. `bootstrap._PROVIDER_KEYS` has always listed
-    `GOOGLE_API_KEY`; this is the code that finally reads it.
+def _available_vendors() -> dict[Modality, dict[str, Any]]:
+    """Every provider that is installed *and* keyed, grouped by modality and vendor.
+
+    Built in full before anything is chosen, so that pinning a vendor is a lookup rather
+    than a re-ordering of construction. A vendor that fails to import or construct is
+    simply absent — a partial provider set is the normal state.
     """
-    providers: dict[Modality, Any] = {}
+    table: dict[Modality, dict[str, Any]] = {m: {} for m in VENDOR_ORDER}
 
     if _keyed("GMI_API_KEY"):
         try:
             from genblaze_gmicloud import GMICloudImageProvider, GMICloudVideoProvider
 
-            providers[Modality.VIDEO] = GMICloudVideoProvider()
-            providers[Modality.IMAGE] = GMICloudImageProvider()
+            table[Modality.VIDEO]["gmicloud"] = GMICloudVideoProvider(
+                models=pricing.priced_registry(GMICloudVideoProvider)
+            )
+            table[Modality.IMAGE]["gmicloud"] = GMICloudImageProvider(
+                models=pricing.priced_registry(GMICloudImageProvider)
+            )
         except Exception as exc:
             log.warning("GMI Cloud unavailable (%s)", exc)
     else:
         log.info("GMI_API_KEY is not set — skipping GMI Cloud")
+
+    if _keyed("OPENAI_API_KEY"):
+        try:
+            from genblaze_openai import DalleProvider, OpenAITTSProvider, SoraProvider
+
+            table[Modality.VIDEO]["openai"] = SoraProvider(models=pricing.priced_registry(SoraProvider))
+            table[Modality.IMAGE]["openai"] = DalleProvider(models=pricing.priced_registry(DalleProvider))
+            table[Modality.AUDIO]["openai"] = OpenAITTSProvider(
+                models=pricing.priced_registry(OpenAITTSProvider)
+            )
+        except Exception as exc:
+            log.warning("OpenAI unavailable (%s)", exc)
+    else:
+        log.info("OPENAI_API_KEY is not set — skipping OpenAI")
 
     google_project = os.environ.get("GCP_PROJECT", "").strip()
     if _keyed("GOOGLE_API_KEY") or google_project:
@@ -173,8 +226,8 @@ def live_providers() -> dict[Modality, Any]:
             if google_project:
                 kwargs["project"] = google_project
 
-            providers.setdefault(Modality.VIDEO, VeoProvider(**kwargs))
-            providers.setdefault(Modality.IMAGE, ImagenProvider(**kwargs))
+            table[Modality.VIDEO]["google"] = VeoProvider(**kwargs)
+            table[Modality.IMAGE]["google"] = ImagenProvider(**kwargs)
         except Exception as exc:
             log.warning("Google (Veo/Imagen) unavailable (%s)", exc)
     else:
@@ -184,23 +237,92 @@ def live_providers() -> dict[Modality, Any]:
         try:
             # `ElevenLabsTTSProvider`, not `ElevenLabsProvider` — the latter has never
             # existed in genblaze-elevenlabs, so this import raised ImportError on every
-            # run and the bare `except` below swallowed it. Audio was therefore skipped
-            # even when a key was present, and nothing said so above debug level. The
-            # package splits speech from sound effects; the kit brief wants speech.
+            # run and a bare `except` swallowed it. The package splits speech from sound
+            # effects; the kit brief wants speech.
             from genblaze_elevenlabs import ElevenLabsTTSProvider
 
-            providers[Modality.AUDIO] = ElevenLabsTTSProvider()
+            table[Modality.AUDIO]["elevenlabs"] = ElevenLabsTTSProvider(
+                models=pricing.priced_registry(ElevenLabsTTSProvider)
+            )
         except Exception as exc:
-            log.warning("ElevenLabs unavailable (%s) — audio shots will be skipped", exc)
+            log.warning("ElevenLabs unavailable (%s)", exc)
     else:
-        log.info("ELEVENLABS_API_KEY is not set — audio shots will be skipped")
+        log.info("ELEVENLABS_API_KEY is not set")
+
+    return table
+
+
+def _pinned(modality: Modality) -> str:
+    """`RK_VIDEO_PROVIDER` and friends, read straight from the environment.
+
+    Read here rather than threaded through `Settings` because `resolve()` is called from
+    the generator, the budget estimate, and the health check, and none of them holds a
+    settings object — the same reason `bootstrap.export_for_libs` exists.
+    """
+    return os.environ.get(f"RK_{modality.name}_PROVIDER", "").strip().lower()
+
+
+def live_providers() -> dict[Modality, Any]:
+    """Whatever is installed *and* actually keyed, one provider per modality.
+
+    A vendor may be pinned per modality — `RK_VIDEO_PROVIDER=openai` sends video to Sora
+    even though GMI is keyed and would otherwise win. That exists because provider
+    preference is an *operational* decision, not a code one: on 2026-07-31 GMI's
+    `seedance-2` failed twice and billed for output it never produced, and the fix has to
+    be a deploy-time setting rather than an edit.
+
+    A pin naming a vendor that is unavailable falls through to the normal order with a
+    warning, rather than leaving the modality unserved — a typo in an environment
+    variable should degrade, not silently delete video from every kit.
+    """
+    available = _available_vendors()
+    providers: dict[Modality, Any] = {}
+
+    for modality, order in VENDOR_ORDER.items():
+        candidates = available.get(modality) or {}
+        if not candidates:
+            continue
+
+        pin = _pinned(modality)
+        if pin:
+            if pin in candidates:
+                providers[modality] = candidates[pin]
+                log.info("%s pinned to %s", modality.value, pin)
+                continue
+            log.warning(
+                "RK_%s_PROVIDER=%s is not available (have: %s) — falling back to preference order",
+                modality.name,
+                pin,
+                ", ".join(sorted(candidates)) or "none",
+            )
+
+        for vendor in order:
+            if vendor in candidates:
+                providers[modality] = candidates[vendor]
+                break
 
     if not providers:
         log.warning(
             "generator_backend=genblaze but no provider is credentialed — every shot "
-            "will be skipped. Set GMI_API_KEY, or GCP_PROJECT for Vertex."
+            "will be skipped. Set OPENAI_API_KEY or GMI_API_KEY."
         )
     return providers
+
+
+def vendor_of(provider: Any) -> str:
+    """Which vendor a resolved provider belongs to — for the health check and banner."""
+    name = type(provider).__name__
+    if name.startswith("GMICloud"):
+        return "gmicloud"
+    if name in {"SoraProvider", "DalleProvider", "OpenAITTSProvider"}:
+        return "openai"
+    if name in {"VeoProvider", "ImagenProvider"}:
+        return "google"
+    if name.startswith("ElevenLabs"):
+        return "elevenlabs"
+    if name.startswith("Mock"):
+        return "mock"
+    return "unknown"
 
 
 def resolve(backend: str) -> dict[Modality, Any]:

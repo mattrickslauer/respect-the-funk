@@ -111,6 +111,11 @@ def export_for_libs(settings) -> list[str]:
     for name, value in (
         ("GCP_PROJECT", settings.gcp_project),
         ("GCP_LOCATION", settings.gcp_location),
+        # `adapters/providers` reads these off the environment because `resolve()` is
+        # called from three places that hold no settings object.
+        ("RK_VIDEO_PROVIDER", settings.video_provider),
+        ("RK_IMAGE_PROVIDER", settings.image_provider),
+        ("RK_AUDIO_PROVIDER", settings.audio_provider),
     ):
         if value and name not in os.environ:
             os.environ[name] = value

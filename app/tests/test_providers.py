@@ -22,7 +22,17 @@ PLACEHOLDER = "PLACEHOLDER — set with `aws ssm put-parameter --overwrite`"
 def _no_ambient_credentials(monkeypatch):
     """Start from nothing set, so a real key on the developer's machine cannot make a
     test pass that would fail in CI."""
-    for name in ("GMI_API_KEY", "GOOGLE_API_KEY", "ELEVENLABS_API_KEY", "GCP_PROJECT", "GCP_LOCATION"):
+    for name in (
+        "GMI_API_KEY",
+        "OPENAI_API_KEY",
+        "GOOGLE_API_KEY",
+        "ELEVENLABS_API_KEY",
+        "GCP_PROJECT",
+        "GCP_LOCATION",
+        "RK_VIDEO_PROVIDER",
+        "RK_IMAGE_PROVIDER",
+        "RK_AUDIO_PROVIDER",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -97,8 +107,113 @@ def test_a_keyed_elevenlabs_actually_serves_audio(monkeypatch):
     assert type(resolved[Modality.AUDIO]).__name__ == "ElevenLabsTTSProvider"
 
 
+# ------------------------------------------------------------------ openai
+def test_openai_serves_every_modality_when_it_is_the_only_key(monkeypatch):
+    """An API key is the only credential that works in Lambda, so OpenAI is the fallback
+    that makes a deployed kit possible at all."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real-looking-key")
+    resolved = providers.live_providers()
+    assert set(resolved) == {Modality.VIDEO, Modality.IMAGE, Modality.AUDIO}
+    assert type(resolved[Modality.VIDEO]).__name__ == "SoraProvider"
+    assert type(resolved[Modality.IMAGE]).__name__ == "DalleProvider"
+
+
+def test_gmi_still_wins_over_openai(monkeypatch):
+    monkeypatch.setenv("GMI_API_KEY", "real")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real")
+    resolved = providers.live_providers()
+    assert type(resolved[Modality.VIDEO]).__name__ == "GMICloudVideoProvider"
+
+
+def test_openai_beats_google_because_vertex_cannot_authenticate_in_lambda(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real")
+    monkeypatch.setenv("GCP_PROJECT", "bidpuma")
+    resolved = providers.live_providers()
+    assert type(resolved[Modality.VIDEO]).__name__ == "SoraProvider"
+
+
+def test_elevenlabs_still_wins_audio_over_openai_tts(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real")
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "real")
+    resolved = providers.live_providers()
+    assert type(resolved[Modality.AUDIO]).__name__ == "ElevenLabsTTSProvider"
+
+
+# ------------------------------------------------------------------ default_model
+def test_every_resolvable_provider_has_a_default_model(monkeypatch):
+    """The regression guard on a model id outliving the provider it belonged to.
+
+    `settings.video_model` used to default to a GMI slug and was passed to whichever
+    provider resolved, so an unkeyed GMI meant `seedance-2-0-260128` being sent to Sora.
+    Every provider this module can hand back must name its own model for the modality it
+    was resolved for.
+    """
+    for env in ("GMI_API_KEY", "OPENAI_API_KEY", "ELEVENLABS_API_KEY"):
+        monkeypatch.setenv(env, "real")
+    monkeypatch.setenv("GCP_PROJECT", "bidpuma")
+
+    seen = 0
+    for table in (providers.live_providers(), providers.mock_providers()):
+        for modality, provider in table.items():
+            assert providers.default_model(provider, modality), (
+                f"{type(provider).__name__} serves {modality.value} with no default model"
+            )
+            seen += 1
+    assert seen, "no providers resolved — the guard would pass vacuously"
+
+
+def test_default_model_is_none_for_an_unknown_provider():
+    assert providers.default_model(object(), Modality.VIDEO) is None
+
+
 def test_mock_backend_is_unaffected_by_credentials(monkeypatch):
     """`resolve('mock')` must never consult the environment — it is what makes a laptop
     run identical to CI."""
     monkeypatch.setenv("GMI_API_KEY", "real")
     assert set(providers.resolve("mock")) == set(providers.mock_providers())
+
+
+# ------------------------------------------------------------------ vendor pinning
+def test_video_can_be_pinned_to_openai_over_a_keyed_gmi(monkeypatch):
+    """The operational lever. GMI's `seedance-2` failed twice and billed for output it
+    never produced on 2026-07-31, so moving video to Sora has to be a deploy-time setting
+    rather than an edit — GMI stays keyed and keeps serving image."""
+    monkeypatch.setenv("GMI_API_KEY", "real")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real")
+    monkeypatch.setenv("RK_VIDEO_PROVIDER", "openai")
+
+    resolved = providers.live_providers()
+    assert type(resolved[Modality.VIDEO]).__name__ == "SoraProvider"
+    assert type(resolved[Modality.IMAGE]).__name__ == "GMICloudImageProvider"
+
+
+def test_a_pin_naming_an_unavailable_vendor_degrades_rather_than_deleting_the_modality(monkeypatch):
+    """A typo in an environment variable must not silently remove video from every kit."""
+    monkeypatch.setenv("GMI_API_KEY", "real")
+    monkeypatch.setenv("RK_VIDEO_PROVIDER", "opnai")  # typo
+
+    resolved = providers.live_providers()
+    assert Modality.VIDEO in resolved
+    assert type(resolved[Modality.VIDEO]).__name__ == "GMICloudVideoProvider"
+
+
+def test_an_empty_pin_uses_the_preference_order(monkeypatch):
+    monkeypatch.setenv("GMI_API_KEY", "real")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real")
+    monkeypatch.setenv("RK_VIDEO_PROVIDER", "")
+    assert type(providers.live_providers()[Modality.VIDEO]).__name__ == "GMICloudVideoProvider"
+
+
+def test_pinning_audio_to_openai_beats_a_keyed_elevenlabs(monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "real")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real")
+    monkeypatch.setenv("RK_AUDIO_PROVIDER", "openai")
+    assert type(providers.live_providers()[Modality.AUDIO]).__name__ == "OpenAITTSProvider"
+
+
+def test_vendor_of_names_every_resolvable_provider(monkeypatch):
+    """`vendor_of` feeds the health check, so an "unknown" there is a banner that lies."""
+    for env in ("GMI_API_KEY", "OPENAI_API_KEY", "ELEVENLABS_API_KEY"):
+        monkeypatch.setenv(env, "real")
+    for provider in providers.live_providers().values():
+        assert providers.vendor_of(provider) != "unknown", type(provider).__name__

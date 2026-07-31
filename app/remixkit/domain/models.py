@@ -631,7 +631,13 @@ class Asset(BaseModel):
     key: str | None = None  # where the bytes landed
     url: str | None = None
     sha256: str | None = None
-    cost_cents: int = 0
+    # `None` means the price is genuinely unknown, and it is a different fact from `0`.
+    # Genblaze registers no prices of its own ("the SDK ships zero hardcoded prices as of
+    # 0.3.0"), so `step.cost_usd` is None for any model `adapters/pricing` has not
+    # registered. Coercing that to 0 is what let a multi-dollar validation run report a
+    # $0.00 ledger on 2026-07-31.
+    cost_cents: int | None = 0
+    cost_note: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -659,4 +665,11 @@ class Kit(Base):
     brief: dict[str, Any] = Field(default_factory=dict)
 
     def recost(self) -> None:
-        self.total_cost_cents = sum(a.cost_cents for a in self.assets)
+        self.total_cost_cents = sum(a.cost_cents or 0 for a in self.assets)
+
+    @property
+    def cost_is_complete(self) -> bool:
+        """False when any asset's price is unknown, so a total can be shown as a floor
+        rather than as the invoice. A kit that says `$0.42` when one of its three steps
+        was never priced is claiming precision it does not have."""
+        return all(a.cost_cents is not None for a in self.assets)

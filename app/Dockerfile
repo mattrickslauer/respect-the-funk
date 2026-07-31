@@ -40,7 +40,20 @@ COPY worker.py ./
 # refuse an upload's measurement up front with the reason named, instead of queueing a job
 # that fails in a container nobody is watching — and one image with two entrypoints is the
 # premise of this file, so the two cannot answer that question differently.
-RUN pip install --no-cache-dir ".[b2,queue,audio]"
+# The provider extras are NOT optional in the image, even though they are optional in
+# `pyproject`. This is the bug that made "flip the flag to go live" a lie: the image was
+# built with `.[b2,queue,audio]` only, so `genblaze_gmicloud`, `genblaze_openai` and
+# `genblaze_elevenlabs` were absent — `live_providers()` returned `{}`, every shot was
+# skipped, and the failure looked like a credentials problem rather than a missing
+# dependency. The Dockerfile even set `RK_GENERATOR_BACKEND=genblaze` below, which the
+# Lambda environment then overrode to `mock`, hiding it completely.
+#
+# `google` is deliberately left out: Vertex authenticates with Application Default
+# Credentials, which do not exist in Lambda or a Fargate task, so shipping it would add
+# weight for a provider that cannot authenticate here. `lyrics` carries the ElevenLabs
+# SDK that `services/transcription` needs, which is a different package from the Genblaze
+# provider of the same vendor.
+RUN pip install --no-cache-dir ".[b2,queue,audio,gmicloud,openai,elevenlabs,lyrics]"
 
 # ---------------------------------------------------------------- api
 FROM base AS api

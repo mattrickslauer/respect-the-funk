@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from pathlib import Path
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -42,7 +43,7 @@ from remixkit.deps import (
     get_container,
 )
 from remixkit.domain.models import AnalysisStatus, ApprovalState, ReferenceFrame, SectionRole
-from remixkit.services.briefs import default_shot_plan, hook_windows
+from remixkit.services.briefs import hook_windows
 from remixkit.services.errors import Conflict, ServiceError
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -309,6 +310,35 @@ def identity_page(
     )
 
 
+# Per-shot edits arrive as `prompt_0`, `model_2`, `seconds_1` — one flat namespace rather
+# than a nested structure, because the re-price control is a plain GET form and the queue
+# form has to carry the identical values back as hidden inputs. Anything that survives a
+# round trip through both without a serialiser is worth preferring here.
+_OVERRIDE_FIELD = re.compile(r"^(prompt|model|seconds)_(\d+)$")
+
+
+def _shot_overrides(params: Any) -> dict[int, dict]:
+    """Read `prompt_N` / `model_N` / `seconds_N` out of a form or query string.
+
+    Unrecognised keys are ignored rather than rejected: this parses attacker-reachable
+    input, and the fields it does accept are re-validated downstream by
+    `briefs.apply_overrides` (which clamps a length and drops an index that no longer
+    exists). A malformed index is not an error worth a 422 on a screen whose job is to
+    show a price.
+    """
+    out: dict[int, dict] = {}
+    for key in params.keys():
+        match = _OVERRIDE_FIELD.match(key)
+        if not match:
+            continue
+        field_name, raw_index = match.groups()
+        value = params[key]
+        if isinstance(value, str) and not value.strip():
+            continue
+        out.setdefault(int(raw_index), {})[field_name] = value
+    return out
+
+
 @router.get("/console/artists/{artist_id}/songs/{song_id}/generate", response_class=HTMLResponse)
 def generate_page(
     request: Request,
@@ -352,8 +382,15 @@ def generate_page(
     # Same filter the kit service applies, for the same reason: a section deleted between
     # loading this page and pricing it must not show up in the plan as a window.
     chosen = [sid for sid in section_ids if song.section(sid)]
-    shots = default_shot_plan(
-        song, identity, video_count=video_count, hook_lines=lines, section_ids=chosen
+    overrides = _shot_overrides(request.query_params)
+
+    plan, shots = kits.plan(
+        principal,
+        song_id=song_id,
+        video_count=video_count,
+        hook_lines=lines,
+        section_ids=chosen,
+        overrides=overrides,
     )
 
     return _render(
@@ -363,11 +400,13 @@ def generate_page(
         song=song,
         identity=identity,
         shots=shots,
+        plan=plan,
+        overrides=overrides,
         video_count=video_count,
         hook_lines=raw_hook_lines,
         section_ids=chosen,
         windows=hook_windows(song, chosen),
-        estimate_cents=kits.estimate_cents(shots),
+        estimate_cents=plan.estimate_cents,
         blocked=artist.consent.blocks_generation,
     )
 
@@ -1191,7 +1230,7 @@ def ui_set_lyrics_text(
 
 # ---------------------------------------------------------------- kit fragments
 @router.post("/ui/kits", response_class=HTMLResponse)
-def ui_create_kit(
+async def ui_create_kit(
     request: Request,
     principal: CurrentPrincipal,
     kits: Kits,
@@ -1201,6 +1240,14 @@ def ui_create_kit(
     hook_lines: str = Form(""),
     section_ids: list[str] = Form(default=[]),
 ):
+    """Buy the plan that was on the screen — including every prompt somebody rewrote.
+
+    The per-shot edits are read straight off the submitted form rather than declared as
+    parameters, because their names carry the shot index (`prompt_0`, `model_2`) and the
+    count is not known until the brief is planned. Reading the form is what keeps the
+    queue button honest: whatever the preview priced is what this submits.
+    """
+    overrides = _shot_overrides(await request.form())
     try:
         kits.request(
             principal,
@@ -1208,6 +1255,7 @@ def ui_create_kit(
             video_count=video_count,
             hook_lines=[line.strip() for line in hook_lines.splitlines() if line.strip()],
             section_ids=section_ids,
+            overrides=overrides,
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)

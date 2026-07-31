@@ -494,3 +494,47 @@ body.auth .footer{margin-top:0}
   .bandbar{min-width:3px}
   .arr-seg{min-width:96px}
 }
+
+/* ---- the plan, as a pipeline ----
+   One card per step, and the prompt is a live field rather than a rendered string. The
+   table this replaced showed a 90-character truncation of the *mood fragment*, so the
+   composed prompt — the thing a provider is actually paid to render — appeared on no
+   screen at all. Cards because a prompt is a paragraph and a paragraph is not a cell. */
+.pipeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.pipeline-step{border:1px solid var(--rule);border-radius:7px;background:var(--panel-2);
+  padding:12px 14px;display:flex;flex-direction:column;gap:10px;position:relative}
+/* The through-line: each step is one stage of a run, and the eye should be able to
+   follow them without counting. Drawn on the card rather than between them so a skipped
+   step still occupies its place in the order. */
+.pipeline-step + .pipeline-step::before{content:"";position:absolute;left:26px;top:-10px;
+  height:10px;width:1px;background:var(--rule)}
+.pipeline-step.is-skipped{opacity:0.6;border-style:dashed}
+
+.step-head{display:flex;align-items:center;gap:10px}
+.step-n{font-family:var(--display);font-size:11px;letter-spacing:0.1em;color:var(--bg);
+  background:var(--gold);border-radius:50%;width:22px;height:22px;flex:none;
+  display:flex;align-items:center;justify-content:center}
+.step-label{color:var(--ink-3);font-size:13px}
+.step-cost{margin-left:auto;font-family:var(--display);color:var(--ink)}
+
+.step-wire{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;margin:0;
+  font-size:13px;align-items:baseline}
+.step-wire dt{font-family:var(--display);font-size:10px;letter-spacing:0.14em;
+  text-transform:uppercase;color:var(--ink-3)}
+.step-wire dd{margin:0;color:var(--ink-2);min-width:0;overflow-wrap:anywhere}
+
+.step-prompt,.step-model{display:flex;flex-direction:column;gap:4px;font-size:12px;
+  color:var(--ink-3)}
+.step-prompt textarea{font-family:var(--mono);font-size:12px;line-height:1.5;
+  color:var(--ink);background:var(--bg-2);border:1px solid var(--rule);border-radius:5px;
+  padding:9px 10px;resize:vertical;width:100%}
+.step-model input{font-family:var(--mono);font-size:12px;color:var(--ink);
+  background:var(--bg-2);border:1px solid var(--rule);border-radius:5px;padding:7px 10px;
+  width:100%}
+.step-prompt textarea:focus,.step-model input:focus{outline:none;border-color:var(--gold-dim)}
+
+/* Below this the two-column key/value grid stops being a grid and starts being a squeeze. */
+@media (max-width:640px){
+  .step-wire{grid-template-columns:1fr;gap:1px}
+  .step-wire dt{margin-top:6px}
+}

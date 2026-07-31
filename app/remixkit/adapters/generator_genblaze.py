@@ -127,6 +127,24 @@ class GenblazeGenerator:
             f"kit:{request.kit_id}",
             tenant_id=request.tenant_id,
             max_concurrency=self._max_concurrency,
+            # `preflight=True` is Genblaze's default and it bills real money on GMI.
+            # The probe is not a metadata lookup — `genblaze_gmicloud/_probe.py` does:
+            #
+            #     resp = http.post("/requests", json={"model": slug, "payload": {}})
+            #
+            # a real generation request with an empty payload, which GMI queues, runs
+            # from its own defaults, and charges for at the full model rate. The adapter
+            # discards the outcome ("the probe verdict is LIVE either way").
+            #
+            # On 2026-07-31 this was half the bill: of four `seedance-2` units at $0.61,
+            # two were promptless probes — one of which completed and produced a video of
+            # a woman in an autumn park that nobody asked for. Each `.run()` would pay
+            # this again, per video model, forever.
+            #
+            # Turning it off is safe here because the thing preflight checks is already
+            # checked: `providers.DEFAULT_MODELS` pins a known-good model per provider,
+            # and `tests/test_providers` asserts every resolvable provider has one.
+            preflight=False,
         )
 
         planned: list[tuple[Modality, str, str, float | None]] = []  # + seconds

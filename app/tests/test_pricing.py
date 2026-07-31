@@ -165,3 +165,28 @@ def test_a_registered_rate_actually_prices_a_step():
         output_duration_s = 10.0
 
     assert strategy(_Ctx()) == Decimal("1.0")
+
+
+# ------------------------------------------------------------------ preflight
+def test_the_pipeline_is_built_with_preflight_disabled():
+    """Genblaze's preflight probe is a *billable generation request*, not a lookup.
+
+    `genblaze_gmicloud/_probe.py` posts `{"model": slug, "payload": {}}` to `/requests`
+    — a real submission GMI queues, runs from its own defaults, and charges for at the
+    full model rate, whose outcome the adapter then discards. On 2026-07-31 it was half
+    the bill: two of four `seedance-2` units at $0.61 were promptless probes, and one of
+    them produced a video nobody asked for.
+
+    This asserts on the source rather than by running a pipeline, because the cheapest
+    possible regression test for "does this cost $0.61 every run" is one that never
+    submits anything.
+    """
+    import inspect
+
+    from remixkit.adapters import generator_genblaze
+
+    src = inspect.getsource(generator_genblaze.GenblazeGenerator.generate)
+    assert "preflight=False" in src, (
+        "Pipeline must be constructed with preflight=False — the default probe bills "
+        "a full generation per video model per run"
+    )

@@ -36,7 +36,7 @@ and the ceiling in `generator_genblaze` is applied before the run rather than af
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from remixkit.domain.models import Modality
@@ -55,6 +55,41 @@ UNVERIFIED = frozenset({"seedance-1-0-pro-fast-251015", "Kling-Text2Video-V2.1-M
 # sliding under it.
 UNKNOWN_CALL_USD = Decimal("2.00")
 
+# Money is computed in `Decimal` — rates like $0.1017/s times a 9.3s loop have no business
+# accumulating binary-float noise — but a strategy's *return* value is not ours to keep in
+# that type. See `_usd` for why the boundary is exactly here.
+USD_PRECISION = Decimal("0.000001")
+
+
+def _usd(amount: Decimal) -> float:
+    """Hand Genblaze a `float`, because a `Decimal` reaches the sink and kills the run.
+
+    `PricingStrategy` is declared `Callable[[PricingContext], float | None]`, and
+    `providers/base._apply_registry_pricing` does a bare `step.cost_usd = cost` onto a
+    `Step` whose `model_config` has no `validate_assignment` — so whatever a strategy
+    returns is stored verbatim, no coercion, and rides into the manifest. There
+    `canonical/_normalize.normalize` handles bool/int/float/str/Enum/datetime/UUID and
+    raises `TypeError` on everything else:
+
+        normalize: unsupported type <class 'decimal.Decimal'> — add explicit handling
+        to preserve canonical JSON determinism
+
+    which surfaces as `ObjectStorageSink failed`. Note *when* that happens: the manifest
+    is written after the steps have run, so a `Decimal` here does not fail cheaply — it
+    fails having already paid every provider, and takes the provenance document (the
+    thing the whole disclosure argument rests on) down with it.
+
+    Quantizing before the cast is the determinism half. Canonical JSON rounds floats to
+    10 decimal places, so two values that differ below that collapse to the same bytes
+    while their hashes differ; micro-dollars is finer than any rate we bill at and coarse
+    enough that the double round-trips to a short decimal, making that rounding a no-op.
+
+    The estimate path already did this conversion on its own — `BaseProvider.estimate_cost`
+    wraps the result in `Decimal(str(cost))` — so returning a float loses no precision
+    upstream either.
+    """
+    return float(amount.quantize(USD_PRECISION, rounding=ROUND_HALF_UP))
+
 
 def per_second(rate_usd: float):
     """Price by output duration, falling back to the duration that was requested.
@@ -66,12 +101,12 @@ def per_second(rate_usd: float):
     """
     rate = Decimal(str(rate_usd))
 
-    def strategy(ctx: Any) -> Decimal:
+    def strategy(ctx: Any) -> float:
         seconds = getattr(ctx, "output_duration_s", None)
         if not seconds:
             params = dict(getattr(getattr(ctx, "step", None), "params", None) or {})
             seconds = params.get("duration") or 0
-        return rate * Decimal(str(seconds or 0))
+        return _usd(rate * Decimal(str(seconds or 0)))
 
     return strategy
 
@@ -80,8 +115,8 @@ def per_call(rate_usd: float):
     """Flat price per emitted output, minimum one — a failed step still submitted work."""
     rate = Decimal(str(rate_usd))
 
-    def strategy(ctx: Any) -> Decimal:
-        return rate * Decimal(max(1, getattr(ctx, "output_count", 1) or 1))
+    def strategy(ctx: Any) -> float:
+        return _usd(rate * Decimal(max(1, getattr(ctx, "output_count", 1) or 1)))
 
     return strategy
 

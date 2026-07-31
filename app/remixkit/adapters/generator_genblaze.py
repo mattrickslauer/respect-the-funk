@@ -91,7 +91,9 @@ class GenblazeGenerator:
                 or self._models.get(shot.modality)
                 or (provider_table.default_model(provider, shot.modality) if provider else None)
             )
-            plan.append((shot.modality, model, shot.seconds))
+            # Snapped, so the quote prices the clip that will actually be
+            # rendered rather than the one the brief asked for.
+            plan.append((shot.modality, model, provider_table.snap_duration(model, shot.seconds)))
         return plan
 
     # -- prompt shaping ---------------------------------------------------------
@@ -176,9 +178,14 @@ class GenblazeGenerator:
                 continue
             prompt = self._compose_prompt(request, shot.prompt)
 
+            # The brief asks for a musically-derived length; the model has its own list of
+            # lengths that exist. Sora takes only {4, 8, 12}, the GMI models take any
+            # integer 1..60, and `briefs._loop_seconds` hands over a float like 9.3 — so
+            # an unsnapped request is rejected outright ("Invalid seconds=10").
             params: dict[str, Any] = {}
-            if shot.seconds:
-                params["duration"] = shot.seconds
+            rendered_seconds = provider_table.snap_duration(model, shot.seconds)
+            if rendered_seconds:
+                params["duration"] = rendered_seconds
             if shot.modality is not Modality.AUDIO:
                 params["aspect_ratio"] = shot.aspect_ratio
 
@@ -195,6 +202,12 @@ class GenblazeGenerator:
                     "hook_start_ms": request.song.hook.start_ms,
                     "hook_end_ms": request.song.hook.end_ms,
                     "bpm": request.song.bpm,
+                    # What the brief asked for versus what the model could render. A kit
+                    # that claims it was cut to a 10s hook while its clips are 8s would be
+                    # the provenance rule quietly defeated by a provider constraint, so
+                    # both numbers travel into the manifest.
+                    "requested_seconds": shot.seconds,
+                    "rendered_seconds": rendered_seconds,
                 },
             }
             if params:
@@ -203,7 +216,7 @@ class GenblazeGenerator:
                 kwargs["negative_prompt"] = negatives
 
             pipeline = pipeline.step(provider, **kwargs)
-            planned.append((shot.modality, model, prompt, shot.seconds))
+            planned.append((shot.modality, model, prompt, rendered_seconds))
 
         if not planned:
             return GenerationResult(

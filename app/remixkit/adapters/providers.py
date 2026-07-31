@@ -136,6 +136,48 @@ DEFAULT_MODELS: dict[str, dict[Modality, str]] = {
 }
 
 
+# Which clip lengths a model will actually accept, in seconds.
+#
+# A loop length is a *musical* quantity here — `services/briefs._loop_seconds` derives it
+# from the measured hook window — but every video model has its own opinion about which
+# durations exist, and they do not agree. Sora enforces a discrete set client-side
+# (`genblaze_openai.provider._VALID_SECONDS`); the GMI models declare `IntSchema(min=1,
+# max=60)`, i.e. any whole number. A model absent from this table is treated as
+# continuous.
+#
+# The float matters as much as the set: `_loop_seconds` returns one decimal place (9.3),
+# and every one of these models wants an integer.
+MODEL_DURATIONS: dict[str, frozenset[int]] = {
+    "sora-2": frozenset({4, 8, 12}),
+    "sora-2-pro": frozenset({4, 8, 12}),
+}
+
+# Continuous models still have bounds — GMI's schema is 1..60.
+CONTINUOUS_MIN, CONTINUOUS_MAX = 1, 60
+
+
+def snap_duration(model: str | None, seconds: float | None) -> int | None:
+    """The nearest length this model will accept, never longer than what was asked.
+
+    Rounding *down* to an allowed value is deliberate rather than nearest-wins. The
+    requested length is the hook window, so a longer clip runs past the end of the
+    section it was cut to — which is precisely the thing a fan trying to copy the
+    template would notice. A loop shorter than its hook still sits inside it.
+
+    Below the smallest allowed value there is no honest choice, so the smallest is used
+    and the caller records that the brief could not be met exactly.
+    """
+    if not seconds or seconds <= 0:
+        return None
+
+    allowed = MODEL_DURATIONS.get(model or "")
+    if allowed:
+        fitting = [d for d in allowed if d <= seconds]
+        return max(fitting) if fitting else min(allowed)
+
+    return max(CONTINUOUS_MIN, min(CONTINUOUS_MAX, int(seconds)))
+
+
 def default_model(provider: Any, modality: Modality) -> str | None:
     """The model this particular provider should be asked for, or None if unknown."""
     return DEFAULT_MODELS.get(type(provider).__name__, {}).get(modality)

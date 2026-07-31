@@ -217,3 +217,67 @@ def test_vendor_of_names_every_resolvable_provider(monkeypatch):
         monkeypatch.setenv(env, "real")
     for provider in providers.live_providers().values():
         assert providers.vendor_of(provider) != "unknown", type(provider).__name__
+
+
+# ------------------------------------------------------------------ duration snapping
+def test_sora_only_accepts_its_discrete_durations(monkeypatch):
+    """The live failure: `Invalid seconds=10. Must be one of {8, 4, 12}`.
+
+    A loop length is a musical quantity — `briefs._loop_seconds` derives it from the
+    measured hook window — but Sora enforces a discrete set client-side
+    (`genblaze_openai.provider._VALID_SECONDS`).
+    """
+    assert providers.snap_duration("sora-2", 10.0) == 8
+    assert providers.snap_duration("sora-2", 12.0) == 12
+    assert providers.snap_duration("sora-2", 4.0) == 4
+
+
+def test_snapping_rounds_down_so_a_loop_never_overruns_its_hook():
+    """Nearest-wins would be wrong. The requested length *is* the hook window, so a
+    longer clip runs past the section it was cut to — which is exactly what a fan
+    copying the template would notice."""
+    assert providers.snap_duration("sora-2", 11.9) == 8  # not 12
+    assert providers.snap_duration("sora-2", 7.9) == 4  # not 8
+
+
+def test_below_the_smallest_allowed_duration_the_smallest_is_used():
+    """There is no honest choice under the floor; the caller records that the brief
+    could not be met exactly."""
+    assert providers.snap_duration("sora-2", 3.0) == 4
+
+
+def test_continuous_models_get_an_integer(monkeypatch):
+    """GMI declares IntSchema(min=1, max=60) — any whole number, but *whole*.
+    `_loop_seconds` returns one decimal place, which is the other half of this bug."""
+    assert providers.snap_duration("seedance-2-0-260128", 9.3) == 9
+    assert providers.snap_duration("Kling-Text2Video-V2.1-Master", 6.0) == 6
+    assert isinstance(providers.snap_duration("seedance-2-0-260128", 9.3), int)
+
+
+def test_continuous_models_are_clamped_to_their_schema_bounds():
+    assert providers.snap_duration("seedance-2-0-260128", 900.0) == 60
+    assert providers.snap_duration("seedance-2-0-260128", 0.4) == 1
+
+
+def test_no_duration_asked_means_no_duration_sent():
+    assert providers.snap_duration("sora-2", None) is None
+    assert providers.snap_duration("sora-2", 0) is None
+
+
+def test_every_default_video_model_can_render_a_default_loop():
+    """The guard that would have caught this before it reached the UI: every video model
+    the app can resolve must accept the loop lengths `briefs` actually produces."""
+    from remixkit.services.briefs import DEFAULT_LOOP_S, MAX_LOOP_S, MIN_LOOP_S
+
+    video_models = [
+        m[Modality.VIDEO] for m in providers.DEFAULT_MODELS.values() if Modality.VIDEO in m
+    ]
+    assert video_models
+    for model in video_models:
+        for requested in (MIN_LOOP_S, DEFAULT_LOOP_S, MAX_LOOP_S, 9.3):
+            snapped = providers.snap_duration(model, requested)
+            allowed = providers.MODEL_DURATIONS.get(model)
+            if allowed:
+                assert snapped in allowed, f"{model} would reject {snapped}"
+            else:
+                assert isinstance(snapped, int) and 1 <= snapped <= 60

@@ -154,17 +154,59 @@ def test_pricing_registers_onto_a_fork_not_the_shared_default():
     assert forked is not shared
 
 
+def _ctx(*, seconds: float | None = None, count: int = 1):
+    class _Ctx:
+        step = type("S", (), {"params": {"duration": seconds or 0}})()
+        output_count = count
+        output_duration_s = seconds
+
+    return _Ctx()
+
+
 def test_a_registered_rate_actually_prices_a_step():
     """The end of the chain: a registered strategy must produce a number Genblaze will
     put on the step, which is what makes `Pipeline.estimated_cost()` real."""
     strategy, _note = pricing.PRICE_BOOK["sora-2"]
 
-    class _Ctx:
-        step = type("S", (), {"params": {"duration": 10}})()
-        output_count = 1
-        output_duration_s = 10.0
+    assert strategy(_ctx(seconds=10.0)) == Decimal("1.0")
 
-    assert strategy(_Ctx()) == Decimal("1.0")
+
+# ------------------------------------------------------------------ the manifest survives
+def test_every_strategy_returns_a_float_not_a_decimal():
+    """`Decimal` is the exactly-wrong type to hand back, and it fails late and expensively.
+
+    `PricingStrategy` is `Callable[[PricingContext], float | None]`; `Step.cost_usd` is a
+    `float` field on a model with no `validate_assignment`, so Genblaze stores whatever a
+    strategy returns without coercing it. A `Decimal` therefore survives all the way into
+    the manifest, where canonical normalization refuses it — after every step has run and
+    been billed.
+    """
+    for model_id, (strategy, _note) in pricing.PRICE_BOOK.items():
+        value = strategy(_ctx(seconds=6.0))
+        assert type(value) is float, f"{model_id} priced as {type(value).__name__}"
+
+
+def test_a_priced_step_canonicalizes():
+    """The actual failure, pinned against the real serializer rather than a stand-in:
+
+        ObjectStorageSink failed: normalize: unsupported type <class 'decimal.Decimal'>
+    """
+    canonical_json = pytest.importorskip("genblaze_core.canonical.json").canonical_json
+
+    for model_id, (strategy, _note) in pricing.PRICE_BOOK.items():
+        cost = strategy(_ctx(seconds=9.3))
+        canonical_json({"model": model_id, "cost_usd": cost})
+
+
+def test_the_same_price_serializes_to_the_same_bytes():
+    """Determinism is the point of canonical JSON, and quantizing is what buys it: the
+    manifest rounds floats to 10 places, so a rate that carried more precision than that
+    would hash differently while serializing identically."""
+    canonical_json = pytest.importorskip("genblaze_core.canonical.json").canonical_json
+    strategy, _note = pricing.PRICE_BOOK["seedance-2-0-260128"]
+
+    cost = strategy(_ctx(seconds=9.3))
+    assert canonical_json({"cost_usd": cost}) == canonical_json({"cost_usd": round(cost, 10)})
 
 
 # ------------------------------------------------------------------ preflight

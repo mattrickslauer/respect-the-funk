@@ -1093,3 +1093,62 @@ def test_an_edit_model_with_no_reference_is_refused_before_submission(
     # needs to explain the refusal.
     assert plan.estimate_cents == 0
     assert plan.blocker
+
+
+def test_the_reference_survives_all_the_way_into_the_provider_payload():
+    """The check every previous version of this fix stopped one step short of.
+
+    Routing an input into the payload is not enough: the spec's `param_allowlist` filters
+    the result immediately afterwards, and `ParamSurface.for_modality` builds that list
+    from the params that are *universally meaningful* for a modality — which cannot
+    include a vendor's input slot name. So the mapper inserted `images`, the filter removed
+    it, and the request went out missing the parameter the model requires.
+
+    The only trace was a log line:
+
+        Dropping non-allowlisted params for bria-fibo-edit: ['images']
+
+    Testing the mapper in isolation passed throughout. This asserts on
+    `prepare_payload`, which is what `submit()` actually sends.
+    """
+    from genblaze_core.models.asset import Asset as GBAsset
+    from genblaze_core.models.enums import Modality as GBModality
+    from genblaze_core.models.step import Step
+    from genblaze_gmicloud import GMICloudImageProvider
+
+    from remixkit.adapters import pricing
+
+    provider = GMICloudImageProvider(models=pricing.priced_registry(GMICloudImageProvider))
+    frames = [
+        GBAsset(url=f"https://b2/{n}.png", media_type="image/png", sha256=n * 64)
+        for n in ("a", "b")
+    ]
+
+    step = Step(
+        provider="gmicloud-image", model="bria-fibo-edit", prompt="a portrait",
+        modality=GBModality.IMAGE, params={"aspect_ratio": "9:16"},
+    )
+    step.inputs = frames
+
+    payload = provider.prepare_payload(step)
+    assert payload.get("images") == ["https://b2/a.png", "https://b2/b.png"]
+
+
+def test_the_shipped_families_still_send_their_own_slot():
+    """A user family is checked first, so a broad pattern can quietly take over a model the
+    connector already handled correctly."""
+    from genblaze_core.models.asset import Asset as GBAsset
+    from genblaze_core.models.enums import Modality as GBModality
+    from genblaze_core.models.step import Step
+    from genblaze_gmicloud import GMICloudImageProvider
+
+    from remixkit.adapters import pricing
+
+    provider = GMICloudImageProvider(models=pricing.priced_registry(GMICloudImageProvider))
+    one = GBAsset(url="https://b2/a.png", media_type="image/png", sha256="a" * 64)
+
+    for model in ("bria-genfill", "seededit-3-0-i2i-250628"):
+        step = Step(provider="gmicloud-image", model=model, prompt="x",
+                    modality=GBModality.IMAGE, params={})
+        step.inputs = [one]
+        assert provider.prepare_payload(step).get("image") == "https://b2/a.png", model

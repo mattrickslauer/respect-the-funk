@@ -35,7 +35,22 @@ def _bria_fibo_family() -> Any:
     from genblaze_core.models.enums import Modality
     from genblaze_core.providers import ModelFamily, ModelSpec, ParamSurface, route_images
 
-    surface = ParamSurface.for_modality(Modality.IMAGE).extend("number_of_images")
+    # `images` has to be on the *allowlist* as well as produced by the input mapping.
+    #
+    # This is the step that made the previous fix a no-op, and it fails in the most
+    # deniable way available: the mapper inserts the key, the allowlist filter removes it
+    # one line later, and the only trace is a log line —
+    #
+    #     Dropping non-allowlisted params for bria-fibo-edit: ['images']
+    #
+    # — after which the request goes out without the parameter the model requires and GMI
+    # rejects it for exactly the reason it was rejected before the fix. Two runs failed
+    # identically and I read that as a stale deployment rather than as the same bug.
+    #
+    # `ParamSurface.for_modality` builds the allowlist from the *universally meaningful*
+    # params for a modality, which cannot include a vendor's input slot names. Anything a
+    # family routes into the payload has to be extended onto its own surface.
+    surface = ParamSurface.for_modality(Modality.IMAGE).extend("number_of_images", "images")
     return ModelFamily(
         name="rk-bria-fibo",
         # The fibo edit family plus the standalone utilities, all of which take an image.

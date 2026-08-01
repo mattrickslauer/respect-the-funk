@@ -4,6 +4,11 @@
    asset grid does it: on B2 these are presigned URLs with an expiry, and persisting one
    gives a page that looks right immediately after upload and fills with broken images
    an hour later. #}
+{# `plate_keys` is computed once here rather than per frame: `Identity.plates()` dedupes
+   and groups across the whole list, so asking it per row would be both quadratic and a
+   different question than the one being answered. #}
+{% set plate_keys = identity.plates(limit=identity.reference_frames|length or 1)
+                    | map(attribute="key") | list %}
 <div id="frames">
   {% if identity.reference_frames %}
     <div class="assets">
@@ -13,6 +18,14 @@
           <figcaption class="small">
             <span class="method">{{ frame.lighting }}</span>
             {% if frame.caption %} · {{ frame.caption }}{% endif %}
+            {# Which of these is actually sent. Uploading forty stills and having one
+               condition the render is the intended behaviour, not a bug — but it is only
+               not a bug if the screen says which one. #}
+            {% if frame.key == plate_keys[0] %}
+              · <span class="ok">plate</span>
+            {% elif frame.key not in plate_keys %}
+              · <span class="hint">duplicate setup</span>
+            {% endif %}
           </figcaption>
         </figure>
       {% endfor %}
@@ -21,6 +34,13 @@
       {{ identity.reference_frames|length }} frame{{ "" if identity.reference_frames|length == 1 else "s" }}
       on v{{ identity.version }}. Frames attach in place — adding evidence of how the
       artist looks is not a change of intent, so it does not mint a version.
+    </p>
+    <p class="hint">
+      A video shot is conditioned on <strong>one</strong> plate — the first frame of each
+      distinct lighting setup, duplicates dropped by content hash. One is deliberate:
+      Seedance routes a second image into <code>last_frame</code>, which asks the model to
+      end the clip on it rather than to hold a stronger likeness. Upload as many stills as
+      you like; variety across <em>setups</em> is what makes the chosen plate generalise.
     </p>
   {% else %}
     <p class="empty">

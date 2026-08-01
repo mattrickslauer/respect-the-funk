@@ -70,6 +70,10 @@ class B2Storage:
             if token is None:
                 return keys
 
+    # Absolute, signed, and fetchable by anyone holding the URL for its lifetime — which
+    # is what makes conditioning images possible at all: the provider does the fetching.
+    serves_public_urls = True
+
     def presign_get(self, key: str, *, expires_in: int = 3600) -> str:
         return self._backend.presigned_get_url(key, expires_in=expires_in)
 

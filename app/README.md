@@ -311,6 +311,37 @@ files and a real manifest with synthetic pixels for nothing; a proxy-frame tier 
 caching are specified but not built. See `PIPELINE-SPEC.md` for both, and for the node
 model that replaces the four hardcoded moods.
 
+### Holding the artist's face
+
+`Identity.reference_frames` had been on the model since it was written, and nothing read
+it — `_compose_prompt` was text-only, so a label that photographed an artist across four
+lighting setups was buying video conditioned on a sentence. The frames now go to the
+provider as an actual image.
+
+`Identity.plates()` picks which ones: exact duplicates dropped by content hash, then one
+frame per lighting setup, hashed frames preferred. Ordinary bookkeeping, no new dependency,
+and pure — so the plan screen can call it on every render. Upload as many stills as you
+like; variety across *setups* is what makes the chosen plate generalise, which is what
+`ReferenceFrame.lighting` has always been for.
+
+A video shot takes exactly **one** plate, and that is a correctness limit rather than a
+budget: Seedance routes a second image into `last_frame`, which the model reads as "end the
+clip here" and interpolates towards. Lyric cards take none — a face reference on a
+typographic plate gives you a portrait with words over it.
+
+Three things will stop a plate being sent, and the plan screen names whichever applies
+rather than going quiet:
+
+- **The provider refuses image inputs.** GMI and Sora declare `accepts_chain_input=True`;
+  Veo and Imagen declare neither, and Genblaze raises before *any* step runs — so an
+  ungated plate fails the whole kit, not one shot.
+- **Storage does not serve public URLs.** The provider fetches the image from its own
+  network, and `LocalStorage` presigns to `/files/…`, an app route that means nothing
+  off-host. A live backend on local storage refuses instead of sending a dead link. The
+  mock generator fetches nothing and is exempt, which is what keeps this path exercised on
+  a laptop.
+- **The identity has no frames.** Text-only, and it says so instead of looking conditioned.
+
 ### Silent loops
 
 A kit loop is a backdrop the master plays over, so a generated soundtrack is a defect.

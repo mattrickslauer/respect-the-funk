@@ -88,6 +88,11 @@ class LocalStorage:
             str(p.relative_to(self.root)) for p in base.rglob("*") if p.is_file()
         )
 
+    # `/files/…` is an app route, not an address. A provider asked to fetch a reference
+    # frame from it would be resolving a path relative to its own host, which is why the
+    # generator refuses to send plates on this backend rather than sending broken ones.
+    serves_public_urls = False
+
     def presign_get(self, key: str, *, expires_in: int = 3600) -> str:
         return f"{self.url_base}/{quote(key)}"
 

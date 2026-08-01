@@ -24,6 +24,17 @@ class Storage(Protocol):
 
     def list(self, prefix: str) -> list[str]: ...
 
+    serves_public_urls: bool
+    """Whether `presign_get` yields a URL something outside this process can fetch.
+
+    False on the local adapter, whose URLs are app-relative (`/files/…`) and mean nothing
+    to anyone but a browser already on the page. That distinction is invisible until it
+    matters and then it matters a lot: a reference frame handed to a live provider as a
+    conditioning image is fetched *by the provider*, from its own network. A relative path
+    works perfectly against the mock generator on a laptop and fails against GMI in Batch,
+    which is the worst place to find out.
+    """
+
     def presign_get(self, key: str, *, expires_in: int = 3600) -> str:
         """A URL the browser can GET directly. Never proxy the bytes."""
 

@@ -56,7 +56,13 @@
     </div>
     <div class="stat">
       <dt>Identity</dt>
-      <dd>{% if identity %}v{{ identity.version }}
+      {# A version number alone said nothing about whether the face would actually be
+         sent. An identity with text and no reference frames renders exactly as one with
+         four, and only the second holds a likeness. #}
+      <dd>{% if identity and identity.has_plates %}v{{ identity.version }}
+            <span class="stat-sub">{{ identity.reference_frames|length }} frame{{ "" if identity.reference_frames|length == 1 else "s" }} · face conditioned</span>
+          {% elif identity %}v{{ identity.version }}
+            <span class="stat-sub unmeasured">no reference frames — text only</span>
           {% else %}<span class="unmeasured">none</span>
             <span class="stat-sub">shots will not hold a face</span>{% endif %}</dd>
     </div>
@@ -174,6 +180,18 @@
                         {% endif %}
                       {% else %}—{% endif %}
                     </dd>
+                    {# The face, and whether it is actually going. Shown even when it is
+                       not, because a plate that was silently dropped looks exactly like an
+                       artist who never had an identity — and the providers genuinely
+                       disagree about this: GMI and Sora take image inputs, Veo and Imagen
+                       refuse them. Which one answers is a runtime decision nobody makes
+                       per kit, so it belongs on the screen before the button. #}
+                    {% if step.plate_note %}
+                      <dt>Face</dt>
+                      <dd class="small {{ '' if step.reference_keys else 'unmeasured' }}">
+                        {{ step.plate_note }}
+                      </dd>
+                    {% endif %}
                     {% if step.negative_prompt %}
                       <dt>Negatives</dt>
                       <dd class="small">{{ step.negative_prompt }}</dd>

@@ -32,7 +32,7 @@ different fixes:
 |---|---------|-----|--------|
 | 1 | The prompt named no song, artist, tempo, or language. `MOODS` is four fixed strings shared by every artist in the catalogue. | Song-aware defaults + **editable prompts** | built |
 | 2 | Nothing told the model not to generate audio. Veo, Sora 2 and Seedance all return a native audio track. | Negatives + prompt clause; deterministic mux-out on delivery | partly built (§4) |
-| 3 | `Identity.reference_frames` — Amanda Kurt's face — is uploadable, storable, rendered in the console, and **read by nothing**. `_compose_prompt` is text-only. | Character nodes as image conditioning (§3) | designed, not built |
+| 3 | `Identity.reference_frames` — Amanda Kurt's face — is uploadable, storable, rendered in the console, and **read by nothing**. `_compose_prompt` is text-only. | Character plates as image conditioning (§3) | built |
 
 The fourth failure is the one that made the other three expensive: **the screen showed a
 90-character truncation of the mood fragment, not the composed prompt.** There was no
@@ -305,14 +305,41 @@ Each of these is independently useful and independently shippable.
 
 1. ~~Preview plane — `plan()`, exact payloads on screen, per-shot editing~~ **done**
 2. ~~Song-aware prompt defaults + anti-soundtrack negatives~~ **done**
-3. `sha256` on reference frames at upload; carry it through `external_inputs`
-4. Character plates as `first_frame` — the smallest change that puts Amanda Kurt's face in
-   a kit, and the highest-value one (§3)
+3. ~~`sha256` and content type on reference frames at upload~~ **done**
+4. ~~Character plates as `first_frame` — Amanda Kurt's face in a kit~~ **done**
 5. Silent delivery — the ffmpeg `-an` pass (§4)
 6. Proxy frames and shot-by-shot promotion (§5)
 7. `Node` as a first-class document; migrate `Identity` onto it as `kind=character`
 8. Step cache with key rehydration (§6)
 
-Steps 3 and 4 are the ones that change what the videos actually look like. Everything
+Steps 3 and 4 were the ones that change what the videos actually look like. Everything
 before them is about being able to see what you are buying; everything after is about
 buying less of it.
+
+### What plates turned out to need
+
+Three constraints surfaced in the build that the design above did not anticipate, and all
+three are the kind that pass on a laptop:
+
+- **Providers disagree about image inputs, and disagreement is fatal.**
+  `GMICloudVideoProvider` and `SoraProvider` declare `accepts_chain_input=True` with
+  `image` among their inputs; `VeoProvider` and `ImagenProvider` declare neither.
+  `Pipeline._check_step_capabilities` raises `GenblazeError` when a step carries
+  `external_inputs` and the provider has not declared it accepts them — *before any step
+  runs*, so the whole kit fails, not the one shot. Since provider selection happens at
+  runtime from whatever is keyed, the same brief conditions correctly on GMI and refuses
+  outright on Google. `_plates_for` gates on the declared capability and drops the plate
+  with a reason rather than letting the run die.
+- **One plate per video shot, and it is a correctness limit.** Seedance routes a second
+  image into `last_frame`, which the model reads as "end the clip here" and interpolates
+  towards. A second reference frame requests a morph, not a stronger likeness.
+- **Plates need storage that serves public URLs.** The provider does the fetching, from its
+  own network. `LocalStorage.presign_get` returns `/files/…`, an app route that means
+  nothing off-host — so `Storage.serves_public_urls` now exists and a live backend on local
+  storage refuses to send plates instead of sending dead links. The mock generator fetches
+  nothing and is deliberately exempt, which is what keeps the laptop exercising this path.
+
+The preprocessing itself came in cheaper than specced: dedupe by content hash, one frame
+per lighting setup, hashed frames preferred. No perceptual hashing, no blur detection, no
+new dependency — and `Identity.plates()` is pure, so it costs nothing to call on every
+render of the plan screen.

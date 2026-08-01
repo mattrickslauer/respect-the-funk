@@ -176,6 +176,11 @@ def default_shot_plan(
                 aspect_ratio="9:16",
                 label=f"{name} · {section_name}",
                 negatives=list(VIDEO_NEGATIVES),
+                # The loops are what a fan puts themselves into, so the artist is the one
+                # thing in them that must not drift. The lyric cards below deliberately do
+                # not opt in: a face reference on a typographic plate produces a portrait
+                # with words over it.
+                use_identity_plate=True,
             )
         )
 

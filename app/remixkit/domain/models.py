@@ -218,12 +218,22 @@ class ReferenceFrame(BaseModel):
 
     The lighting label matters: MEMORY-SPEC's whole argument for why the second video
     is cheap is that the identity was built across *several* setups once.
+
+    `sha256` is not decoration. When a frame is handed to a provider as a conditioning
+    image, Genblaze derives both the step cache key and the manifest's canonical hash from
+    the input asset's content hash — and falls back to its *URL* when there is none. On B2
+    that URL is presigned and rotates on every render, so a frame without a hash means the
+    cache never hits and the provenance record drifts every run. `pipeline.step()` warns
+    about exactly this; the upload route now fills it in.
     """
 
     key: str  # object key in the bucket
     lighting: str = "neutral"
     caption: str | None = None
     sha256: str | None = None
+    # What the bytes are, so a provider handed this frame is told rather than left to
+    # infer it from a presigned URL whose path carries a query string and no extension.
+    content_type: str | None = None
 
 
 class Identity(Base):
@@ -257,6 +267,56 @@ class Identity(Base):
 
     def negative_fragment(self) -> str:
         return ", ".join(self.negatives)
+
+    def plates(self, limit: int = 1) -> list[ReferenceFrame]:
+        """The frames worth *sending* — the conditioning images, not the whole upload set.
+
+        A prompt describing a face is a lossy encoding of a face. An image of the face is
+        not, which is why this exists: `prompt_fragment` was the only thing the generator
+        ever saw, so the reference frames a label uploaded reached no provider at all.
+
+        The selection is deliberately ordinary image bookkeeping rather than anything that
+        needs a model or a new dependency, which is what makes it free to run:
+
+        1. **Exact duplicates go**, by content hash. The same still uploaded twice is one
+           reference, and a duplicate that survived would crowd out a genuinely different
+           setup under the cap.
+        2. **One per lighting setup**, in upload order. This is the whole reason
+           `ReferenceFrame.lighting` exists — MEMORY-SPEC's argument for why the second
+           video is cheap is that the identity was built across several setups once, and a
+           plate set that is four exposures of one setup generalises to nothing.
+        3. **Frames with no hash sort last.** They still work, but they cost a stable cache
+           key and a stable manifest hash, so a hashed frame is preferred where there is a
+           choice.
+
+        `limit` defaults to one, and callers should think hard before raising it. Seedance
+        routes a second image into `last_frame`, which does not mean "another reference" —
+        it means "end the clip on this", and the model will interpolate towards it. Two
+        plates on a video shot is a request for a morph, not a stronger likeness.
+        """
+        by_hash: dict[str, ReferenceFrame] = {}
+        unhashed: list[ReferenceFrame] = []
+        for frame in self.reference_frames:
+            if frame.sha256:
+                by_hash.setdefault(frame.sha256, frame)
+            else:
+                unhashed.append(frame)
+
+        chosen: list[ReferenceFrame] = []
+        seen_lighting: set[str] = set()
+        for frame in [*by_hash.values(), *unhashed]:
+            setup = (frame.lighting or "neutral").strip().lower()
+            if setup in seen_lighting:
+                continue
+            seen_lighting.add(setup)
+            chosen.append(frame)
+            if len(chosen) >= limit:
+                break
+        return chosen
+
+    @property
+    def has_plates(self) -> bool:
+        return bool(self.plates(limit=1))
 
 
 class HookWindow(BaseModel):

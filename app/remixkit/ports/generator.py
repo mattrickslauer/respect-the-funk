@@ -34,6 +34,12 @@ class ShotSpec:
     # what this *kind of output* should contain" — a backdrop loop that must not score
     # itself, a lyric card that must not hallucinate a second caption.
     negatives: list[str] = field(default_factory=list)
+    # Whether this shot should be conditioned on the artist's face.
+    #
+    # Opt-in per shot rather than "always, if an identity exists", because a lyric card is
+    # a typographic plate and putting a face reference on it produces a portrait with words
+    # over it. The loops want the face held invariant; the cards want the text legible.
+    use_identity_plate: bool = False
 
 
 @dataclass
@@ -85,6 +91,11 @@ class PlannedShot:
     requested_seconds: float | None = None
     rendered_seconds: int | None = None
     reference_keys: list[str] = field(default_factory=list)
+    # Why the face is or is not going with this shot, in one phrase. Present even when
+    # everything worked, because "the plate was attached" and "the plate was silently
+    # dropped" look identical on a screen that only shows the successful case — and the
+    # second one is how an identity a label spent an afternoon building reaches nothing.
+    plate_note: str | None = None
     estimate_cents: int = 0
     skipped_reason: str | None = None
 

@@ -172,6 +172,8 @@ class GenblazeGenerator:
             else:
                 reason = None
 
+            plates, plate_note = self._plates_for(shot, request, provider)
+
             planned = PlannedShot(
                 index=index,
                 modality=shot.modality,
@@ -184,6 +186,8 @@ class GenblazeGenerator:
                 params=params,
                 requested_seconds=shot.seconds,
                 rendered_seconds=rendered_seconds,
+                reference_keys=[plate.key for plate in plates],
+                plate_note=plate_note,
                 # Priced on the length that will be *rendered*, not the one asked for —
                 # otherwise the quote is for a clip the provider will not make.
                 estimate_cents=pricing.estimate_cents(shot.modality, model, rendered_seconds),
@@ -192,6 +196,111 @@ class GenblazeGenerator:
             resolved.append((planned, provider))
 
         return resolved
+
+    # -- the face --------------------------------------------------------------
+    # How many conditioning images a video shot may carry. One, and the number is a
+    # correctness constraint rather than a budget: Seedance routes a second image into
+    # `last_frame`, which the model reads as "end the clip here" and interpolates towards.
+    # A second reference frame would not strengthen the likeness, it would request a morph.
+    PLATE_LIMIT = 1
+
+    def _plates_for(self, shot: Any, request: GenerationRequest, provider: Any):
+        """The artist's face, if this shot wants it and this provider will take it.
+
+        The gate is the provider's own declared capability, because getting it wrong is not
+        a degraded render — it is a `GenblazeError` raised in `_validate_steps()` before any
+        step runs, which fails the *whole* kit. And the providers genuinely disagree:
+        `GMICloudVideoProvider` and `SoraProvider` declare `accepts_chain_input=True` with
+        `image` among their inputs, while `VeoProvider` and `ImagenProvider` declare neither.
+        So the same brief that conditions correctly on GMI would refuse outright on Google,
+        and provider selection is a runtime decision nobody makes per kit.
+
+        `None` capabilities means unspecified, which Genblaze documents as "no restriction"
+        — so it is treated as permissive here rather than as a refusal. That is also what
+        keeps the mock path exercising this code rather than routing around it.
+
+        Returns the chosen frames and a note saying what happened, which is always set:
+        a plate silently not sent looks exactly like no identity at all.
+        """
+        if not shot.use_identity_plate:
+            return [], None
+        if provider is None:
+            return [], None
+
+        identity = request.identity
+        if identity is None:
+            return [], "no identity — this shot will not hold a face"
+        plates = identity.plates(limit=GenblazeGenerator.PLATE_LIMIT)
+        if not plates:
+            return [], "identity has no reference frames — add one to hold the face"
+
+        # A conditioning image is fetched *by the provider*, from its own network. The
+        # local adapter's `/files/…` is an app route rather than an address, so on a live
+        # backend it is a URL nothing can resolve — and this is precisely the class of bug
+        # that passes on a laptop and fails in Batch. The mock generator fetches nothing,
+        # so it is left alone: refusing there would mean the plate path is never exercised
+        # by the thing the laptop actually runs.
+        if self._backend != "mock" and not getattr(self._storage, "serves_public_urls", True):
+            return [], (
+                "local storage serves app-relative URLs that a provider cannot fetch — "
+                "set RK_STORAGE_BACKEND=b2 to condition on the face"
+            )
+
+        caps = provider.get_capabilities() if hasattr(provider, "get_capabilities") else None
+        if caps is not None:
+            name = type(provider).__name__
+            if not getattr(caps, "accepts_chain_input", False):
+                return [], f"{name} does not accept image inputs — the face is not sent"
+            inputs = getattr(caps, "supported_inputs", None)
+            if inputs and "image" not in inputs:
+                return [], f"{name} takes {', '.join(inputs)} only — the face is not sent"
+
+        plate = plates[0]
+        where = f" ({plate.lighting})" if plate.lighting else ""
+        note = f"identity v{identity.version}{where}"
+        if not plate.sha256:
+            # Not a refusal — it still conditions. But an unhashed input means Genblaze
+            # keys the cache and the manifest off a presigned URL that rotates, so the
+            # provenance record moves under a kit that has not changed.
+            note += " — no content hash, so the manifest hash will not be stable"
+        return plates, note
+
+    def _plate_assets(self, keys: list[str], identity: Any) -> list[Any]:
+        """Turn stored plate keys into fetchable Genblaze assets.
+
+        The URL is presigned at submission time and never persisted, for the same reason
+        `ui.routes.asset_url` derives its URLs at render time: a stored presigned URL is a
+        link that works in the demo and is broken by the time anybody checks.
+
+        `sha256` travels with it whenever the frame has one. Without it Genblaze falls back
+        to hashing the URL, and a rotating URL means the step cache never hits and the
+        manifest's canonical hash changes on every render of an unchanged kit.
+
+        A plate that cannot be presigned is dropped rather than raised on. A broken
+        reference image should cost a kit its likeness conditioning, not its whole run.
+        """
+        if not keys or identity is None:
+            return []
+
+        from genblaze_core.models.asset import Asset as GBAsset
+
+        by_key = {frame.key: frame for frame in identity.reference_frames}
+        assets: list[Any] = []
+        for key in keys:
+            try:
+                url = self._storage.presign_get(key, expires_in=3600)
+            except Exception as exc:
+                log.warning("could not presign plate %s (%s) — sending without it", key, exc)
+                continue
+            frame = by_key.get(key)
+            assets.append(
+                GBAsset(
+                    url=url,
+                    media_type=getattr(frame, "content_type", None) or "image/png",
+                    sha256=getattr(frame, "sha256", None),
+                )
+            )
+        return assets
 
     def plan(self, request: GenerationRequest) -> GenerationPlan:
         """What this run would send, and what it would cost. Spends nothing."""
@@ -296,6 +405,14 @@ class GenblazeGenerator:
                 kwargs["params"] = params
             if shot.negative_prompt:
                 kwargs["negative_prompt"] = shot.negative_prompt
+
+            # The face, as an actual image the provider fetches. Minted here rather than in
+            # `_resolve` because a presigned URL is a short-lived credential and the preview
+            # screen must not be in the business of issuing them — `plan()` runs on every
+            # keystroke of a re-price, and none of those runs is going to generate anything.
+            inputs = self._plate_assets(shot.reference_keys, request.identity)
+            if inputs:
+                kwargs["external_inputs"] = inputs
 
             pipeline = pipeline.step(provider, **kwargs)
             planned.append((shot.modality, model, prompt, rendered_seconds))

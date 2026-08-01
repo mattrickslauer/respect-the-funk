@@ -745,15 +745,29 @@ async def ui_add_reference_frame(
         return _error_fragment(request, exc)
 
     # Same HIERARCHICAL shape as every other object: prefix / tenant / collection.
-    digest = hashlib.sha256(data).hexdigest()[:16]
+    #
+    # The full digest is kept on the frame even though only its first sixteen characters
+    # name the object. A frame handed to a provider as a conditioning image travels into
+    # the step cache key and the manifest's canonical hash, and Genblaze falls back to
+    # hashing the *URL* when the asset carries no hash of its own — which on B2 is
+    # presigned and rotates, so an unhashed plate means a manifest that changes on every
+    # render of a kit nobody edited.
+    digest = hashlib.sha256(data).hexdigest()
+    content_type = file.content_type or "image/png"
     suffix = Path(file.filename or "frame.png").suffix or ".png"
     key = (
         f"{container.settings.key_prefix}/tenants/{principal.tenant_id}"
-        f"/identities/{identity.id}/frames/{digest}{suffix}"
+        f"/identities/{identity.id}/frames/{digest[:16]}{suffix}"
     )
-    container.storage.put(key, data, content_type=file.content_type or "image/png")
+    container.storage.put(key, data, content_type=content_type)
 
-    frame = ReferenceFrame(key=key, lighting=lighting or "neutral", caption=caption or None)
+    frame = ReferenceFrame(
+        key=key,
+        lighting=lighting or "neutral",
+        caption=caption or None,
+        sha256=digest,
+        content_type=content_type,
+    )
     try:
         identity = identities.add_reference_frame(principal, identity_id, frame)
     except ServiceError as exc:

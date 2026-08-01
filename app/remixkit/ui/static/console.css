@@ -170,10 +170,10 @@ body.shell .banner{flex:none}
 .tab-state{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 .tabs{flex:none;display:flex;gap:5px;position:sticky;top:0;z-index:var(--z-sticky);flex-wrap:wrap;
   background:var(--bg);padding-bottom:10px}
-.tabs label{display:flex;flex-direction:row;align-items:center;gap:7px;cursor:pointer;
+.tabs label,.tabs .tab-link{display:flex;flex-direction:row;align-items:center;gap:7px;cursor:pointer;
   font-family:var(--display);font-size:13px;color:var(--ink-3);padding:6px 13px;
   border:1px solid var(--rule);border-radius:6px;background:var(--panel);user-select:none}
-.tabs label:hover{color:var(--ink);border-color:var(--gold-dim)}
+.tabs label:hover,.tabs .tab-link:hover{color:var(--ink);border-color:var(--gold-dim)}
 .count{font-family:var(--body);font-size:11px;color:var(--ink-3);background:var(--bg-2);
   border-radius:10px;padding:1px 7px;min-width:20px;text-align:center}
 .count-blocked{color:var(--warn)}
@@ -757,3 +757,99 @@ dialog.drawer[open]{animation:drawer-in 180ms cubic-bezier(0.2,0.7,0.3,1)}
   box-shadow:var(--lift-1)}
 .asset-acts button:hover{color:var(--ink);border-color:var(--ink-3)}
 .asset-acts .del:hover{color:var(--err);border-color:var(--err)}
+
+
+/* ---- the turntable ----
+   One head you can walk around, instead of six thumbnails you assemble in your own head.
+   The question a reference set has to answer before it is worth conditioning on is "do
+   these look like the same human", and a grid never asked it.
+
+   The zones sit *before* the stage in the DOM because `~` only looks forward. Building it
+   the intuitive way round — pictures first, hotspots over them — is precisely what would
+   have required JavaScript. */
+.turntable{position:relative;border:1px solid var(--rule);border-radius:9px;
+  background:var(--bg-2);overflow:hidden;aspect-ratio:3/4;max-height:62vh;margin-bottom:14px}
+
+/* The hotspots. Above the stage so they receive the pointer, transparent so they are only
+   felt. `pointer-events` stays on; nothing under them is interactive. */
+.tt-zones{position:absolute;inset:0;z-index:var(--z-sticky);
+  display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr)}
+.tt-zone{display:block;cursor:crosshair}
+.tt-zone:focus-visible{outline:1px solid var(--gold-dim);outline-offset:-2px}
+.tt-zone.is-missing{cursor:not-allowed}
+
+.tt-stage{position:absolute;inset:0}
+/* `visibility` as well as opacity so a hidden view is out of the accessibility tree
+   rather than merely transparent over the one being looked at. */
+.tt-view{position:absolute;inset:0;opacity:0;visibility:hidden;transition:opacity 90ms linear;
+  display:flex;align-items:center;justify-content:center}
+.tt-view img{width:100%;height:100%;object-fit:cover}
+
+/* The resting view: front where there is one, otherwise the best-ranked frame there is. */
+.tt-view:first-of-type{opacity:1;visibility:visible}
+.tt-view[data-angle="front"]{opacity:1;visibility:visible}
+
+.tt-gap{background:repeating-linear-gradient(45deg,transparent,transparent 9px,
+  rgba(255,255,255,0.022) 9px,rgba(255,255,255,0.022) 18px)}
+.tt-gap-inner{display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center;
+  padding:18px}
+.tt-gap-inner strong{color:var(--ink-2);font-family:var(--display);font-weight:500}
+
+.tt-label{position:absolute;left:0;right:0;bottom:0;padding:9px 12px;font-size:12px;
+  color:var(--ink-2);background:linear-gradient(to top,rgba(8,7,12,0.86),transparent);
+  text-transform:capitalize;pointer-events:none}
+.tt-name{display:none}
+
+/* The reveal.
+   `:has()` rather than a bare `~` because the hotspots live inside `.tt-zones` and a
+   sibling combinator cannot climb out of a wrapper to reach `.tt-stage`. Flattening the
+   markup instead would mean nine absolutely-positioned spans in place of one grid.
+
+   The reset must be less specific than the per-angle rules and more specific than the
+   resting-view rules, which is why it is written as four classes: it has to beat
+   `.tt-view[data-angle="front"]` and lose to the hover rules below. */
+.tt-zones:hover ~ .tt-stage .tt-view,
+.tt-zones:focus-within ~ .tt-stage .tt-view{opacity:0;visibility:hidden}
+.tt-zones:hover ~ .tt-stage [data-tt-default],
+.tt-zones:focus-within ~ .tt-stage [data-tt-default]{display:none}
+
+.tt-zones:has([data-angle="three-quarter-left"]:hover) ~ .tt-stage .tt-view[data-angle="three-quarter-left"],
+.tt-zones:has([data-angle="three-quarter-left"]:focus-visible) ~ .tt-stage .tt-view[data-angle="three-quarter-left"]{opacity:1;visibility:visible}
+.tt-zones:has([data-angle="three-quarter-left"]:hover) ~ .tt-stage .tt-name[data-angle="three-quarter-left"],
+.tt-zones:has([data-angle="three-quarter-left"]:focus-visible) ~ .tt-stage .tt-name[data-angle="three-quarter-left"]{display:inline}
+.tt-zones:has([data-angle="three-quarter-right"]:hover) ~ .tt-stage .tt-view[data-angle="three-quarter-right"],
+.tt-zones:has([data-angle="three-quarter-right"]:focus-visible) ~ .tt-stage .tt-view[data-angle="three-quarter-right"]{opacity:1;visibility:visible}
+.tt-zones:has([data-angle="three-quarter-right"]:hover) ~ .tt-stage .tt-name[data-angle="three-quarter-right"],
+.tt-zones:has([data-angle="three-quarter-right"]:focus-visible) ~ .tt-stage .tt-name[data-angle="three-quarter-right"]{display:inline}
+.tt-zones:has([data-angle="front"]:hover) ~ .tt-stage .tt-view[data-angle="front"],
+.tt-zones:has([data-angle="front"]:focus-visible) ~ .tt-stage .tt-view[data-angle="front"]{opacity:1;visibility:visible}
+.tt-zones:has([data-angle="front"]:hover) ~ .tt-stage .tt-name[data-angle="front"],
+.tt-zones:has([data-angle="front"]:focus-visible) ~ .tt-stage .tt-name[data-angle="front"]{display:inline}
+.tt-zones:has([data-angle="profile-left"]:hover) ~ .tt-stage .tt-view[data-angle="profile-left"],
+.tt-zones:has([data-angle="profile-left"]:focus-visible) ~ .tt-stage .tt-view[data-angle="profile-left"]{opacity:1;visibility:visible}
+.tt-zones:has([data-angle="profile-left"]:hover) ~ .tt-stage .tt-name[data-angle="profile-left"],
+.tt-zones:has([data-angle="profile-left"]:focus-visible) ~ .tt-stage .tt-name[data-angle="profile-left"]{display:inline}
+.tt-zones:has([data-angle="profile-right"]:hover) ~ .tt-stage .tt-view[data-angle="profile-right"],
+.tt-zones:has([data-angle="profile-right"]:focus-visible) ~ .tt-stage .tt-view[data-angle="profile-right"]{opacity:1;visibility:visible}
+.tt-zones:has([data-angle="profile-right"]:hover) ~ .tt-stage .tt-name[data-angle="profile-right"],
+.tt-zones:has([data-angle="profile-right"]:focus-visible) ~ .tt-stage .tt-name[data-angle="profile-right"]{display:inline}
+.tt-zones:has([data-angle="back"]:hover) ~ .tt-stage .tt-view[data-angle="back"],
+.tt-zones:has([data-angle="back"]:focus-visible) ~ .tt-stage .tt-view[data-angle="back"]{opacity:1;visibility:visible}
+.tt-zones:has([data-angle="back"]:hover) ~ .tt-stage .tt-name[data-angle="back"],
+.tt-zones:has([data-angle="back"]:focus-visible) ~ .tt-stage .tt-name[data-angle="back"]{display:inline}
+
+/* A tab that navigates rather than switching a pane. Styled identically to its
+   radio-driven siblings, because from the reader's side it is the same control — the
+   difference is that its content is a whole workspace and does not belong in a pane. */
+.tab-link{text-decoration:none}
+
+/* ---- identity lines ----
+   One per face this roster entry has. A band is one artist with several; before these
+   existed, whoever was described last became the artist's face for every kit. */
+.lines{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.line{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:99px;
+  border:1px solid var(--rule);background:var(--bg-2);color:var(--ink-2);font-size:13px;
+  text-decoration:none;cursor:pointer}
+.line:hover{border-color:var(--ink-3);color:var(--ink)}
+.line.is-on{border-color:var(--gold);color:var(--ink);background:var(--panel-2)}
+.line-add{color:var(--ink-3);border-style:dashed}

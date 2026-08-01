@@ -60,26 +60,25 @@
        swap and what is allowed to differ per page. #}
     <input type="radio" name="rk-pane" id="pane-1" class="tab-state" checked>
     <input type="radio" name="rk-pane" id="pane-2" class="tab-state">
-    <input type="radio" name="rk-pane" id="pane-3" class="tab-state">
 
     <nav class="tabs">
       <label for="pane-1">Songs <span class="count">{{ songs|length }}</span></label>
       <label for="pane-2">Kits <span class="count">{{ kits|length }}</span></label>
-      <label for="pane-3">Identity
+      {# Identity is a link, not a pane.
+         It was a summary card whose only real content was a button to the builder — a
+         tab that costs a click to tell you to click again. The builder is a full
+         workspace of its own now, so the tab goes straight there and the artist page
+         stops carrying a second, staler view of the same record. #}
+      <a class="tab-link" href="/console/artists/{{ artist.id }}/identity">
+        Identity
         {% if identity %}<span class="count">v{{ identity.version }}</span>
-        {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
+        {% else %}<span class="count count-blocked">!</span>{% endif %}
+      </a>
     </nav>
 
     <div class="panes">
       <div class="pane-1">{% include "components/_songs.html" %}</div>
       <div class="pane-2">{% include "components/_kits.html" %}</div>
-      {# A summary, not a second form.
-
-         This pane used to include the identity builder itself, so the console carried two
-         editable copies of one record — and because saving mints a version, two people on
-         two screens could each be looking at a form that was current when it rendered.
-         The builder is one place now; this says what is in there and sends you to it. #}
-      <div class="pane-3">{% include "components/_identity_summary.html" %}</div>
     </div>
   </div>
 

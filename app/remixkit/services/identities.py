@@ -42,10 +42,39 @@ class IdentityService:
         ]
         return sorted(identities, key=lambda i: i.version, reverse=True)
 
-    def current(self, principal: Principal, artist_id: str) -> Identity | None:
-        """The highest version. What generation uses unless told otherwise."""
-        identities = self.list_for_artist(principal, artist_id)
-        return identities[0] if identities else None
+    def lines(self, principal: Principal, artist_id: str) -> dict[str, list[Identity]]:
+        """Every identity line this artist has, newest version of each first.
+
+        A band is one roster entry with several faces in it. Before lines existed, whoever
+        was described last became the artist's face for every kit — not an awkward
+        representation of a four-piece but no representation of one at all.
+
+        The primary line (`name == ""`) sorts first when it exists, because it is what a
+        solo artist has and what every identity stored before this field did.
+        """
+        grouped: dict[str, list[Identity]] = {}
+        for identity in self.list_for_artist(principal, artist_id):
+            grouped.setdefault(identity.name.strip(), []).append(identity)
+        return {key: grouped[key] for key in sorted(grouped, key=lambda n: (n != "", n.lower()))}
+
+    def current(
+        self, principal: Principal, artist_id: str, name: str | None = None
+    ) -> Identity | None:
+        """The highest version of one line. What generation uses unless told otherwise.
+
+        `name=None` means the primary line, falling back to whichever line exists if there
+        is no primary one — an artist whose only identity is called "Amanda" should not
+        generate as though they had none. Passing a name that has no versions returns
+        `None` rather than silently substituting a different person's face, which is the
+        one substitution this method must never make.
+        """
+        lines = self.lines(principal, artist_id)
+        if not lines:
+            return None
+        if name is not None:
+            versions = lines.get(name.strip())
+            return versions[0] if versions else None
+        return next(iter(lines.values()))[0]
 
     def get(self, principal: Principal, identity_id: str) -> Identity:
         identity = self._repo.get(principal.tenant_id, COLLECTION, identity_id, Identity)
@@ -65,8 +94,13 @@ class IdentityService:
         presentation: Presentation | None = None,
         build: BodyBuild | None = None,
         height: HeightBand | None = None,
+        name: str = "",
     ) -> Identity:
-        previous = self.current(principal, artist_id)
+        # Versions count within their line, not across the artist. A band's second member
+        # starts at v1; without this, adding a face to a four-piece would number itself
+        # after somebody else's revisions and the history would read as one person's.
+        name = (name or "").strip()
+        previous = self.current(principal, artist_id, name)
 
         def carried(given, attribute, empty):
             """A value the caller omitted is inherited; one they cleared is honoured.
@@ -84,6 +118,7 @@ class IdentityService:
         identity = Identity(
             tenant_id=principal.tenant_id,
             artist_id=artist_id,
+            name=name,
             version=(previous.version + 1) if previous else 1,
             structural_features=structural_features or (previous.structural_features if previous else None),
             wardrobe=wardrobe if wardrobe is not None else (previous.wardrobe if previous else []),
@@ -169,6 +204,7 @@ class IdentityService:
         return self.create_version(
             principal,
             source.artist_id,
+            name=source.name,
             structural_features=source.structural_features,
             wardrobe=list(source.wardrobe),
             negatives=list(source.negatives),

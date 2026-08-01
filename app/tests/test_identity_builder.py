@@ -16,6 +16,8 @@ all three failures it had were failures of *visibility*:
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from remixkit.domain.models import (
@@ -456,3 +458,155 @@ def test_nothing_reaches_for_a_bare_z_index():
     body = css.split("}", 1)[1]  # everything after the :root token block
     bare = re.findall(r"z-index:\s*(?!var\()([^;}]+)", body)
     assert not bare, f"z-index values not on the scale: {bare}"
+
+
+# ------------------------------------------------------------------ the turntable
+@pytest.fixture
+def five_of_six(client, container, principal, artist):
+    """Amanda Kurt's actual reference set: every class except the back of her head."""
+    record = container.identities.create_version(principal, artist["id"], structural_features="x")
+    for angle in (
+        "three-quarter-left", "three-quarter-right", "front", "profile-left", "profile-right"
+    ):
+        client.post(
+            f"/ui/identities/{record.id}/frames",
+            files={"file": (f"{angle}.png", b"\x89PNG" + angle.encode(), "image/png")},
+            data={"angle": angle, "lighting": "neutral"},
+        )
+    return container.identities.current(principal, artist["id"])
+
+
+def test_the_turntable_renders_one_view_per_covered_class(client, artist, five_of_six):
+    """One head you can walk around, rather than six thumbnails you assemble yourself.
+
+    The question a reference set has to answer before it is worth conditioning on is "do
+    these look like the same human", and a grid never asked it.
+    """
+    page = client.get(f"/console/artists/{artist['id']}/identity").text
+
+    assert 'class="turntable"' in page
+    assert len(re.findall(r'class="tt-view" data-angle', page)) == 5
+    assert len(re.findall(r'class="tt-zone[^"]*" *\n? *data-angle', page)) == 9, "a 3×3 of hotspots"
+
+
+def test_a_class_with_no_frame_is_felt_not_just_counted(client, artist, five_of_six):
+    """Amanda has five of six. The sixth is findable today only by reading a count —
+    here the head simply stops turning when you walk behind it."""
+    page = client.get(f"/console/artists/{artist['id']}/identity").text
+
+    assert "No back frame" in page
+    assert re.search(r'class="tt-zone is-missing"\s+data-angle="back"', page), (
+        "the cell you walk to must be marked as uncovered, not merely blank"
+    )
+
+
+def test_the_turntable_is_absent_until_there_is_something_to_turn(client, artist, container, principal):
+    container.identities.create_version(principal, artist["id"], structural_features="x")
+    page = client.get(f"/console/artists/{artist['id']}/identity").text
+    assert 'class="turntable"' not in page
+
+
+# ------------------------------------------------------------------ identity lines
+def test_an_artist_can_have_several_faces(client, container, principal, artist):
+    """A band is one roster entry with several. Before lines existed, whoever was
+    described last became the artist's face for every kit."""
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"structural_features": "singer"})
+    client.post(
+        f"/ui/artists/{artist['id']}/identity",
+        data={"name": "Session drummer", "structural_features": "drummer"},
+    )
+
+    lines = container.identities.lines(principal, artist["id"])
+    assert set(lines) == {"", "Session drummer"}
+    assert container.identities.current(principal, artist["id"], "Session drummer").version == 1
+
+
+def test_versions_count_within_their_line(client, container, principal, artist):
+    """A band's second member starts at v1. Numbering across the artist would file one
+    member's revisions under another member's history."""
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"structural_features": "a"})
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"structural_features": "b"})
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"name": "Drummer", "structural_features": "c"})
+
+    assert container.identities.current(principal, artist["id"]).version == 2
+    assert container.identities.current(principal, artist["id"], "Drummer").version == 1
+
+
+def test_the_primary_line_is_what_generation_uses(client, container, principal, artist):
+    """`current()` with no name must keep meaning what it meant, or adding a band member
+    would silently change whose face every existing kit renders."""
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"structural_features": "singer"})
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"name": "Drummer", "structural_features": "drummer"})
+
+    assert container.identities.current(principal, artist["id"]).structural_features == "singer"
+
+
+def test_a_line_that_does_not_exist_is_none_not_somebody_else(container, principal, artist, client):
+    """The one substitution this must never make."""
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"structural_features": "singer"})
+    assert container.identities.current(principal, artist["id"], "Nobody") is None
+
+
+def test_each_line_keeps_its_own_frames(client, container, principal, artist):
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"structural_features": "singer"})
+    primary = container.identities.current(principal, artist["id"])
+    client.post(
+        f"/ui/identities/{primary.id}/frames",
+        files={"file": ("f.png", b"\x89PNGsinger", "image/png")},
+        data={"angle": "front", "lighting": "neutral"},
+    )
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"name": "Drummer"})
+
+    assert len(container.identities.current(principal, artist["id"]).reference_frames) == 1
+    assert container.identities.current(principal, artist["id"], "Drummer").reference_frames == []
+
+
+def test_saving_stays_on_its_line(client, container, principal, artist):
+    """The form carries its line. Without it every save lands on the primary, so editing
+    a band member would silently mint a version of somebody else."""
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"name": "Drummer", "structural_features": "a"})
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"name": "Drummer", "structural_features": "b"})
+
+    assert container.identities.current(principal, artist["id"], "Drummer").version == 2
+    assert container.identities.current(principal, artist["id"]) is not None
+    assert container.identities.lines(principal, artist["id"]).keys() == {"Drummer"}
+
+
+def test_restoring_stays_on_its_line(client, container, principal, artist):
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"name": "Drummer", "structural_features": "a"})
+    first = container.identities.current(principal, artist["id"], "Drummer")
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"name": "Drummer", "structural_features": "b"})
+
+    restored = container.identities.restore_version(principal, first.id)
+
+    assert restored.name == "Drummer"
+    assert restored.version == 3
+    assert restored.structural_features == "a"
+
+
+def test_the_builder_switches_between_lines(client, container, principal, artist):
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"structural_features": "singer"})
+    client.post(f"/ui/artists/{artist['id']}/identity", data={"name": "Drummer", "structural_features": "drummer"})
+
+    page = client.get(f"/console/artists/{artist['id']}/identity?line=Drummer").text
+    assert "<h1>Drummer</h1>" in page
+    assert 'href="/console/artists/%s/identity?line="' % artist["id"] in page, "the primary is reachable"
+
+
+def test_creating_a_line_lands_on_it(client, artist):
+    """Otherwise the modal closes over a page still showing whoever was being edited."""
+    response = client.post(
+        f"/ui/artists/{artist['id']}/identity", data={"name": "Drummer", "redirect": "1"}
+    )
+    assert response.headers["HX-Redirect"].endswith("/identity?line=Drummer")
+
+
+# ------------------------------------------------------------------ the way in
+def test_the_artist_page_links_straight_to_the_builder(client, artist):
+    """The Identity tab was a summary card whose only real content was a button to the
+    builder — a tab that costs a click to tell you to click again."""
+    page = client.get(f"/console/artists/{artist['id']}").text
+
+    assert f'class="tab-link" href="/console/artists/{artist["id"]}/identity"' in page
+    assert "Open the identity builder" not in page
+    assert page.count('name="structural_features"') == 0, "still exactly one editable copy"

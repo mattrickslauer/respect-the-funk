@@ -335,6 +335,29 @@ declares a five-step elevation scale (`--z-sticky` … `--z-lightbox`) and every
 the file is one of them — a test asserts no bare integers, because the failure mode of
 stacking is invisible until two things collide and the fix is a bigger number, forever.
 
+**A turntable, not a contact sheet.** The reference set renders as one image at full size
+with a 3×3 grid of hotspots over it, so moving the pointer turns the head: horizontal
+movement rotates, and the top row is the far side. A grid of thumbnails asks you to
+assemble a person out of six pictures in your own head; the turntable does the assembling,
+which turns "do these look like the same human" from something you reason about into
+something you see. That is the question a reference set has to answer before it is worth
+conditioning on, and nothing in the console asked it.
+
+An uncovered class shows a gap panel rather than nothing — so a missing back-of-head is
+*felt*, as the head refusing to turn, instead of being findable only by reading a count.
+It is pure CSS: the hotspots sit before the stage in the DOM and `:has()` does the reveal,
+because a sibling combinator only looks forward and building it the intuitive way round
+(pictures first) is exactly what would have needed JavaScript.
+
+**Several faces per artist.** An `Artist` is a roster entry, and a band is one entry with
+four faces in it. `Identity.name` is the *line*; versions count within their line, so a
+band's second member starts at v1 rather than being numbered after somebody else's
+revisions. The empty name is the primary line — what every solo artist has and what every
+identity stored before the field existed is — and `current()` with no name still returns
+it, so adding a member cannot silently change whose face existing kits render. Asking for a
+line that has no versions returns `None` rather than substituting a different person, which
+is the one substitution that must never happen.
+
 **Full CRUD.** Frames can be removed, not just added — a mis-classified upload used to be
 permanent, and a profile filed as a front kept winning the one conditioning slot for every
 kit afterwards. Versions can be approved, deleted, and restored. Restoring *copies forward*

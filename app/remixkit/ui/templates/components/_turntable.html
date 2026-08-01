@@ -1,0 +1,78 @@
+{# The reference set as one head you can walk around.
+
+   A grid of thumbnails asks you to assemble a person out of six pictures in your own head.
+   A turntable does the assembling: one image at full size, and the view changes with the
+   pointer, so "do these six stills look like the same human" becomes something you can see
+   rather than something you have to reason about. That is the actual question a reference
+   set has to answer before it is worth conditioning on, and nothing in the console asked
+   it.
+
+   The 3×3 is a map of where you are standing relative to the artist:
+
+       profile-left   |   back    |  profile-right     ← you have walked round behind
+       3/4-left       |   front   |  3/4-right
+       3/4-left       |   front   |  3/4-right         ← you are in front of them
+
+   So horizontal movement turns them and moving up walks around them. The bottom two rows
+   repeat on purpose: most of the pointer's travel should land on the views that are
+   actually used for conditioning, and the back of a head earns one row, not three.
+
+   Pure CSS. The hover zones are siblings *before* the stacked views, which is what lets
+   `:hover ~` reach them — a sibling combinator only looks forward, and building this the
+   intuitive way round (pictures first) is why it would otherwise need JavaScript. #}
+
+{% set grid = [
+  ("profile-left", "back", "profile-right"),
+  ("three-quarter-left", "front", "three-quarter-right"),
+  ("three-quarter-left", "front", "three-quarter-right"),
+] %}
+{% set coverage = identity.coverage %}
+{% set by_angle = {} %}
+{% for angle, frames in coverage.items() %}
+  {% if frames %}{% set _ = by_angle.update({angle.value: frames[0]}) %}{% endif %}
+{% endfor %}
+
+<div class="turntable">
+  {# Zones first — see the note above about sibling order. #}
+  <div class="tt-zones">
+    {% for row in grid %}
+      {% for angle in row %}
+        <span class="tt-zone{{ ' is-missing' if angle not in by_angle }}"
+              data-angle="{{ angle }}"
+              tabindex="0"
+              aria-label="View {{ angle.replace('-', ' ') }}"></span>
+      {% endfor %}
+    {% endfor %}
+  </div>
+
+  <div class="tt-stage">
+    {% for angle_value, frame in by_angle.items() %}
+      <figure class="tt-view" data-angle="{{ angle_value }}">
+        <img src="{{ asset_url(frame) }}" alt="{{ angle_value.replace('-', ' ') }}" loading="lazy">
+      </figure>
+    {% endfor %}
+
+    {# One panel per missing class rather than a blank stage. Amanda Kurt has five of six,
+       and the sixth is only findable today by reading a count — here you feel it: the head
+       stops turning when you walk behind it. #}
+    {% for angle, frames in coverage.items() %}
+      {% if not frames %}
+        <figure class="tt-view tt-gap" data-angle="{{ angle.value }}">
+          <div class="tt-gap-inner">
+            <strong>No {{ angle.label }} frame</strong>
+            <span class="hint">this view is not covered</span>
+            <button class="btn-ghost" type="button" data-open="add-frame">Add one</button>
+          </div>
+        </figure>
+      {% endif %}
+    {% endfor %}
+
+    <div class="tt-label">
+      <span data-tt-default>{{ identity.covered_angles }}/{{ coverage|length }} classes ·
+        move the pointer to turn</span>
+      {% for angle in coverage %}
+        <span class="tt-name" data-angle="{{ angle.value }}">{{ angle.label }}</span>
+      {% endfor %}
+    </div>
+  </div>
+</div>

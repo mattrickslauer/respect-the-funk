@@ -23,11 +23,27 @@
       <a href="/console">Roster</a> /
       <a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a>
     </p>
-    <h1>Identity</h1>
+    <h1>{{ identity.display_name if identity else "Identity" }}</h1>
     {% if identity %}
       {% with state = identity.approval %}{% include "components/_badge.html" %}{% endwith %}
     {% endif %}
   </div>
+
+  {# The identity lines — one per face this roster entry has. A band is one artist with
+     four of them, and before this the console had no way to say so: whoever was described
+     last became the artist's face for every kit. #}
+  {% if lines %}
+    <nav class="lines" aria-label="Identity lines">
+      {% for name, versions in lines.items() %}
+        <a class="line {{ 'is-on' if identity and identity.name.strip() == name }}"
+           href="/console/artists/{{ artist.id }}/identity?line={{ name|urlencode }}">
+          {{ versions[0].display_name }}
+          <span class="hint">v{{ versions[0].version }}</span>
+        </a>
+      {% endfor %}
+      <button class="line line-add" type="button" data-open="new-line">+ Add a face</button>
+    </nav>
+  {% endif %}
 
   <dl class="stats">
     <div class="stat">
@@ -102,6 +118,12 @@
       </p>
 
       {% if identity %}
+        {# One head you can walk around, above the classed grid rather than instead of it.
+           The turntable answers "do these look like the same human"; the grid answers
+           "what have we got and what is missing". Neither replaces the other. #}
+        {% if identity.reference_frames %}
+          {% include "components/_turntable.html" %}
+        {% endif %}
         <div id="frames">{% include "components/_frames.html" %}</div>
       {% else %}
         <p class="empty">Save an identity first — frames attach to a version.</p>
@@ -176,6 +198,36 @@
     <div class="sheet-foot">
       <form method="dialog"><button class="btn btn-quiet">Cancel</button></form>
       <button class="btn btn-primary" type="submit" form="add-frame-form">Add frame</button>
+    </div>
+  </dialog>
+
+  {# ---- layer: modal — a new face ----
+     Its own line, starting at v1. The name is the only required field because everything
+     else is what the builder is for; this modal exists to create the line, not to fill
+     it in. #}
+  <dialog class="sheet" id="new-line">
+    <form method="dialog" class="sheet-head">
+      <h3>Add a face</h3>
+      <button class="sheet-x" aria-label="Close">×</button>
+    </form>
+    <div class="sheet-body">
+      <p class="hint">
+        A band is one roster entry with several faces in it. Each line has its own
+        versions, its own reference frames, and its own compiled prompt.
+      </p>
+      <form class="form" id="new-line-form"
+            hx-post="/ui/artists/{{ artist.id }}/identity">
+        {# Creating a line should land you on it — otherwise the modal closes and the
+           page still shows whoever you were editing before. #}
+        <input type="hidden" name="redirect" value="1">
+        <label>Name <span class="hint">how this member is referred to</span>
+          <input name="name" required placeholder="e.g. the drummer, or their name">
+        </label>
+      </form>
+    </div>
+    <div class="sheet-foot">
+      <form method="dialog"><button class="btn btn-quiet">Cancel</button></form>
+      <button class="btn btn-primary" type="submit" form="new-line-form">Create line</button>
     </div>
   </dialog>
 

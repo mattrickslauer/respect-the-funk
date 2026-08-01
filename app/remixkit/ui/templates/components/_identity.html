@@ -29,6 +29,10 @@
         hx-target="#identity"
         hx-swap="outerHTML">
 
+    {# Which face this save belongs to. Without it every save lands on the primary line,
+       so editing a band member would silently mint a version of somebody else. #}
+    <input type="hidden" name="name" value="{{ identity.name if identity else "" }}">
+
     {# --- the standardised part -------------------------------------------------
        Three enums where there used to be prose. This is the compression argument in
        practice: "feminine athletic tall build" is four words that survive any truncation

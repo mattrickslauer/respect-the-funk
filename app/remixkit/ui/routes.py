@@ -20,6 +20,7 @@ import hashlib
 import logging
 import re
 from pathlib import Path
+from urllib.parse import quote
 
 from typing import Annotated, Any
 
@@ -302,24 +303,39 @@ def identity_page(
     principal: CurrentPrincipal,
     artists: Artists,
     identities: Identities,
+    line: str | None = None,
 ):
     """The identity builder as its own surface — wireframe gap #1.
 
     The domain model has carried `reference_frames` since it was written and nothing
     could create one, so an identity was text-only in practice. This is the screen that
     closes that.
+
+    `line` selects which face is being edited. An artist is a roster entry, and a band is
+    one entry with several faces in it; `None` means the primary line. An unknown line
+    falls through to `current`'s own fallback rather than 404ing, because a stale link
+    should land you on a person rather than on an error.
     """
     try:
         artist = artists.get(principal, artist_id)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    lines = identities.lines(principal, artist_id)
+    identity = identities.current(principal, artist_id, line) or identities.current(
+        principal, artist_id
+    )
     return _render(
         request,
         "pages/identity.html",
         artist=artist,
         artist_id=artist.id,
-        identity=identities.current(principal, artist_id),
-        identities=identities.list_for_artist(principal, artist_id),
+        identity=identity,
+        lines=lines,
+        # The versions of the line on screen. History is per line because versions count
+        # per line — showing the artist's whole stack here would list one member's
+        # revisions under another member's name.
+        identities=lines.get(identity.name.strip(), []) if identity else [],
     )
 
 
@@ -658,6 +674,8 @@ def ui_save_identity(
     presentation: str = Form(""),
     build: str = Form(""),
     height: str = Form(""),
+    name: str = Form(""),
+    redirect: str = Form(""),
 ):
     def split(raw: str) -> list[str]:
         return [p.strip() for p in raw.split(",") if p.strip()]
@@ -685,9 +703,20 @@ def ui_save_identity(
             presentation=enum_or_none(Presentation, presentation),
             build=enum_or_none(BodyBuild, build),
             height=enum_or_none(HeightBand, height),
+            name=name,
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)
+
+    if redirect:
+        # Creating a line should land on it. Swapping the form in place would close the
+        # modal over a page still showing whoever was being edited before.
+        response = HTMLResponse("")
+        response.headers["HX-Redirect"] = (
+            f"/console/artists/{artist_id}/identity?line={quote(identity.name)}"
+        )
+        return response
+
     return _render(
         request,
         "components/_identity.html",

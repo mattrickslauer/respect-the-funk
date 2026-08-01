@@ -338,6 +338,17 @@ class Identity(Base):
 
     id: str = Field(default_factory=lambda: new_id("idn"))
     artist_id: str
+    # Which *person* this describes, when the artist is not one person.
+    #
+    # An `Artist` is a roster entry — a band is one entry with four faces in it, and until
+    # now the model said an artist had one appearance and a stack of revisions to it. That
+    # made a four-piece unrepresentable rather than merely awkward: whoever was described
+    # last became the artist's face for every kit.
+    #
+    # So an identity belongs to a *line*, and versions count within their line. Empty is
+    # the primary line — what every identity stored before this field existed is, and what
+    # a solo artist never has to think about.
+    name: str = ""
     version: int = 1
     structural_features: str | None = None  # face structure held invariant
     wardrobe: list[str] = Field(default_factory=list)
@@ -440,6 +451,11 @@ class Identity(Base):
 
     def negative_fragment(self) -> str:
         return ", ".join(self.negatives)
+
+    @property
+    def display_name(self) -> str:
+        """What to call this line on screen. The primary line has no name and needs one."""
+        return self.name.strip() or "Primary"
 
     def plates(self, limit: int = 1) -> list[ReferenceFrame]:
         """The frames worth *sending* — the conditioning images, not the whole upload set.

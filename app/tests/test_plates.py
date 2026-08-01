@@ -975,3 +975,94 @@ def test_both_stages_swap_when_configured(
     assert clip.prelude is not None
     assert clip.prelude.model == "bria-fibo-edit"
     assert clip.prelude.reference_keys == ["remixkit/frames/a.png"]
+
+
+# ------------------------------------------------------------------ payload shapes
+def test_the_bria_family_sends_images_as_an_array():
+    """GMI rejected the singular form by name:
+
+        bria-fibo-edit -> 400: invalid payload parameters: images (Required parameter is
+        missing)
+
+    The connector ships a family for `bria-genfill`/`bria-eraser` only; everything else
+    Bria publishes lands on the permissive fallback and goes out as `image`. A rejection
+    that names the missing parameter is the one source that cannot be wrong about it.
+    """
+    from genblaze_core.models.asset import Asset as GBAsset
+    from genblaze_gmicloud import GMICloudImageProvider
+
+    from remixkit.adapters import pricing
+
+    registry = pricing.priced_registry(GMICloudImageProvider)
+    one = GBAsset(url="https://b2/a.png", media_type="image/png", sha256="a" * 64)
+
+    assert registry.get("bria-fibo-edit").input_mapping([one]) == {"images": ["https://b2/a.png"]}
+    # The connector's own inpaint family is more specific and must not be overridden.
+    assert registry.get("bria-genfill").input_mapping([one]) == {"image": "https://b2/a.png"}
+
+
+def test_an_array_slot_carries_the_whole_reference_set():
+    """A slot that takes a list is a multi-reference slot, which is what a likeness needs
+    and what `RK_REFERENCE_SLOT` was holding out for — except this one came from the
+    vendor rather than from a guess."""
+    from genblaze_core.models.asset import Asset as GBAsset
+    from genblaze_gmicloud import GMICloudImageProvider
+
+    from remixkit.adapters import pricing
+
+    registry = pricing.priced_registry(GMICloudImageProvider)
+    frames = [
+        GBAsset(url=f"https://b2/{n}.png", media_type="image/png", sha256=n * 64)
+        for n in ("a", "b", "c")
+    ]
+
+    assert registry.get("bria-fibo-edit").input_mapping(frames) == {
+        "images": ["https://b2/a.png", "https://b2/b.png", "https://b2/c.png"]
+    }
+
+
+def test_a_model_with_an_array_slot_gets_the_whole_classed_set(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """Per model rather than per deployment: how many references travel is a property of
+    the model, and one positional slot still gets one whatever the setting says."""
+    from remixkit.domain.models import FrameAngle, ReferenceFrame
+
+    frames = [
+        ReferenceFrame(
+            key=f"remixkit/frames/{angle.value}.png", angle=angle,
+            sha256=angle.value.ljust(64, "0")[:64], content_type="image/png",
+        )
+        for angle in (FrameAngle.FRONT, FrameAngle.THREE_QUARTER_LEFT, FrameAngle.PROFILE_RIGHT)
+    ]
+    container.identities.create_version(principal, artist.id, reference_frames=frames)
+    monkeypatch.setattr(container.generator, "_edit_model", "bria-fibo-edit")
+    monkeypatch.setattr(container.generator, "_video_edit_model", "kling-o1-image-to-video")
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="performance"
+    )
+    still = plan.shots[0].prelude
+
+    assert len(still.reference_keys) == 3, "an array slot should carry the whole set"
+    assert "3 references" in still.plate_note
+
+
+def test_a_single_slot_model_still_gets_one(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    from remixkit.adapters import providers as provider_table
+
+    container.identities.create_version(
+        principal, artist.id,
+        reference_frames=[frame("a", "neutral"), frame("b", "warm")],
+    )
+    monkeypatch.setattr(container.generator, "_edit_model", "seededit-3-0-i2i-250628")
+    monkeypatch.setattr(container.generator, "_video_edit_model", "kling-o1-image-to-video")
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="performance"
+    )
+
+    assert not provider_table.takes_multiple_references("seededit-3-0-i2i-250628")
+    assert len(plan.shots[0].prelude.reference_keys) == 1

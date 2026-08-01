@@ -329,7 +329,7 @@ class GenblazeGenerator:
             shot,
             request,
             image_provider,
-            limit=self._reference_limit,
+            limit=self._references_for(model),
             model=model,
             modality=Modality.IMAGE,
         )
@@ -443,6 +443,19 @@ class GenblazeGenerator:
         so a wrong guess is visible in the record rather than only in the output.
         """
         return self._reference_max if self._reference_slot else 1
+
+    def _references_for(self, model: str | None) -> int:
+        """How many frames this particular model will actually take.
+
+        Per model rather than per deployment, because it is a property of the model. Bria's
+        fibo family declares an `images` array — confirmed by the vendor rejecting the
+        singular form — so the whole classed reference set can condition one still, which
+        is the strongest likeness signal available without training. A model with one
+        positional slot still gets one, whatever the setting says.
+        """
+        if provider_table.takes_multiple_references(model):
+            return self._reference_max
+        return self._reference_limit
 
     @staticmethod
     def _accepts_images(provider: Any) -> tuple[bool, str | None]:

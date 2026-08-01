@@ -601,6 +601,45 @@ refused by the 500¢ `RK_MAX_RUN_CENTS` ceiling. Reconcile the real rate against
 invoice and register it in `adapters/pricing.PRICE_BOOK` — the same discipline every other
 model in that table went through. Until then, the refusal is the system working.
 
+### Payload shapes the connector does not ship
+
+Genblaze routes input assets per model family, and a model with no matching family falls
+through to a permissive fallback emitting `{"image": <url>}`. When the vendor wants
+something else the request is rejected — or accepted and ignored.
+
+`adapters/model_families.py` corrects those, and every entry is **evidence rather than
+inference**. That distinction is why the module exists: two earlier attempts guessed a slug
+and a slot name from the connector's `example_slugs` and both failed in production. A
+rejection that names the missing parameter cannot be wrong about it.
+
+```
+bria-fibo-edit -> 400: invalid payload parameters: images (Required parameter is missing)
+```
+
+So Bria's fibo family takes `images` as an **array**, and the connector ships a family for
+`bria-genfill`/`bria-eraser` only. Registered on the same forked registry as the prices,
+checked before the connector's own, and never overriding a more specific shipped family.
+
+That array is also the multi-reference answer `RK_REFERENCE_SLOT` was waiting for on this
+model — a slot taking a list is a slot taking several references, which is what a likeness
+needs. So the reference count is a property of the *model*: `bria-fibo-edit` gets the whole
+classed set, `seededit-3-0-i2i-250628` gets one, whatever the setting says.
+
+### Live re-pricing
+
+Every control on the generate form changes what a run costs, and a page that only tells you
+after a reload is a page people stop reading. The form re-prices itself with htmx on any
+change — still a GET to the same handler, so the estimate is still the server's answer and
+there is no second implementation of the arithmetic.
+
+Two regions swap: the plan, and the pagebar stats out-of-band, because the estimate lives
+outside the scrolling area on purpose — the number that decides whether to press the button
+must not scroll away from it.
+
+The debounce is on text inputs only. A tick or a radio is a finished decision; a prompt
+being typed is not, and re-pricing per keystroke would be a request per character for an
+answer nobody is reading yet.
+
 ### `RK_REFERENCE_SLOT`
 
 Sending several reference frames in one call is the standard zero-shot way to hold a

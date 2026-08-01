@@ -244,6 +244,19 @@ REFERENCE_MODEL_CANDIDATES: dict[Modality, tuple[str, ...]] = {
 }
 
 
+# Models whose reference slot is an *array*, so several frames reach the wire rather than
+# one. Confirmed for Bria by GMI's own rejection naming `images` — see
+# `adapters/model_families`. This is the answer `RK_REFERENCE_SLOT` was holding out for on
+# these models, and unlike a guessed slug it came from the vendor.
+MULTI_REFERENCE: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^bria-(?!genfill$|eraser$)", re.IGNORECASE),
+)
+
+
+def takes_multiple_references(model: str | None) -> bool:
+    return bool(model) and any(p.search(model) for p in MULTI_REFERENCE)
+
+
 def honours_reference(model: str | None, modality: Modality = Modality.IMAGE) -> bool:
     """Would this model actually look at an image it is handed?
 

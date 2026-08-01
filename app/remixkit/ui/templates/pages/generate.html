@@ -31,7 +31,7 @@
     <h1>Generate a kit</h1>
   </div>
 
-  <dl class="stats">
+  <dl class="stats" id="plan-stats">
     <div class="stat">
       <dt>Estimate</dt>
       {# Shots and provider calls are different numbers once a shot has two stages, and
@@ -101,7 +101,7 @@
 
 <div class="deck deck-r">
   <div class="workarea">
-    <div class="stack">
+    <div class="stack" id="plan-body">
       <section class="panel">
         <div class="panel-head">
           <h3>What this will buy</h3>
@@ -118,7 +118,30 @@
         {# `id` so the per-shot prompt and model fields below can join this form with
            `form="repricer"` while living inside the step cards they belong to. Nesting
            them here instead would put the plan's controls somewhere other than the plan. #}
-        <form class="form" method="get" id="repricer">
+        {# Live re-pricing.
+
+           Every control on this form changes what a run costs, and a page that only tells
+           you after a reload is a page people stop reading. The request is still a GET to
+           this same handler, so the estimate remains the server's answer and there is no
+           second implementation of the arithmetic — htmx swaps two regions of the response
+           in rather than repainting the document.
+
+           `#plan-stats` rides along out-of-band because the estimate lives in the pagebar,
+           which is deliberately outside the scrolling area: the number that decides
+           whether to press the button must not be able to scroll away from it.
+
+           The debounce is on text inputs only. A tick or a radio is a finished decision;
+           a prompt being typed is not, and re-pricing per keystroke would be a request per
+           character for an answer nobody is reading yet. #}
+        <form class="form" method="get" id="repricer"
+              hx-get="{{ request.url.path }}"
+              hx-trigger="change, keyup changed delay:600ms from:(#repricer textarea, #repricer input[type=text], #repricer input[type=number])"
+              hx-target="#plan-body"
+              hx-select="#plan-body"
+              hx-swap="outerHTML"
+              hx-select-oob="#plan-stats"
+              hx-push-url="true"
+              hx-indicator="#repricing">
           {# --- which format ---
              What this app could generate used to be one hardcoded opinion, so there was
              nothing to choose. A format carries its own prompt, negatives, length policy
@@ -161,7 +184,10 @@
               <input name="budget_cents" type="number" min="0" step="1"
                      value="{{ budget_cents if budget_cents is not none else '' }}">
             </label>
+            {# Kept for keyboard submits and for a browser with htmx unavailable — the
+               form is a working GET either way. It is no longer how the page updates. #}
             <button class="btn btn-quiet" type="submit">Re-price</button>
+            <span id="repricing" class="repricing" aria-live="polite">pricing…</span>
           </div>
 
           {# --- who is in it ---

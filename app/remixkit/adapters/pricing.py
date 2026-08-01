@@ -223,7 +223,13 @@ def priced_registry(provider_cls: Any):
     Forked rather than mutated: `models_default()` is shared class state, and registering
     onto it would leak this app's price opinions into every other consumer in the process.
     """
+    from remixkit.adapters import model_families
+
     registry = provider_cls.models_default().fork()
+    # Payload shapes the connector does not ship. Registered on the same fork as the
+    # prices, because both are this app's corrections to a shared default and neither
+    # should leak into another consumer in the process.
+    model_families.register(registry)
     for model_id, (strategy, _note) in PRICE_BOOK.items():
         try:
             registry.register_pricing(model_id, strategy)

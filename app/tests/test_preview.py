@@ -24,7 +24,6 @@ import pytest
 
 from remixkit.domain.models import Modality
 from remixkit.ports.generator import GenerationRequest
-from remixkit.services.briefs import VIDEO_NEGATIVES
 
 
 # ------------------------------------------------------------------ fixtures
@@ -108,9 +107,11 @@ def test_a_video_shot_is_told_not_to_score_itself(container, principal, song):
     plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
     video = next(s for s in plan.shots if s.modality is Modality.VIDEO)
 
-    for term in ("music", "soundtrack", "singing"):
+    # The *audio* terms, on every format whose asset sits under a master. "singing" is
+    # deliberately not among them here: it is a defect in a backdrop and the subject of a
+    # performance clip, which is exactly the kind of thing that had to stop being global.
+    for term in ("music", "soundtrack", "speech"):
         assert term in video.negative_prompt
-    assert "silent" in video.prompt.lower()
 
 
 def test_an_unmeasured_song_contributes_no_tempo_rather_than_a_guess(container, principal, artist):
@@ -243,7 +244,7 @@ def test_the_screen_shows_the_whole_prompt_not_a_truncation(client, container, p
 
     plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
     assert plan.shots[0].prompt in page, "the plan on the page must be the plan on the wire"
-    for term in VIDEO_NEGATIVES[:3]:
+    for term in plan.shots[0].negative_prompt.split(", ")[:3]:
         assert term in page, "what the run suppresses is part of what it is about to buy"
 
 

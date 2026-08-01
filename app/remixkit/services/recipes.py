@@ -22,7 +22,16 @@ Two rules hold across all of them, because they are the parts that are not opini
 
 from __future__ import annotations
 
-from remixkit.domain.models import FacePolicy, FrameAngle, Modality, Recipe
+import logging
+
+from remixkit.auth.provider import Principal
+from remixkit.domain.models import ApprovalState, FacePolicy, FrameAngle, Modality, Recipe
+from remixkit.ports.repository import DocumentRepository
+from remixkit.services.errors import Conflict, NotFound
+
+log = logging.getLogger(__name__)
+
+COLLECTION = "recipes"
 
 # What a shot that sits *under* the master must not contain. Audio first: Veo, Sora 2 and
 # Seedance all return a soundtrack unless told otherwise, and on 2026-07-31 a kit came back
@@ -167,4 +176,95 @@ def builtin_recipes() -> list[Recipe]:
             face=FacePolicy.PLATE,
             face_angle=FrameAngle.FRONT,
         ),
+        Recipe(
+            tenant_id="",
+            slug="voice-over",
+            name="Voice-over",
+            intent="One spoken line as audio, to lay over a clip.",
+            modality=Modality.AUDIO,
+            builtin=True,
+            # The line and nothing else. A TTS provider is being asked to *say* this, not
+            # to interpret a description of a scene — every extra clause is a word it may
+            # read aloud.
+            prompt_template="{line}",
+            variants=[""],
+            seconds_from="none",
+            face=FacePolicy.NONE,
+        ),
     ]
+
+
+# What a kit is if nobody says. `backdrop-loop` was the only thing this app made, and it
+# is the wrong default now that there is a choice: a backdrop deliberately has *nobody* in
+# it, so defaulting to it would mean an artist's identity — the reference frames, the
+# silhouette, the locked still — reaching nothing unless somebody went looking for the
+# right format. Likeness is the point; the format that carries it is the default, and the
+# empty-centre backdrop is a deliberate pick.
+DEFAULT_SLUG = "performance"
+
+# The format a spoken line is rendered with when a brief asks for one alongside its video.
+# A kit is one format plus, optionally, this — which is the honest description of what
+# `tts_text` always was, rather than a second modality bolted into the video planner.
+VOICE_SLUG = "voice-over"
+
+
+class RecipeService:
+    """The tenant's formats, seeded from the built-ins on first read.
+
+    Seeding lazily rather than at startup, because a tenant is created by the first
+    request that mentions it and there is no migration step to hang a fixture on. The
+    first `list()` writes the built-ins and every later one reads them, so a tenant always
+    has somewhere to start and an operator who has edited them is never overwritten.
+
+    Built-ins are seeded as `APPROVED`. They ship having been thought about; making a label
+    approve four records before generating anything would be ceremony rather than a gate.
+    """
+
+    def __init__(self, repo: DocumentRepository) -> None:
+        self._repo = repo
+
+    def list(self, principal: Principal) -> list[Recipe]:
+        stored = self._repo.list(principal.tenant_id, COLLECTION, Recipe)
+        if not stored:
+            stored = self._seed(principal)
+        return sorted(stored, key=lambda r: (not r.builtin, r.name.lower()))
+
+    def _seed(self, principal: Principal) -> list[Recipe]:
+        made: list[Recipe] = []
+        for recipe in builtin_recipes():
+            recipe.tenant_id = principal.tenant_id
+            recipe.approval = ApprovalState.APPROVED
+            self._repo.put(principal.tenant_id, COLLECTION, recipe.id, recipe)
+            made.append(recipe)
+        log.info("seeded %d built-in recipes for %s", len(made), principal.tenant_id)
+        return made
+
+    def get(self, principal: Principal, slug: str) -> Recipe:
+        """By slug, because that is what a kit brief stores.
+
+        The id would be the more usual key and is the wrong one here: a brief has to name
+        a *format*, and a format that gets edited is still the same format. Storing the id
+        would mean a kit re-run after an edit either points at a record that no longer
+        describes it or at nothing at all.
+        """
+        wanted = (slug or DEFAULT_SLUG).strip()
+        for recipe in self.list(principal):
+            if recipe.slug == wanted:
+                return recipe
+        raise NotFound(f"No recipe {wanted!r}")
+
+    def save(self, principal: Principal, recipe: Recipe) -> Recipe:
+        recipe.tenant_id = principal.tenant_id
+        recipe.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, recipe.id, recipe)
+        return recipe
+
+    def delete(self, principal: Principal, slug: str) -> None:
+        """A built-in refuses. It is the floor a tenant falls back to."""
+        recipe = self.get(principal, slug)
+        if recipe.builtin:
+            raise Conflict(
+                f"{recipe.name!r} ships with the app. Copy it and edit the copy — "
+                "deleting it would leave a tenant with no format to start from."
+            )
+        self._repo.delete(principal.tenant_id, COLLECTION, recipe.id)

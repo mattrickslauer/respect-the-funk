@@ -37,6 +37,7 @@ from remixkit.deps import (
     Identities,
     Kits,
     MaybePrincipal,
+    Recipes,
     Recommendations,
     Songs,
     Transcription,
@@ -54,6 +55,7 @@ from remixkit.domain.models import (
     SectionRole,
 )
 from remixkit.services.briefs import hook_windows
+from remixkit.services.recipes import DEFAULT_SLUG
 from remixkit.services.errors import Conflict, ServiceError
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -378,12 +380,15 @@ def generate_page(
     songs: Songs,
     identities: Identities,
     kits: Kits,
+    container_recipes: Recipes,
     video_count: int = 3,
     section_ids: Annotated[list[str], Query()] = [],
     identity_names: Annotated[list[str], Query()] = [],
     faces_chosen: str = "",
     tts_text: str = "",
     budget_cents: int | None = None,
+    recipe_slug: str = "",
+    line: str = "",
 ):
     """Cost *before* the button — wireframe gap #3.
 
@@ -405,6 +410,13 @@ def generate_page(
     # Same filter the kit service applies, for the same reason: a section deleted between
     # loading this page and pricing it must not show up in the plan as a window.
     chosen = [sid for sid in section_ids if song.section(sid)]
+    # The formats this tenant can generate, and the one selected. Seeded on first read,
+    # so a fresh tenant lands on a page with four choices rather than an empty picker.
+    recipe_list = container_recipes.list(principal)
+    chosen_recipe = next(
+        (r for r in recipe_list if r.slug == (recipe_slug or DEFAULT_SLUG)), recipe_list[0]
+    )
+
     overrides = _shot_overrides(request.query_params)
     # `None` and `[]` are different answers — not asked means the primary line, an empty
     # tick-list means a kit with nobody in it — and a checkbox group sends nothing in
@@ -420,6 +432,8 @@ def generate_page(
         overrides=overrides,
         identity_names=faces,
         tts_text=tts_text or None,
+        recipe_slug=recipe_slug or DEFAULT_SLUG,
+        line=line,
     )
 
     return _render(
@@ -437,6 +451,9 @@ def generate_page(
         estimate_cents=plan.estimate_cents,
         blocked=artist.consent.blocks_generation,
         lines=identities.lines(principal, artist_id),
+        recipes=recipe_list,
+        recipe=chosen_recipe,
+        line=line,
         identity_names=faces,
         tts_text=tts_text,
         budget_cents=budget_cents,
@@ -1331,6 +1348,8 @@ async def ui_create_kit(
     tts_text: str = Form(""),
     budget_cents: int | None = Form(default=None),
     name: str = Form(""),
+    recipe_slug: str = Form(""),
+    line: str = Form(""),
 ):
     """Buy the plan that was on the screen — including every prompt somebody rewrote.
 
@@ -1351,6 +1370,8 @@ async def ui_create_kit(
             tts_text=tts_text or None,
             budget_cents=budget_cents,
             name=name or None,
+            recipe_slug=recipe_slug or DEFAULT_SLUG,
+            line=line,
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)

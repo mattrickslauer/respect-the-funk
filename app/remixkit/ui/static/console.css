@@ -870,3 +870,13 @@ dialog.drawer[open]{animation:drawer-in 180ms cubic-bezier(0.2,0.7,0.3,1)}
 /* The brief row grows with the controls on it; wrap rather than squeeze. */
 .plan-row{flex-wrap:wrap}
 @media (max-width:760px){ .step-knobs{grid-template-columns:1fr} }
+
+/* The format picker. Wider chips than the silhouette row, because the choice is between
+   four different products and the one-line intent is what distinguishes them — a row of
+   bare names would make "performance" and "direct address" look like the same thing. */
+.chips-wide{gap:8px}
+.chip-format span{display:flex;flex-direction:column;gap:2px;align-items:flex-start;
+  padding:8px 13px;text-align:left;max-width:260px}
+.chip-format strong{font-family:var(--display);font-weight:500;color:var(--ink-2);font-size:13px}
+.chip-format em{font-style:normal;font-size:11.5px;color:var(--ink-3);line-height:1.35}
+.chip-format input:checked + span strong{color:var(--ink)}

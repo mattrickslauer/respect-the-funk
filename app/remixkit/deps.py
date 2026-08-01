@@ -36,6 +36,7 @@ from remixkit.services.catalogue import CatalogueService
 from remixkit.services.delivery import DeliveryService
 from remixkit.services.identities import IdentityService
 from remixkit.services.kits import JOB_TYPE, KitService
+from remixkit.services.recipes import RecipeService
 from remixkit.services.recommendations import RecommendationService
 from remixkit.services.songs import SongService
 from remixkit.services.transcription import (
@@ -109,6 +110,7 @@ class Container:
             language=settings.transcription_language,
         )
         self.recommendations = RecommendationService()
+        self.recipes = RecipeService(self.repo)
         self.kits = KitService(
             self.repo,
             self.queue,
@@ -117,6 +119,7 @@ class Container:
             self.identities,
             self.songs,
             self.storage,
+            self.recipes,
             max_shots=settings.max_shots_per_kit,
         )
         # Cascading an artist delete has to go through the owning services so each
@@ -449,3 +452,4 @@ Delivery = Annotated[DeliveryService, Depends(get_delivery)]
 Analysis = Annotated[AnalysisService, Depends(get_analysis)]
 Transcription = Annotated[TranscriptionService, Depends(get_transcription)]
 Recommendations = Annotated[RecommendationService, Depends(get_recommendations)]
+Recipes = Annotated[RecipeService, Depends(lambda: get_container().recipes)]

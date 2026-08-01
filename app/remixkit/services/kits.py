@@ -36,10 +36,11 @@ from remixkit.services.artists import ArtistService
 from remixkit.services.briefs import (
     OVERRIDABLE,
     apply_overrides,
-    default_shot_plan,
     hook_windows,
     overrides_from_brief,
+    plan_from_recipe,
 )
+from remixkit.services.recipes import DEFAULT_SLUG, VOICE_SLUG, RecipeService
 from remixkit.services.errors import Conflict, NotFound, RightsError
 from remixkit.services.identities import IdentityService
 from remixkit.services.songs import SongService
@@ -68,6 +69,7 @@ class KitService:
         identities: IdentityService,
         songs: SongService,
         storage: Storage,
+        recipes: RecipeService,
         *,
         max_shots: int = 8,
     ) -> None:
@@ -78,6 +80,7 @@ class KitService:
         self._identities = identities
         self._songs = songs
         self._storage = storage
+        self._recipes = recipes
         self._max_shots = max_shots
 
     # -- reads ------------------------------------------------------------------
@@ -105,6 +108,51 @@ class KitService:
         planned = models(shots) if callable(models) else [(s.modality, s.model, s.seconds) for s in shots]
         return sum(pricing.estimate_cents(m, model, secs) for m, model, secs in planned)
 
+    def _shots_for(
+        self,
+        principal: Principal,
+        *,
+        song,
+        artist,
+        recipe_slug: str,
+        count: int,
+        line: str,
+        section_ids: list[str],
+        tts_text: str | None = None,
+    ) -> list[ShotSpec]:
+        """One planner for the preview and the run.
+
+        `plan()` and `run()` used to each call the brief builder with their own arguments,
+        which was survivable while there was one format and is not now: a format carries
+        its own length policy, negatives and face policy, so two call sites that disagree
+        about which recipe is in play produce two genuinely different kits.
+        """
+        recipe = self._recipes.get(principal, recipe_slug)
+        shots = plan_from_recipe(
+            recipe,
+            song,
+            count=count,
+            max_shots=self._max_shots,
+            section_ids=section_ids,
+            artist_name=artist.name,
+            line=line,
+        )
+        # A spoken line rides alongside, as its own format rather than as a branch in the
+        # video planner. That is what `tts_text` always was; making it a recipe means it
+        # gets the same prompt, provenance and preview treatment as everything else.
+        if tts_text and tts_text.strip():
+            shots.extend(
+                plan_from_recipe(
+                    self._recipes.get(principal, VOICE_SLUG),
+                    song,
+                    count=1,
+                    max_shots=1,
+                    artist_name=artist.name,
+                    line=tts_text.strip(),
+                )
+            )
+        return shots[: self._max_shots]
+
     def plan(
         self,
         principal: Principal,
@@ -115,6 +163,8 @@ class KitService:
         section_ids: list[str] | None = None,
         overrides: dict[int, dict] | None = None,
         identity_names: list[str] | None = None,
+        recipe_slug: str = DEFAULT_SLUG,
+        line: str = "",
     ) -> tuple[GenerationPlan, list[ShotSpec]]:
         """The dry run. Resolves the whole request to wire payloads and spends nothing.
 
@@ -134,14 +184,9 @@ class KitService:
         identity = identities[0] if identities else None
 
         section_ids = [sid for sid in (section_ids or []) if song.section(sid)]
-        shots = default_shot_plan(
-            song,
-            identity,
-            video_count=video_count,
-            tts_text=tts_text,
-            max_shots=self._max_shots,
-            section_ids=section_ids,
-            artist_name=artist.name,
+        shots = self._shots_for(
+            principal, song=song, artist=artist, recipe_slug=recipe_slug,
+            count=video_count, line=line, section_ids=section_ids, tts_text=tts_text,
         )
         shots = apply_overrides(shots, overrides)
 
@@ -181,6 +226,8 @@ class KitService:
         section_ids: list[str] | None = None,
         overrides: dict[int, dict] | None = None,
         identity_names: list[str] | None = None,
+        recipe_slug: str = DEFAULT_SLUG,
+        line: str = "",
     ) -> Kit:
         """Validate, persist a queued kit, enqueue. Must stay well under 200 ms."""
         song = self._songs.get(principal, song_id)
@@ -199,14 +246,9 @@ class KitService:
         # a section that was deleted before the request. The worker re-plans from the same
         # stored ids, and `briefs.hook_windows` drops any that have gone since.
         section_ids = [sid for sid in (section_ids or []) if song.section(sid)]
-        shots = default_shot_plan(
-            song,
-            identity,
-            video_count=video_count,
-            tts_text=tts_text,
-            max_shots=self._max_shots,
-            section_ids=section_ids,
-            artist_name=artist.name,
+        shots = self._shots_for(
+            principal, song=song, artist=artist, recipe_slug=recipe_slug,
+            count=video_count, line=line, section_ids=section_ids, tts_text=tts_text,
         )
         shots = apply_overrides(shots, overrides)
         if not shots:
@@ -232,6 +274,12 @@ class KitService:
             status=KitStatus.QUEUED,
             brief={
                 "video_count": video_count,
+                # Which format, by slug. The id would be the usual key and is the wrong
+                # one: a brief names a *format*, and a format that gets edited is still
+                # the same format — an id would point at a record that no longer describes
+                # the kit, or at nothing.
+                "recipe_slug": recipe_slug,
+                "line": line,
                 "tts_text": tts_text,
                 "section_ids": section_ids,
                 # The windows as they were when the kit was bought. The ids alone would
@@ -306,14 +354,15 @@ class KitService:
             )
             identity = identities[0] if identities else None
 
-            shots = default_shot_plan(
-                song,
-                identity,
-                video_count=int(kit.brief.get("video_count", 3)),
-                tts_text=kit.brief.get("tts_text"),
-                max_shots=self._max_shots,
+            shots = self._shots_for(
+                principal,
+                song=song,
+                artist=artist,
+                recipe_slug=kit.brief.get("recipe_slug") or DEFAULT_SLUG,
+                count=int(kit.brief.get("video_count", 3)),
+                line=kit.brief.get("line") or "",
                 section_ids=list(kit.brief.get("section_ids") or []),
-                artist_name=artist.name,
+                tts_text=kit.brief.get("tts_text"),
             )
             # The edits the buyer made on the preview screen. Replayed here rather than
             # stored as finished prompts so that a kit re-run after an identity change

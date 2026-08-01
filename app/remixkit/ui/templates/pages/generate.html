@@ -117,8 +117,39 @@
            `form="repricer"` while living inside the step cards they belong to. Nesting
            them here instead would put the plan's controls somewhere other than the plan. #}
         <form class="form" method="get" id="repricer">
+          {# --- which format ---
+             What this app could generate used to be one hardcoded opinion, so there was
+             nothing to choose. A format carries its own prompt, negatives, length policy
+             and face policy, which is why picking one changes the whole plan below rather
+             than a phrase in it. #}
+          <fieldset class="fieldset">
+            <legend>Format</legend>
+            <div class="chips chips-wide">
+              {% for option in recipes %}
+                <label class="chip chip-format">
+                  <input type="radio" name="recipe_slug" value="{{ option.slug }}"
+                         {{ "checked" if option.slug == recipe.slug }}>
+                  <span>
+                    <strong>{{ option.name }}</strong>
+                    <em>{{ option.intent }}</em>
+                  </span>
+                </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+
+          {# The line, for a format that has somebody say something. Shown only when the
+             template actually has a slot for it — a field that changes nothing is worse
+             than an absent one, because it looks like it changed something. #}
+          {% if "{line}" in recipe.prompt_template %}
+            <label>What she says <span class="hint">spoken in the clip, word for word</span>
+              <textarea name="line" rows="2"
+                        placeholder="Hope to see you at my show…">{{ line }}</textarea>
+            </label>
+          {% endif %}
+
           <div class="plan-row">
-            <label>Videos
+            <label>{{ "Clips" if recipe.modality.value == "video" else "Images" }}
               <input name="video_count" type="number" min="0" max="8" value="{{ video_count }}">
             </label>
             <label>Voice-over <span class="hint">optional — one spoken line</span>
@@ -346,6 +377,11 @@
         <input type="hidden" name="song_id" value="{{ song.id }}">
         <input type="hidden" name="artist_id" value="{{ artist.id }}">
         <input type="hidden" name="video_count" value="{{ video_count }}">
+        {# The format and its line ride the purchase, like every other control. Buying a
+           different format than the one priced is the divergence this screen exists to
+           prevent, and the format decides more than any other field on the page. #}
+        <input type="hidden" name="recipe_slug" value="{{ recipe.slug }}">
+        {% if line %}<textarea name="line" hidden>{{ line }}</textarea>{% endif %}
         {% for section_id in section_ids %}
           <input type="hidden" name="section_ids" value="{{ section_id }}">
         {% endfor %}

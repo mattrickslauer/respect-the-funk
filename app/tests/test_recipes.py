@@ -240,3 +240,98 @@ def test_a_backdrop_records_no_identity(container, principal, identity, song):
     assert clip.recipe_slug == "backdrop-loop"
     assert clip.reference_keys == []
     assert clip.derived_from == []
+
+
+# ------------------------------------------------------------------ wired through
+def test_the_builtins_are_seeded_on_first_read(container, principal):
+    """No migration step exists to hang a fixture on — a tenant is created by the first
+    request that mentions it, so the first read writes the floor."""
+    assert container.repo.list(principal.tenant_id, "recipes", Recipe) == []
+
+    seeded = container.recipes.list(principal)
+
+    assert {r.slug for r in seeded} >= {"backdrop-loop", "direct-address", "performance"}
+    assert all(r.builtin for r in seeded)
+
+
+def test_seeding_happens_once(container, principal):
+    """An operator who has edited the built-ins is never overwritten by a later read."""
+    first = container.recipes.list(principal)
+    first[0].name = "Edited"
+    container.recipes.save(principal, first[0])
+
+    assert any(r.name == "Edited" for r in container.recipes.list(principal))
+    assert len(container.recipes.list(principal)) == len(first)
+
+
+def test_a_builtin_refuses_to_be_deleted(container, principal):
+    from remixkit.services.errors import Conflict
+
+    with pytest.raises(Conflict):
+        container.recipes.delete(principal, "performance")
+
+
+def test_the_default_format_carries_the_face(container, principal, identity, song):
+    """`backdrop-loop` was the only format and is the wrong default now there is a choice:
+    it deliberately has nobody in it, so defaulting to it would mean an artist's identity
+    reached nothing unless somebody went looking for the right format."""
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
+
+    assert plan.shots[0].prelude is not None, "the default must condition on the artist"
+
+
+def test_a_kit_records_and_replays_its_format(container, principal, identity, song):
+    """The brief names the format by slug, and the worker replans from it — otherwise a
+    kit queued as a selfie runs as whatever the default happens to be."""
+    kit = container.kits.request(
+        principal, song_id=song.id, video_count=1,
+        recipe_slug="direct-address", line=LINE,
+    )
+    assert kit.brief["recipe_slug"] == "direct-address"
+    assert kit.brief["line"] == LINE
+
+    ran = container.kits.run(principal.tenant_id, kit.id)
+    assert ran.status.value == "ready", ran.error
+    clip = next(a for a in ran.assets if a.modality is Modality.VIDEO)
+    assert clip.recipe_slug == "direct-address"
+    assert LINE in clip.prompt
+
+
+def test_the_generate_screen_offers_the_formats(client, container, principal, artist, song):
+    page = client.get(
+        f"/console/artists/{artist.id}/songs/{song.id}/generate"
+    ).text
+
+    for slug in ("backdrop-loop", "direct-address", "performance"):
+        assert f'name="recipe_slug" value="{slug}"' in page
+
+
+def test_the_line_field_appears_only_for_a_format_that_speaks(client, artist, song):
+    """A field that changes nothing is worse than an absent one — it looks like it did."""
+    base = f"/console/artists/{artist.id}/songs/{song.id}/generate"
+
+    assert 'name="line"' not in client.get(f"{base}?recipe_slug=backdrop-loop").text
+    assert 'name="line"' in client.get(f"{base}?recipe_slug=direct-address").text
+
+
+def test_the_format_rides_the_queue_button(client, artist, song):
+    """It decides more than any other control on the page, so buying a different format
+    than the one priced is the sharpest version of the divergence this screen prevents."""
+    page = client.get(
+        f"/console/artists/{artist.id}/songs/{song.id}/generate?recipe_slug=direct-address"
+    ).text
+    queue_form = page.split('hx-post="/ui/kits"', 1)[1].split("</form>", 1)[0]
+
+    assert 'name="recipe_slug" value="direct-address"' in queue_form
+
+
+def test_a_spoken_line_rides_alongside_as_its_own_format(container, principal, identity, song):
+    """`tts_text` was a branch in the video planner. It is a recipe now, so it gets the
+    same prompt, provenance and preview treatment as everything else."""
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, tts_text="one spoken line"
+    )
+
+    audio = [s for s in plan.shots if s.modality is Modality.AUDIO]
+    assert len(audio) == 1
+    assert audio[0].prompt == "one spoken line", "a TTS model is asked to say it, not to read a brief"

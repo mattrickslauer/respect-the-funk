@@ -543,13 +543,41 @@ catalogue. The whole classed plate set then goes, and the slot name and count ar
 into the step metadata, so a wrong guess is visible in the run's own record rather than
 only in a face that came back looking like someone else.
 
+### Formats
+
+A kit is an instance of a **format**, and formats are rows. `Recipe` carries the prompt
+template, the negatives, the aspect, the length policy, the face policy, which reference
+class the framing wants, and the variant spread — so adding a format is adding a record
+rather than editing the planner.
+
+Four ship, seeded per tenant on first read (there is no migration step to hang a fixture
+on, and a tenant is created by the first request that mentions it). Built-ins refuse to be
+deleted, because they are the floor a tenant falls back to; copy and edit the copy.
+
+| Format | Face | Reference class | Length | Suppresses |
+|---|---|---|---|---|
+| Backdrop loop | none | — | hook window | music, speech, singing |
+| Direct address | locked | front | fixed 8s | *nothing audio* |
+| Performance clip | locked | three-quarter | hook window | music, speech |
+| Portrait still | plate | front | — | — |
+| Voice-over | none | — | — | — |
+
+**The default is `performance`, not the backdrop.** The backdrop was the only format this
+app had and it is the wrong default now there is a choice: it deliberately has nobody in
+it, so defaulting to it would mean an artist's identity — the frames, the silhouette, the
+locked still — reaching nothing unless somebody went looking for the right format.
+
+`tts_text` is a voice-over recipe planned alongside, rather than a branch in the video
+planner. That is what it always was; making it a format means it gets the same prompt,
+provenance and preview treatment as everything else.
+
 ### What the generate screen can change
 
 Everything that alters the plan is on it, and everything on it rides the queue button —
 a control that changes what is bought without changing what was priced is the divergence
 this screen exists to prevent.
 
-**Kit-level:** video count, which hooks to cut to, **which faces the kit is for**, an
+**Kit-level:** the format, the spoken line when the format has one, count, which hooks to cut to, **which faces the kit is for**, an
 optional voice-over line, a budget ceiling, and the kit's name.
 
 **Per shot:** the composed prompt, the model, the loop length, and whether the face is

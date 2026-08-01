@@ -130,8 +130,11 @@ def test_generate_prices_the_plan_before_queueing(client, song):
     assert page.status_code == 200
     assert "Queue this kit" in page.text
     assert "Estimate" in page.text
-    # The shot table is the plan, not an illustration.
-    assert "Vertical 9:16 loop" in page.text or "9:16" in page.text
+    # The plan is the plan, not an illustration. The wording belongs to whichever format
+    # is selected now, so this asserts the structure every format renders through rather
+    # than a phrase that used to be the only one there was.
+    assert 'data-shot="0"' in page.text
+    assert "Runs on" in page.text
 
 
 def test_the_estimate_matches_what_the_service_would_charge(client, container, principal, song):

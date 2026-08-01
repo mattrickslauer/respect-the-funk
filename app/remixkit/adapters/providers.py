@@ -209,6 +209,11 @@ IMAGE_TO_VIDEO: tuple[re.Pattern[str], ...] = (
     re.compile(r"^ltx", re.IGNORECASE),
     re.compile(r"MiniMeTalks", re.IGNORECASE),      # GMI's talking-head-from-a-photo workflow
     re.compile(r"-r2v$", re.IGNORECASE),            # reference-to-video, the identity-shaped ones
+    # Sora is not on GMI's hub — it is reached through `genblaze_openai`, whose provider
+    # declares `supported_inputs=["text", "image"]`. It belongs here because this
+    # deployment pins `RK_VIDEO_PROVIDER=openai`, so the clip that consumes an
+    # identity-locked still is Sora rather than anything in the GMI catalogue above.
+    re.compile(r"^sora-", re.IGNORECASE),
 )
 
 # Slugs from the shipped registry's `example_slugs`, offered as *candidates* and never

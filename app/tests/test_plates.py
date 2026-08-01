@@ -1066,3 +1066,30 @@ def test_a_single_slot_model_still_gets_one(
 
     assert not provider_table.takes_multiple_references("seededit-3-0-i2i-250628")
     assert len(plan.shots[0].prelude.reference_keys) == 1
+
+
+def test_an_edit_model_with_no_reference_is_refused_before_submission(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """An edit model with nothing to edit is a 400, not a worse picture.
+
+    Bria said so by name — `images (Required parameter is missing)` — and the run reached
+    the provider to find out, spending a queue slot and a worker on an answer the plan
+    screen already had.
+    """
+    # An identity with no reference frames at all.
+    container.identities.create_version(principal, artist.id, structural_features="oval face")
+    monkeypatch.setattr(container.generator, "_edit_model", "bria-fibo-edit")
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="portrait-still"
+    )
+    shot = plan.shots[0]
+
+    assert not shot.runs
+    assert "needs a reference image" in shot.skipped_reason
+    # The plan total is what a person is asked to approve, and a run that cannot happen
+    # must not be quoted. The shot keeps its own would-be price, which is what the screen
+    # needs to explain the refusal.
+    assert plan.estimate_cents == 0
+    assert plan.blocker

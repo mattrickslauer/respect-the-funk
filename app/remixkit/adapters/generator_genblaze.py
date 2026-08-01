@@ -227,14 +227,29 @@ class GenblazeGenerator:
             if shot.modality is not Modality.AUDIO:
                 params["aspect_ratio"] = shot.aspect_ratio
 
+            # Resolved before the refusal below, because one of the refusals depends on
+            # whether a reference was actually attached.
+            plates, plate_note = self._plates_for(shot, request, provider, model=model)
+
             if provider is None:
                 reason = f"no {shot.modality.value} provider is credentialed"
             elif not model:
                 reason = f"no model known for {shot.modality.value} on {type(provider).__name__}"
+            elif (
+                shot.modality is Modality.IMAGE
+                and provider_table.requires_reference(model)
+                and not plates
+            ):
+                # An edit model with nothing to edit is a 400, not a worse picture — Bria
+                # says so by name: `images (Required parameter is missing)`. Refusing here
+                # costs nothing; discovering it costs a queue slot, a worker and a wait.
+                reason = (
+                    f"{model} is an edit model and needs a reference image, and none is "
+                    f"attached ({plate_note or 'no reference'}) — add a reference frame, "
+                    "or choose a format that does not lock a face"
+                )
             else:
                 reason = None
-
-            plates, plate_note = self._plates_for(shot, request, provider, model=model)
 
             planned = PlannedShot(
                 index=index,

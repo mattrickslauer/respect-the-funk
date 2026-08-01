@@ -253,6 +253,15 @@ MULTI_REFERENCE: tuple[re.Pattern[str], ...] = (
 )
 
 
+# Models that cannot run text-only at all — an *edit* model with nothing to edit is a 400,
+# not a degraded render. Bria said so by name: `images (Required parameter is missing)`.
+#
+# The distinction from `honours_reference` is what happens when there is no reference:
+# "would ignore it" is a quality problem, "requires it" is a failed run.
+def requires_reference(model: str | None) -> bool:
+    return honours_reference(model, Modality.IMAGE)
+
+
 def takes_multiple_references(model: str | None) -> bool:
     return bool(model) and any(p.search(model) for p in MULTI_REFERENCE)
 

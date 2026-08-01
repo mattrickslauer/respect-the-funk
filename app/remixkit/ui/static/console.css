@@ -37,6 +37,7 @@
      dims what is under it must sit above it in this list. */
   --z-sticky:10;    /* pinned within a scroll region — the compiled prompt, tab strips */
   --z-topbar:20;    /* app chrome, above page content and below anything it launches */
+  --z-skip:30;      /* the skip link, on focus — must clear the sticky topbar it precedes */
   --z-drawer:40;    /* slides over one pane: version history */
   --z-modal:60;     /* suspends the page: add a frame, confirm a delete */
   --z-lightbox:80;  /* suspends everything: one still, full size */
@@ -68,6 +69,16 @@ code{font-family:var(--mono);font-size:0.88em;color:var(--ink-3)}
 .links{display:flex;gap:14px;flex-wrap:wrap}
 
 /* ---- chrome ---- */
+/* Off-screen rather than `display:none`, which would take it out of the tab order and
+   defeat the point. It comes back on focus only, so it costs a sighted mouse user
+   nothing and saves a keyboard user the topbar, the banner and the breadcrumb on every
+   navigation. Above the topbar in the stack, or the sticky header would cover it at the
+   moment it appears. */
+.skip{position:absolute;left:-9999px;top:0;z-index:var(--z-skip);
+  background:var(--gold);color:#0e0c14;font-family:var(--display);font-size:13px;
+  padding:9px 16px;border-radius:0 0 4px 0;text-decoration:none}
+.skip:focus{left:0}
+
 .topbar{border-bottom:1px solid var(--rule);background:var(--bg-2);position:sticky;top:0;z-index:var(--z-topbar)}
 .topbar-inner{display:flex;align-items:center;justify-content:space-between;height:50px}
 .brand{display:flex;align-items:baseline;gap:9px;font-family:var(--display);font-size:17px;color:var(--ink);text-decoration:none}
@@ -76,6 +87,11 @@ code{font-family:var(--mono);font-size:0.88em;color:var(--ink-3)}
 .topnav{display:flex;gap:20px;font-size:13.5px;align-items:center}
 .topnav a{color:var(--ink-3);text-decoration:none}
 .topnav a:hover{color:var(--gold)}
+/* Which section you are in. Selected on the ARIA attribute rather than a class, so the
+   styling cannot drift from what a screen reader is told — there is one source for
+   "current" and it is the one that carries meaning. The underline sits below the
+   50px bar so it reads as a tab marker rather than as a link underline. */
+.topnav a[aria-current="page"]{color:var(--ink);box-shadow:inset 0 -2px 0 var(--gold)}
 .whoami{color:var(--ink-3);border-left:1px solid var(--rule-2);padding-left:20px}
 
 /* The mocked-backend warning. It has to be on every page — a console running on mocks
@@ -97,6 +113,18 @@ code{font-family:var(--mono);font-size:0.88em;color:var(--ink-3)}
 
 .eyebrow{font-family:var(--display);font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--gold);margin:0}
 .eyebrow a{text-decoration:none}
+
+/* The trail back up (components/_crumbs.html). It occupies the row the eyebrow used to,
+   and inherits `.eyebrow` for its type, so this only has to undo the list and draw the
+   separator. The separator is generated content on purpose: it is presentational, and as
+   literal text it was announced between every step. */
+.crumbs ol{display:flex;flex-wrap:wrap;align-items:baseline;gap:0;list-style:none}
+.crumbs li{display:flex;align-items:baseline}
+.crumbs li + li::before{content:"/";color:var(--ink-3);opacity:0.6;margin:0 7px}
+.crumbs a:hover{color:var(--ink);text-decoration:underline}
+/* The page you are on is the one step that is not a link, and it is dimmed rather than
+   gold so the trail reads as "here is where this sits" and not as four equal choices. */
+.crumbs [aria-current="page"]{color:var(--ink-3)}
 
 /* Rendered only by the pages that are still documents — which, since every console page
    is a workspace, means the sign-in screen. Kept short for the same reason as the rest. */
@@ -277,6 +305,16 @@ body.shell .banner{flex:none}
 .row{background:var(--panel-2);border:1px solid var(--rule-2);border-radius:6px;padding:11px 13px;display:flex;gap:12px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap}
 .row-main{flex:1;min-width:0}
 .kit-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+/* A row's heading is now the way into the record it names — the kit page, the song page.
+   Left in the heading's own colour rather than turned gold: a list of rows whose every
+   title is a link should not read as a list of calls to action, and the underline on
+   hover is enough to say it is one. */
+.row-main h4 a{text-decoration:none}
+.row-main h4 a:hover{color:var(--gold);text-decoration:underline}
+/* The in-row links out — "Generate a kit →" and the like. These *are* actions, so unlike
+   the headings above they are gold at rest. */
+.row-main .links a{color:var(--gold);text-decoration:none}
+.row-main .links a:hover{text-decoration:underline}
 .version{color:var(--gold);font-size:13px}
 .method{font-style:italic}
 .unmeasured{color:var(--warn)}
@@ -341,6 +379,12 @@ input::placeholder,textarea::placeholder{color:#5d5872}
   position:sticky;top:0;background:var(--panel);z-index:var(--z-sticky)}
 .table td{padding:6px 9px;border-bottom:1px solid var(--rule-2);vertical-align:top}
 .table tbody tr:hover{background:rgba(255,255,255,0.022)}
+/* The catalogue is a table of links — the song, the artist, and each thing blocking the
+   row. Stated here rather than left to `a{color:inherit}`, under which a link inside a
+   `.small` cell rendered the same grey as the text around it and stopped looking like
+   one. Specific to the body so the header row is unaffected. */
+.table tbody a{color:var(--gold);text-decoration:none}
+.table tbody a:hover{text-decoration:underline}
 .table .prompt{color:var(--ink-3);max-width:400px}
 /* Deliberately *not* wrapped in an `overflow-x` scroller. A wrapper would become the
    nearest scroll container, and a sticky header inside a box that never scrolls

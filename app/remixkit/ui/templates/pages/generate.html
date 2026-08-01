@@ -21,11 +21,13 @@
 {% block content %}
 <header class="pagebar">
   <div class="pagebar-id">
-    <p class="eyebrow">
-      <a href="/console">Roster</a> /
-      <a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a> /
-      <a href="/console/songs/{{ song.id }}">{{ song.title }}</a>
-    </p>
+    {% set crumbs = [
+         ("Roster", "/console"),
+         (artist.name, "/console/artists/" ~ artist.id),
+         (song.title, "/console/songs/" ~ song.id),
+         ("Generate", ""),
+       ] %}
+    {% include "components/_crumbs.html" %}
     <h1>Generate a kit</h1>
   </div>
 

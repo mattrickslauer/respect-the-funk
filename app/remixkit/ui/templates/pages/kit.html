@@ -20,11 +20,14 @@
 {% block content %}
 <header class="pagebar">
   <div class="pagebar-id">
-    <p class="eyebrow">
-      <a href="/console">Roster</a> /
-      {% if artist %}<a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a> / {% endif %}
-      {% if song %}<a href="/console/songs/{{ song.id }}">{{ song.title }}</a>{% else %}kit{% endif %}
-    </p>
+    {# Built up rather than written out, because a kit outlives its song and its artist —
+       see routes.kit_detail. A trail that named a deleted record, or linked to a page
+       that 404s, would be worse than a shorter trail. #}
+    {% set crumbs = [("Roster", "/console")] %}
+    {% if artist %}{% set crumbs = crumbs + [(artist.name, "/console/artists/" ~ artist.id)] %}{% endif %}
+    {% if song %}{% set crumbs = crumbs + [(song.title, "/console/songs/" ~ song.id)] %}{% endif %}
+    {% set crumbs = crumbs + [(kit.name, "")] %}
+    {% include "components/_crumbs.html" %}
     <h1>{{ kit.name }}</h1>
     <span class="badge badge-{{ kit.status.value }}">{{ kit.status.value }}</span>
     {% with state = kit.approval %}{% include "components/_badge.html" %}{% endwith %}

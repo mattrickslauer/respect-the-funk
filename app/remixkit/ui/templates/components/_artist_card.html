@@ -21,6 +21,10 @@
 
   <div class="card-foot">
     <a class="btn btn-quiet" href="/console/artists/{{ artist.id }}">Open</a>
+    {# The other thing this card already reports on. The consent line says whether this
+       artist can be generated for; the identity is what a generated shot would look
+       like, and it was two clicks away from the only screen that lists everyone. #}
+    <a class="btn btn-quiet" href="/console/artists/{{ artist.id }}/identity">Identity</a>
     <button class="btn btn-danger btn-quiet"
             hx-delete="/ui/artists/{{ artist.id }}"
             hx-target="#roster"

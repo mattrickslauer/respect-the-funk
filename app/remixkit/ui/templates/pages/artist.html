@@ -16,7 +16,8 @@
 {% block content %}
 <header class="pagebar">
   <div class="pagebar-id">
-    <p class="eyebrow"><a href="/console">Roster</a> / {{ artist.slug }}</p>
+    {% set crumbs = [("Roster", "/console"), (artist.name, "")] %}
+    {% include "components/_crumbs.html" %}
     <h1>{{ artist.name }}</h1>
     {% with state = artist.approval %}{% include "components/_badge.html" %}{% endwith %}
   </div>
@@ -48,6 +49,12 @@
   </dl>
 
   <div class="pagebar-cta">
+    {# The catalogue, pre-filtered to this artist — the same screen the topbar reaches,
+       arriving with the question already narrowed to the person on screen. The filter is
+       a GET parameter precisely so it can be linked to (see catalogue.html), and this is
+       the link that was missing: the only route to a filtered catalogue was to open the
+       unfiltered one and pick the artist you had just navigated away from. #}
+    <a class="btn btn-quiet" href="/console/catalogue?artist_id={{ artist.id }}">What needs work →</a>
     <a class="btn" href="/console/artists/{{ artist.id }}/identity">Identity builder →</a>
   </div>
 </header>

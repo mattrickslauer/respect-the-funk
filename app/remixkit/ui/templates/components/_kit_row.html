@@ -18,7 +18,11 @@
 
   <div class="row-main">
     <div class="kit-head">
-      <h4>{{ kit.name }}</h4>
+      {# The kit's own page — the assets full size, the brief the run was built from, the
+         per-asset cost ledger, and the manifest. Nothing in the console linked to it, so
+         everything on it was reachable only by typing the URL. The name is the link
+         because the name is what someone looking for a particular kit reads. #}
+      <h4><a href="/console/kits/{{ kit.id }}">{{ kit.name }}</a></h4>
       <span class="badge badge-{{ kit.status.value }}">{{ kit.status.value }}</span>
       {% with state = kit.approval %}{% include "components/_badge.html" %}{% endwith %}
       {% if kit.manifest_verified %}<span class="badge badge-verified" title="manifest.verify() passed">provenance verified</span>{% endif %}
@@ -56,6 +60,10 @@
      A delivered asset is unaffected either way: its manifest is embedded in the file,
      so `/verify` still reads provenance from the bytes with nothing to look up. #}
   <div class="card-foot">
+    {# Spelled out as well as sitting on the name, because this row carries a delete
+       button and a select, and a heading that happens to be a link is not an obvious
+       way in next to two controls that announce themselves. #}
+    <a class="btn btn-quiet" href="/console/kits/{{ kit.id }}">Open kit</a>
     <button class="btn btn-danger btn-quiet"
             hx-delete="/ui/kits/{{ kit.id }}{% if kit.approval.value != 'draft' %}?force=true{% endif %}"
             hx-target="#kits"

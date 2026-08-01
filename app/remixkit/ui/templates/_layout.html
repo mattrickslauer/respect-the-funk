@@ -23,6 +23,12 @@
    is the exception, being a card with nothing to lay out against. #}
 <body class="{% block body_class %}{% endblock %}">
 
+{# Keyboard users land on the topbar on every page, and on a console page the nav is
+   followed by a banner, a breadcrumb, an identity bar and a rail before the work area.
+   Tabbing through that on every navigation is the cost this one link removes. It is
+   visually hidden until focused, which is the only state in which it means anything. #}
+<a class="skip" href="#main">Skip to content</a>
+
 <header class="topbar">
   <div class="wrap topbar-inner">
     <a class="brand" href="/console">
@@ -30,11 +36,33 @@
       <span>RemixKit</span>
       <span class="brand-sub">artist console</span>
     </a>
-    <nav class="topnav">
-      <a href="/console">Roster</a>
-      <a href="/console/catalogue">Catalogue</a>
-      <a href="/verify">Verify</a>
-      <a href="/console/settings">Deployment</a>
+    {# `aria-current="page"` rather than a class alone: "which section am I in" is
+       information, not decoration, and a screen reader has no other way to read the
+       highlight. The match is by prefix so a song, a kit and the generate screen all
+       still report Roster as the section they hang off — `/console` itself would
+       otherwise be current on exactly one URL out of the eight under it.
+
+       `request` is in the template context because `_render` builds the response with
+       `TemplateResponse(request, ...)`, so this needs nothing added to twenty handlers. #}
+    {% set path = request.url.path %}
+    {# Resolved to one href rather than tested per link, so exactly one item can ever be
+       current. Order matters and is the whole logic: the two specific `/console/...`
+       sections are claimed before the catch-all, which then absorbs every artist, song,
+       kit, identity and generate URL into Roster — the section they actually hang off. #}
+    {% set section = "/console/catalogue" if path.startswith("/console/catalogue")
+                else "/console/settings" if path.startswith("/console/settings")
+                else "/verify" if path.startswith("/verify")
+                else "/console" if path.startswith("/console")
+                else "" %}
+    <nav class="topnav" aria-label="Console sections">
+      {% for href, label in [
+           ("/console", "Roster"),
+           ("/console/catalogue", "Catalogue"),
+           ("/verify", "Verify"),
+           ("/console/settings", "Deployment"),
+         ] %}
+        <a href="{{ href }}"{% if section == href %} aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
       <a href="/docs">API</a>
       {# `viewer` is the verified session cookie, injected by ui.routes._render, so this
          cannot name someone whose token the next request would reject. Absent under
@@ -49,7 +77,7 @@
 
 {% include "components/_env_banner.html" %}
 
-<main class="{% block main_class %}wrap{% endblock %}">
+<main id="main" class="{% block main_class %}wrap{% endblock %}">
   {% block content %}{% endblock %}
 </main>
 

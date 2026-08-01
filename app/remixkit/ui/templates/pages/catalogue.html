@@ -86,12 +86,28 @@
                       {{ row.kit_count }}
                       {% if row.approved_kit %}<span class="badge badge-approved">approved</span>{% endif %}
                     </td>
+                    {# Each blocker links to the screen that clears it, which is the whole
+                       point of naming them: this column is a to-do list, and a to-do list
+                       whose items are not the way to do them makes the reader work out
+                       where consent is recorded versus where a master is uploaded. The
+                       four reasons live on two records — consent is the artist's, the
+                       other three are the song's — so that is the split. Text comes from
+                       `SongGaps.blocked_on`, so a reason added there still renders; it
+                       just points at the song, which is where three of the four are. #}
                     <td class="small">
                       {% if row.blocked_on %}
-                        {{ row.blocked_on|join(", ") }}
-                      {% elif row.approved_kit %}
-                        <span class="hint">complete</span>
+                        {% for reason in row.blocked_on %}
+                          {% if reason == "likeness consent" and row.artist %}
+                            <a href="/console/artists/{{ row.artist.id }}">{{ reason }}</a>
+                          {%- else %}
+                            <a href="/console/songs/{{ row.song.id }}">{{ reason }}</a>
+                          {%- endif %}{{ "" if loop.last else ", " }}
+                        {% endfor %}
                       {% else %}
+                        {# Offered even once a kit is approved. "Complete" was the end of
+                           the row, but a song that shipped one kit is the likeliest thing
+                           on this page to want another, and the approved badge two columns
+                           left already says it landed. #}
                         <a href="/console/artists/{{ row.song.artist_id }}/songs/{{ row.song.id }}/generate">Generate →</a>
                       {% endif %}
                     </td>

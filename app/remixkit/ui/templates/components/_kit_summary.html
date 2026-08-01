@@ -5,7 +5,10 @@
    sidebar wants "which kit, did it work, what did it cost", and the artist page wants
    the assets and the approval control. Squeezing the wide row into 340px produced a
    column of stacked badges, which is how you can tell it was the wrong component. #}
-<a class="kit-summary" href="/console/artists/{{ kit.artist_id }}">
+{# Goes to the kit, not to the artist who owns it. It named a kit, showed that kit's
+   status and that kit's cost, and then opened a roster page that mentions neither —
+   "recent kits" that cannot be opened is a list of things you have to go and find. #}
+<a class="kit-summary" href="/console/kits/{{ kit.id }}">
   <span class="kit-summary-name">{{ kit.name }}</span>
   <span class="kit-summary-meta">
     <span class="badge badge-{{ kit.status.value }}">{{ kit.status.value }}</span>

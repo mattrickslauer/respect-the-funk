@@ -1,0 +1,65 @@
+{# The identity, read-only, with a way in.
+
+   Everything here is a fact about the record rather than a control over it. That is the
+   point: the builder is a single surface, and an artist page that offers a second form
+   for the same versioned document invites two people to overwrite each other's version
+   from two screens that were both current when they rendered. #}
+<section class="panel" id="identity">
+  <div class="panel-head">
+    <h3>Identity{% if identity %} <span class="version">v{{ identity.version }}</span>{% endif %}</h3>
+    {% if identities|length > 1 %}
+      <span class="small">{{ identities|length }} versions</span>
+    {% endif %}
+  </div>
+
+  {% if identity %}
+    <dl class="kv">
+      <dt>Silhouette</dt>
+      <dd>
+        {% set silhouette = [] %}
+        {% if identity.presentation.value != "unspecified" %}{% set _ = silhouette.append(identity.presentation.value) %}{% endif %}
+        {% if identity.build.value != "unspecified" %}{% set _ = silhouette.append(identity.build.value) %}{% endif %}
+        {% if identity.height.value != "unspecified" %}{% set _ = silhouette.append(identity.height.value) %}{% endif %}
+        {% if silhouette %}{{ silhouette|join(" · ") }}
+        {% else %}<span class="unmeasured">not said</span>{% endif %}
+      </dd>
+
+      <dt>Face structure</dt>
+      <dd>{% if identity.structural_features %}{{ identity.structural_features|truncate(120) }}
+          {% else %}<span class="unmeasured">none</span>{% endif %}</dd>
+
+      <dt>Reference frames</dt>
+      <dd>
+        {% if identity.reference_frames %}
+          {{ identity.reference_frames|length }} ·
+          {{ identity.covered_angles }}/{{ identity.coverage|length }} classes covered
+        {% else %}
+          <span class="unmeasured">none — shots are conditioned on text alone</span>
+        {% endif %}
+      </dd>
+
+      <dt>Prompt cost</dt>
+      <dd class="{{ 'err' if identity.dropped_clauses }}">
+        {{ identity.compile()|length }} / {{ identity.PROMPT_BUDGET }} characters
+        {% if identity.dropped_clauses %}
+          · {{ identity.dropped_clauses }} clause{{ "" if identity.dropped_clauses == 1 else "s" }} not sent
+        {% endif %}
+      </dd>
+    </dl>
+
+    {% if identity.compile() %}
+      <p class="compiled">{{ identity.compile() }}</p>
+    {% endif %}
+  {% else %}
+    <p class="empty">
+      No identity yet. Until there is one, every kit for this artist describes them from
+      scratch — which is the cost the identity exists to remove.
+    </p>
+  {% endif %}
+
+  <div class="links">
+    <a class="btn" href="/console/artists/{{ artist_id }}/identity">
+      {{ "Open the identity builder" if identity else "Build an identity" }} →
+    </a>
+  </div>
+</section>

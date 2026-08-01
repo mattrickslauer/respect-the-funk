@@ -1,0 +1,93 @@
+{# The body-type picker, drawn rather than listed.
+
+   A five-item dropdown reading "slight / lean / athletic / solid / full" asks somebody to
+   translate a person they can picture into a word, and different people translate it
+   differently. A row of silhouettes asks them to point, which is both faster and more
+   consistent between two people describing the same artist.
+
+   The figures are *parameterised*, not fifteen hand-drawn paths: each is three numbers —
+   shoulder, waist and hip half-widths — and the presentation sets the ratio between them
+   while the build scales it. That keeps the whole picker to one macro and one table, and
+   means adding a stop to the scale is a row of numbers rather than a drawing.
+
+   No JavaScript. The presentation radios and the three silhouette sets are siblings, so
+   `:checked ~` reveals the matching set — see `.silhouette-set` in console.css. #}
+
+{% macro figure(shoulder, waist, hip) %}
+  {# A stylised front-on figure in a 64×96 box. Deliberately crude: this is a *selector*,
+     and detail here would imply the choice carries more precision than five stops do. #}
+  <svg viewBox="0 0 64 96" width="46" height="69" aria-hidden="true" focusable="false">
+    <circle cx="32" cy="13" r="9"/>
+    <path d="M{{ 32 - shoulder }},30
+             L{{ 32 + shoulder }},30
+             L{{ 32 + waist }},54
+             L{{ 32 + hip }},64
+             L{{ 32 + hip - 2 }},92
+             L{{ 32 + 2 }},92
+             L32,66
+             L{{ 32 - 2 }},92
+             L{{ 32 - hip + 2 }},92
+             L{{ 32 - hip }},64
+             L{{ 32 - waist }},54 Z"/>
+  </svg>
+{% endmacro %}
+
+{# shoulder / waist / hip half-widths per build, at a neutral shoulder-to-hip ratio.
+   Presentation shifts that ratio below; build is what moves along the scale. #}
+{% set builds = [
+  ("slight",   {"s": 9,  "w": 7,  "h": 9 }),
+  ("lean",     {"s": 11, "w": 8,  "h": 10}),
+  ("athletic", {"s": 14, "w": 10, "h": 12}),
+  ("solid",    {"s": 16, "w": 14, "h": 15}),
+  ("full",     {"s": 17, "w": 17, "h": 18}),
+] %}
+
+{# How each presentation redistributes the same build. Shoulders and hips are scaled in
+   opposite directions so a build stop stays the same overall mass across the three sets —
+   the picker is choosing a *shape*, and changing presentation should not read as changing
+   size. #}
+{% set shapes = [
+  ("unspecified", 1.00, 1.00),
+  ("feminine",    0.88, 1.14),
+  ("masculine",   1.14, 0.88),
+  ("androgynous", 1.00, 1.00),
+] %}
+
+{# One radio per build, with all four drawings inside it and CSS revealing the one that
+   matches the chosen presentation.
+
+   The obvious construction — a whole set of radios per presentation, hidden and shown
+   together — loses the selection the moment somebody changes presentation, because the
+   checked input is in the set that just went away and its counterpart in the visible set
+   is a different element. Same value, different radio, and the picker reads as having
+   forgotten. Keeping one input per build and swapping only the picture means presentation
+   and build are genuinely independent, which is what they are. #}
+<div class="silhouettes">
+  {% for name, d in builds %}
+    <label class="silhouette">
+      <input type="radio" name="build" value="{{ name }}"
+             {{ "checked" if identity and identity.build.value == name }}>
+      {% for shape, shoulder_scale, hip_scale in shapes %}
+        <span class="shape" data-shape="{{ shape }}">
+          {{ figure((d.s * shoulder_scale)|round|int,
+                    (d.w * ((shoulder_scale + hip_scale) / 2))|round|int,
+                    (d.h * hip_scale)|round|int) }}
+        </span>
+      {% endfor %}
+      <span class="silhouette-name">{{ name }}</span>
+    </label>
+  {% endfor %}
+
+  <label class="silhouette">
+    <input type="radio" name="build" value="unspecified"
+           {{ "checked" if not identity or identity.build.value == 'unspecified' }}>
+    <span class="shape shape-any">
+      <svg viewBox="0 0 64 96" width="46" height="69" aria-hidden="true" focusable="false">
+        <circle cx="32" cy="13" r="9" class="ghost"/>
+        <path d="M23,30 L41,30 L38,54 L40,64 L38,92 L34,92 L32,66 L30,92 L26,92 L24,64 L26,54 Z"
+              class="ghost"/>
+      </svg>
+    </span>
+    <span class="silhouette-name">not said</span>
+  </label>
+</div>

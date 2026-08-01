@@ -18,7 +18,7 @@ import unicodedata
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -93,6 +93,95 @@ class SectionRole(str, Enum):
         split rather than the list being filtered by hand at every call site.
         """
         return self in (SectionRole.HOOK, SectionRole.CHORUS, SectionRole.DROP)
+
+
+class FrameAngle(str, Enum):
+    """Which way the artist is facing in a reference still.
+
+    The classes exist because a reference set is not a pile of photographs — it is a
+    *cover* of the subject, and the thing that makes it a cover is that the angles are
+    named. Twelve flattering front-on portraits document one view twelve times; one still
+    per class documents a head.
+
+    Ordered by how well each serves as the single conditioning image a video shot gets.
+    `THREE_QUARTER_*` sits above `FRONT` deliberately: a three-quarter view carries both
+    the front planes and the depth of the nose and cheekbone, which is why it is the
+    standard reference angle in casting and character art. A flat front-on frame is
+    unambiguous about symmetry and says almost nothing about profile.
+    """
+
+    THREE_QUARTER_LEFT = "three-quarter-left"
+    THREE_QUARTER_RIGHT = "three-quarter-right"
+    FRONT = "front"
+    PROFILE_LEFT = "profile-left"
+    PROFILE_RIGHT = "profile-right"
+    BACK = "back"
+
+    @property
+    def label(self) -> str:
+        return self.value.replace("-", " ")
+
+    @classmethod
+    def by_reference_quality(cls) -> list[FrameAngle]:
+        """Declaration order *is* the preference order — see the class docstring."""
+        return list(cls)
+
+
+class Presentation(str, Enum):
+    """How the artist reads on screen.
+
+    Presentation rather than gender, and the distinction is doing real work rather than
+    being decorous. What conditions a render is silhouette, styling, and how a face is
+    lit and framed — none of which is recoverable from a gender field, and all of which a
+    person can state directly. It is also the honest thing to store about a roster: this
+    is a record of how somebody presents in their own work, which they are the authority
+    on, not a demographic fact the label is asserting about them.
+
+    `UNSPECIFIED` is the default and contributes nothing to a prompt. An artist who has
+    not said should not have a guess sent to a provider on their behalf.
+    """
+
+    UNSPECIFIED = "unspecified"
+    FEMININE = "feminine"
+    MASCULINE = "masculine"
+    ANDROGYNOUS = "androgynous"
+
+
+class BodyBuild(str, Enum):
+    """A standardised silhouette, in the plainest words that carry it.
+
+    Five bands on one axis — the classical ectomorph → endomorph range — named in ordinary
+    language rather than in somatotype vocabulary. That is a generation decision, not a
+    stylistic one: image and video models are trained on captions written by people, and
+    "athletic" appears in millions of them where "mesomorph" appears in almost none.
+
+    Deliberately one axis and five stops. A silhouette is the highest-signal, lowest-cost
+    thing an identity can tell a model — it survives compression, it reads at any framing,
+    and it is the first thing that goes wrong when a prompt is vague. Splitting it into
+    shoulders, waist and limb length would spend the entire prompt budget on a body that
+    is, in these kits, usually out of frame.
+    """
+
+    UNSPECIFIED = "unspecified"
+    SLIGHT = "slight"
+    LEAN = "lean"
+    ATHLETIC = "athletic"
+    SOLID = "solid"
+    FULL = "full"
+
+
+class HeightBand(str, Enum):
+    """Short / average / tall, and not a number.
+
+    A centimetre figure is more precise and less useful: no video model has a scale, and
+    "165cm" in a prompt is three tokens that condition nothing. A band conditions framing
+    and proportion, which is what the number was standing in for.
+    """
+
+    UNSPECIFIED = "unspecified"
+    SHORT = "short"
+    AVERAGE = "average"
+    TALL = "tall"
 
 
 class Provenance(str, Enum):
@@ -229,6 +318,10 @@ class ReferenceFrame(BaseModel):
 
     key: str  # object key in the bucket
     lighting: str = "neutral"
+    # Which view this documents. Defaults to front because that is what every frame
+    # uploaded before the classes existed actually is, and guessing anything else would
+    # retroactively mislabel a stored reference set.
+    angle: FrameAngle = FrameAngle.FRONT
     caption: str | None = None
     sha256: str | None = None
     # What the bytes are, so a provider handed this frame is told rather than left to
@@ -252,18 +345,98 @@ class Identity(Base):
     negatives: list[str] = Field(default_factory=list)  # anti-drift
     approval: ApprovalState = ApprovalState.DRAFT
 
-    def prompt_fragment(self) -> str:
-        """The identity, rendered into the text a provider actually sees.
+    # The standardised part of the description — three enums instead of three sentences.
+    # See `compile()` for why that matters more than it looks.
+    presentation: Presentation = Presentation.UNSPECIFIED
+    build: BodyBuild = BodyBuild.UNSPECIFIED
+    height: HeightBand = HeightBand.UNSPECIFIED
 
-        Kept here rather than in the Genblaze adapter so it is testable without a
+    # How many characters the identity may spend of a shot's prompt.
+    #
+    # This is the whole compression argument in one number. A prompt is not a document —
+    # it is a fixed budget of attention, and every character the identity spends is a
+    # character the *shot* does not get. The failure this prevents is specific and was
+    # observed: an identity written as three paragraphs of prose pushes "vertical 9:16
+    # loop, clean centre frame left empty" so far down the string that the model renders a
+    # portrait instead of a backdrop, and the kit is wrong in a way that reads like the
+    # shot description was ignored — because effectively it was.
+    #
+    # 220 is a working figure rather than a measured threshold, chosen so the identity
+    # stays roughly a third of a typical composed prompt. It is a constant here so that
+    # raising it is a deliberate edit in one place.
+    PROMPT_BUDGET: ClassVar[int] = 220
+
+    def compile(self, budget: int | None = None) -> str:
+        """The identity, compressed to the text a provider actually sees.
+
+        Ordered by salience, not by the order the form asks for things, because truncation
+        happens at the end and the end is where the least important clause belongs:
+
+        1. **Silhouette** — presentation, build, height. Three enums, a handful of
+           characters, and the highest-signal thing in the record. It survives any
+           truncation because it is first.
+        2. **Face structure** — what the person typed. The one free-text field that earns
+           its length, and the thing reference frames reinforce rather than replace.
+        3. **Wardrobe** — last, because it is the most likely to be overridden by the shot
+           and the least costly to lose.
+
+        Clauses are dropped whole rather than cut mid-sentence. A prompt ending in "high
+        cheekb" is worse than one that never mentioned cheekbones: it is a fragment the
+        model will try to interpret.
+
+        Kept on the model rather than in the Genblaze adapter so it is testable without a
         provider and identical across every adapter.
         """
-        bits: list[str] = []
-        if self.structural_features:
-            bits.append(self.structural_features)
-        if self.wardrobe:
-            bits.append("wearing " + ", ".join(self.wardrobe))
-        return ". ".join(bits)
+        budget = self.PROMPT_BUDGET if budget is None else budget
+
+        silhouette = " ".join(
+            token
+            for token in (
+                self.presentation.value if self.presentation is not Presentation.UNSPECIFIED else "",
+                self.build.value if self.build is not BodyBuild.UNSPECIFIED else "",
+                f"{self.height.value} build" if self.height is not HeightBand.UNSPECIFIED else "",
+            )
+            if token
+        )
+
+        clauses = [
+            silhouette,
+            (self.structural_features or "").strip(),
+            ("wearing " + ", ".join(self.wardrobe)) if self.wardrobe else "",
+        ]
+
+        kept: list[str] = []
+        spent = 0
+        for clause in clauses:
+            clause = clause.strip(". ")
+            if not clause:
+                continue
+            cost = len(clause) + (2 if kept else 0)  # the ". " join
+            if spent + cost > budget:
+                continue  # skipped whole, and the next clause still gets its chance
+            kept.append(clause)
+            spent += cost
+        return ". ".join(kept)
+
+    def prompt_fragment(self) -> str:
+        """What the generator prepends. The compiled, budgeted form — see `compile`."""
+        return self.compile()
+
+    @property
+    def dropped_clauses(self) -> int:
+        """How many clauses the budget refused, for a screen that should say so.
+
+        An identity that silently loses its wardrobe every render is an identity somebody
+        will keep editing without understanding why nothing changes.
+        """
+        full = len([c for c in (
+            self.presentation is not Presentation.UNSPECIFIED
+            or self.build is not BodyBuild.UNSPECIFIED
+            or self.height is not HeightBand.UNSPECIFIED,
+            bool((self.structural_features or "").strip()),
+            bool(self.wardrobe),
+        ) if c])
+        return max(0, full - len([c for c in self.compile().split(". ") if c]))
 
     def negative_fragment(self) -> str:
         return ", ".join(self.negatives)
@@ -302,17 +475,47 @@ class Identity(Base):
             else:
                 unhashed.append(frame)
 
+        # Angle first, then lighting. A reference set covers a *head*, so the frame that
+        # earns the one conditioning slot is the one whose view carries the most shape —
+        # three-quarter, then front, then the profiles, then the back. Sorting by that
+        # order rather than by upload order means a label can add frames in any sequence
+        # and still get the best one sent.
+        ranked = sorted(
+            [*by_hash.values(), *unhashed],
+            key=lambda f: FrameAngle.by_reference_quality().index(f.angle),
+        )
+
         chosen: list[ReferenceFrame] = []
-        seen_lighting: set[str] = set()
-        for frame in [*by_hash.values(), *unhashed]:
-            setup = (frame.lighting or "neutral").strip().lower()
-            if setup in seen_lighting:
+        seen: set[tuple[str, str]] = set()
+        for frame in ranked:
+            setup = (frame.angle.value, (frame.lighting or "neutral").strip().lower())
+            if setup in seen:
                 continue
-            seen_lighting.add(setup)
+            seen.add(setup)
             chosen.append(frame)
             if len(chosen) >= limit:
                 break
         return chosen
+
+    @property
+    def coverage(self) -> dict[FrameAngle, list[ReferenceFrame]]:
+        """The reference set as classes rather than as a pile, in preference order.
+
+        This is what makes "collect many stills" a finishable task instead of an open one:
+        an angle with no frames is a visible gap, and an angle with nine is visibly done.
+        Every class appears, including the empty ones — a coverage view that hides what is
+        missing is a progress bar that only counts forwards.
+        """
+        grouped: dict[FrameAngle, list[ReferenceFrame]] = {
+            angle: [] for angle in FrameAngle.by_reference_quality()
+        }
+        for frame in self.reference_frames:
+            grouped[frame.angle].append(frame)
+        return grouped
+
+    @property
+    def covered_angles(self) -> int:
+        return len([frames for frames in self.coverage.values() if frames])
 
     @property
     def has_plates(self) -> bool:

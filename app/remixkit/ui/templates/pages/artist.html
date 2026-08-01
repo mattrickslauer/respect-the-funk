@@ -73,7 +73,13 @@
     <div class="panes">
       <div class="pane-1">{% include "components/_songs.html" %}</div>
       <div class="pane-2">{% include "components/_kits.html" %}</div>
-      <div class="pane-3">{% include "components/_identity.html" %}</div>
+      {# A summary, not a second form.
+
+         This pane used to include the identity builder itself, so the console carried two
+         editable copies of one record — and because saving mints a version, two people on
+         two screens could each be looking at a form that was current when it rendered.
+         The builder is one place now; this says what is in there and sends you to it. #}
+      <div class="pane-3">{% include "components/_identity_summary.html" %}</div>
     </div>
   </div>
 

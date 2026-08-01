@@ -538,3 +538,85 @@ body.auth .footer{margin-top:0}
   .step-wire{grid-template-columns:1fr;gap:1px}
   .step-wire dt{margin-top:6px}
 }
+
+/* ---- the identity builder ----
+   One surface: what the model is told, then what it is shown. The description and the
+   reference frames used to sit either side of a tab switch, which made the one question
+   worth asking here — do the words and the pictures agree — the one thing you could not
+   look at. */
+.fieldset{border:0;padding:0;margin:0 0 14px}
+.fieldset legend{font-family:var(--display);font-size:10px;letter-spacing:0.14em;
+  text-transform:uppercase;color:var(--ink-3);padding:0;margin-bottom:7px}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{position:relative}
+.chip input{position:absolute;opacity:0;width:0;height:0}
+.chip span{display:inline-block;padding:5px 12px;border:1px solid var(--rule);border-radius:99px;
+  font-size:13px;color:var(--ink-2);background:var(--bg-2);cursor:pointer;
+  transition:border-color 120ms,color 120ms}
+.chip input:checked + span{border-color:var(--gold);color:var(--ink);background:var(--panel-2)}
+.chip input:focus-visible + span{outline:2px solid var(--gold-dim);outline-offset:2px}
+
+/* The body picker. One radio per build; only the drawing matching the chosen
+   presentation is shown, via `:checked ~` across sibling fieldsets. No JavaScript.
+
+   The `unspecified` drawing is the default rather than being revealed by a selector, so a
+   browser without `:has()` still renders a working neutral picker instead of a row of
+   labels with no figures in them. */
+.silhouettes{display:flex;flex-wrap:wrap;gap:8px}
+.shape{display:none;line-height:0}
+.shape[data-shape="unspecified"],.shape-any{display:block}
+.fieldset:has(input[name="presentation"][value="feminine"]:checked) ~ .fieldset .shape[data-shape="unspecified"],
+.fieldset:has(input[name="presentation"][value="masculine"]:checked) ~ .fieldset .shape[data-shape="unspecified"],
+.fieldset:has(input[name="presentation"][value="androgynous"]:checked) ~ .fieldset .shape[data-shape="unspecified"]{
+  display:none}
+.fieldset:has(input[name="presentation"][value="feminine"]:checked) ~ .fieldset .shape[data-shape="feminine"],
+.fieldset:has(input[name="presentation"][value="masculine"]:checked) ~ .fieldset .shape[data-shape="masculine"],
+.fieldset:has(input[name="presentation"][value="androgynous"]:checked) ~ .fieldset .shape[data-shape="androgynous"]{
+  display:block}
+
+.silhouette{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:8px 10px 6px;border:1px solid var(--rule);border-radius:7px;background:var(--bg-2);
+  cursor:pointer;transition:border-color 120ms}
+.silhouette input{position:absolute;opacity:0;width:0;height:0}
+.silhouette svg{fill:var(--ink-3);transition:fill 120ms}
+.silhouette svg .ghost{fill:none;stroke:var(--ink-3);stroke-width:1.5;stroke-dasharray:3 3}
+.silhouette .silhouette-name{font-size:11px;color:var(--ink-3);letter-spacing:0.02em}
+.silhouette:hover{border-color:var(--rule)}
+.silhouette:hover svg{fill:var(--ink-2)}
+.silhouette:has(input:checked){border-color:var(--gold);background:var(--panel-2)}
+.silhouette:has(input:checked) svg{fill:var(--gold)}
+.silhouette:has(input:checked) svg .ghost{fill:none;stroke:var(--gold)}
+.silhouette:has(input:checked) .silhouette-name{color:var(--ink)}
+.silhouette:has(input:focus-visible){outline:2px solid var(--gold-dim);outline-offset:2px}
+
+/* ---- the prompt budget ----
+   Every character the identity spends is one the shot description does not get. The bar
+   exists because that trade is invisible otherwise, and the failure it produces — a
+   backdrop loop rendered as a portrait — reads like the shot was ignored. */
+.budget{margin-top:16px;padding-top:14px;border-top:1px solid var(--rule-2)}
+.budget-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.budget-bar{height:4px;border-radius:2px;background:var(--rule-2);overflow:hidden;margin:8px 0 10px}
+.budget-bar span{display:block;height:100%;background:var(--gold);transition:width 160ms}
+.budget-bar span.over{background:var(--err)}
+.compiled{font-family:var(--mono);font-size:12px;line-height:1.55;color:var(--ink-2);
+  background:var(--bg-2);border:1px solid var(--rule-2);border-radius:6px;padding:10px 12px;
+  margin:0 0 10px;overflow-wrap:anywhere}
+
+/* ---- reference frames, by class ----
+   A flat grid answers "how many" and hides "which views are covered". An empty row is a
+   to-do, which is what makes collecting stills a finishable task. */
+.coverage-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;
+  gap:8px;margin-bottom:12px}
+.class-row{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:start;
+  padding:10px 0;border-top:1px solid var(--rule-2)}
+.class-row.is-empty{opacity:0.55}
+.class-key h4{margin:0;font-size:13px;color:var(--ink-2);text-transform:capitalize}
+.class-assets{margin:0}
+.class-empty{margin:0;font-size:12px}
+.asset.is-plate{outline:1px solid var(--gold);outline-offset:2px;border-radius:4px}
+
+@media (max-width:640px){
+  .class-row{grid-template-columns:1fr;gap:6px}
+  .silhouettes{gap:6px}
+}

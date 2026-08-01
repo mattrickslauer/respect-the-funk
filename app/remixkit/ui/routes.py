@@ -42,7 +42,16 @@ from remixkit.deps import (
     Verify,
     get_container,
 )
-from remixkit.domain.models import AnalysisStatus, ApprovalState, ReferenceFrame, SectionRole
+from remixkit.domain.models import (
+    AnalysisStatus,
+    ApprovalState,
+    BodyBuild,
+    FrameAngle,
+    HeightBand,
+    Presentation,
+    ReferenceFrame,
+    SectionRole,
+)
 from remixkit.services.briefs import hook_windows
 from remixkit.services.errors import Conflict, ServiceError
 
@@ -101,6 +110,10 @@ def _render(request: Request, template: str, **ctx) -> HTMLResponse:
         {
             "env": container.describe(),
             "ApprovalState": ApprovalState,
+            # The photo classes, so the upload form offers exactly the set the model
+            # defines. A hand-written `<option>` list is a second definition of the same
+            # enum, and the two drift the first time a class is added.
+            "FrameAngle": FrameAngle,
             "viewer": _viewer(request),
             **ctx,
         },
@@ -642,9 +655,25 @@ def ui_save_identity(
     structural_features: str = Form(""),
     wardrobe: str = Form(""),
     negatives: str = Form(""),
+    presentation: str = Form(""),
+    build: str = Form(""),
+    height: str = Form(""),
 ):
     def split(raw: str) -> list[str]:
         return [p.strip() for p in raw.split(",") if p.strip()]
+
+    def enum_or_none(enum, raw: str):
+        """An unrecognised value is treated as "not sent", not as an error.
+
+        These arrive from radio groups whose values are the enum members, so a bad one
+        means a stale page or a hand-built request rather than a person making a choice
+        the form offered. Falling back to the inherited value is the behaviour that keeps
+        an old open tab from silently wiping a silhouette somebody set since.
+        """
+        try:
+            return enum(raw) if raw else None
+        except ValueError:
+            return None
 
     try:
         identity = identities.create_version(
@@ -653,6 +682,9 @@ def ui_save_identity(
             structural_features=structural_features or None,
             wardrobe=split(wardrobe),
             negatives=split(negatives),
+            presentation=enum_or_none(Presentation, presentation),
+            build=enum_or_none(BodyBuild, build),
+            height=enum_or_none(HeightBand, height),
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)
@@ -722,6 +754,7 @@ async def ui_add_reference_frame(
     identities: Identities,
     file: UploadFile = File(...),
     lighting: str = Form("neutral"),
+    angle: str = Form(FrameAngle.FRONT.value),
     caption: str = Form(""),
 ):
     """Upload a reference still — the surface the domain model has always lacked.
@@ -761,9 +794,17 @@ async def ui_add_reference_frame(
     )
     container.storage.put(key, data, content_type=content_type)
 
+    try:
+        classified = FrameAngle(angle)
+    except ValueError:
+        # Front is what every frame uploaded before the classes existed actually is, so
+        # it is the honest fallback for an unrecognised value rather than a refusal.
+        classified = FrameAngle.FRONT
+
     frame = ReferenceFrame(
         key=key,
         lighting=lighting or "neutral",
+        angle=classified,
         caption=caption or None,
         sha256=digest,
         content_type=content_type,

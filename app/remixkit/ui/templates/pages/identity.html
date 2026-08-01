@@ -36,7 +36,21 @@
     <div class="stat">
       <dt>Reference frames</dt>
       <dd>{% if identity %}{{ identity.reference_frames|length }}{% else %}0{% endif %}
-        <span class="stat-sub">what the model is shown</span></dd>
+        <span class="stat-sub">
+          {%- if identity and identity.reference_frames -%}
+            {{ identity.covered_angles }}/{{ identity.coverage|length }} classes covered
+          {%- else -%}what the model is shown{%- endif -%}
+        </span></dd>
+    </div>
+    <div class="stat">
+      <dt>Prompt cost</dt>
+      {# The compression figure, in the header, because it is a property of the identity
+         rather than of the form that edits it — and because it is the number that decides
+         whether a shot description survives. #}
+      <dd>{% if identity %}{{ identity.compile()|length }}
+            <span class="stat-sub {{ 'unmeasured' if identity.dropped_clauses }}">
+              of {{ identity.PROMPT_BUDGET }} chars{{ " · over" if identity.dropped_clauses }}</span>
+          {% else %}<span class="unmeasured">—</span>{% endif %}</dd>
     </div>
     <div class="stat">
       <dt>Consent</dt>
@@ -62,56 +76,59 @@
 
 <div class="deck deck-r">
   <div class="workarea">
-    <input type="radio" name="rk-pane" id="pane-1" class="tab-state" checked>
-    <input type="radio" name="rk-pane" id="pane-2" class="tab-state">
+    {# One surface, no tabs.
 
-    <nav class="tabs">
-      <label for="pane-1">Description</label>
-      <label for="pane-2">Reference frames
-        <span class="count">{{ identity.reference_frames|length if identity else 0 }}</span></label>
-    </nav>
+       The description and the reference frames used to sit on either side of a tab
+       switch, which put the words describing a face on one screen and the photographs of
+       that face on another — so the one question worth asking here, *do these two agree*,
+       was the one question the layout made impossible. They are now a single scroll: what
+       the model is told, then what the model is shown. #}
+    <div class="stack">
+      {% include "components/_identity.html" %}
 
-    <div class="panes">
-      {# One definition of the identity form, not two.
-
-         This page used to hand-roll its own copy *and* include the component, so the
-         screen carried two forms for the same record — and the hand-rolled one asked for
-         wardrobe and negatives "one per line" while `ui_save_identity` splits on commas,
-         so a three-line answer was saved as a single item. The component is the form the
-         fragment route returns after a save, so it is the one that has to be right. #}
-      <div class="pane-1">{% include "components/_identity.html" %}</div>
-
-      <div class="pane-2">
-        <section class="panel">
-          <div class="panel-head"><h3>Reference frames</h3></div>
-          <p class="hint">
-            Stills the generator matches against. Lighting is recorded because a face lit
-            three different ways is three different references, not one.
-          </p>
-
+      <section class="panel">
+        <div class="panel-head">
+          <h3>What the model is shown</h3>
           {% if identity %}
-            <form class="form" hx-post="/ui/identities/{{ identity.id }}/frames"
-                  hx-target="#frames" hx-swap="outerHTML" hx-encoding="multipart/form-data">
-              <div class="form-row">
-                <label>Image <input name="file" type="file" accept="image/*" required></label>
-                <label>Lighting
-                  <select name="lighting">
-                    {% for l in ("neutral", "warm", "hard-flash", "backlit", "low-key") %}
-                      <option value="{{ l }}">{{ l }}</option>
-                    {% endfor %}
-                  </select>
-                </label>
-                <label>Caption <input name="caption" type="text" placeholder="optional"></label>
-              </div>
-              <button class="btn btn-primary" type="submit">Add reference frame</button>
-            </form>
-
-            <div id="frames">{% include "components/_frames.html" %}</div>
-          {% else %}
-            <p class="empty">Save an identity first — frames attach to a version.</p>
+            <span class="hint">{{ identity.covered_angles }}/{{ identity.coverage|length }} classes</span>
           {% endif %}
-        </section>
-      </div>
+        </div>
+        <p class="hint">
+          Stills the generator conditions on. Both axes are recorded because both change
+          what a reference is: a face lit three ways is three references, and a face from
+          three angles is three different pieces of information about one head.
+        </p>
+
+        {% if identity %}
+          <form class="form" hx-post="/ui/identities/{{ identity.id }}/frames"
+                hx-target="#frames" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+            <div class="form-row">
+              <label>Image <input name="file" type="file" accept="image/*" required></label>
+              <label>Class
+                <select name="angle">
+                  {% for angle in FrameAngle %}
+                    <option value="{{ angle.value }}"
+                            {{ "selected" if angle.value == "three-quarter-left" }}>{{ angle.label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>Lighting
+                <select name="lighting">
+                  {% for l in ("neutral", "warm", "hard-flash", "backlit", "low-key") %}
+                    <option value="{{ l }}">{{ l }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>Caption <input name="caption" type="text" placeholder="optional"></label>
+            </div>
+            <button class="btn btn-primary" type="submit">Add reference frame</button>
+          </form>
+
+          <div id="frames">{% include "components/_frames.html" %}</div>
+        {% else %}
+          <p class="empty">Save an identity first — frames attach to a version.</p>
+        {% endif %}
+      </section>
     </div>
   </div>
 

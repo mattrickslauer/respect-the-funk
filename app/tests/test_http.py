@@ -151,9 +151,20 @@ def test_the_artist_pages_forms_post_where_they_say_they_do(client):
 
     actions = re.findall(r'hx-post="(/ui/artists/[^"]+)"', page)
     assert f"/ui/artists/{artist['id']}/songs" in actions
-    assert f"/ui/artists/{artist['id']}/identity" in actions
 
-    # And they are live, submitted exactly as the page addresses them.
+    # The identity is deliberately *not* editable from here any more. It used to be, and
+    # the console therefore carried two forms for one versioned document — two people on
+    # two screens, each looking at a form that was current when it rendered, each able to
+    # mint a version over the other. The pane shows the record and links to the one place
+    # it is written.
+    assert f"/ui/artists/{artist['id']}/identity" not in actions
+    assert f'href="/console/artists/{artist["id"]}/identity"' in page
+
+    # And the builder's form posts where it says, submitted exactly as it is rendered.
+    builder = client.get(f"/console/artists/{artist['id']}/identity").text
+    assert "/ui/artists//" not in builder
+    assert f'hx-post="/ui/artists/{artist["id"]}/identity"' in builder
+
     assert client.post(
         f"/ui/artists/{artist['id']}/songs", data={"title": "Losing Sleep"}
     ).status_code == 200

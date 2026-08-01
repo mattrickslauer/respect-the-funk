@@ -311,6 +311,62 @@ files and a real manifest with synthetic pixels for nothing; a proxy-frame tier 
 caching are specified but not built. See `PIPELINE-SPEC.md` for both, and for the node
 model that replaces the four hardcoded moods.
 
+### The identity builder
+
+One surface, at `/console/artists/{id}/identity`. It used to be three: the builder page,
+which split "Description" from "Reference frames" across a tab switch, plus a second full
+copy of the form on the artist page. Saving mints a version, so two open screens could each
+mint a version over the other from forms that were both current when they rendered — and
+the tab split put the words describing a face on one pane and the photographs of that face
+on another, which made "do these agree" the one question the layout prevented.
+
+The artist page now shows a read-only summary and links here.
+
+**The description is standardised where it can be.** Presentation, build and height are
+enums picked from chips and a row of drawn silhouettes rather than typed as prose. The
+silhouettes are parameterised — three half-widths per build, scaled by presentation — so
+the whole picker is one macro and a table of numbers rather than fifteen drawings. There is
+one radio per build with the drawing swapped underneath it, because a set of radios per
+presentation loses the selection the moment presentation changes.
+
+Presentation rather than gender, deliberately: what conditions a render is silhouette and
+styling, neither of which is recoverable from a demographic field, and this is a record of
+how an artist presents in their own work rather than a claim the label is making about
+them. `unspecified` is the default and contributes nothing to a prompt.
+
+**Reference frames are classed.** Six angles — three-quarter left/right, front, profile
+left/right, back — crossed with the lighting label that already existed. The frames grid
+groups by class and shows every class including the empty ones, because a flat grid answers
+"how many" and hides the only question that matters, which is which views are covered.
+
+**And the whole thing is bounded.** See below.
+
+### The prompt budget
+
+`Identity.compile()` renders the identity into at most `PROMPT_BUDGET` characters (220),
+ordered by salience — silhouette, then face structure, then wardrobe — and drops clauses
+*whole* when they do not fit. `prompt_fragment()` is `compile()`, so the budget is a
+property of the run rather than a decoration on a screen.
+
+This is the compression argument, and it is a real failure mode rather than tidiness. A
+prompt is a fixed budget of attention; every character the identity spends is one the shot
+does not get. An identity written as three paragraphs pushes "vertical 9:16 loop, clean
+centre frame left empty" far enough down the string that the model renders a portrait
+instead of a backdrop — and that reads like the shot description was ignored, because
+effectively it was.
+
+Clauses drop whole because a prompt ending in `high cheekb` is worse than one that never
+mentioned cheekbones: a fragment is not less information, it is a different instruction.
+Ordering is truncation policy — silhouette survives anything, wardrobe goes first, since
+wardrobe is the most likely to be overridden by the shot and the cheapest to lose.
+
+The builder shows the compiled string, its length against the budget, and a count of what
+was refused. An identity that silently loses its wardrobe every render is one somebody will
+keep editing without understanding why nothing changes.
+
+Reference frames cost nothing against this budget, which is the trade the screen is trying
+to make obvious: detail that will not fit in the text belongs in a photograph.
+
 ### Holding the artist's face
 
 `Identity.reference_frames` had been on the model since it was written, and nothing read

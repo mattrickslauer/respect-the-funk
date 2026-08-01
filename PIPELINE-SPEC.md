@@ -307,10 +307,30 @@ Each of these is independently useful and independently shippable.
 2. ~~Song-aware prompt defaults + anti-soundtrack negatives~~ **done**
 3. ~~`sha256` and content type on reference frames at upload~~ **done**
 4. ~~Character plates as `first_frame` — Amanda Kurt's face in a kit~~ **done**
-5. Silent delivery — the ffmpeg `-an` pass (§4)
-6. Proxy frames and shot-by-shot promotion (§5)
-7. `Node` as a first-class document; migrate `Identity` onto it as `kind=character`
-8. Step cache with key rehydration (§6)
+5. ~~One identity surface; photo classes; standardised silhouette; bounded prompt~~ **done**
+6. Silent delivery — the ffmpeg `-an` pass (§4)
+7. Proxy frames and shot-by-shot promotion (§5)
+8. `Node` as a first-class document; migrate `Identity` onto it as `kind=character`
+9. Step cache with key rehydration (§6)
+
+Step 5 landed most of §2's `Node` shape inside `Identity` rather than alongside it, which
+is the right order: `character` is the only node kind with a real consumer today, and
+generalising before that consumer worked would have been designing against a guess. What
+`Identity` now carries — a standardised enum triple, classed sources, a compiled fragment
+with a budget — *is* the node contract, discovered by building one. Step 8 is now a
+rename and a `kind` field rather than a new design.
+
+Two things the compression work settled that §2 left open:
+
+- **The compiled fragment needs a budget, not just an order.** A prompt is a fixed
+  allowance of attention and the identity spends it first, so an unbounded `fragment`
+  silently starves the shot description. `Identity.PROMPT_BUDGET` (220 chars) with
+  whole-clause dropping, ordered silhouette → face → wardrobe, is the mechanism; the
+  builder shows the meter and the count of what was refused.
+- **Standardised beats free text wherever a field can be standardised.** "feminine
+  athletic tall build" is four words that survive any truncation and condition a
+  silhouette. The same information as prose costs twenty and is the first thing a budget
+  drops. That is the whole reason presentation, build and height are enums.
 
 Steps 3 and 4 were the ones that change what the videos actually look like. Everything
 before them is about being able to see what you are buying; everything after is about

@@ -12,7 +12,14 @@ from __future__ import annotations
 import logging
 
 from remixkit.auth.provider import Principal
-from remixkit.domain.models import ApprovalState, Identity, ReferenceFrame
+from remixkit.domain.models import (
+    ApprovalState,
+    BodyBuild,
+    HeightBand,
+    Identity,
+    Presentation,
+    ReferenceFrame,
+)
 from remixkit.ports.repository import DocumentRepository
 from remixkit.ports.storage import Storage
 from remixkit.services.errors import NotFound
@@ -55,8 +62,25 @@ class IdentityService:
         wardrobe: list[str] | None = None,
         negatives: list[str] | None = None,
         reference_frames: list[ReferenceFrame] | None = None,
+        presentation: Presentation | None = None,
+        build: BodyBuild | None = None,
+        height: HeightBand | None = None,
     ) -> Identity:
         previous = self.current(principal, artist_id)
+
+        def carried(given, attribute, empty):
+            """A value the caller omitted is inherited; one they cleared is honoured.
+
+            The distinction matters for the three standardised fields specifically. They
+            are enums with an `UNSPECIFIED` member, so "not sent" and "set back to
+            unspecified" are different intentions that arrive as different values —
+            `None` and the member. Collapsing them would make the silhouette fields the
+            only ones on this form that cannot be un-set.
+            """
+            if given is not None:
+                return given
+            return getattr(previous, attribute) if previous else empty
+
         identity = Identity(
             tenant_id=principal.tenant_id,
             artist_id=artist_id,
@@ -69,6 +93,9 @@ class IdentityService:
                 if reference_frames is not None
                 else (previous.reference_frames if previous else [])
             ),
+            presentation=carried(presentation, "presentation", Presentation.UNSPECIFIED),
+            build=carried(build, "build", BodyBuild.UNSPECIFIED),
+            height=carried(height, "height", HeightBand.UNSPECIFIED),
         )
         self._repo.put(principal.tenant_id, COLLECTION, identity.id, identity)
         return identity

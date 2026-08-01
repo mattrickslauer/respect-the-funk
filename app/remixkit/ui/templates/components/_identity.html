@@ -1,9 +1,16 @@
-{# The identity — "build it once", and the reason the second kit is cheap.
+{# The identity builder. One definition, one surface.
 
-   Editing mints a new version rather than overwriting, because a kit generated last
-   week was generated against a specific description of how this artist reads on
-   screen. Losing that makes the run unreproducible, which is the one thing the
-   provenance story cannot afford. #}
+   There used to be two editable copies of this record in the console — this component on
+   the artist page, and the dedicated builder page which also split "Description" from
+   "Reference frames" across two tabs. Three places to edit one thing, and the split put
+   the silhouette on one tab and the photographs of that silhouette on another, so nobody
+   could see whether the words and the pictures agreed. The artist page now shows a
+   read-only summary that links here; this is the only place the identity is written.
+
+   Editing mints a new version rather than overwriting, because a kit generated last week
+   was generated against a specific description of how this artist reads on screen. Losing
+   that makes the run unreproducible, which is the one thing the provenance story cannot
+   afford. #}
 <section class="panel" id="identity">
   <div class="panel-head">
     <h3>Identity{% if identity %} <span class="version">v{{ identity.version }}</span>{% endif %}</h3>
@@ -12,14 +19,6 @@
     {% endif %}
   </div>
 
-  <p class="small">
-    A stored, reusable description of how this artist looks and reads on screen. It is
-    prepended to every prompt in every kit, which is what keeps them looking like
-    themselves — and why the second video costs a fraction of the first.
-  </p>
-
-  {# The versioning rule travels with the form rather than sitting on one page that
-     happens to show it, because it is true wherever the form appears. #}
   <p class="hint">
     Saving creates a new version. Kits record the version they were built from, so an
     edit in place would rewrite the provenance of kits already delivered.
@@ -29,7 +28,45 @@
         hx-post="/ui/artists/{{ artist_id }}/identity"
         hx-target="#identity"
         hx-swap="outerHTML">
-    <label>Structural features
+
+    {# --- the standardised part -------------------------------------------------
+       Three enums where there used to be prose. This is the compression argument in
+       practice: "feminine athletic tall build" is four words that survive any truncation
+       and condition a silhouette, where the same information written as a sentence costs
+       twenty and is the first thing a budget drops. #}
+    <fieldset class="fieldset">
+      <legend>Presentation <span class="hint">how the artist reads on screen — not a demographic field</span></legend>
+      <div class="chips">
+        {% for option in ("unspecified", "feminine", "masculine", "androgynous") %}
+          <label class="chip">
+            <input type="radio" name="presentation" value="{{ option }}"
+                   {{ "checked" if (identity.presentation.value if identity else "unspecified") == option }}>
+            <span>{{ "not said" if option == "unspecified" else option }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <fieldset class="fieldset">
+      <legend>Build <span class="hint">point at it rather than naming it</span></legend>
+      {% include "components/_silhouette.html" %}
+    </fieldset>
+
+    <fieldset class="fieldset">
+      <legend>Height <span class="hint">a band, not a number — no model has a scale</span></legend>
+      <div class="chips">
+        {% for option in ("unspecified", "short", "average", "tall") %}
+          <label class="chip">
+            <input type="radio" name="height" value="{{ option }}"
+                   {{ "checked" if (identity.height.value if identity else "unspecified") == option }}>
+            <span>{{ "not said" if option == "unspecified" else option }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    {# --- the free text ------------------------------------------------------ #}
+    <label>Face structure
       <textarea name="structural_features" rows="3"
                 placeholder="Held invariant across shots: face structure, hair, distinguishing features.">{{ identity.structural_features if identity else "" }}</textarea>
     </label>
@@ -41,19 +78,51 @@
       <input name="negatives" value="{{ identity.negatives|join(', ') if identity else '' }}"
              placeholder="extra fingers, warped face, text artifacts">
     </label>
+
     <button class="btn btn-primary" type="submit">
       {{ "Save as v%d"|format(identity.version + 1) if identity else "Create identity" }}
     </button>
   </form>
 
-  {% if identity and identity.reference_frames %}
-    <h4 class="sub">Reference frames</h4>
-    <p class="small">The only record of what the image model was actually shown.</p>
-    <div class="frames">
-      {% for frame in identity.reference_frames %}
-        <figure><img src="{{ asset_url(frame) }}" alt="{{ frame.caption or frame.lighting }}">
-          <figcaption>{{ frame.lighting }}</figcaption></figure>
-      {% endfor %}
+  {% if identity %}
+    {# --- what actually gets sent ---------------------------------------------
+       The compiled fragment, its length, and what the budget refused. Rendered from the
+       saved record rather than computed in the browser, for the same reason the generate
+       screen prices on the server: a second opinion about what will be sent is worse than
+       no opinion. It updates on save, because saving is when the record changes. #}
+    {% set compiled = identity.compile() %}
+    {% set used = compiled|length %}
+    {% set budget = identity.PROMPT_BUDGET %}
+    <div class="budget">
+      <div class="budget-head">
+        <h4 class="sub">What the model is told</h4>
+        <span class="small {{ 'err' if identity.dropped_clauses else '' }}">
+          {{ used }} / {{ budget }} characters
+        </span>
+      </div>
+      <div class="budget-bar" role="img"
+           aria-label="{{ used }} of {{ budget }} characters used">
+        <span style="width: {{ [100, (used * 100 / budget)|round|int]|min }}%"
+              class="{{ 'over' if identity.dropped_clauses else '' }}"></span>
+      </div>
+      {% if compiled %}
+        <p class="compiled">{{ compiled }}</p>
+      {% else %}
+        <p class="empty">Nothing yet — this identity contributes no text to a prompt.</p>
+      {% endif %}
+      <p class="hint">
+        Prepended to every shot in every kit. The budget is a share of the prompt: every
+        character here is one the shot description does not get, which is how a long
+        identity turns a backdrop loop into a portrait. Clauses are dropped whole, in
+        reverse order of salience — silhouette survives, wardrobe goes first.
+      </p>
+      {% if identity.dropped_clauses %}
+        <p class="notice notice-error small">
+          {{ identity.dropped_clauses }} clause{{ "" if identity.dropped_clauses == 1 else "s" }}
+          over budget and not sent. Shorten the face structure, or move detail into
+          reference frames — a photograph costs nothing against this budget.
+        </p>
+      {% endif %}
     </div>
   {% endif %}
 </section>

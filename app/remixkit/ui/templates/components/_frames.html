@@ -1,51 +1,81 @@
-{# Reference frames on the current identity version.
+{# Reference frames, as classes rather than as a pile.
 
-   `asset_url` is called per render rather than stored, for the same reason the kit
-   asset grid does it: on B2 these are presigned URLs with an expiry, and persisting one
-   gives a page that looks right immediately after upload and fills with broken images
-   an hour later. #}
-{# `plate_keys` is computed once here rather than per frame: `Identity.plates()` dedupes
-   and groups across the whole list, so asking it per row would be both quadratic and a
-   different question than the one being answered. #}
-{% set plate_keys = identity.plates(limit=identity.reference_frames|length or 1)
-                    | map(attribute="key") | list %}
+   A flat grid of thirty stills answers "how many" and hides the only question that
+   matters: *which views are covered*. Twelve flattering front-on portraits and one
+   profile is a set that looks well-stocked and documents one angle. Grouping by class
+   makes the gap the thing you see first — an empty row is a to-do, and the whole point of
+   "collect many stills" is that it should be a finishable task.
+
+   `asset_url` is called per render rather than stored: on B2 these are presigned URLs with
+   an expiry, and persisting one gives a page that looks right immediately after upload and
+   fills with broken images an hour later. #}
+{% set plates = identity.plates(limit=identity.reference_frames|length or 1) %}
+{% set plate_keys = plates | map(attribute="key") | list %}
+{% set sent_key = plate_keys[0] if plate_keys else None %}
+
 <div id="frames">
   {% if identity.reference_frames %}
-    <div class="assets">
-      {% for frame in identity.reference_frames %}
-        <figure class="asset">
-          <img src="{{ asset_url(frame) }}" alt="{{ frame.caption or 'reference frame' }}" loading="lazy">
-          <figcaption class="small">
-            <span class="method">{{ frame.lighting }}</span>
-            {% if frame.caption %} · {{ frame.caption }}{% endif %}
-            {# Which of these is actually sent. Uploading forty stills and having one
-               condition the render is the intended behaviour, not a bug — but it is only
-               not a bug if the screen says which one. #}
-            {% if frame.key == plate_keys[0] %}
-              · <span class="ok">plate</span>
-            {% elif frame.key not in plate_keys %}
-              · <span class="hint">duplicate setup</span>
-            {% endif %}
-          </figcaption>
-        </figure>
-      {% endfor %}
+    <div class="coverage-head">
+      <span class="small">
+        {{ identity.covered_angles }} of {{ identity.coverage|length }} classes covered ·
+        {{ identity.reference_frames|length }} frame{{ "" if identity.reference_frames|length == 1 else "s" }}
+        on v{{ identity.version }}
+      </span>
+      <span class="hint">frames attach in place — evidence is not a change of intent, so it does not mint a version</span>
     </div>
-    <p class="hint">
-      {{ identity.reference_frames|length }} frame{{ "" if identity.reference_frames|length == 1 else "s" }}
-      on v{{ identity.version }}. Frames attach in place — adding evidence of how the
-      artist looks is not a change of intent, so it does not mint a version.
-    </p>
-    <p class="hint">
-      A video shot is conditioned on <strong>one</strong> plate — the first frame of each
-      distinct lighting setup, duplicates dropped by content hash. One is deliberate:
-      Seedance routes a second image into <code>last_frame</code>, which asks the model to
-      end the clip on it rather than to hold a stronger likeness. Upload as many stills as
-      you like; variety across <em>setups</em> is what makes the chosen plate generalise.
-    </p>
-  {% else %}
+  {% endif %}
+
+  {% for angle, frames in identity.coverage.items() %}
+    <div class="class-row {{ 'is-empty' if not frames }}">
+      <div class="class-key">
+        <h4>{{ angle.label }}</h4>
+        <span class="hint">
+          {% if frames %}{{ frames|length }}{% else %}none{% endif %}
+        </span>
+      </div>
+
+      {% if frames %}
+        <div class="assets class-assets">
+          {% for frame in frames %}
+            <figure class="asset {{ 'is-plate' if frame.key == sent_key }}">
+              <img src="{{ asset_url(frame) }}"
+                   alt="{{ frame.caption or (angle.label ~ ', ' ~ frame.lighting) }}" loading="lazy">
+              <figcaption class="small">
+                <span class="method">{{ frame.lighting }}</span>
+                {% if frame.caption %} · {{ frame.caption }}{% endif %}
+                {# Which single frame is actually sent. Uploading forty stills and having
+                   one condition the render is intended behaviour — but it is only not a
+                   bug if the screen says which one. #}
+                {% if frame.key == sent_key %}
+                  · <span class="ok">sent</span>
+                {% elif frame.key not in plate_keys %}
+                  · <span class="hint">duplicate setup</span>
+                {% endif %}
+              </figcaption>
+            </figure>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty class-empty">
+          No {{ angle.label }} frame yet.
+        </p>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  {% if not identity.reference_frames %}
     <p class="empty">
-      No reference frames. The identity is text-only, so the generator has nothing to
-      match a face against.
+      No reference frames at all. The identity is text-only, so the generator has nothing
+      to match a face against — every shot is conditioned on the description alone.
     </p>
   {% endif %}
+
+  <p class="hint">
+    A video shot is conditioned on <strong>one</strong> frame: the best-covered class
+    — three-quarter first, since it carries both the front planes and the depth a flat
+    front-on frame cannot — with duplicates dropped by content hash. One is deliberate:
+    Seedance routes a second image into <code>last_frame</code>, which asks the model to
+    end the clip on it rather than to hold a stronger likeness. Upload as many as you like;
+    variety across <em>classes and lighting</em> is what makes the chosen frame generalise.
+  </p>
 </div>

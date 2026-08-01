@@ -23,6 +23,30 @@
      better in a 1180px column on a 1440px screen. Prose is held to `max-width` per
      element instead, so widening the shell does not widen a paragraph. */
   --maxw:1560px;
+
+  /* ---- elevation ----
+     Five layers, named, so nothing ever reaches for a number. Every `z-index` in this
+     file is one of these; a bare integer anywhere is a bug, because the whole failure
+     mode of stacking is that it is invisible until two things collide and then the fix
+     is a bigger number, forever.
+
+     The scale is also the interaction model. Depth here means *how much of the page a
+     thing suspends*: sticky furniture suspends nothing and stays out of the way, a
+     drawer suspends the pane behind it, a modal suspends the page, and a lightbox
+     suspends everything including the modal that may have opened it. Anything that
+     dims what is under it must sit above it in this list. */
+  --z-sticky:10;    /* pinned within a scroll region — the compiled prompt, tab strips */
+  --z-topbar:20;    /* app chrome, above page content and below anything it launches */
+  --z-drawer:40;    /* slides over one pane: version history */
+  --z-modal:60;     /* suspends the page: add a frame, confirm a delete */
+  --z-lightbox:80;  /* suspends everything: one still, full size */
+
+  /* Shadow is the other half of the same signal — a layer that rises without casting
+     anything reads as a rendering mistake. Tuned dark-first, since this console is. */
+  --lift-1:0 1px 2px rgba(0,0,0,0.30);
+  --lift-2:0 6px 18px -4px rgba(0,0,0,0.45);
+  --lift-3:0 18px 44px -8px rgba(0,0,0,0.62);
+  --scrim:rgba(8,7,12,0.66);
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -44,7 +68,7 @@ code{font-family:var(--mono);font-size:0.88em;color:var(--ink-3)}
 .links{display:flex;gap:14px;flex-wrap:wrap}
 
 /* ---- chrome ---- */
-.topbar{border-bottom:1px solid var(--rule);background:var(--bg-2);position:sticky;top:0;z-index:20}
+.topbar{border-bottom:1px solid var(--rule);background:var(--bg-2);position:sticky;top:0;z-index:var(--z-topbar)}
 .topbar-inner{display:flex;align-items:center;justify-content:space-between;height:50px}
 .brand{display:flex;align-items:baseline;gap:9px;font-family:var(--display);font-size:17px;color:var(--ink);text-decoration:none}
 .brand-mark{color:var(--gold)}
@@ -144,7 +168,7 @@ body.shell .banner{flex:none}
    with it. The pane rule is a descendant selector for the same reason: a pane may be
    nested inside a swap wrapper rather than being a direct child. */
 .tab-state{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
-.tabs{flex:none;display:flex;gap:5px;position:sticky;top:0;z-index:5;flex-wrap:wrap;
+.tabs{flex:none;display:flex;gap:5px;position:sticky;top:0;z-index:var(--z-sticky);flex-wrap:wrap;
   background:var(--bg);padding-bottom:10px}
 .tabs label{display:flex;flex-direction:row;align-items:center;gap:7px;cursor:pointer;
   font-family:var(--display);font-size:13px;color:var(--ink-3);padding:6px 13px;
@@ -314,7 +338,7 @@ input::placeholder,textarea::placeholder{color:#5d5872}
    now — a 40-row gaps table with its column names off screen is a table you have to
    scroll back up to read. */
 .table th{text-align:left;font-family:var(--display);font-weight:500;color:var(--ink-3);font-size:11.5px;letter-spacing:0.08em;text-transform:uppercase;padding:6px 9px;border-bottom:1px solid var(--rule);
-  position:sticky;top:0;background:var(--panel);z-index:2}
+  position:sticky;top:0;background:var(--panel);z-index:var(--z-sticky)}
 .table td{padding:6px 9px;border-bottom:1px solid var(--rule-2);vertical-align:top}
 .table tbody tr:hover{background:rgba(255,255,255,0.022)}
 .table .prompt{color:var(--ink-3);max-width:400px}
@@ -632,3 +656,104 @@ body.auth .footer{margin-top:0}
   margin:6px 0 0;overflow-wrap:anywhere}
 .stage-arrow{font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);
   text-align:center;padding:2px 0}
+
+/* ---- three-column workspace ----
+   The identity builder is the one page with three genuinely different jobs on screen at
+   once: what the model is told, what it is shown, and what has been said before. Two
+   columns forced one of them below the fold, and the whole point of holding a description
+   and its photographs together is that you can look at both. */
+.deck-3{grid-template-columns:352px minmax(0,1fr) 300px}
+.deck-3 > .rail:last-child{padding-right:0;padding-left:6px}
+
+@media (max-width:1240px){
+  .deck-3{grid-template-columns:320px minmax(0,1fr)}
+  .deck-3 > .rail:last-child{display:none}  /* the drawer still reaches it */
+}
+@media (max-width:900px){
+  .deck-3{grid-template-columns:minmax(0,1fr)}
+  .deck-3 > .rail:first-child{display:none}
+}
+
+/* The compiled prompt pins to the bottom of the column that produces it. It is the
+   output of every control above it, so it is the one thing that must not scroll away
+   while you edit — the same argument the pagebar makes, one level in. */
+.pinned{position:sticky;bottom:0;z-index:var(--z-sticky);margin-top:auto;
+  background:linear-gradient(to bottom,transparent,var(--bg) 22%);padding-top:16px}
+.pinned .budget{margin-top:0;border-top:0;background:var(--panel);border:1px solid var(--rule);
+  border-radius:8px;padding:12px 14px;box-shadow:var(--lift-2)}
+
+/* ---- modal ----
+   Native <dialog>: the browser owns focus trapping, Escape, inertness of the page behind,
+   and the top layer, which is four things that are tedious and easy to get subtly wrong.
+   `::backdrop` is the scrim; the `z-*` scale still documents the intent even though the
+   top layer means it is not load-bearing here. */
+dialog.sheet{border:1px solid var(--rule);border-radius:12px;background:var(--panel);
+  color:var(--ink-2);padding:0;max-width:min(560px,calc(100vw - 32px));width:100%;
+  box-shadow:var(--lift-3);z-index:var(--z-modal)}
+dialog.sheet::backdrop{background:var(--scrim);backdrop-filter:blur(2px)}
+dialog.sheet[open]{animation:sheet-in 140ms cubic-bezier(0.2,0.7,0.3,1)}
+@keyframes sheet-in{from{opacity:0;transform:translateY(6px) scale(0.99)}}
+.sheet-head{display:flex;align-items:center;gap:12px;padding:13px 16px;
+  border-bottom:1px solid var(--rule-2)}
+.sheet-head h3{margin:0}
+.sheet-body{padding:15px 16px}
+.sheet-foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;
+  border-top:1px solid var(--rule-2);background:var(--bg-2);
+  border-radius:0 0 11px 11px}
+.sheet-x{margin-left:auto;background:none;border:0;color:var(--ink-3);font-size:19px;
+  line-height:1;cursor:pointer;padding:2px 4px;border-radius:4px}
+.sheet-x:hover{color:var(--ink)}
+
+/* ---- lightbox ----
+   Above the modal, because it is reachable *from* one and a layer that dims its own
+   opener has to sit over it. Full-bleed, so a reference still is judged at the size the
+   model sees rather than at thumbnail size. */
+dialog.lightbox{border:0;background:transparent;padding:0;max-width:none;max-height:none;
+  width:100vw;height:100dvh;z-index:var(--z-lightbox);overflow:hidden}
+dialog.lightbox::backdrop{background:rgba(6,5,9,0.90)}
+.lightbox-inner{height:100%;display:grid;grid-template-rows:1fr auto;gap:10px;padding:22px}
+.lightbox-inner img{min-height:0;max-width:100%;max-height:100%;margin:0 auto;
+  object-fit:contain;border-radius:6px}
+.lightbox-bar{display:flex;align-items:center;gap:14px;justify-content:center;
+  color:var(--ink-2);font-size:13px;flex-wrap:wrap}
+
+/* ---- drawer ----
+   Version history slides over the work area instead of living in it. History is
+   consulted rarely and occupies a column permanently; the drawer trades a click for the
+   space, and closes by clicking away because that is what a drawer means. */
+dialog.drawer{border:0;border-left:1px solid var(--rule);border-radius:0;
+  background:var(--panel);color:var(--ink-2);padding:0;
+  margin:0 0 0 auto;height:100dvh;max-height:none;width:min(420px,100vw);
+  box-shadow:var(--lift-3);z-index:var(--z-drawer)}
+dialog.drawer::backdrop{background:var(--scrim)}
+dialog.drawer[open]{animation:drawer-in 180ms cubic-bezier(0.2,0.7,0.3,1)}
+@keyframes drawer-in{from{transform:translateX(18px);opacity:0}}
+.drawer-body{height:calc(100dvh - 52px);overflow-y:auto;padding:14px 16px}
+
+/* ---- version rows ---- */
+.vrow{display:flex;align-items:flex-start;gap:10px;padding:10px 0;
+  border-bottom:1px solid var(--rule-2)}
+.vrow:last-child{border-bottom:0}
+.vrow-main{flex:1;min-width:0}
+.vrow-acts{display:flex;gap:6px;flex:none}
+.vrow.is-current{background:rgba(245,185,64,0.05);margin:0 -8px;padding:10px 8px;
+  border-radius:6px}
+
+/* ---- buttons that carry weight ---- */
+.btn-ghost{background:none;border:1px solid var(--rule);color:var(--ink-3);
+  padding:4px 9px;font-size:12px;border-radius:5px;cursor:pointer}
+.btn-ghost:hover{border-color:var(--ink-3);color:var(--ink)}
+.btn-danger{border-color:rgba(217,89,38,0.5);color:var(--err)}
+.btn-danger:hover{border-color:var(--err);background:rgba(217,89,38,0.10);color:var(--err)}
+
+/* A frame tile becomes a control: hover reveals what can be done to it, which keeps the
+   grid quiet until you are actually working on it. */
+.asset{position:relative}
+.asset-acts{position:absolute;top:5px;right:5px;display:flex;gap:4px;opacity:0;
+  transition:opacity 120ms}
+.asset:hover .asset-acts,.asset:focus-within .asset-acts{opacity:1}
+.asset-acts button{background:rgba(14,12,20,0.86);border:1px solid var(--rule);
+  color:var(--ink-2);border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;
+  box-shadow:var(--lift-1)}
+.asset-acts button:hover{color:var(--ink);border-color:var(--ink-3)}
+.asset-acts .del:hover{color:var(--err);border-color:var(--err)}

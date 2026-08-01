@@ -1344,6 +1344,10 @@ def ui_approve_kit(
 ):
     try:
         kit = kits.set_approval(principal, kit_id, ApprovalState(state))
+    except ValueError:
+        # `ApprovalState(state)` raises `ValueError`, not `ServiceError`, so an unknown
+        # state was an unhandled 500 here rather than a refusal the console could render.
+        return _error_fragment(request, ServiceError(f"{state!r} is not an approval state."))
     except ServiceError as exc:
         return _error_fragment(request, exc)
     return _render(request, "components/_kit_row.html", kit=kit)
@@ -1433,6 +1437,73 @@ def ui_delete_identity(
         return _error_fragment(request, exc)
     response = HTMLResponse("")
     response.headers["HX-Redirect"] = f"/console/artists/{artist_id}/identity"
+    return response
+
+
+@router.delete("/ui/identities/{identity_id}/frames/{index}", response_class=HTMLResponse)
+def ui_delete_reference_frame(
+    request: Request,
+    identity_id: str,
+    index: int,
+    principal: CurrentPrincipal,
+    identities: Identities,
+):
+    """Remove one reference still, and the object behind it.
+
+    The gap this closes is not cosmetic: frames could be added and never removed, so a
+    mis-classified upload — a profile filed as a front — was permanent, and it kept
+    winning the one conditioning slot for every kit afterwards.
+    """
+    try:
+        identity = identities.remove_reference_frame(principal, identity_id, index)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    return _render(request, "components/_frames.html", identity=identity)
+
+
+@router.post("/ui/identities/{identity_id}/restore", response_class=HTMLResponse)
+def ui_restore_identity(
+    request: Request, identity_id: str, principal: CurrentPrincipal, identities: Identities
+):
+    """Copy an older version forward as the new current one.
+
+    A restore that rewound in place would leave a kit generated last week pointing at a
+    version number whose content had since changed underneath it — the exact failure the
+    versioning exists to prevent. History only grows, and going back is itself an event.
+    """
+    try:
+        identity = identities.restore_version(principal, identity_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    response = HTMLResponse("")
+    response.headers["HX-Redirect"] = f"/console/artists/{identity.artist_id}/identity"
+    return response
+
+
+@router.post("/ui/identities/{identity_id}/approval", response_class=HTMLResponse)
+def ui_approve_identity(
+    request: Request,
+    identity_id: str,
+    principal: CurrentPrincipal,
+    identities: Identities,
+    state: str = Form(...),
+):
+    """The editorial gate, on the record that decides what an artist looks like.
+
+    `set_approval` has been on the service since it was written with nothing able to call
+    it, so every identity in the console was permanently a draft.
+    """
+    try:
+        identities.set_approval(principal, identity_id, ApprovalState(state))
+    except ValueError:
+        # 400 rather than 409: this is a malformed value, not a conflict with stored
+        # state. Only reachable from a stale page or a hand-built request, since the
+        # buttons that call it are rendered from the enum.
+        return _error_fragment(request, ServiceError(f"{state!r} is not an approval state."))
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+    response = HTMLResponse("")
+    response.headers["HX-Refresh"] = "true"
     return response
 
 

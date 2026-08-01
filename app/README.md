@@ -322,6 +322,32 @@ on another, which made "do these agree" the one question the layout prevented.
 
 The artist page now shows a read-only summary and links here.
 
+**Three columns, and depth for the rest.** The page has three jobs on screen at once —
+what the model is told, what it is shown, and what has been said before — and they are only
+useful together, so stacking them into one scroll defeated the merge that put them on one
+page. The compiled prompt pins to the bottom of the column that produces it. Uploading
+opens a modal, a still opens a lightbox, version history opens a drawer.
+
+Those are native `<dialog>` elements: the browser owns focus trapping, Escape, the top
+layer, and making the page behind inert, which is four things that are tedious to hand-roll
+and easy to get subtly wrong. The glue is about ten lines of event delegation. `console.css`
+declares a five-step elevation scale (`--z-sticky` … `--z-lightbox`) and every `z-index` in
+the file is one of them — a test asserts no bare integers, because the failure mode of
+stacking is invisible until two things collide and the fix is a bigger number, forever.
+
+**Full CRUD.** Frames can be removed, not just added — a mis-classified upload used to be
+permanent, and a profile filed as a front kept winning the one conditioning slot for every
+kit afterwards. Versions can be approved, deleted, and restored. Restoring *copies forward*
+rather than rewinding: a version rewound in place would leave a kit generated last week
+pointing at a version number whose content had since changed underneath it.
+
+Two deletion rules follow from that and are easy to get wrong. Removing a frame deletes its
+object only if no other frame in the identity shares the key — the key is the content digest
+alone, so one photograph filed under two classes is two rows sharing one object. Deleting a
+*version* deletes only the objects no surviving version references, because restore copies
+frames forward by reference. Without either rule nothing errors: the rows remain and the
+images 404, which is the shape of data loss that is hardest to notice.
+
 **The description is standardised where it can be.** Presentation, build and height are
 enums picked from chips and a row of drawn silhouettes rather than typed as prose. The
 silhouettes are parameterised — three half-widths per build, scaled by presentation — so

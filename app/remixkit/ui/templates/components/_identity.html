@@ -93,6 +93,10 @@
     {% set compiled = identity.compile() %}
     {% set used = compiled|length %}
     {% set budget = identity.PROMPT_BUDGET %}
+    {# Pinned to the bottom of the column that produces it. It is the output of every
+       control above, so it is the one thing that must not scroll away while you edit —
+       the same argument the pagebar makes, one level in. #}
+    <div class="pinned">
     <div class="budget">
       <div class="budget-head">
         <h4 class="sub">What the model is told</h4>
@@ -123,6 +127,7 @@
           reference frames — a photograph costs nothing against this budget.
         </p>
       {% endif %}
+    </div>
     </div>
   {% endif %}
 </section>

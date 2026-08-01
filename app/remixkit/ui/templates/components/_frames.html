@@ -37,9 +37,24 @@
       {% if frames %}
         <div class="assets class-assets">
           {% for frame in frames %}
+            {# The position in `identity.reference_frames`, not in this class's group.
+               Deletion keys on it, for the same reason `briefs.apply_overrides` does: the
+               obvious alternative — the object key — is derived from the content digest
+               alone, so one photograph filed under two classes is two frames sharing a
+               key, and deleting by key would take both. #}
+            {% set position = identity.reference_frames.index(frame) %}
             <figure class="asset {{ 'is-plate' if frame.key == sent_key }}">
               <img src="{{ asset_url(frame) }}"
                    alt="{{ frame.caption or (angle.label ~ ', ' ~ frame.lighting) }}" loading="lazy">
+              <div class="asset-acts">
+                <button type="button" title="View full size"
+                        data-full="{{ asset_url(frame) }}"
+                        data-caption="{{ angle.label }} · {{ frame.lighting }}{{ ' · ' ~ frame.caption if frame.caption }}">⤢</button>
+                <button type="button" class="del" title="Remove this frame"
+                        hx-delete="/ui/identities/{{ identity.id }}/frames/{{ position }}"
+                        hx-target="#frames" hx-swap="outerHTML"
+                        hx-confirm="Remove this {{ angle.label }} frame?">×</button>
+              </div>
               <figcaption class="small">
                 <span class="method">{{ frame.lighting }}</span>
                 {% if frame.caption %} · {{ frame.caption }}{% endif %}

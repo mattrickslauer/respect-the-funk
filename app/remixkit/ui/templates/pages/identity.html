@@ -1,12 +1,15 @@
-{# The identity builder as its own surface — wireframe gap #1.
+{# The identity builder.
 
-   "Reference frames have no surface. The domain model carries them and nothing can
-   create one, so the identity is text-only in practice."
+   Three columns rather than one scroll, because this page has three genuinely different
+   jobs on screen at once and they are only useful together: what the model is *told*
+   (left), what it is *shown* (centre), and what has been said before (right). Stacking
+   them put at least one below the fold, and the entire argument for merging the old tabs
+   was that a description and its photographs have to be comparable.
 
-   The identity is the reason the second video is cheap: hold the face structure
-   invariant once, and every subsequent kit reuses it instead of re-describing it. That
-   argument used to be the page's opening paragraph; it is now the hint on the form that
-   makes the claim, where it is read by someone about to act on it. #}
+   Depth carries the rest. The compiled prompt pins to the bottom of the column that
+   produces it; uploading opens a modal; a still opens a lightbox; history opens a drawer.
+   Each of those is a thing you do *to* the page rather than a thing the page is, and the
+   elevation scale in console.css says how much each one suspends. #}
 {% extends "_layout.html" %}
 {% block title %}Identity — {{ artist.name }}{% endblock %}
 {% block body_class %}shell{% endblock %}
@@ -44,9 +47,6 @@
     </div>
     <div class="stat">
       <dt>Prompt cost</dt>
-      {# The compression figure, in the header, because it is a property of the identity
-         rather than of the form that edits it — and because it is the number that decides
-         whether a shot description survives. #}
       <dd>{% if identity %}{{ identity.compile()|length }}
             <span class="stat-sub {{ 'unmeasured' if identity.dropped_clauses }}">
               of {{ identity.PROMPT_BUDGET }} chars{{ " · over" if identity.dropped_clauses }}</span>
@@ -60,12 +60,18 @@
   </dl>
 
   <div class="pagebar-cta">
+    {% if identity %}
+      <button class="btn btn-quiet" type="button" data-open="history">
+        History <span class="count">{{ identities|length }}</span>
+      </button>
+      <button class="btn btn-primary" type="button" data-open="add-frame">Add frame</button>
+    {% endif %}
     <a class="btn" href="/console/artists/{{ artist.id }}">← {{ artist.name }}</a>
   </div>
 </header>
 
 {% if artist.consent.blocks_generation %}
-  {# Stated here as well as on the artist page, because this is the screen where someone
+  {# Stated here as well as on the artist page, because this is the screen where somebody
      uploads photographs of a person's face. #}
   <div class="notice notice-error shell-notice">
     <strong>No likeness consent on file.</strong>
@@ -74,95 +80,180 @@
   </div>
 {% endif %}
 
-<div class="deck deck-r">
-  <div class="workarea">
-    {# One surface, no tabs.
-
-       The description and the reference frames used to sit on either side of a tab
-       switch, which put the words describing a face on one screen and the photographs of
-       that face on another — so the one question worth asking here, *do these two agree*,
-       was the one question the layout made impossible. They are now a single scroll: what
-       the model is told, then what the model is shown. #}
-    <div class="stack">
-      {% include "components/_identity.html" %}
-
-      <section class="panel">
-        <div class="panel-head">
-          <h3>What the model is shown</h3>
-          {% if identity %}
-            <span class="hint">{{ identity.covered_angles }}/{{ identity.coverage|length }} classes</span>
-          {% endif %}
-        </div>
-        <p class="hint">
-          Stills the generator conditions on. Both axes are recorded because both change
-          what a reference is: a face lit three ways is three references, and a face from
-          three angles is three different pieces of information about one head.
-        </p>
-
-        {% if identity %}
-          <form class="form" hx-post="/ui/identities/{{ identity.id }}/frames"
-                hx-target="#frames" hx-swap="outerHTML" hx-encoding="multipart/form-data">
-            <div class="form-row">
-              <label>Image <input name="file" type="file" accept="image/*" required></label>
-              <label>Class
-                <select name="angle">
-                  {% for angle in FrameAngle %}
-                    <option value="{{ angle.value }}"
-                            {{ "selected" if angle.value == "three-quarter-left" }}>{{ angle.label }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <label>Lighting
-                <select name="lighting">
-                  {% for l in ("neutral", "warm", "hard-flash", "backlit", "low-key") %}
-                    <option value="{{ l }}">{{ l }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <label>Caption <input name="caption" type="text" placeholder="optional"></label>
-            </div>
-            <button class="btn btn-primary" type="submit">Add reference frame</button>
-          </form>
-
-          <div id="frames">{% include "components/_frames.html" %}</div>
-        {% else %}
-          <p class="empty">Save an identity first — frames attach to a version.</p>
-        {% endif %}
-      </section>
-    </div>
-  </div>
-
+<div class="deck deck-3">
+  {# --- told ------------------------------------------------------------------ #}
   <aside class="rail">
+    {% include "components/_identity.html" %}
+  </aside>
+
+  {# --- shown ----------------------------------------------------------------- #}
+  <div class="workarea">
     <section class="panel">
-      {# The rule about why saving mints a version travels with the form, in
-         _identity.html — it belongs next to the button that does it, and repeating it
-         here just made two paragraphs of the same sentence face each other. #}
       <div class="panel-head">
-        <h3>Version history</h3>
-        <span class="hint">{{ identities|length }}</span>
+        <h3>What the model is shown</h3>
+        {% if identity %}
+          <span class="hint">{{ identity.covered_angles }}/{{ identity.coverage|length }} classes</span>
+        {% endif %}
       </div>
-      {% if identities %}
-        <div class="rows">
-          {% for v in identities|sort(attribute="version", reverse=true) %}
-            <div class="row">
-              <div class="row-main">
-                <h4>v{{ v.version }}
-                  {% with state = v.approval %}{% include "components/_badge.html" %}{% endwith %}
-                </h4>
-                <p class="small">
-                  {{ v.reference_frames|length }} frame{{ "" if v.reference_frames|length == 1 else "s" }} ·
-                  {{ v.created_at.strftime("%Y-%m-%d") }}
-                </p>
-              </div>
-            </div>
-          {% endfor %}
-        </div>
+      <p class="hint">
+        Stills the generator conditions on. Both axes are recorded because both change what
+        a reference is: a face lit three ways is three references, and a face from three
+        angles is three different pieces of information about one head.
+      </p>
+
+      {% if identity %}
+        <div id="frames">{% include "components/_frames.html" %}</div>
       {% else %}
-        <p class="empty">No versions yet.</p>
+        <p class="empty">Save an identity first — frames attach to a version.</p>
       {% endif %}
     </section>
+  </div>
 
+  {# --- said before ----------------------------------------------------------- #}
+  <aside class="rail">
+    {% if identity %}
+      <section class="panel">
+        <div class="panel-head"><h3>This version</h3></div>
+        <dl class="kv">
+          <dt>Created</dt><dd>{{ identity.created_at.strftime("%Y-%m-%d %H:%M") }}</dd>
+          <dt>Approval</dt><dd>{{ identity.approval.value }}</dd>
+        </dl>
+        {# The editorial gate. `set_approval` had been on the service since it was written
+           with nothing able to call it, so every identity in the console was permanently
+           a draft. #}
+        <div class="links">
+          {% for state in ("draft", "approved", "published") %}
+            {% if state != identity.approval.value %}
+              <button class="btn-ghost" type="button"
+                      hx-post="/ui/identities/{{ identity.id }}/approval"
+                      hx-vals='{"state": "{{ state }}"}'>Mark {{ state }}</button>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
     {% include "components/_rail_env.html" %}
   </aside>
 </div>
+
+{% if identity %}
+  {# ---- layer: modal ------------------------------------------------------------
+     Native <dialog>. The browser owns focus trapping, Escape, the top layer, and making
+     the page behind inert — four things that are tedious to hand-roll and easy to get
+     subtly wrong. #}
+  <dialog class="sheet" id="add-frame">
+    <form method="dialog" class="sheet-head">
+      <h3>Add a reference frame</h3>
+      <button class="sheet-x" aria-label="Close">×</button>
+    </form>
+    <div class="sheet-body">
+      <form class="form" id="add-frame-form"
+            hx-post="/ui/identities/{{ identity.id }}/frames"
+            hx-target="#frames" hx-swap="outerHTML"
+            hx-encoding="multipart/form-data"
+            hx-on::after-request="if(event.detail.successful){this.reset();this.closest('dialog').close()}">
+        <label>Image <input name="file" type="file" accept="image/*" required></label>
+        <div class="form-row">
+          <label>Class
+            <select name="angle">
+              {% for angle in FrameAngle %}
+                <option value="{{ angle.value }}"
+                        {{ "selected" if angle.value == "three-quarter-left" }}>{{ angle.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Lighting
+            <select name="lighting">
+              {% for l in ("neutral", "warm", "hard-flash", "backlit", "low-key") %}
+                <option value="{{ l }}">{{ l }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <label>Caption <input name="caption" type="text" placeholder="optional"></label>
+      </form>
+    </div>
+    <div class="sheet-foot">
+      <form method="dialog"><button class="btn btn-quiet">Cancel</button></form>
+      <button class="btn btn-primary" type="submit" form="add-frame-form">Add frame</button>
+    </div>
+  </dialog>
+
+  {# ---- layer: drawer ----
+     History is consulted rarely and would occupy a column permanently. A drawer trades a
+     click for the space and closes by clicking away, which is what a drawer means. #}
+  <dialog class="drawer" id="history">
+    <form method="dialog" class="sheet-head">
+      <h3>Version history</h3>
+      <button class="sheet-x" aria-label="Close">×</button>
+    </form>
+    <div class="drawer-body">
+      <p class="hint">
+        Saving mints a version and restoring copies one forward — history only grows. A
+        version rewound in place would leave a kit generated last week pointing at a
+        version number whose content had since changed underneath it.
+      </p>
+      {% for v in identities|sort(attribute="version", reverse=true) %}
+        <div class="vrow {{ 'is-current' if v.id == identity.id }}">
+          <div class="vrow-main">
+            <h4>v{{ v.version }}
+              {% if v.id == identity.id %}<span class="hint">current</span>{% endif %}
+              {% with state = v.approval %}{% include "components/_badge.html" %}{% endwith %}
+            </h4>
+            <p class="small">
+              {{ v.reference_frames|length }} frame{{ "" if v.reference_frames|length == 1 else "s" }} ·
+              {{ v.created_at.strftime("%Y-%m-%d") }}
+            </p>
+            {% if v.compile() %}<p class="hint">{{ v.compile()|truncate(90) }}</p>{% endif %}
+          </div>
+          <div class="vrow-acts">
+            {% if v.id != identity.id %}
+              <button class="btn-ghost" type="button"
+                      hx-post="/ui/identities/{{ v.id }}/restore">Restore</button>
+            {% endif %}
+            {% if identities|length > 1 %}
+              <button class="btn-ghost btn-danger" type="button"
+                      hx-delete="/ui/identities/{{ v.id }}"
+                      hx-confirm="Delete v{{ v.version }}? Frames no other version uses are deleted with it.">
+                Delete
+              </button>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </dialog>
+
+  {# ---- layer: lightbox ----
+     Above the modal, because it is reachable from one and a layer that dims its own
+     opener must sit over it. Full-bleed so a reference is judged at the size the model
+     sees rather than at thumbnail size. Its content is filled in by the opener below. #}
+  <dialog class="lightbox" id="lightbox">
+    <form method="dialog" class="lightbox-inner">
+      <img alt="" src="">
+      <div class="lightbox-bar">
+        <span data-lightbox-caption></span>
+        <button class="btn btn-quiet">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+  // Three lines of glue, and deliberately no more. Everything structural — focus
+  // trapping, Escape, inertness, stacking — is the browser's, because <dialog> already
+  // does it correctly and a hand-rolled version of any of them is a bug waiting.
+  document.addEventListener("click", (e) => {
+    const opener = e.target.closest("[data-open]");
+    if (opener) document.getElementById(opener.dataset.open)?.showModal();
+
+    const tile = e.target.closest("[data-full]");
+    if (tile) {
+      const box = document.getElementById("lightbox");
+      box.querySelector("img").src = tile.dataset.full;
+      box.querySelector("[data-lightbox-caption]").textContent = tile.dataset.caption || "";
+      box.showModal();
+    }
+  });
+  </script>
+{% endif %}
 {% endblock %}

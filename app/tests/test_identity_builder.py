@@ -296,3 +296,163 @@ def test_an_unrecognised_class_falls_back_to_front(client, container, principal,
 
     stored = container.identities.current(principal, artist["id"])
     assert stored.reference_frames[-1].angle is FrameAngle.FRONT
+
+
+# ------------------------------------------------------------------ full CRUD
+def test_a_reference_frame_can_be_removed(client, container, principal, artist):
+    """It could be added and never removed, so a mis-classified upload was permanent —
+    and a profile filed as a front kept winning the one conditioning slot forever."""
+    record = container.identities.create_version(principal, artist["id"], structural_features="x")
+    for angle in ("three-quarter-left", "front", "profile-right"):
+        client.post(
+            f"/ui/identities/{record.id}/frames",
+            files={"file": (f"{angle}.png", b"\x89PNG" + angle.encode(), "image/png")},
+            data={"angle": angle, "lighting": "neutral"},
+        )
+
+    response = client.delete(f"/ui/identities/{record.id}/frames/1")
+    assert response.status_code == 200
+
+    stored = container.identities.current(principal, artist["id"])
+    assert [f.angle.value for f in stored.reference_frames] == [
+        "three-quarter-left", "profile-right"
+    ], "removal is by position, and it took the one at that position"
+
+
+def test_removing_a_frame_takes_its_object_with_it(client, container, principal, artist):
+    """An orphaned still is a bucket paying for something no screen can reach."""
+    record = container.identities.create_version(principal, artist["id"], structural_features="x")
+    client.post(
+        f"/ui/identities/{record.id}/frames",
+        files={"file": ("f.png", b"\x89PNGone", "image/png")},
+        data={"angle": "front", "lighting": "neutral"},
+    )
+    key = container.identities.current(principal, artist["id"]).reference_frames[0].key
+    assert container.storage.exists(key)
+
+    client.delete(f"/ui/identities/{record.id}/frames/0")
+    assert not container.storage.exists(key)
+
+
+def test_one_photograph_filed_under_two_classes_survives_deleting_one(
+    client, container, principal, artist
+):
+    """The object key is derived from the content digest alone, so the same still filed
+    as `front` and as `profile-left` is two rows sharing one key. Deleting the object on
+    the first removal would break the image the second row still renders."""
+    record = container.identities.create_version(principal, artist["id"], structural_features="x")
+    for angle in ("front", "profile-left"):
+        client.post(
+            f"/ui/identities/{record.id}/frames",
+            files={"file": ("same.png", b"\x89PNGidentical", "image/png")},
+            data={"angle": angle, "lighting": "neutral"},
+        )
+    stored = container.identities.current(principal, artist["id"])
+    assert len({f.key for f in stored.reference_frames}) == 1, "the fixture must share a key"
+    key = stored.reference_frames[0].key
+
+    client.delete(f"/ui/identities/{record.id}/frames/0")
+
+    assert container.storage.exists(key), "the surviving row's image was deleted"
+
+
+def test_restoring_copies_a_version_forward_rather_than_rewinding(
+    client, container, principal, artist
+):
+    """A version rewound in place leaves a kit generated last week pointing at a version
+    number whose content has since changed underneath it — the exact failure versioning
+    exists to prevent. History only grows, and going back is itself an event."""
+    client.post(
+        f"/ui/artists/{artist['id']}/identity",
+        data={"structural_features": "oval face", "build": "athletic"},
+    )
+    client.post(
+        f"/ui/artists/{artist['id']}/identity",
+        data={"structural_features": "square jaw", "build": "solid"},
+    )
+    first = next(
+        i for i in container.identities.list_for_artist(principal, artist["id"]) if i.version == 1
+    )
+
+    assert client.post(f"/ui/identities/{first.id}/restore").status_code == 200
+
+    versions = container.identities.list_for_artist(principal, artist["id"])
+    assert [v.version for v in versions] == [3, 2, 1], "nothing was erased"
+    current = container.identities.current(principal, artist["id"])
+    assert current.build is BodyBuild.ATHLETIC
+    assert "oval face" in current.compile()
+
+
+def test_deleting_a_version_keeps_frames_another_version_still_uses(
+    client, container, principal, artist
+):
+    """`restore_version` copies frames forward by reference — two versions naming one
+    immutable still. Deleting a version's objects unconditionally would blank the frames
+    of the version it was restored from. Nothing errors; the rows stay and the images
+    404, which is the shape of data loss that is hardest to notice.
+    """
+    record = container.identities.create_version(principal, artist["id"], structural_features="x")
+    client.post(
+        f"/ui/identities/{record.id}/frames",
+        files={"file": ("f.png", b"\x89PNGshared", "image/png")},
+        data={"angle": "front", "lighting": "neutral"},
+    )
+    original = container.identities.current(principal, artist["id"])
+    key = original.reference_frames[0].key
+
+    restored = container.identities.restore_version(principal, original.id)
+    assert restored.reference_frames[0].key == key, "the fixture must share the object"
+
+    container.identities.delete(principal, restored.id)
+
+    assert container.storage.exists(key), "the original version's image was deleted"
+    assert container.identities.current(principal, artist["id"]).reference_frames
+
+
+def test_an_identity_can_be_approved(client, container, principal, artist):
+    """`set_approval` had been on the service with nothing able to call it, so every
+    identity in the console was permanently a draft."""
+    record = container.identities.create_version(principal, artist["id"], structural_features="x")
+
+    assert client.post(
+        f"/ui/identities/{record.id}/approval", data={"state": "approved"}
+    ).status_code == 200
+    assert container.identities.get(principal, record.id).approval.value == "approved"
+
+
+def test_a_bogus_approval_state_is_refused(client, container, principal, artist):
+    record = container.identities.create_version(principal, artist["id"], structural_features="x")
+
+    response = client.post(f"/ui/identities/{record.id}/approval", data={"state": "shipped"})
+    assert response.status_code == 400
+    assert container.identities.get(principal, record.id).approval.value == "draft"
+
+
+def test_removing_a_frame_that_is_not_there_is_a_404(client, container, principal, artist):
+    record = container.identities.create_version(principal, artist["id"], structural_features="x")
+    assert client.delete(f"/ui/identities/{record.id}/frames/7").status_code == 404
+
+
+# ------------------------------------------------------------------ the layers
+def test_the_builder_is_three_columns_and_the_work_is_layered(client, container, principal, artist):
+    """The page has three jobs on screen at once — told, shown, said before — and they
+    are only useful together. Depth carries what would otherwise be a fourth column."""
+    container.identities.create_version(principal, artist["id"], structural_features="x")
+    page = client.get(f"/console/artists/{artist['id']}/identity").text
+
+    assert "deck-3" in page
+    for layer in ("add-frame", "history", "lightbox"):
+        assert f'id="{layer}"' in page, f"the {layer} surface is missing"
+    assert 'class="pinned"' in page, "the compiled prompt must not scroll away while editing"
+
+
+def test_nothing_reaches_for_a_bare_z_index():
+    """Every layer is named on the scale in `:root`. A bare integer is the start of the
+    stacking arms race the scale exists to prevent."""
+    import re
+    from pathlib import Path
+
+    css = Path("remixkit/ui/static/console.css").read_text()
+    body = css.split("}", 1)[1]  # everything after the :root token block
+    bare = re.findall(r"z-index:\s*(?!var\()([^;}]+)", body)
+    assert not bare, f"z-index values not on the scale: {bare}"

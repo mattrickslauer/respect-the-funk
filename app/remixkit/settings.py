@@ -153,6 +153,11 @@ class Settings(BaseSettings):
     # Which models an account can reach is therefore a fact only the operator has. See
     # `providers.REFERENCE_MODEL_CANDIDATES` for what to look for in the GMI console.
     image_edit_model: str = ""
+    # The image-to-video model a locked clip runs on, e.g. "kling-o1-reference-to-video".
+    # The default video model matters here for the same reason: GMI's hub tags
+    # `seedance-2-0-260128` Text-to-Video only, so the still the lock paid to render is
+    # discarded by the clip that was supposed to inherit it.
+    video_edit_model: str = ""
 
     reference_slot: str = ""
     reference_max: int = 4

@@ -92,6 +92,7 @@ class Container:
             max_concurrency=settings.max_concurrency,
             max_run_cents=settings.max_run_cents,
             image_edit_model=settings.image_edit_model,
+            video_edit_model=settings.video_edit_model,
             reference_slot=settings.reference_slot,
             reference_max=settings.reference_max,
         )

@@ -61,6 +61,7 @@ class GenblazeGenerator:
         reference_slot: str = "",
         reference_max: int = 4,
         image_edit_model: str = "",
+        video_edit_model: str = "",
     ) -> None:
         self.name = f"genblaze:{backend}"
         self._storage = storage
@@ -71,6 +72,7 @@ class GenblazeGenerator:
         self._max_concurrency = max_concurrency
         self._max_run_cents = max_run_cents
         self._edit_model = (image_edit_model or "").strip()
+        self._video_edit_model = (video_edit_model or "").strip()
         self._reference_slot = (reference_slot or "").strip()
         self._reference_max = max(1, reference_max)
 
@@ -201,13 +203,14 @@ class GenblazeGenerator:
             # whole point of the field; the refusal note still says what it will cost them.
             if (
                 shot.use_identity_plate
-                and shot.modality is Modality.IMAGE
                 and not shot.model
                 and provider is not None
-                and not provider_table.honours_reference(model)
+                and not provider_table.honours_reference(model, shot.modality)
             ):
                 swapped = provider_table.reference_model(
-                    provider, shot.modality, self._edit_model
+                    provider,
+                    shot.modality,
+                    self._edit_model if shot.modality is Modality.IMAGE else self._video_edit_model,
                 )
                 if swapped:
                     log.info(
@@ -257,7 +260,18 @@ class GenblazeGenerator:
             # under the same rule as a plate — so a provider that refuses images refuses
             # the still too, and building one anyway would render and bill a frame whose
             # only consumer then kills the run.
-            if shot.identity_lock and planned.runs and self._accepts_images(provider)[0]:
+            # And the clip that consumes the still has to be able to read it. Locking a
+            # face into a frame and handing it to a text-to-video model spends the image
+            # call for nothing — which is exactly what `seedance-2-0-260128` did.
+            clip_reads = self._backend == "mock" or provider_table.honours_reference(
+                model, Modality.VIDEO
+            )
+            if (
+                shot.identity_lock
+                and planned.runs
+                and clip_reads
+                and self._accepts_images(provider)[0]
+            ):
                 planned.prelude, prelude_provider = self._identity_still(
                     shot, request, table, index
                 )
@@ -547,16 +561,14 @@ class GenblazeGenerator:
         # holding it to this check would make the entire locked path unreachable on a
         # laptop — which is precisely the shape of gap that let this bug ship.
         is_mock = provider_table.vendor_of(provider) == "mock"
-        if (
-            carrier is Modality.IMAGE
-            and not is_mock
-            and not provider_table.honours_reference(model)
-        ):
+        if not is_mock and not provider_table.honours_reference(model, carrier):
+            setting = "RK_IMAGE_EDIT_MODEL" if carrier is Modality.IMAGE else "RK_VIDEO_EDIT_MODEL"
+            candidates = provider_table.REFERENCE_MODEL_CANDIDATES.get(carrier, ())
+            kind = "text-to-image" if carrier is Modality.IMAGE else "text-to-video"
             return [], (
-                f"{model} is text-to-image and would ignore the reference. "
-                "Set RK_IMAGE_EDIT_MODEL to an image-to-image model your account can "
-                f"reach (candidates: {', '.join(provider_table.REFERENCE_MODEL_CANDIDATES[:2])}) "
-                "— until then no likeness is held"
+                f"{model} is {kind} and would discard the reference. "
+                f"Set {setting} to a model your account can reach "
+                f"(candidates: {', '.join(candidates[:2])}) — until then no likeness is held"
             )
 
         plate = plates[0]

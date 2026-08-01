@@ -174,12 +174,41 @@ CONTINUOUS_MIN, CONTINUOUS_MAX = 1, 60
 # (`genblaze_gmicloud/models/image.py`): Seededit, Reve edit/remix, and the Bria inpaint
 # pair. Everything else there resolves through a permissive fallback that routes an image
 # into the payload whether or not the model reads it, which is exactly the trap.
+# Taken from GMI's own Model Hub listing rather than from the connector's example slugs,
+# which is what went wrong twice. The hub tags each model with its input modalities; these
+# are the ones tagged Image-to-Image, plus the edit models whose name carries it.
 IMAGE_TO_IMAGE: tuple[re.Pattern[str], ...] = (
     re.compile(r"^seededit-", re.IGNORECASE),
     re.compile(r"^reve-(?:edit|remix)", re.IGNORECASE),
-    re.compile(r"^bria-(?:genfill|eraser)$", re.IGNORECASE),
-    re.compile(r"kontext", re.IGNORECASE),   # FLUX Kontext — in-context edit
-    re.compile(r"^gpt-image", re.IGNORECASE),  # OpenAI image edit accepts a source image
+    re.compile(r"^bria-", re.IGNORECASE),          # the whole fibo edit family, and the utilities
+    re.compile(r"kontext", re.IGNORECASE),
+    re.compile(r"^gpt-image", re.IGNORECASE),      # incl. gpt-image-2-edit
+    re.compile(r"image-to-image", re.IGNORECASE),  # hunyuan-image-to-image
+    re.compile(r"-i2i", re.IGNORECASE),
+)
+
+# Video models that accept an image, from the same listing.
+#
+# This is the half I missed, and it is why a corrected still changed nothing. The default
+# video model is `seedance-2-0-260128`, which GMI's hub tags **Text-to-Video only** — so
+# the first frame the two-stage lock spends money rendering is handed to a model that
+# discards it. The genblaze registry declares `first_frame`/`last_frame` for every
+# `seedance-*` slug, which is true of the 1.x line and not of 2.0; the connector's family
+# pattern is broader than the vendor's actual capability.
+IMAGE_TO_VIDEO: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^kling-", re.IGNORECASE),          # o1 r2v / i2v / flfv, v3, motion-control
+    re.compile(r"^vidu-", re.IGNORECASE),
+    re.compile(r"^pixverse-.*(?:i2v|transition)", re.IGNORECASE),
+    re.compile(r"^seedance-1", re.IGNORECASE),      # 1.x is i2v; 2.0 is not
+    re.compile(r"^wan", re.IGNORECASE),             # incl. Wan2.2-Animate-14B, wan2.7-r2v
+    re.compile(r"^veo-3\.1", re.IGNORECASE),
+    re.compile(r"^minimax-hailuo", re.IGNORECASE),
+    re.compile(r"^happyhorse-.*(?:i2v|r2v)", re.IGNORECASE),
+    re.compile(r"^luma-ray", re.IGNORECASE),
+    re.compile(r"^skyreels-v4-image", re.IGNORECASE),
+    re.compile(r"^ltx", re.IGNORECASE),
+    re.compile(r"MiniMeTalks", re.IGNORECASE),      # GMI's talking-head-from-a-photo workflow
+    re.compile(r"-r2v$", re.IGNORECASE),            # reference-to-video, the identity-shaped ones
 )
 
 # Slugs from the shipped registry's `example_slugs`, offered as *candidates* and never
@@ -195,15 +224,27 @@ IMAGE_TO_IMAGE: tuple[re.Pattern[str], ...] = (
 # So which image-to-image model exists on a given account is a fact only the operator has.
 # These are what to look for in the GMI console; `RK_IMAGE_EDIT_MODEL` is where the answer
 # goes. Guessing again would just move the 404.
-REFERENCE_MODEL_CANDIDATES = (
-    "seededit-3-0-i2i-250628",
-    "reve-edit-20250915",
-    "reve-remix-20250915",
-    "flux-kontext-pro",
-)
+REFERENCE_MODEL_CANDIDATES: dict[Modality, tuple[str, ...]] = {
+    # Image edit — what renders the identity-locking still.
+    Modality.IMAGE: (
+        "bria-fibo-edit",
+        "gpt-image-2-edit",
+        "seededit-3-0-i2i-250628",
+        "hunyuan-image-to-image",
+    ),
+    # Image-to-video — what turns that still into the clip. `kling-o1-reference-to-video`
+    # is the one shaped for this problem: reference-to-video rather than
+    # animate-this-frame.
+    Modality.VIDEO: (
+        "kling-o1-reference-to-video",
+        "kling-o1-image-to-video",
+        "vidu-q2-pro-i2v",
+        "seedance-1-5-pro-251215",
+    ),
+}
 
 
-def honours_reference(model: str | None) -> bool:
+def honours_reference(model: str | None, modality: Modality = Modality.IMAGE) -> bool:
     """Would this model actually look at an image it is handed?
 
     Unknown models answer `False`. That is the safe direction and the expensive one to get
@@ -211,7 +252,8 @@ def honours_reference(model: str | None) -> bool:
     bills full price for it, where one wrongly treated as text-only produces a visible
     refusal on the plan screen that somebody can act on.
     """
-    return bool(model) and any(p.search(model) for p in IMAGE_TO_IMAGE)
+    patterns = IMAGE_TO_VIDEO if modality is Modality.VIDEO else IMAGE_TO_IMAGE
+    return bool(model) and any(p.search(model) for p in patterns)
 
 
 def reference_model(provider: Any, modality: Modality, configured: str = "") -> str | None:
@@ -231,10 +273,10 @@ def reference_model(provider: Any, modality: Modality, configured: str = "") -> 
     `None` means "ask the operator", and the caller must refuse rather than render
     something with no likeness in it.
     """
-    if configured and honours_reference(configured):
+    if configured and honours_reference(configured, modality):
         return configured
     default = default_model(provider, modality)
-    if honours_reference(default):
+    if honours_reference(default, modality):
         return default
     if vendor_of(provider) == "mock":
         # The mock reads nothing and renders nothing, so it cannot mislead about likeness.

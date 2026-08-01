@@ -522,6 +522,35 @@ provider's slot count caps the total — so today a duo sends one plate and the 
 `2 faces — 1 reference sent; set RK_REFERENCE_SLOT to send the rest`. A duo silently
 conditioned on one member is exactly the failure that must not be invisible.
 
+### Both stages have to read the reference
+
+Two models sit between an artist's photograph and a finished clip, and **each one can
+silently discard it**. Getting the first right changed nothing until the second was too.
+
+| stage | GMI default | hub tags it | result |
+|---|---|---|---|
+| still | `seedream-5.0-lite` | Text-to-Image | reference ignored |
+| clip | `seedance-2-0-260128` | **Text-to-Video only** | the still is discarded |
+
+The second is the one that hid the first. The connector declares `first_frame`/`last_frame`
+for every `seedance-*` slug — true of the 1.x line, not of 2.0 — so the lock rendered a
+frame, paid for it, and handed it to a model that throws it away.
+
+Set both, from GMI's Model Hub rather than from any list in this repo:
+
+```
+RK_IMAGE_EDIT_MODEL=bria-fibo-edit                  # or gpt-image-2-edit, seededit-3-0-i2i-250628
+RK_VIDEO_EDIT_MODEL=kling-o1-reference-to-video     # or kling-o1-image-to-video, vidu-q2-pro-i2v
+```
+
+`kling-o1-reference-to-video` is the one shaped for this problem — reference-to-video
+rather than animate-this-frame. `GMI-MiniMeTalks-Workflow` ($0.02, Image-to-Video) is worth
+trying for a talking head specifically.
+
+Unset, the plan screen names the missing setting and says no likeness is held. Nothing is
+guessed: a hardcoded slug 404'd once already, and GMI declares `DiscoverySupport.PARTIAL`
+so there is no catalog endpoint to check one against.
+
 ### Accepting a reference and reading one
 
 `GMICloudImageProvider` declares `accepts_chain_input=True`, so the capability gate passes

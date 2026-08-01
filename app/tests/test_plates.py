@@ -638,7 +638,7 @@ def test_a_plate_is_refused_when_the_vendor_has_no_model_that_would_read_it(
     shot = plan.shots[0]
 
     assert shot.reference_keys == []
-    assert "would ignore the reference" in shot.plate_note
+    assert "would discard the reference" in shot.plate_note
 
 
 # ------------------------------------------------------------------ several faces
@@ -920,4 +920,58 @@ def test_an_explicitly_pinned_model_is_never_swapped(
 
     assert shot.model == "seedream-5.0-lite"
     assert shot.reference_keys == []
-    assert "would ignore the reference" in shot.plate_note
+    assert "would discard the reference" in shot.plate_note
+
+
+# ------------------------------------------------------------------ the clip must read it too
+def test_a_text_to_video_model_discards_the_still_the_lock_paid_for():
+    """The half that made a corrected still change nothing.
+
+    GMI's hub tags `seedance-2-0-260128` Text-to-Video only, while the connector declares
+    `first_frame`/`last_frame` for every `seedance-*` slug — true of the 1.x line and not
+    of 2.0. So the lock rendered a frame, paid for it, and handed it to a model that
+    throws it away.
+    """
+    from remixkit.adapters import providers as provider_table
+    from remixkit.domain.models import Modality
+
+    assert not provider_table.honours_reference("seedance-2-0-260128", Modality.VIDEO)
+    assert provider_table.honours_reference("seedance-1-5-pro-251215", Modality.VIDEO)
+    assert provider_table.honours_reference("kling-o1-reference-to-video", Modality.VIDEO)
+
+
+def test_no_still_is_rendered_for_a_clip_that_would_discard_it(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """Paying for a frame whose only consumer throws it away is worse than not locking."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    monkeypatch.setattr(container.generator, "_edit_model", "bria-fibo-edit")
+    monkeypatch.setattr(container.generator, "_backend", "genblaze")  # leave the mock exemption
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="performance"
+    )
+    assert plan.shots[0].prelude is None, "a still was rendered for a model that discards it"
+
+
+def test_both_stages_swap_when_configured(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """The whole chain, on models the catalog actually lists."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    monkeypatch.setattr(container.generator, "_edit_model", "bria-fibo-edit")
+    monkeypatch.setattr(container.generator, "_video_edit_model", "kling-o1-reference-to-video")
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="performance"
+    )
+    clip = plan.shots[0]
+
+    assert clip.model == "kling-o1-reference-to-video"
+    assert clip.prelude is not None
+    assert clip.prelude.model == "bria-fibo-edit"
+    assert clip.prelude.reference_keys == ["remixkit/frames/a.png"]

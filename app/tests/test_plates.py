@@ -1152,3 +1152,31 @@ def test_the_shipped_families_still_send_their_own_slot():
                     modality=GBModality.IMAGE, params={})
         step.inputs = [one]
         assert provider.prepare_payload(step).get("image") == "https://b2/a.png", model
+
+
+def test_the_bria_family_renames_prompt_to_instruction():
+    """Bria's fibo models are *edit* models: pictures plus a statement of what to change.
+
+    They reject a request carrying neither:
+
+        422: Either 'instruction' or 'structured_instruction' must be provided.
+
+    `prompt` is the canonical name across every other provider here, so the rename belongs
+    on the family — a shot should not have to know which vendor is going to answer it.
+    """
+    from genblaze_core.models.asset import Asset as GBAsset
+    from genblaze_core.models.enums import Modality as GBModality
+    from genblaze_core.models.step import Step
+    from genblaze_gmicloud import GMICloudImageProvider
+
+    from remixkit.adapters import pricing
+
+    provider = GMICloudImageProvider(models=pricing.priced_registry(GMICloudImageProvider))
+    step = Step(provider="gmicloud-image", model="bria-fibo-edit", prompt="a portrait",
+                modality=GBModality.IMAGE, params={})
+    step.inputs = [GBAsset(url="https://b2/a.png", media_type="image/png", sha256="a" * 64)]
+
+    payload = provider.prepare_payload(step)
+    assert payload.get("instruction") == "a portrait"
+    assert "prompt" not in payload
+    assert payload.get("images") == ["https://b2/a.png"]

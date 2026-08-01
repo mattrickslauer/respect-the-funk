@@ -50,7 +50,23 @@ def _bria_fibo_family() -> Any:
     # `ParamSurface.for_modality` builds the allowlist from the *universally meaningful*
     # params for a modality, which cannot include a vendor's input slot names. Anything a
     # family routes into the payload has to be extended onto its own surface.
-    surface = ParamSurface.for_modality(Modality.IMAGE).extend("number_of_images", "images")
+    surface = (
+        ParamSurface.for_modality(Modality.IMAGE)
+        .extend("number_of_images", "images")
+        # `prompt` → `instruction`.
+        #
+        # Bria's fibo models are *edit* models: they take pictures plus a statement of what
+        # to change, and they reject a request carrying neither `instruction` nor
+        # `structured_instruction`:
+        #
+        #     422: Either 'instruction' or 'structured_instruction' must be provided.
+        #
+        # The canonical name across every other provider here is `prompt`, so the rename
+        # belongs on this family rather than in the caller — a shot should not have to know
+        # which vendor is going to answer. `with_aliases` adds the target to the allowlist
+        # automatically, which is the mistake made one commit ago in the other direction.
+        .with_aliases(prompt="instruction")
+    )
     return ModelFamily(
         name="rk-bria-fibo",
         # The fibo edit family plus the standalone utilities, all of which take an image.

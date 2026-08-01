@@ -853,3 +853,20 @@ dialog.drawer[open]{animation:drawer-in 180ms cubic-bezier(0.2,0.7,0.3,1)}
 .line:hover{border-color:var(--ink-3);color:var(--ink)}
 .line.is-on{border-color:var(--gold);color:var(--ink);background:var(--panel-2)}
 .line-add{color:var(--ink-3);border-style:dashed}
+
+/* Per-shot knobs, on one row under the prompt. They are the fields that change what the
+   provider is asked for; the prompt above is what it is asked *in*. */
+.step-knobs{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1.2fr);
+  gap:10px;align-items:end}
+.step-knobs > label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink-3)}
+.step-knobs input,.step-knobs select{font-family:var(--mono);font-size:12px;color:var(--ink);
+  background:var(--bg-2);border:1px solid var(--rule);border-radius:5px;padding:7px 9px;
+  width:100%}
+.step-knobs input:focus,.step-knobs select:focus{outline:none;border-color:var(--gold-dim)}
+.queue-name{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink-3);
+  margin-bottom:9px}
+.queue-name input{font-size:13px;color:var(--ink);background:var(--bg-2);
+  border:1px solid var(--rule);border-radius:5px;padding:7px 9px;width:100%}
+/* The brief row grows with the controls on it; wrap rather than squeeze. */
+.plan-row{flex-wrap:wrap}
+@media (max-width:760px){ .step-knobs{grid-template-columns:1fr} }

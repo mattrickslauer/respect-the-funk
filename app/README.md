@@ -543,6 +543,33 @@ catalogue. The whole classed plate set then goes, and the slot name and count ar
 into the step metadata, so a wrong guess is visible in the run's own record rather than
 only in a face that came back looking like someone else.
 
+### What the generate screen can change
+
+Everything that alters the plan is on it, and everything on it rides the queue button —
+a control that changes what is bought without changing what was priced is the divergence
+this screen exists to prevent.
+
+**Kit-level:** video count, which hooks to cut to, **which faces the kit is for**, an
+optional voice-over line, a budget ceiling, and the kit's name.
+
+**Per shot:** the composed prompt, the model, the loop length, and whether the face is
+locked to a still at all. Length had been overridable since per-shot editing landed and
+had no field — the one thing a loop is measured in was the one thing the plan could not
+change. Turning the lock off is for a backdrop that wants nobody in it, and it skips the
+still rather than rendering one it will not use.
+
+The budget ceiling refuses *on the screen*: `KitService.request` raises on an estimate over
+it, and a button that submits into a known refusal is a round trip to be told something the
+page already knew.
+
+Two encoding details in the face picker, both load-bearing. Not choosing and choosing
+nobody are different answers — the first means the primary line, the second means a kit
+with no face — and an HTML checkbox group sends nothing in either case, so a hidden
+`faces_chosen` marker distinguishes them. That marker cannot be an empty `identity_names`
+value, because the empty string is *the primary line's real name*: using it would silently
+add the primary to every kit and make "Marco alone" unreachable. And the primary is
+pre-ticked on first load, because the boxes have to describe the plan underneath them.
+
 ### Silent loops
 
 A kit loop is a backdrop the master plays over, so a generated soundtrack is a defect.

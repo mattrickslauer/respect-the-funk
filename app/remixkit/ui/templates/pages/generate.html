@@ -121,8 +121,56 @@
             <label>Videos
               <input name="video_count" type="number" min="0" max="8" value="{{ video_count }}">
             </label>
+            <label>Voice-over <span class="hint">optional — one spoken line</span>
+              <input name="tts_text" value="{{ tts_text }}" placeholder="leave empty for none">
+            </label>
+            <label>Budget ceiling <span class="hint">cents — blank for none</span>
+              <input name="budget_cents" type="number" min="0" step="1"
+                     value="{{ budget_cents if budget_cents is not none else '' }}">
+            </label>
             <button class="btn btn-quiet" type="submit">Re-price</button>
           </div>
+
+          {# --- who is in it ---
+             The face picker. `identity_names` reached the service two commits ago and
+             had no control, so the console always generated the primary line no matter
+             how many faces an artist had.
+
+             Ticking none is a real answer — a backdrop with nobody in it — and it is
+             distinguishable from not choosing, because an untouched form sends no
+             `identity_names` key at all while a form with the boxes cleared sends the
+             empty marker below. #}
+          {% if lines %}
+            {# What is ticked. On first load nothing has been chosen, and the run would
+               use the primary line — so that is what the boxes show, or the screen would
+               be describing a different kit than the one below it. #}
+            {% set selected = identity_names if identity_names is not none
+                              else [(lines|list)[0]] %}
+            <div class="sections-pick" role="group" aria-label="Faces this kit is for">
+              <p class="hint pick-note">
+                Faces — each contributes its description to every prompt, and one
+                reference each to the still that locks them.
+              </p>
+              {% for line_name, versions in lines.items() %}
+                <label class="tick">
+                  <input type="checkbox" name="identity_names" value="{{ line_name }}"
+                         {{ "checked" if line_name in selected }}>
+                  {{ versions[0].display_name }}
+                  <span class="hint">
+                    v{{ versions[0].version }} ·
+                    {{ versions[0].reference_frames|length }} frame{{ "" if versions[0].reference_frames|length == 1 else "s" }}
+                  </span>
+                </label>
+              {% endfor %}
+              {# A marker, not a value.
+                 The empty string is the *primary line's actual name*, so it cannot double
+                 as "none chosen" — a hidden `identity_names=""` would silently add the
+                 primary to every kit and make "Marco alone" unreachable. This says only
+                 that the picker was on screen, which is what lets a form with every box
+                 cleared mean "no face" rather than "not asked". #}
+              <input type="hidden" name="faces_chosen" value="1">
+            </div>
+          {% endif %}
           {# Which hooks this kit is cut to. The videos are *dealt* across the chosen
              sections rather than multiplied by them — every hook gets a loop before any
              hook gets a second one — so ticking another box does not double the invoice
@@ -238,11 +286,35 @@
                   <textarea name="prompt_{{ step.index }}" rows="3"
                             form="repricer">{{ step.prompt }}</textarea>
                 </label>
-                <label class="step-model">Model <span class="hint">blank = {{ step.model or "none resolved" }}</span>
-                  <input name="model_{{ step.index }}" form="repricer"
-                         value="{{ overrides.get(step.index, {}).get('model', '') }}"
-                         placeholder="{{ step.model or '—' }}">
-                </label>
+                <div class="step-knobs">
+                  <label class="step-model">Model <span class="hint">blank = {{ step.model or "none resolved" }}</span>
+                    <input name="model_{{ step.index }}" form="repricer"
+                           value="{{ overrides.get(step.index, {}).get('model', '') }}"
+                           placeholder="{{ step.model or '—' }}">
+                  </label>
+
+                  {% if step.modality.value == "video" %}
+                    {# `seconds` has been overridable since per-shot editing landed and had
+                       no field, so the one thing a loop is measured in was the one thing
+                       the plan could not change. Blank keeps the hook's own length. #}
+                    <label class="step-secs">Length <span class="hint">seconds</span>
+                      <input name="seconds_{{ step.index }}" form="repricer"
+                             type="number" min="3" max="10" step="0.1"
+                             value="{{ overrides.get(step.index, {}).get('seconds', '') }}"
+                             placeholder="{{ '%.1f'|format(step.requested_seconds) if step.requested_seconds else '—' }}">
+                    </label>
+
+                    {# Explicit on/off rather than a checkbox: absence already means "use
+                       the default", and this field defaults to on, so an unticked box and
+                       an untouched form would be indistinguishable. #}
+                    <label class="step-lock">Face
+                      <select name="identity_lock_{{ step.index }}" form="repricer">
+                        <option value="on" {{ "selected" if step.prelude }}>lock to a still</option>
+                        <option value="off" {{ "selected" if not step.prelude }}>no face</option>
+                      </select>
+                    </label>
+                  {% endif %}
+                </div>
               </li>
             {% endfor %}
           </ol>
@@ -277,6 +349,22 @@
         {% for section_id in section_ids %}
           <input type="hidden" name="section_ids" value="{{ section_id }}">
         {% endfor %}
+        {# Everything the estimate above was computed from. A control that changes the
+           plan but does not ride the button buys a different kit than the one priced —
+           the divergence this whole screen exists to prevent. #}
+        {% if identity_names is not none %}
+          <input type="hidden" name="faces_chosen" value="1">
+          {% for line_name in identity_names %}
+            <input type="hidden" name="identity_names" value="{{ line_name }}">
+          {% endfor %}
+        {% endif %}
+        {% if tts_text %}<input type="hidden" name="tts_text" value="{{ tts_text }}">{% endif %}
+        {% if budget_cents is not none %}
+          <input type="hidden" name="budget_cents" value="{{ budget_cents }}">
+        {% endif %}
+        <label class="queue-name">Kit name <span class="hint">optional</span>
+          <input name="name" placeholder="{{ song.title }} — kit">
+        </label>
         {# Every edit that was priced, carried into the purchase. Without these the queue
            button buys the generated defaults while the screen above shows the rewritten
            prompts — the exact divergence this page exists to prevent, reintroduced one
@@ -286,9 +374,18 @@
             <input type="hidden" name="{{ field }}_{{ index }}" value="{{ value }}">
           {% endfor %}
         {% endfor %}
-        <button class="btn btn-primary" type="submit" {{ "disabled" if blocked }}>
+        <button class="btn btn-primary" type="submit" {{ "disabled" if blocked or over_budget }}>
           Queue this kit
         </button>
+        {% if over_budget %}
+          {# Refused here as well as in the service. `KitService.request` raises on this,
+             and a button that submits into a known refusal is a round trip to be told
+             something the screen already knew. #}
+          <p class="notice notice-error small">
+            {{ "$%.2f"|format(estimate_cents / 100) }} is over the
+            {{ "$%.2f"|format(budget_cents / 100) }} ceiling. Raise it, or drop a shot.
+          </p>
+        {% endif %}
       </form>
       <div id="queued"></div>
     </section>

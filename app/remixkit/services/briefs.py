@@ -198,7 +198,15 @@ def default_shot_plan(
 # already understood end-to-end by `ports.generator`. Aspect ratio is absent because the
 # whole product is 9:16 (BUILD-SPEC §7); modality is absent because changing it would
 # change which provider runs and make the label meaningless.
-OVERRIDABLE = ("prompt", "model", "seconds")
+OVERRIDABLE = ("prompt", "model", "seconds", "identity_lock")
+
+# Fields whose value is a yes/no rather than a string. They need their own coercion
+# because a checkbox that is simply *absent* when unticked cannot express "off" — absence
+# already means "use the default", and for a field that defaults to on those are opposite
+# intentions. So the form sends the answer explicitly and this reads it.
+BOOLEAN_OVERRIDES = frozenset({"identity_lock"})
+_TRUE = frozenset({"on", "1", "true", "yes"})
+_FALSE = frozenset({"off", "0", "false", "no"})
 
 
 def overrides_from_brief(brief: dict) -> dict[int, dict]:
@@ -251,6 +259,17 @@ def apply_overrides(
             if isinstance(value, str):
                 value = value.strip()
             if value in (None, ""):
+                continue
+            if field_name in BOOLEAN_OVERRIDES:
+                if isinstance(value, bool):
+                    setattr(shot, field_name, value)
+                    continue
+                lowered = str(value).strip().lower()
+                if lowered in _TRUE:
+                    setattr(shot, field_name, True)
+                elif lowered in _FALSE:
+                    setattr(shot, field_name, False)
+                # Anything else is not an answer, so the default stands.
                 continue
             if field_name == "seconds":
                 try:

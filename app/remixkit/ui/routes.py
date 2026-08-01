@@ -343,7 +343,7 @@ def identity_page(
 # than a nested structure, because the re-price control is a plain GET form and the queue
 # form has to carry the identical values back as hidden inputs. Anything that survives a
 # round trip through both without a serialiser is worth preferring here.
-_OVERRIDE_FIELD = re.compile(r"^(prompt|model|seconds)_(\d+)$")
+_OVERRIDE_FIELD = re.compile(r"^(prompt|model|seconds|identity_lock)_(\d+)$")
 
 
 def _shot_overrides(params: Any) -> dict[int, dict]:
@@ -380,6 +380,10 @@ def generate_page(
     kits: Kits,
     video_count: int = 3,
     section_ids: Annotated[list[str], Query()] = [],
+    identity_names: Annotated[list[str], Query()] = [],
+    faces_chosen: str = "",
+    tts_text: str = "",
+    budget_cents: int | None = None,
 ):
     """Cost *before* the button — wireframe gap #3.
 
@@ -402,6 +406,11 @@ def generate_page(
     # loading this page and pricing it must not show up in the plan as a window.
     chosen = [sid for sid in section_ids if song.section(sid)]
     overrides = _shot_overrides(request.query_params)
+    # `None` and `[]` are different answers — not asked means the primary line, an empty
+    # tick-list means a kit with nobody in it — and a checkbox group sends nothing in
+    # either case. `faces_chosen` is the marker that tells them apart. It cannot be the
+    # empty string in `identity_names`, because that is the primary line's real name.
+    faces = list(identity_names) if faces_chosen else None
 
     plan, shots = kits.plan(
         principal,
@@ -409,6 +418,8 @@ def generate_page(
         video_count=video_count,
         section_ids=chosen,
         overrides=overrides,
+        identity_names=faces,
+        tts_text=tts_text or None,
     )
 
     return _render(
@@ -425,6 +436,11 @@ def generate_page(
         windows=hook_windows(song, chosen),
         estimate_cents=plan.estimate_cents,
         blocked=artist.consent.blocks_generation,
+        lines=identities.lines(principal, artist_id),
+        identity_names=faces,
+        tts_text=tts_text,
+        budget_cents=budget_cents,
+        over_budget=budget_cents is not None and plan.estimate_cents > budget_cents,
     )
 
 
@@ -1310,6 +1326,11 @@ async def ui_create_kit(
     artist_id: str = Form(...),
     video_count: int = Form(3),
     section_ids: list[str] = Form(default=[]),
+    identity_names: list[str] = Form(default=[]),
+    faces_chosen: str = Form(""),
+    tts_text: str = Form(""),
+    budget_cents: int | None = Form(default=None),
+    name: str = Form(""),
 ):
     """Buy the plan that was on the screen — including every prompt somebody rewrote.
 
@@ -1326,6 +1347,10 @@ async def ui_create_kit(
             video_count=video_count,
             section_ids=section_ids,
             overrides=overrides,
+            identity_names=list(identity_names) if faces_chosen else None,
+            tts_text=tts_text or None,
+            budget_cents=budget_cents,
+            name=name or None,
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)

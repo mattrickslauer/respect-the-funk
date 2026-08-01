@@ -18,6 +18,7 @@ asserted to carry the negatives that tell a model not to score its own footage.
 from __future__ import annotations
 
 import html
+import re
 
 import pytest
 
@@ -244,3 +245,141 @@ def test_the_screen_shows_the_whole_prompt_not_a_truncation(client, container, p
     assert plan.shots[0].prompt in page, "the plan on the page must be the plan on the wire"
     for term in VIDEO_NEGATIVES[:3]:
         assert term in page, "what the run suppresses is part of what it is about to buy"
+
+
+# ------------------------------------------------------------------ the controls
+@pytest.fixture
+def two_faces(client, container, principal, artist):
+    """An artist with a primary line and a second member, both with a reference frame."""
+    from remixkit.domain.models import FrameAngle, ReferenceFrame
+
+    for name in ("", "Marco"):
+        client.post(
+            f"/ui/artists/{artist.id}/identity",
+            data={"name": name, "presentation": "feminine", "build": "slight"},
+        )
+        identity = container.identities.current(principal, artist.id, name)
+        key = f"remixkit/f/{name or 'p'}.png"
+        container.storage.put(key, b"png", content_type="image/png")
+        container.identities.add_reference_frame(
+            principal,
+            identity.id,
+            ReferenceFrame(
+                key=key, angle=FrameAngle.FRONT,
+                sha256=(name or "p").ljust(64, "0")[:64], content_type="image/png",
+            ),
+        )
+    return artist
+
+
+def test_the_generate_screen_offers_every_face(client, song, two_faces):
+    """`identity_names` reached the service with no control on any screen, so the console
+    always generated the primary line however many faces an artist had."""
+    page = client.get(
+        f"/console/artists/{two_faces.id}/songs/{song.id}/generate"
+    ).text
+
+    assert page.count('name="identity_names" value=') == 2
+    assert 'name="faces_chosen"' in page
+
+
+def test_the_primary_is_ticked_before_anything_is_chosen(client, song, two_faces):
+    """The boxes must describe the run below them. Nothing ticked while the plan uses the
+    primary would be the screen disagreeing with itself."""
+    page = client.get(f"/console/artists/{two_faces.id}/songs/{song.id}/generate").text
+
+    assert re.search(r'name="identity_names" value=""[^>]*checked', page)
+
+
+def test_choosing_two_faces_puts_both_in_the_prompt(client, song, two_faces):
+    page = html.unescape(
+        client.get(
+            f"/console/artists/{two_faces.id}/songs/{song.id}/generate"
+            "?video_count=1&faces_chosen=1&identity_names=&identity_names=Marco"
+        ).text
+    )
+
+    assert "Amanda Kurt: feminine slight" in page
+    assert "Marco: feminine slight" in page or "Marco:" in page
+
+
+def test_a_kit_with_no_face_is_reachable(client, container, principal, song, two_faces):
+    """Clearing every box is a real answer — a backdrop with nobody in it — and it has to
+    be distinguishable from not having chosen. The empty string cannot carry that, because
+    it is the primary line's actual name."""
+    client.post(
+        "/ui/kits",
+        data={"song_id": song.id, "artist_id": two_faces.id, "video_count": "1",
+              "faces_chosen": "1"},
+    )
+    kit = container.kits.list(principal)[0]
+
+    assert kit.brief["identities"] == []
+
+
+def test_a_shot_length_can_be_edited(client, container, principal, song, two_faces):
+    """`seconds` was overridable from the day per-shot editing landed and had no field —
+    the one thing a loop is measured in was the one thing the plan could not change."""
+    client.post(
+        "/ui/kits",
+        data={"song_id": song.id, "artist_id": two_faces.id, "video_count": "1",
+              "seconds_0": "4.5"},
+    )
+    kit = container.kits.list(principal)[0]
+    ran = container.kits.run(principal.tenant_id, kit.id)
+
+    clip = next(a for a in ran.assets if a.modality is Modality.VIDEO)
+    assert clip.params["duration"] == 4
+
+
+def test_the_face_can_be_turned_off_for_one_shot(client, container, principal, song, two_faces):
+    """A backdrop that wants nobody in it should not pay for a still that locks a face."""
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=2)
+    assert all(s.prelude for s in plan.shots), "both loops lock by default"
+
+    client.post(
+        "/ui/kits",
+        data={"song_id": song.id, "artist_id": two_faces.id, "video_count": "2",
+              "identity_lock_1": "off"},
+    )
+    kit = container.kits.list(principal)[0]
+    ran = container.kits.run(principal.tenant_id, kit.id)
+
+    stills = [a for a in ran.assets if a.modality is Modality.IMAGE]
+    assert len(stills) == 1, "the second loop rendered a still it was told not to"
+
+
+def test_an_estimate_over_the_ceiling_refuses_before_the_button(client, song, two_faces):
+    """`KitService.request` raises on this. A button that submits into a known refusal is
+    a round trip to be told something the screen already knew."""
+    page = client.get(
+        f"/console/artists/{two_faces.id}/songs/{song.id}/generate?video_count=3&budget_cents=10"
+    ).text
+
+    assert "is over the" in page
+    assert re.search(r"Queue this kit", page)
+    assert "disabled" in page
+
+
+def test_the_kit_can_be_named(client, container, principal, song, two_faces):
+    client.post(
+        "/ui/kits",
+        data={"song_id": song.id, "artist_id": two_faces.id, "video_count": "1",
+              "name": "Duo test"},
+    )
+    assert container.kits.list(principal)[0].name == "Duo test"
+
+
+def test_every_control_rides_the_queue_button(client, song, two_faces):
+    """A control that changes the plan but does not travel with the purchase buys a
+    different kit than the one priced — the divergence this screen exists to prevent."""
+    page = client.get(
+        f"/console/artists/{two_faces.id}/songs/{song.id}/generate"
+        "?video_count=1&faces_chosen=1&identity_names=Marco&tts_text=hello&budget_cents=900"
+    ).text
+    queue_form = page.split('hx-post="/ui/kits"', 1)[1].split("</form>", 1)[0]
+
+    assert 'name="faces_chosen"' in queue_form
+    assert 'value="Marco"' in queue_form
+    assert 'name="tts_text"' in queue_form
+    assert 'name="budget_cents"' in queue_form

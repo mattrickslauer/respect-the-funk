@@ -522,6 +522,33 @@ provider's slot count caps the total — so today a duo sends one plate and the 
 `2 faces — 1 reference sent; set RK_REFERENCE_SLOT to send the rest`. A duo silently
 conditioned on one member is exactly the failure that must not be invisible.
 
+### Accepting a reference and reading one
+
+`GMICloudImageProvider` declares `accepts_chain_input=True`, so the capability gate passes
+and a reference image is attached. That says nothing about whether the **model** reads it.
+GMI's default image model is `seedream-5.0-lite`, which is text-to-image: the payload
+carried an `image` key nothing consumed, so the only thing describing the artist was the
+compiled silhouette, and what came back was a stranger with the right build. It cost full
+price and looked like it had worked.
+
+`providers.honours_reference()` is the model-level check the provider-level one could not
+be. Only the shipped registry's own image-to-image families qualify — Seededit, Reve
+edit/remix, Bria inpaint — plus FLUX Kontext and OpenAI's image edit. **An unknown model
+answers no**, which is the safe direction: a model wrongly treated as image-capable renders
+a plausible stranger and bills for it, where one wrongly treated as text-only produces a
+refusal on the plan screen that somebody can act on.
+
+An identity-locking still is therefore rendered with `providers.reference_model()`, which
+swaps GMI's text-to-image default for `seededit-3-0-i2i-250628`. A vendor with no
+image-to-image model at all — Imagen, today — returns `None`, and the lock is refused
+rather than rendering something with no likeness in it.
+
+**`seededit-3-0-i2i-250628` is unpriced**, so it estimates at the unknown-model rate of
+$2.00/call. That is deliberate and it bites: three locked clips quote at 783¢ and are
+refused by the 500¢ `RK_MAX_RUN_CENTS` ceiling. Reconcile the real rate against a GMI
+invoice and register it in `adapters/pricing.PRICE_BOOK` — the same discipline every other
+model in that table went through. Until then, the refusal is the system working.
+
 ### `RK_REFERENCE_SLOT`
 
 Sending several reference frames in one call is the standard zero-shot way to hold a

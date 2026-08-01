@@ -660,3 +660,74 @@ def test_a_different_scene_misses_the_index(container, principal, song, artist):
     reused = [s.prelude.reused_still is not None for s in plan.shots]
 
     assert reused == [True, False]
+
+
+# ------------------------------------------------------------------ the model must read it
+def test_a_text_to_image_model_is_never_used_to_lock_a_face():
+    """The failure that made this worthless without looking broken.
+
+    `GMICloudImageProvider` declares `accepts_chain_input=True`, so the capability gate
+    passed and the plate was sent — to `seedream-5.0-lite`, which is text-to-image. The
+    payload carried an `image` key the model does not read, so the only thing describing
+    the artist was four words of compiled silhouette, and what came back was a stranger
+    with the right build.
+    """
+    from remixkit.adapters import providers as provider_table
+
+    assert not provider_table.honours_reference("seedream-5.0-lite")
+    assert not provider_table.honours_reference("imagen-4.0-generate-001")
+    assert provider_table.honours_reference("seededit-3-0-i2i-250628")
+    assert provider_table.honours_reference("gpt-image-1")
+
+
+def test_an_unknown_model_is_assumed_not_to_read_references():
+    """The safe direction, and the expensive one to get backwards: a model wrongly treated
+    as image-capable renders a plausible stranger and bills full price, where one wrongly
+    treated as text-only produces a refusal somebody can act on."""
+    from remixkit.adapters import providers as provider_table
+
+    assert not provider_table.honours_reference("some-model-nobody-has-heard-of")
+    assert not provider_table.honours_reference(None)
+
+
+def test_the_lock_swaps_to_a_model_that_reads_the_reference():
+    """GMI's default image model ignores references. The lock must not use it."""
+    from remixkit.adapters import providers as provider_table
+    from remixkit.domain.models import Modality
+
+    gmi = type("GMICloudImageProvider", (), {})()
+    chosen = provider_table.reference_model(gmi, Modality.IMAGE)
+
+    assert chosen != provider_table.default_model(gmi, Modality.IMAGE)
+    assert provider_table.honours_reference(chosen)
+
+
+def test_a_vendor_with_no_image_to_image_model_cannot_lock():
+    """Imagen is text-only. Returning its default would render a stranger at full price."""
+    from remixkit.adapters import providers as provider_table
+    from remixkit.domain.models import Modality
+
+    imagen = type("ImagenProvider", (), {})()
+    assert provider_table.reference_model(imagen, Modality.IMAGE) is None
+
+
+def test_a_plate_on_an_image_shot_is_refused_when_the_model_would_ignore_it(
+    container, principal, song, artist, monkeypatch
+):
+    """Accepting an image and reading one are different things, and the difference is
+    invisible in the output until somebody who knows the artist looks at the face."""
+    from remixkit.adapters import providers as provider_table
+
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    # Force the resolved image model to one that does not read references.
+    monkeypatch.setattr(provider_table, "honours_reference", lambda model: False)
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="portrait-still"
+    )
+    shot = plan.shots[0]
+
+    assert shot.reference_keys == []
+    assert "would ignore the reference" in shot.plate_note

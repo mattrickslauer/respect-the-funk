@@ -199,7 +199,7 @@ class GenblazeGenerator:
             else:
                 reason = None
 
-            plates, plate_note = self._plates_for(shot, request, provider)
+            plates, plate_note = self._plates_for(shot, request, provider, model=model)
 
             planned = PlannedShot(
                 index=index,
@@ -262,9 +262,15 @@ class GenblazeGenerator:
         if image_provider is None:
             return None, None
 
-        model = (
-            self._models.get(Modality.IMAGE)
-            or provider_table.default_model(image_provider, Modality.IMAGE)
+        # The model has to *read* the reference, not merely accept it.
+        #
+        # This is the failure that made the whole feature worthless without looking
+        # broken: the configured image model is text-to-image, the plate rode along in a
+        # payload key nothing consumed, and the still came back as a stranger with the
+        # right build. `accepts_chain_input` is a provider capability and was true; it says
+        # nothing about the model, and the model is what decides.
+        model = provider_table.reference_model(
+            image_provider, Modality.IMAGE, self._models.get(Modality.IMAGE, "")
         )
         if not model:
             return None, None
@@ -273,7 +279,9 @@ class GenblazeGenerator:
         # limits a video shot to one is a fact about `first_frame`/`last_frame`, not about
         # image conditioning. How many actually reach the wire depends on the slot the
         # provider declares; see `_plate_assets`.
-        plates, note = self._plates_for(shot, request, image_provider, limit=self._reference_limit)
+        plates, note = self._plates_for(
+            shot, request, image_provider, limit=self._reference_limit, model=model
+        )
         if not plates:
             return None, None
 
@@ -414,7 +422,13 @@ class GenblazeGenerator:
         return True, None
 
     def _plates_for(
-        self, shot: Any, request: GenerationRequest, provider: Any, *, limit: int | None = None
+        self,
+        shot: Any,
+        request: GenerationRequest,
+        provider: Any,
+        *,
+        limit: int | None = None,
+        model: str | None = None,
     ):
         """The artist's face, if this shot wants it and this provider will take it.
 
@@ -480,6 +494,16 @@ class GenblazeGenerator:
         accepts, refusal = self._accepts_images(provider)
         if not accepts:
             return [], refusal
+
+        # Accepting an image and reading one are different things, and the difference is
+        # invisible in the output until you look at the face. A text-to-image model handed
+        # a reference renders a stranger who matches the description — which costs the same
+        # as a likeness and looks like one until somebody who knows the artist sees it.
+        if shot.modality is Modality.IMAGE and not provider_table.honours_reference(model):
+            return [], (
+                f"{model} is text-to-image and would ignore the reference — "
+                "no likeness would be held"
+            )
 
         plate = plates[0]
         wanted = len(request.identities)

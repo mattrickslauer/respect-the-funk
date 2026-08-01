@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
 
 from remixkit.adapters import pricing
@@ -154,6 +155,71 @@ MODEL_DURATIONS: dict[str, frozenset[int]] = {
 
 # Continuous models still have bounds — GMI's schema is 1..60.
 CONTINUOUS_MIN, CONTINUOUS_MAX = 1, 60
+
+
+# Which models actually *use* a reference image, as opposed to accepting one.
+#
+# This distinction cost a real run. `GMICloudImageProvider` declares
+# `accepts_chain_input=True`, so the capability gate passed and the plate was sent — but
+# the model it was sent to was `seedream-5.0-lite`, which is text-to-image. The payload
+# carried an `image` key the model does not read, so the only thing describing the artist
+# was the compiled silhouette, and what came back was a stranger with the right build.
+#
+# The provider says whether an image may be *attached*. Only the model decides whether it
+# is *looked at*, and conditioning a likeness on a model that ignores the conditioning is
+# indistinguishable from having no identity at all — except that it costs the same and
+# looks like it worked.
+#
+# The patterns come from the shipped registry's own image-to-image families
+# (`genblaze_gmicloud/models/image.py`): Seededit, Reve edit/remix, and the Bria inpaint
+# pair. Everything else there resolves through a permissive fallback that routes an image
+# into the payload whether or not the model reads it, which is exactly the trap.
+IMAGE_TO_IMAGE: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^seededit-", re.IGNORECASE),
+    re.compile(r"^reve-(?:edit|remix)", re.IGNORECASE),
+    re.compile(r"^bria-(?:genfill|eraser)$", re.IGNORECASE),
+    re.compile(r"kontext", re.IGNORECASE),   # FLUX Kontext — in-context edit
+    re.compile(r"^gpt-image", re.IGNORECASE),  # OpenAI image edit accepts a source image
+)
+
+# The model an identity-locking still is rendered with when the configured one cannot
+# honour a reference. GMI's documented image-to-image slug as of the 2026-03 catalog.
+DEFAULT_REFERENCE_MODEL = "seededit-3-0-i2i-250628"
+
+
+def honours_reference(model: str | None) -> bool:
+    """Would this model actually look at an image it is handed?
+
+    Unknown models answer `False`. That is the safe direction and the expensive one to get
+    backwards: a model wrongly treated as image-capable renders a plausible stranger and
+    bills full price for it, where one wrongly treated as text-only produces a visible
+    refusal on the plan screen that somebody can act on.
+    """
+    return bool(model) and any(p.search(model) for p in IMAGE_TO_IMAGE)
+
+
+def reference_model(provider: Any, modality: Modality, configured: str = "") -> str | None:
+    """A model for this provider that will use a reference image, or None.
+
+    Preference order is operator > the provider's default if it already qualifies > the
+    documented image-to-image slug. `None` means this provider cannot condition on an
+    image at all, and the caller must refuse the lock rather than render something with no
+    likeness in it.
+    """
+    if configured and honours_reference(configured):
+        return configured
+    default = default_model(provider, modality)
+    if honours_reference(default):
+        return default
+    if vendor_of(provider) == "gmicloud":
+        return DEFAULT_REFERENCE_MODEL
+    if vendor_of(provider) == "openai":
+        return "gpt-image-1"
+    if vendor_of(provider) == "mock":
+        # The mock reads nothing and renders nothing, so it cannot mislead about likeness.
+        # Excluding it would mean the whole locked path is unreachable on a laptop.
+        return default
+    return None
 
 
 def snap_duration(model: str | None, seconds: float | None) -> int | None:

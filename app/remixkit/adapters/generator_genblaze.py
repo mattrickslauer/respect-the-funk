@@ -28,7 +28,12 @@ from typing import Any
 from remixkit.adapters import pricing
 from remixkit.adapters import providers as provider_table
 from remixkit.domain.models import Asset, Modality
-from remixkit.ports.generator import GenerationRequest, GenerationResult
+from remixkit.ports.generator import (
+    GenerationPlan,
+    GenerationRequest,
+    GenerationResult,
+    PlannedShot,
+)
 
 log = logging.getLogger(__name__)
 
@@ -85,16 +90,31 @@ class GenblazeGenerator:
         table = provider_table.resolve(self._backend)
         plan: list[tuple[Modality, str | None, float | None]] = []
         for shot in shots:
-            provider = table.get(shot.modality)
-            model = (
-                shot.model
-                or self._models.get(shot.modality)
-                or (provider_table.default_model(provider, shot.modality) if provider else None)
-            )
+            _provider, model = self._resolve_model(table, shot)
             # Snapped, so the quote prices the clip that will actually be
             # rendered rather than the one the brief asked for.
             plan.append((shot.modality, model, provider_table.snap_duration(model, shot.seconds)))
         return plan
+
+    def _resolve_model(self, table: dict, shot: Any) -> tuple[Any, str | None]:
+        """Which provider answers for this shot, and which model it is asked for.
+
+        Explicit shot > operator override > the model this provider actually serves. The
+        last step is not a nicety: provider selection happens at runtime, so a single
+        configured id would be sent to whichever provider answered — a GMI slug to Sora,
+        which 404s.
+
+        One function because three callers need the same answer: the quote (`model_plan`),
+        the preview (`_resolve`), and the run (`generate`). They disagreed once and it cost
+        real money.
+        """
+        provider = table.get(shot.modality)
+        model = (
+            shot.model
+            or self._models.get(shot.modality)
+            or (provider_table.default_model(provider, shot.modality) if provider else None)
+        )
+        return provider, model
 
     # -- prompt shaping ---------------------------------------------------------
     @staticmethod
@@ -108,6 +128,89 @@ class GenblazeGenerator:
                 parts.append(fragment)
         parts.append(shot_prompt)
         return ". ".join(p.strip(". ") for p in parts if p.strip())
+
+    # -- resolution -------------------------------------------------------------
+    def _resolve(self, request: GenerationRequest) -> list[tuple[PlannedShot, Any]]:
+        """Every shot, resolved to its wire payload, paired with the provider that runs it.
+
+        The single source of truth for "what would be sent". `plan()` drops the provider
+        objects and shows the rest; `generate()` keeps them and submits. There is no second
+        implementation, which is the only way a preview can be trusted to describe the run
+        that a button actually buys — the same argument `services/kits.estimate_cents`
+        makes about the price, applied to the payload the price is for.
+
+        A shot that cannot run is still returned, carrying `skipped_reason`. Dropping it
+        silently is how a brief for four videos quietly becomes a kit of two.
+        """
+        table = provider_table.resolve(self._backend)
+        identity_negatives = request.identity.negatives if request.identity else []
+        resolved: list[tuple[PlannedShot, Any]] = []
+
+        for index, shot in enumerate(request.shots):
+            # Identity first, then the shot's own. De-duplicated preserving order so a
+            # term named in both does not reach the provider twice.
+            seen: dict[str, None] = {}
+            for term in [*identity_negatives, *shot.negatives]:
+                term = term.strip()
+                if term:
+                    seen.setdefault(term, None)
+            negatives = ", ".join(seen)
+
+            provider, model = self._resolve_model(table, shot)
+            rendered_seconds = provider_table.snap_duration(model, shot.seconds)
+
+            params: dict[str, Any] = {}
+            if rendered_seconds:
+                params["duration"] = rendered_seconds
+            if shot.modality is not Modality.AUDIO:
+                params["aspect_ratio"] = shot.aspect_ratio
+
+            if provider is None:
+                reason = f"no {shot.modality.value} provider is credentialed"
+            elif not model:
+                reason = f"no model known for {shot.modality.value} on {type(provider).__name__}"
+            else:
+                reason = None
+
+            planned = PlannedShot(
+                index=index,
+                modality=shot.modality,
+                label=shot.label,
+                provider=type(provider).__name__ if provider is not None else None,
+                vendor=provider_table.vendor_of(provider) if provider is not None else "none",
+                model=model,
+                prompt=self._compose_prompt(request, shot.prompt),
+                negative_prompt=negatives,
+                params=params,
+                requested_seconds=shot.seconds,
+                rendered_seconds=rendered_seconds,
+                # Priced on the length that will be *rendered*, not the one asked for —
+                # otherwise the quote is for a clip the provider will not make.
+                estimate_cents=pricing.estimate_cents(shot.modality, model, rendered_seconds),
+                skipped_reason=reason,
+            )
+            resolved.append((planned, provider))
+
+        return resolved
+
+    def plan(self, request: GenerationRequest) -> GenerationPlan:
+        """What this run would send, and what it would cost. Spends nothing."""
+        resolved = self._resolve(request)
+        plan = GenerationPlan(shots=[planned for planned, _ in resolved])
+
+        if not plan.runnable:
+            missing = sorted({s.modality.value for s in plan.skipped})
+            plan.blocker = (
+                "No provider available for any requested modality "
+                f"({', '.join(missing)})." if missing
+                else "This brief produces no shots."
+            )
+        elif self._max_run_cents and plan.estimate_cents > self._max_run_cents:
+            plan.blocker = (
+                f"Estimated {plan.estimate_cents}¢ exceeds the {self._max_run_cents}¢ "
+                f"ceiling for a single run (RK_MAX_RUN_CENTS)."
+            )
+        return plan
 
     # -- the run ----------------------------------------------------------------
     def generate(self, request: GenerationRequest) -> GenerationResult:
@@ -123,7 +226,8 @@ class GenblazeGenerator:
                 "provider extra and set its API key, or run with RK_GENERATOR_BACKEND=mock.",
             )
 
-        negatives = request.identity.negative_fragment() if request.identity else ""
+        # The same resolution the preview screen showed. Not a re-derivation of it.
+        resolved = self._resolve(request)
 
         pipeline = Pipeline(
             f"kit:{request.kit_id}",
@@ -152,42 +256,20 @@ class GenblazeGenerator:
         planned: list[tuple[Modality, str, str, float | None]] = []  # + seconds
         skipped: list[str] = []
 
-        for shot in request.shots:
-            provider = table.get(shot.modality)
-            if provider is None:
+        for shot, provider in resolved:
+            if not shot.runs:
                 skipped.append(shot.modality.value)
+                log.warning("skipping %s shot — %s", shot.modality.value, shot.skipped_reason)
                 continue
 
-            # Explicit shot > operator override > the model this provider actually
-            # serves. The last step is not a nicety: provider selection happens at
-            # runtime, so a single configured id would be sent to whichever provider
-            # answered — a GMI slug to Sora, which 404s. `"default"` used to sit here
-            # and was never a real model id on any provider.
-            model = (
-                shot.model
-                or self._models.get(shot.modality)
-                or provider_table.default_model(provider, shot.modality)
-            )
-            if not model:
-                skipped.append(shot.modality.value)
-                log.warning(
-                    "no model known for %s on %s — skipping shot",
-                    shot.modality.value,
-                    type(provider).__name__,
-                )
-                continue
-            prompt = self._compose_prompt(request, shot.prompt)
-
+            model, prompt = shot.model, shot.prompt
             # The brief asks for a musically-derived length; the model has its own list of
             # lengths that exist. Sora takes only {4, 8, 12}, the GMI models take any
             # integer 1..60, and `briefs._loop_seconds` hands over a float like 9.3 — so
-            # an unsnapped request is rejected outright ("Invalid seconds=10").
-            params: dict[str, Any] = {}
-            rendered_seconds = provider_table.snap_duration(model, shot.seconds)
-            if rendered_seconds:
-                params["duration"] = rendered_seconds
-            if shot.modality is not Modality.AUDIO:
-                params["aspect_ratio"] = shot.aspect_ratio
+            # an unsnapped request is rejected outright ("Invalid seconds=10"). Snapping
+            # happened in `_resolve`, which is why the preview could show the real length.
+            params = dict(shot.params)
+            rendered_seconds = shot.rendered_seconds
 
             kwargs: dict[str, Any] = {
                 "model": model,
@@ -206,14 +288,14 @@ class GenblazeGenerator:
                     # that claims it was cut to a 10s hook while its clips are 8s would be
                     # the provenance rule quietly defeated by a provider constraint, so
                     # both numbers travel into the manifest.
-                    "requested_seconds": shot.seconds,
+                    "requested_seconds": shot.requested_seconds,
                     "rendered_seconds": rendered_seconds,
                 },
             }
             if params:
                 kwargs["params"] = params
-            if negatives:
-                kwargs["negative_prompt"] = negatives
+            if shot.negative_prompt:
+                kwargs["negative_prompt"] = shot.negative_prompt
 
             pipeline = pipeline.step(provider, **kwargs)
             planned.append((shot.modality, model, prompt, rendered_seconds))

@@ -22,13 +22,24 @@ import logging
 
 from remixkit.adapters import pricing
 from remixkit.auth.provider import Principal
-from remixkit.domain.models import ApprovalState, Kit, KitStatus, Modality
-from remixkit.ports.generator import GenerationRequest, Generator, ShotSpec
+from remixkit.domain.models import ApprovalState, Kit, KitStatus
+from remixkit.ports.generator import (
+    GenerationPlan,
+    GenerationRequest,
+    Generator,
+    ShotSpec,
+)
 from remixkit.ports.queue import JobQueue
 from remixkit.ports.repository import DocumentRepository
 from remixkit.ports.storage import Storage
 from remixkit.services.artists import ArtistService
-from remixkit.services.briefs import default_shot_plan, hook_windows
+from remixkit.services.briefs import (
+    OVERRIDABLE,
+    apply_overrides,
+    default_shot_plan,
+    hook_windows,
+    overrides_from_brief,
+)
 from remixkit.services.errors import Conflict, NotFound, RightsError
 from remixkit.services.identities import IdentityService
 from remixkit.services.songs import SongService
@@ -94,6 +105,68 @@ class KitService:
         planned = models(shots) if callable(models) else [(s.modality, s.model, s.seconds) for s in shots]
         return sum(pricing.estimate_cents(m, model, secs) for m, model, secs in planned)
 
+    def plan(
+        self,
+        principal: Principal,
+        *,
+        song_id: str,
+        video_count: int = 3,
+        hook_lines: list[str] | None = None,
+        tts_text: str | None = None,
+        section_ids: list[str] | None = None,
+        overrides: dict[int, dict] | None = None,
+    ) -> tuple[GenerationPlan, list[ShotSpec]]:
+        """The dry run. Resolves the whole request to wire payloads and spends nothing.
+
+        This is the answer to "what am I about to buy". It builds the identical
+        `GenerationRequest` that `run()` submits and hands it to the generator's `plan()`,
+        which resolves models, composes prompts, snaps durations, and prices each shot
+        without opening a socket. The `kit_id` is a placeholder because no kit exists yet —
+        it appears only in step metadata, never in the resolution.
+
+        Returned alongside the plan are the `ShotSpec`s it was resolved from, so a caller
+        that wants to *queue* what it just previewed can hand back the same list rather
+        than rebuilding it from parameters and hoping the two agree.
+        """
+        song = self._songs.get(principal, song_id)
+        artist = self._artists.get(principal, song.artist_id)
+        identity = self._identities.current(principal, artist.id)
+
+        section_ids = [sid for sid in (section_ids or []) if song.section(sid)]
+        shots = default_shot_plan(
+            song,
+            identity,
+            video_count=video_count,
+            hook_lines=hook_lines,
+            tts_text=tts_text,
+            max_shots=self._max_shots,
+            section_ids=section_ids,
+            artist_name=artist.name,
+        )
+        shots = apply_overrides(shots, overrides)
+
+        request = GenerationRequest(
+            kit_id="preview",
+            tenant_id=principal.tenant_id,
+            artist_name=artist.name,
+            identity=identity,
+            song=song,
+            shots=shots,
+        )
+        planner = getattr(self._generator, "plan", None)
+        if not callable(planner):
+            # A generator with no planner cannot be previewed, and pretending otherwise
+            # would put a fabricated payload on the one screen that exists to be trusted.
+            return GenerationPlan(blocker="This generator cannot preview a run."), shots
+
+        plan = planner(request)
+        if artist.consent.blocks_generation:
+            plan.blocker = (
+                f"{artist.name} has no recorded likeness consent. A kit holds the "
+                "artist's face invariant, and that needs auditable rights."
+            )
+        return plan, shots
+
     # -- the fast path ----------------------------------------------------------
     def request(
         self,
@@ -106,6 +179,7 @@ class KitService:
         tts_text: str | None = None,
         budget_cents: int | None = None,
         section_ids: list[str] | None = None,
+        overrides: dict[int, dict] | None = None,
     ) -> Kit:
         """Validate, persist a queued kit, enqueue. Must stay well under 200 ms."""
         song = self._songs.get(principal, song_id)
@@ -131,7 +205,9 @@ class KitService:
             tts_text=tts_text,
             max_shots=self._max_shots,
             section_ids=section_ids,
+            artist_name=artist.name,
         )
+        shots = apply_overrides(shots, overrides)
         if not shots:
             raise Conflict("That brief produces no shots. Ask for at least one video or lyric card.")
 
@@ -168,6 +244,14 @@ class KitService:
                 ],
                 "shot_count": len(shots),
                 "estimate_cents": estimate,
+                # Every field a person changed on the preview screen, by position in the
+                # plan. Stored as a list rather than an int-keyed map because this dict is
+                # persisted as JSON, and JSON has no integer keys — a `{0: {...}}` written
+                # here comes back as `{"0": {...}}` and silently matches nothing.
+                "shot_overrides": [
+                    {"index": index, **{k: v for k, v in edits.items() if k in OVERRIDABLE}}
+                    for index, edits in sorted((overrides or {}).items())
+                ],
                 "identity_id": identity.id if identity else None,
                 "identity_version": identity.version if identity else None,
                 "generator": getattr(self._generator, "name", "unknown"),
@@ -213,7 +297,12 @@ class KitService:
                 tts_text=kit.brief.get("tts_text"),
                 max_shots=self._max_shots,
                 section_ids=list(kit.brief.get("section_ids") or []),
+                artist_name=artist.name,
             )
+            # The edits the buyer made on the preview screen. Replayed here rather than
+            # stored as finished prompts so that a kit re-run after an identity change
+            # still picks the new identity up, while everything a person typed survives.
+            shots = apply_overrides(shots, overrides_from_brief(kit.brief))
 
             result = self._generator.generate(
                 GenerationRequest(

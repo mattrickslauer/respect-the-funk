@@ -284,6 +284,46 @@ failed step is billed; the observed answer is that it is. So the only safe assum
 that a submitted step is a charged step, and the only safe place to refuse is before
 submission.
 
+## Seeing the run before buying it
+
+`/console/artists/{id}/songs/{id}/generate` is a dry run. It resolves the whole brief to
+per-shot wire payloads — the model that would answer, the composed prompt as the provider
+receives it, the negatives, the duration after snapping, and the price — and sends nothing.
+
+The property that makes it worth reading is that there is **one resolution path**.
+`GenblazeGenerator._resolve()` builds the payloads; `plan()` displays them and `generate()`
+submits them. Not two implementations kept in step by hand — one function with two callers.
+
+That mattered on 2026-07-31. A kit for "Un Poquito Más" came back as a stock night drive
+scored with a lofi instrumental the model wrote itself, and nothing had failed. The plan
+table showed `Vertical 9:16 loop, moody night drive…`, which was the *mood fragment* —
+truncated at ninety characters, before the identity is prepended. The string on the wire
+named no song, no artist, and no constraint against audio, and no screen in the product
+displayed it. Three separate defects were invisible because the payload was.
+
+Every prompt on the screen is editable and pre-filled with what would be sent. Edits are
+re-priced on the server, carried onto the queue button, stored on the kit as
+`brief["shot_overrides"]`, and replayed by the worker — so what was previewed is what runs.
+Clearing a field restores the generated default rather than sending an empty prompt.
+
+Three cheaper-than-live paths exist beyond it: `RK_GENERATOR_BACKEND=mock` renders real
+files and a real manifest with synthetic pixels for nothing; a proxy-frame tier and step
+caching are specified but not built. See `PIPELINE-SPEC.md` for both, and for the node
+model that replaces the four hardcoded moods.
+
+### Silent loops
+
+A kit loop is a backdrop the master plays over, so a generated soundtrack is a defect.
+Video shots carry `music, soundtrack, singing, speech, …` as `negative_prompt` and a
+`silent footage` clause in the prompt.
+
+**This is best-effort, and the console should not be read as promising more.**
+`negative_prompt` is a conditioning signal, and no provider here documents it as binding on
+the audio track — Veo, Sora 2 and Seedance all return video with a native audio track by
+default. The deterministic fix is to drop the track on delivery (`ffmpeg -c copy -an`, a
+container rewrite rather than a re-encode); it is specified in `PIPELINE-SPEC.md` §4 and not
+yet built.
+
 ## Two front doors
 
 ```

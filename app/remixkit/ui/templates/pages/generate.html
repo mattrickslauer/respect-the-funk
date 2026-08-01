@@ -69,6 +69,22 @@
     A kit holds the artist's face invariant, and that needs auditable rights.
     <a href="/console/artists/{{ artist.id }}">Record consent →</a>
   </div>
+{% elif plan.blocker %}
+  {# Everything else that would refuse this run — no credentialed provider for a
+     modality, or an estimate over `RK_MAX_RUN_CENTS`. Shown here rather than discovered
+     as a failed kit, because both refusals are free to make now and cost a queue slot,
+     a worker, and a wait to make later. #}
+  <div class="notice notice-error shell-notice">
+    <strong>This run would refuse.</strong> {{ plan.blocker }}
+  </div>
+{% endif %}
+
+{% if plan.skipped and plan.runnable %}
+  <div class="notice shell-notice">
+    <strong>{{ plan.skipped|length }} of {{ plan.shots|length }} shots would not run.</strong>
+    They are priced at nothing and produce nothing — the estimate below is for the
+    {{ plan.runnable|length }} that would.
+  </div>
 {% endif %}
 
 <div class="deck deck-r">
@@ -87,7 +103,10 @@
            is bought without also changing what is priced. Editing the hook lines without
            re-pricing leaves the old value on the queue button — which is the safe way
            round: the button always buys the plan shown in the table below. #}
-        <form class="form" method="get">
+        {# `id` so the per-shot prompt and model fields below can join this form with
+           `form="repricer"` while living inside the step cards they belong to. Nesting
+           them here instead would put the plan's controls somewhere other than the plan. #}
+        <form class="form" method="get" id="repricer">
           <div class="plan-row">
             <label>Videos
               <input name="video_count" type="number" min="0" max="8" value="{{ video_count }}">
@@ -118,21 +137,69 @@
           {% endif %}
         </form>
 
-        {% if shots %}
-          <table class="table">
-            <thead><tr><th>#</th><th>Modality</th><th>Cut to</th><th>Length</th><th>Prompt</th></tr></thead>
-            <tbody>
-              {% for shot in shots %}
-                <tr>
-                  <td>{{ loop.index }}</td>
-                  <td>{{ shot.modality.value }}</td>
-                  <td class="small">{{ shot.label or "—" }}</td>
-                  <td>{% if shot.seconds %}{{ "%.1f"|format(shot.seconds) }}s{% else %}—{% endif %}</td>
-                  <td class="small prompt">{{ shot.prompt|truncate(90) }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        {% if plan.shots %}
+          {# One card per step, and every field on it is the *resolved* value — the model
+             that was chosen, the length after snapping, and the composed prompt exactly
+             as the provider receives it. The old table showed `shot.prompt`, which is the
+             mood fragment before the identity is prepended; a kit was bought on
+             2026-07-31 against a row that read "moody night drive…" while the string on
+             the wire named no song at all. Truncating it was how that stayed invisible. #}
+          <ol class="pipeline">
+            {% for step in plan.shots %}
+              {# `data-shot` for the same reason `data-estimate` exists below: the tests
+                 assert that the plan on the page is the plan that gets bought, and they
+                 should not have to know which element this is styled with to do it. #}
+              <li class="pipeline-step {{ 'is-skipped' if not step.runs }}"
+                  data-shot="{{ step.index }}">
+                <div class="step-head">
+                  <span class="step-n">{{ loop.index }}</span>
+                  <span class="badge">{{ step.modality.value }}</span>
+                  <span class="step-label">{{ step.label or "—" }}</span>
+                  <span class="step-cost">
+                    {% if step.runs %}{{ "$%.2f"|format(step.estimate_cents / 100) }}
+                    {% else %}<span class="unmeasured">skipped</span>{% endif %}
+                  </span>
+                </div>
+
+                {% if step.runs %}
+                  <dl class="kv step-wire">
+                    <dt>Runs on</dt>
+                    <dd>{{ step.vendor }} <span class="hint">{{ step.provider }}</span></dd>
+                    <dt>Length</dt>
+                    <dd>
+                      {% if step.rendered_seconds %}{{ step.rendered_seconds }}s
+                        {% if step.duration_was_snapped %}
+                          <span class="hint">brief asked {{ "%.1f"|format(step.requested_seconds) }}s —
+                            this model does not render that length</span>
+                        {% endif %}
+                      {% else %}—{% endif %}
+                    </dd>
+                    {% if step.negative_prompt %}
+                      <dt>Negatives</dt>
+                      <dd class="small">{{ step.negative_prompt }}</dd>
+                    {% endif %}
+                  </dl>
+                {% else %}
+                  <p class="notice notice-error small">{{ step.skipped_reason }}</p>
+                {% endif %}
+
+                {# Editable, and pre-filled with what would actually be sent. The two are
+                   the same field on purpose: a preview you cannot correct is a preview
+                   that only tells you afterwards. Empty means "use the default", which is
+                   why clearing the box restores the generated prompt rather than sending
+                   an empty one. #}
+                <label class="step-prompt">Prompt <span class="hint">as sent — edit and re-price</span>
+                  <textarea name="prompt_{{ step.index }}" rows="3"
+                            form="repricer">{{ step.prompt }}</textarea>
+                </label>
+                <label class="step-model">Model <span class="hint">blank = {{ step.model or "none resolved" }}</span>
+                  <input name="model_{{ step.index }}" form="repricer"
+                         value="{{ overrides.get(step.index, {}).get('model', '') }}"
+                         placeholder="{{ step.model or '—' }}">
+                </label>
+              </li>
+            {% endfor %}
+          </ol>
         {% else %}
           <p class="empty">No shots at this count. Raise the video count above zero.</p>
         {% endif %}
@@ -167,6 +234,15 @@
         <textarea name="hook_lines" hidden>{{ hook_lines }}</textarea>
         {% for section_id in section_ids %}
           <input type="hidden" name="section_ids" value="{{ section_id }}">
+        {% endfor %}
+        {# Every edit that was priced, carried into the purchase. Without these the queue
+           button buys the generated defaults while the screen above shows the rewritten
+           prompts — the exact divergence this page exists to prevent, reintroduced one
+           level down. #}
+        {% for index, edits in overrides.items() %}
+          {% for field, value in edits.items() %}
+            <input type="hidden" name="{{ field }}_{{ index }}" value="{{ value }}">
+          {% endfor %}
         {% endfor %}
         <button class="btn btn-primary" type="submit" {{ "disabled" if blocked }}>
           Queue this kit

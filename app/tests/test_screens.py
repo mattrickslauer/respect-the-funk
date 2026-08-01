@@ -169,7 +169,7 @@ def test_what_is_priced_is_what_is_bought(client, container, principal, song):
     base = f"/console/artists/{song['artist_id']}/songs/{song['id']}/generate"
     page = client.get(f"{base}?video_count=2&hook_lines=first+line%0Asecond+line").text
 
-    priced_rows = len(re.findall(r"<tr>\s*<td>\d+</td>", page))
+    priced_rows = len(re.findall(r'data-shot="\d+"', page))
     # Matched on `data-estimate` rather than on a styling class, so re-laying-out the page
     # cannot break the assertion that the price shown is the price charged.
     shown = re.search(r"data-estimate>\$([0-9.]+)<", page)
@@ -195,7 +195,7 @@ def test_hook_lines_are_editable_and_default_to_the_title(client, song):
     import re
 
     def shot_rows(html: str) -> int:
-        return len(re.findall(r"<tr>\s*<td>\d+</td>", html))
+        return len(re.findall(r'data-shot="\d+"', html))
 
     base = f"/console/artists/{song['artist_id']}/songs/{song['id']}/generate"
     first_load = client.get(base).text

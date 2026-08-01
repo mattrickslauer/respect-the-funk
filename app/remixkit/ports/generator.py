@@ -40,6 +40,15 @@ class ShotSpec:
     # a typographic plate and putting a face reference on it produces a portrait with words
     # over it. The loops want the face held invariant; the cards want the text legible.
     use_identity_plate: bool = False
+    # Render an identity-locked still first, then generate the clip *from that still*.
+    #
+    # This is the two-stage character shot, and it is the strongest likeness this stack
+    # can produce without training a model. A video model conditioned only on a text
+    # description drifts across the clip; one conditioned on a first frame is anchored to
+    # it. So the face is settled in a still — which costs a few cents, can be regenerated
+    # until it is right, and can be looked at by a person — and the clip inherits it
+    # rather than re-deriving it.
+    identity_lock: bool = False
 
 
 @dataclass
@@ -96,6 +105,18 @@ class PlannedShot:
     # dropped" look identical on a screen that only shows the successful case — and the
     # second one is how an identity a label spent an afternoon building reaches nothing.
     plate_note: str | None = None
+    # The identity-locked still this shot is generated *from*, if it has one.
+    #
+    # Modelled as a nested step rather than as a second entry in the plan so that
+    # `PlannedShot.index` stays the index of the `ShotSpec` it came from — which is what
+    # per-shot prompt overrides are keyed by. A two-stage shot is one thing a person
+    # bought, rendered in two calls, and the plan reads that way.
+    prelude: PlannedShot | None = None
+    # True on the still itself. `_resolve` yields preludes flat as well as nested — flat
+    # because the pipeline builder submits them as their own step, nested because the plan
+    # displays and prices them as part of the shot they belong to. Without this marker the
+    # plan counts and charges each two-stage shot's still twice.
+    is_prelude: bool = False
     estimate_cents: int = 0
     skipped_reason: str | None = None
 
@@ -136,7 +157,20 @@ class GenerationPlan:
 
     @property
     def estimate_cents(self) -> int:
-        return sum(s.estimate_cents for s in self.runnable)
+        """Both stages of every runnable shot.
+
+        A two-stage shot is billed twice — the still and the clip — and quoting only the
+        clip would understate a character kit by the price of an image per loop.
+        """
+        return sum(
+            s.estimate_cents + (s.prelude.estimate_cents if s.prelude else 0)
+            for s in self.runnable
+        )
+
+    @property
+    def steps(self) -> int:
+        """Provider calls, not shots. What the run will actually submit."""
+        return sum(2 if s.prelude else 1 for s in self.runnable)
 
 
 class Generator(Protocol):

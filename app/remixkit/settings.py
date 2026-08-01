@@ -132,6 +132,16 @@ class Settings(BaseSettings):
     # Empty is the preference order in `adapters/providers.VENDOR_ORDER`. These exist so
     # that "video goes to Sora, not seedance" is a deploy-time setting rather than a code
     # change — which is what it needs to be when a provider starts failing in production.
+    # The payload key a model expects multiple reference images under, e.g.
+    # "reference_images". Empty means one reference — the only count this code can claim
+    # to have verified, because every GMI image model resolves through a fallback
+    # declaring a single positional `image` slot and extras are silently dropped. Set this
+    # only after checking the model's actual payload in GMI's catalogue: a wrong key is
+    # either a 400 or, worse, a kit that reports four references and was conditioned on
+    # one. See `adapters/generator_genblaze._reference_limit`.
+    reference_slot: str = ""
+    reference_max: int = 4
+
     video_provider: str = ""
     image_provider: str = ""
     audio_provider: str = ""

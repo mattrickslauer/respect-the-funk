@@ -299,6 +299,89 @@ records it. Until then, the honest state is: available, and knowingly not used.
 
 ---
 
+## 6b. How close to "exactly them" this can get
+
+Four techniques produce a recognisable person. They are not variations on one idea — they
+sit at different points in the stack, and only two are reachable from here.
+
+| | Technique | Fidelity | Available in this stack |
+|---|---|---|---|
+| 1 | **Two-stage identity lock** — settle the face in a still, generate the clip from it | high, and human-checked | **built** |
+| 2 | **Multi-reference conditioning** — several classed plates in one call | high, zero-shot | plumbed; needs a verified slot name (§6c) |
+| 3 | **Character fine-tune** (LoRA / DreamBooth) | highest | **no** — no training API through Genblaze |
+| 4 | **Face swap post-pass** (InsightFace-class) | highest for faces | **no model in the registry**; would be our own compute |
+
+**Why the two-stage lock is the one that matters most.** A video model conditioned on text
+drifts across the clip — the face at second six is not the face at second one, because
+nothing anchors it. A video model conditioned on a *first frame* is anchored: the clip
+inherits the identity rather than re-deriving it. So the expensive, uncertain part happens
+once, in a still, at roughly a fifteenth of the price of the clip, where a person can look
+at it and press regenerate until it is right. `ShotSpec.identity_lock` does this, and the
+clip carries no plates of its own — Seedance's slots are positional, so a clip handed both
+the still and the raw reference has two different images in `first_frame`/`last_frame` and
+is being asked to interpolate between them.
+
+**Why 3 and 4 are out, specifically.** Neither is a limitation of ambition:
+
+- Genblaze exposes generation, not training. There is no fine-tune endpoint on any of the
+  five installed connectors, and GMI's catalogue as shipped in `genblaze_gmicloud/models/`
+  contains no trainable family. A character LoRA would mean a second vendor (Replicate,
+  fal) or our own GPUs, and a per-artist training run rather than a per-kit one.
+- There is no face-swap or face-restoration model in the GMI registry — the image families
+  are inpainting (`bria-genfill`, `bria-eraser`) and image-to-image edit (`seededit-*`,
+  `reve-edit`, `reve-remix`), plus a permissive fallback covering Seedream, FLUX-Kontext,
+  Gemini-Flash and Bria fibo. A swap pass would run `inswapper`-class weights on our own
+  compute against the delivered MP4. That is a real option — it is a small ONNX model and
+  the delivery pipeline already needs an ffmpeg pass (§4) — but it is a new dependency and
+  a new failure surface, and it should follow the ffmpeg work rather than precede it.
+
+## 6c. The reference-slot boundary
+
+Multi-reference conditioning is the standard zero-shot way to hold a likeness, and the
+frames are already collected and classed. The plumbing is built. One fact is missing, and
+it is a fact about the vendor rather than about this code.
+
+Genblaze routes any number of images — `route_images(array_slot=…)` exists and works. What
+it cannot know is the **key** a given model expects them under, and GMI ships no per-model
+payload schema: every image model resolves through a fallback declaring
+
+```python
+_COMMON_INPUT = route_images(slots=("image",))   # one positional slot
+```
+
+and the mapper's documented behaviour for the rest is *"If `array_slot` is None, extras are
+dropped."* Silently.
+
+So one reference is the only count this code can honestly claim. Inventing a slot name here
+would produce one of two outcomes, and the second is much worse than the first: a 400, or a
+kit that reports four references, is billed for one, and looks conditioned. That is the
+exact failure shape this whole document exists to eliminate.
+
+`RK_REFERENCE_SLOT` turns it on once an operator has checked the model's payload against
+GMI's catalogue. When set, the whole classed plate set goes and the slot name and count are
+written into the step metadata — so a wrong guess shows up in the run's own record rather
+than only in a face that came back looking like somebody else.
+
+## 6d. Rights, at this fidelity
+
+`LikenessConsent.blocks_generation` already refuses to queue a kit for an artist with no
+recorded release, and that gate is load-bearing rather than decorative — it is checked in
+`services.kits.request` before anything is enqueued.
+
+Raising fidelity does not change who may be generated; it changes what a mistake costs. Two
+things follow, and both are ordinary engineering rather than caution:
+
+- **A release should carry a scope and an expiry.** `LikenessConsent` records `granted`,
+  `signed_by`, `signed_at` and a `document_key`. A boolean that never lapses will outlive
+  the agreement it represents, and "was this artist still signed when that clip was made"
+  is a question the record should be able to answer without opening a PDF.
+- **The manifest should record that a likeness was synthesised**, not merely that a video
+  was. `/verify` reads provenance from the delivered bytes; at this fidelity "which
+  identity, which version, which frames" is the part of the record worth having.
+
+Neither is built. Both belong before this is pointed at anything published rather than
+after.
+
 ## 7. Build order
 
 Each of these is independently useful and independently shippable.
@@ -308,10 +391,14 @@ Each of these is independently useful and independently shippable.
 3. ~~`sha256` and content type on reference frames at upload~~ **done**
 4. ~~Character plates as `first_frame` — Amanda Kurt's face in a kit~~ **done**
 5. ~~One identity surface; photo classes; standardised silhouette; bounded prompt~~ **done**
-6. Silent delivery — the ffmpeg `-an` pass (§4)
-7. Proxy frames and shot-by-shot promotion (§5)
-8. `Node` as a first-class document; migrate `Identity` onto it as `kind=character`
-9. Step cache with key rehydration (§6)
+6. ~~Two-stage identity lock — the still that anchors the clip~~ **done** (§6b)
+7. Silent delivery — the ffmpeg `-an` pass (§4)
+8. Consent scope + expiry, and the identity in the manifest (§6d)
+9. Proxy frames and shot-by-shot promotion (§5) — now a variation on the lock, not a
+   separate mechanism: both render a cheap still, show it to a person, and promote it
+10. Verify `RK_REFERENCE_SLOT` against GMI's payload schema and turn multi-reference on (§6c)
+11. `Node` as a first-class document; migrate `Identity` onto it as `kind=character`
+12. Step cache with key rehydration (§6)
 
 Step 5 landed most of §2's `Node` shape inside `Identity` rather than alongside it, which
 is the right order: `character` is the only node kind with a real consumer today, and

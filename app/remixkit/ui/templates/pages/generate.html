@@ -32,8 +32,12 @@
   <dl class="stats">
     <div class="stat">
       <dt>Estimate</dt>
+      {# Shots and provider calls are different numbers once a shot has two stages, and
+         the invoice counts calls. Showing only shots would understate a character kit by
+         an image per loop. #}
       <dd>{{ "$%.2f"|format(estimate_cents / 100) }}
-        <span class="stat-sub">{{ shots|length }} shot{{ "" if shots|length == 1 else "s" }} · {{ env.generator }}</span></dd>
+        <span class="stat-sub">{{ shots|length }} shot{{ "" if shots|length == 1 else "s" }} ·
+          {{ plan.steps }} call{{ "" if plan.steps == 1 else "s" }} · {{ env.generator }}</span></dd>
     </div>
     <div class="stat">
       <dt>Consent</dt>
@@ -162,10 +166,38 @@
                   <span class="badge">{{ step.modality.value }}</span>
                   <span class="step-label">{{ step.label or "—" }}</span>
                   <span class="step-cost">
-                    {% if step.runs %}{{ "$%.2f"|format(step.estimate_cents / 100) }}
+                    {% if step.runs %}
+                      {{ "$%.2f"|format(((step.estimate_cents + (step.prelude.estimate_cents if step.prelude else 0)) / 100)) }}
+                      {% if step.prelude %}<span class="stat-sub">2 calls</span>{% endif %}
                     {% else %}<span class="unmeasured">skipped</span>{% endif %}
                   </span>
                 </div>
+
+                {% if step.prelude %}
+                  {# The identity lock, shown as its own stage because it is its own
+                     provider call and its own charge. A two-stage shot that priced and
+                     rendered as one row would be a kit billing twice per loop with one
+                     number on the screen. #}
+                  <div class="stage">
+                    <div class="stage-head">
+                      <span class="badge">stage 1 · {{ step.prelude.modality.value }}</span>
+                      <span class="hint">{{ step.prelude.model }}</span>
+                      <span class="step-cost">{{ "$%.2f"|format(step.prelude.estimate_cents / 100) }}</span>
+                    </div>
+                    <p class="hint">
+                      The face is settled here, then the clip is generated <em>from this
+                      frame</em> rather than from the description again. Regenerating a
+                      still costs {{ "$%.2f"|format(step.prelude.estimate_cents / 100) }};
+                      regenerating the clip costs
+                      {{ "$%.2f"|format(step.estimate_cents / 100) }}.
+                    </p>
+                    {% if step.prelude.plate_note %}
+                      <p class="small"><strong>Face:</strong> {{ step.prelude.plate_note }}</p>
+                    {% endif %}
+                    <p class="small prompt">{{ step.prelude.prompt }}</p>
+                  </div>
+                  <div class="stage-arrow" aria-hidden="true">↓ first frame</div>
+                {% endif %}
 
                 {% if step.runs %}
                   <dl class="kv step-wire">

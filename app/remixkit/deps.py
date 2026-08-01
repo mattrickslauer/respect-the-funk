@@ -90,6 +90,8 @@ class Container:
             timeout_s=settings.generation_timeout_s,
             max_concurrency=settings.max_concurrency,
             max_run_cents=settings.max_run_cents,
+            reference_slot=settings.reference_slot,
+            reference_max=settings.reference_max,
         )
 
         self.analyzer = _build_analyzer(settings)

@@ -181,6 +181,14 @@ def default_shot_plan(
                 # not opt in: a face reference on a typographic plate produces a portrait
                 # with words over it.
                 use_identity_plate=True,
+                # Settle the face in a still, then render the clip from it. A video model
+                # conditioned on text drifts across the clip; one conditioned on a first
+                # frame is anchored to it — so the likeness is decided once, cheaply, and
+                # inherited rather than re-derived four times at video prices.
+                #
+                # Costs an image per loop and degrades to a plain plate-conditioned clip
+                # when there is no image provider or no reference frame to lock from.
+                identity_lock=True,
             )
         )
 

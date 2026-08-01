@@ -41,6 +41,18 @@ def song(container, principal, artist):
     return container.songs.set_measurement(principal, made.id, bpm=96.0, bpm_method="manual entry")
 
 
+def conditioned(shot):
+    """The stage that actually carries the reference images.
+
+    A video shot with an identity lock delegates its plates to the still it is generated
+    from — the clip is conditioned on the still, not on the raw frames, because putting
+    both in the same positional slots asks the model to interpolate between them. So the
+    stage under test is the prelude where there is one, and the clip itself where the lock
+    degraded (no image provider, no frames, or a provider that refuses images).
+    """
+    return shot.prelude or shot
+
+
 def frame(name: str, lighting: str = "neutral", *, digest: str | None = None) -> ReferenceFrame:
     return ReferenceFrame(
         key=f"remixkit/frames/{name}.png",
@@ -101,7 +113,11 @@ def test_a_video_shot_takes_exactly_one_plate(container, principal, song, artist
     plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
     video = next(s for s in plan.shots if s.modality is Modality.VIDEO)
 
-    assert len(video.reference_keys) == 1
+    # The clip carries none: it is conditioned on the still, which is where the face was
+    # settled. The still carries one, because no reference slot is configured — see
+    # `GenblazeGenerator._reference_limit`.
+    assert video.reference_keys == []
+    assert len(video.prelude.reference_keys) == 1
 
 
 # ------------------------------------------------------------------ attachment
@@ -119,8 +135,8 @@ def test_the_face_reaches_the_shot_that_wants_it(container, principal, song, art
     video = next(s for s in plan.shots if s.modality is Modality.VIDEO)
     card = next(s for s in plan.shots if s.modality is Modality.IMAGE)
 
-    assert video.reference_keys == ["remixkit/frames/a.png"]
-    assert "identity v" in video.plate_note
+    assert conditioned(video).reference_keys == ["remixkit/frames/a.png"]
+    assert "identity v" in conditioned(video).plate_note
 
     # A lyric card is a typographic plate. A face reference on it produces a portrait
     # with words over it, so it deliberately does not opt in.
@@ -152,8 +168,8 @@ def test_an_unhashed_frame_still_conditions_but_is_flagged(container, principal,
     plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
     video = next(s for s in plan.shots if s.modality is Modality.VIDEO)
 
-    assert video.reference_keys == ["remixkit/frames/legacy.png"]
-    assert "no content hash" in video.plate_note
+    assert conditioned(video).reference_keys == ["remixkit/frames/legacy.png"]
+    assert "no content hash" in conditioned(video).plate_note
 
 
 # ------------------------------------------------------------------ the sharp edge
@@ -201,6 +217,10 @@ def test_a_provider_that_refuses_images_does_not_take_the_whole_run_down(
     assert video.runs, "the shot must still run, just without the face"
     assert video.reference_keys == []
     assert "does not accept image inputs" in video.plate_note
+    # And no still was built for it. `input_from` is validated under the same rule as a
+    # plate, so a still rendered for a provider that refuses images is a frame that is
+    # billed and then kills the run it was rendered for.
+    assert video.prelude is None
 
 
 def test_a_live_backend_on_local_storage_refuses_rather_than_sending_a_dead_url(
@@ -247,7 +267,7 @@ def test_unspecified_capabilities_are_permissive(container, principal, song, art
     plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
     video = next(s for s in plan.shots if s.modality is Modality.VIDEO)
 
-    assert video.reference_keys == ["remixkit/frames/a.png"]
+    assert conditioned(video).reference_keys == ["remixkit/frames/a.png"]
 
 
 # ------------------------------------------------------------------ the wire
@@ -336,3 +356,169 @@ def test_an_uploaded_frame_records_its_full_hash_and_type(client, container, pri
     assert added.sha256 == hashlib.sha256(data).hexdigest()
     assert added.content_type == "image/png"
     assert added.lighting == "hard-flash"
+
+
+# ------------------------------------------------------------------ the identity lock
+def test_a_locked_clip_is_generated_from_a_still_not_from_the_plates(
+    container, principal, song, artist
+):
+    """The two-stage shot, which is the strongest likeness this stack can produce.
+
+    A video model conditioned on text drifts across the clip; one conditioned on a first
+    frame is anchored to it. So the face is settled once in a still — cheap enough to
+    regenerate until it is right — and the clip inherits it.
+
+    The clip must carry *no* plates of its own. Seedance's slots are positional, so a clip
+    handed both the still and the raw reference would have two different images in
+    `first_frame`/`last_frame` and be asked to interpolate between them.
+    """
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
+    video = next(s for s in plan.shots if s.modality is Modality.VIDEO)
+
+    assert video.prelude is not None
+    assert video.prelude.modality is Modality.IMAGE
+    assert video.reference_keys == []
+    assert video.prelude.reference_keys == ["remixkit/frames/a.png"]
+
+
+def test_both_stages_are_quoted(container, principal, song, artist):
+    """The invoice counts provider calls. A shot priced as one call bills as two."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
+    video = next(s for s in plan.shots if s.modality is Modality.VIDEO)
+
+    assert plan.steps == 2, "one shot, two provider calls"
+    assert plan.estimate_cents == video.estimate_cents + video.prelude.estimate_cents
+
+
+def test_the_still_is_asked_for_a_photograph_not_a_frame_of_video(
+    container, principal, song, artist
+):
+    """A still rendered from "vertical 9:16 loop … movement at 96 BPM" is a request for a
+    frame of a video, and image models answer that with motion blur. The scene survives;
+    the motion language does not."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
+    still = next(s for s in plan.shots if s.modality is Modality.VIDEO).prelude
+
+    assert "Single still photograph" in still.prompt
+    assert "BPM" not in still.prompt
+    assert "loop" not in still.prompt.lower()
+    assert "Un Poquito Mas" in still.prompt, "the two stages must agree about the scene"
+
+
+def test_no_still_is_built_for_a_provider_that_refuses_images(
+    container, principal, song, artist, monkeypatch
+):
+    """`input_from` is validated under the same rule as `external_inputs`.
+
+    A still built for a provider that refuses image inputs is a frame that is rendered,
+    billed, and then kills the run it was rendered for — the single-stage path already
+    closed this hole and the two-stage path reopened it.
+    """
+    from remixkit.adapters import providers as provider_table
+
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    table = provider_table.resolve("mock")
+    _refuse_images(table[Modality.VIDEO])
+    monkeypatch.setattr(provider_table, "resolve", lambda backend: table)
+
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
+    video = next(s for s in plan.shots if s.modality is Modality.VIDEO)
+
+    assert video.prelude is None
+    assert plan.steps == len(plan.runnable), "no orphan still was planned or priced"
+
+
+def test_the_lock_degrades_when_there_is_no_image_provider(
+    container, principal, song, artist, monkeypatch
+):
+    """Video only. The clip still runs, conditioned on the plate directly."""
+    from remixkit.adapters import providers as provider_table
+
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    full = provider_table.resolve("mock")
+    monkeypatch.setattr(
+        provider_table, "resolve", lambda backend: {Modality.VIDEO: full[Modality.VIDEO]}
+    )
+
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
+    video = next(s for s in plan.shots if s.modality is Modality.VIDEO)
+
+    assert video.runs
+    assert video.prelude is None
+    assert video.reference_keys == ["remixkit/frames/a.png"]
+
+
+def test_only_one_reference_is_sent_until_a_slot_is_configured(
+    container, principal, song, artist
+):
+    """The honest boundary of what can be built without the vendor's payload schema.
+
+    Genblaze can route any number of images; what it cannot know is the key a given model
+    expects them under, and every GMI image model resolves through a fallback declaring a
+    single positional `image` slot that silently drops the rest. A slot name invented here
+    would either 400 or — far worse — be ignored, leaving a kit that reports four
+    references, is billed for one, and looks conditioned.
+    """
+    container.identities.create_version(
+        principal,
+        artist.id,
+        reference_frames=[
+            frame("a", "neutral"), frame("b", "warm"), frame("c", "hard-flash")
+        ],
+    )
+
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
+    still = next(s for s in plan.shots if s.modality is Modality.VIDEO).prelude
+
+    assert len(still.reference_keys) == 1
+    assert container.generator._reference_slot == "", "the default must be the verified one"
+
+
+def test_configuring_a_slot_sends_the_whole_classed_set(
+    container, principal, song, artist, monkeypatch
+):
+    """And when an operator has checked the model's payload, the set goes."""
+    container.identities.create_version(
+        principal,
+        artist.id,
+        reference_frames=[
+            frame("a", "neutral"), frame("b", "warm"), frame("c", "hard-flash")
+        ],
+    )
+    monkeypatch.setattr(container.generator, "_reference_slot", "reference_images")
+
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
+    still = next(s for s in plan.shots if s.modality is Modality.VIDEO).prelude
+
+    assert len(still.reference_keys) == 3
+    assert "3 references" in still.plate_note
+
+
+def test_a_locked_kit_generates_both_stages(container, principal, song, artist):
+    """End to end: the still is rendered, and the clip is generated from it."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+
+    kit = container.kits.request(principal, song_id=song.id, video_count=1)
+    ran = container.kits.run(principal.tenant_id, kit.id)
+
+    assert ran.status.value == "ready", ran.error
+    assert len(ran.assets) == 2, "the still and the clip"
+    assert {a.modality.value for a in ran.assets} == {"image", "video"}

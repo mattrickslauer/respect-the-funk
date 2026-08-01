@@ -620,3 +620,15 @@ body.auth .footer{margin-top:0}
   .class-row{grid-template-columns:1fr;gap:6px}
   .silhouettes{gap:6px}
 }
+
+/* ---- the identity lock, as a stage ----
+   A two-stage shot is one thing somebody bought and two things the provider charges for.
+   Drawing it as one row with one price is how a character kit bills an image per loop
+   with nothing on the screen saying so. */
+.stage{border:1px dashed var(--rule);border-radius:6px;background:var(--bg-2);padding:10px 12px}
+.stage-head{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+.stage-head .step-cost{margin-left:auto}
+.stage .prompt{font-family:var(--mono);font-size:11.5px;line-height:1.5;color:var(--ink-3);
+  margin:6px 0 0;overflow-wrap:anywhere}
+.stage-arrow{font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--gold);
+  text-align:center;padding:2px 0}

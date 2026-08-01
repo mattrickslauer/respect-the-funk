@@ -57,6 +57,8 @@ class GenblazeGenerator:
         timeout_s: float = 900.0,
         max_concurrency: int = 4,
         max_run_cents: int = 0,
+        reference_slot: str = "",
+        reference_max: int = 4,
     ) -> None:
         self.name = f"genblaze:{backend}"
         self._storage = storage
@@ -66,6 +68,8 @@ class GenblazeGenerator:
         self._timeout = timeout_s
         self._max_concurrency = max_concurrency
         self._max_run_cents = max_run_cents
+        self._reference_slot = (reference_slot or "").strip()
+        self._reference_max = max(1, reference_max)
 
     # -- sink -------------------------------------------------------------------
     def _build_sink(self):
@@ -193,9 +197,102 @@ class GenblazeGenerator:
                 estimate_cents=pricing.estimate_cents(shot.modality, model, rendered_seconds),
                 skipped_reason=reason,
             )
+            # A locked clip receives the still via `input_from`, which Genblaze validates
+            # under the same rule as a plate — so a provider that refuses images refuses
+            # the still too, and building one anyway would render and bill a frame whose
+            # only consumer then kills the run.
+            if shot.identity_lock and planned.runs and self._accepts_images(provider)[0]:
+                planned.prelude, prelude_provider = self._identity_still(
+                    shot, request, table, index
+                )
+                if planned.prelude is not None:
+                    # The still is where the face is settled, so the clip does not also
+                    # need to be handed the raw plates — it is conditioned on the still,
+                    # which already is the face. Sending both would put two different
+                    # images in the same positional slots and ask for an interpolation.
+                    planned.reference_keys = []
+                    planned.plate_note = (
+                        f"locked by a still first — {planned.prelude.plate_note}"
+                        if planned.prelude.plate_note
+                        else "locked by a still first"
+                    )
+                    resolved.append((planned.prelude, prelude_provider))
+
             resolved.append((planned, provider))
 
         return resolved
+
+    def _identity_still(self, shot: Any, request: GenerationRequest, table: dict, index: int):
+        """The stage-one plate: this artist, in this scene, as a single frame.
+
+        Returns `(None, None)` when there is nothing to lock — no image provider, no
+        identity, no frames. That is a degradation rather than a refusal: a shot that
+        wanted an identity lock and cannot have one is still a shot, and the plan says so
+        on the row rather than failing the kit.
+
+        The prompt is the clip's prompt with the motion language removed. A still rendered
+        from "vertical 9:16 loop … steady mid-tempo movement at 96 BPM" is being asked for
+        a frame of a video, and image models answer that with motion blur.
+        """
+        image_provider = table.get(Modality.IMAGE)
+        if image_provider is None:
+            return None, None
+
+        model = (
+            self._models.get(Modality.IMAGE)
+            or provider_table.default_model(image_provider, Modality.IMAGE)
+        )
+        if not model:
+            return None, None
+
+        # A still may carry more than one reference — the positional-slot constraint that
+        # limits a video shot to one is a fact about `first_frame`/`last_frame`, not about
+        # image conditioning. How many actually reach the wire depends on the slot the
+        # provider declares; see `_plate_assets`.
+        plates, note = self._plates_for(shot, request, image_provider, limit=self._reference_limit)
+        if not plates:
+            return None, None
+
+        prompt = self._still_prompt(shot.prompt)
+        return (
+            PlannedShot(
+                index=index,
+                modality=Modality.IMAGE,
+                label=f"identity lock · {shot.label}" if shot.label else "identity lock",
+                provider=type(image_provider).__name__,
+                vendor=provider_table.vendor_of(image_provider),
+                model=model,
+                prompt=prompt,
+                negative_prompt=", ".join(request.identity.negatives) if request.identity else "",
+                params={"aspect_ratio": shot.aspect_ratio},
+                reference_keys=[plate.key for plate in plates],
+                plate_note=note,
+                is_prelude=True,
+                estimate_cents=pricing.estimate_cents(Modality.IMAGE, model, None),
+            ),
+            image_provider,
+        )
+
+    @staticmethod
+    def _still_prompt(clip_prompt: str) -> str:
+        """The clip's prompt, asked for as a photograph rather than as footage.
+
+        Only the clauses that describe *motion or duration* are dropped. Everything about
+        the subject, the light and the framing is what the still exists to settle, so it
+        stays — the two stages must agree about the scene or the clip's first frame will
+        be a different place than the rest of it.
+        """
+        motion_words = ("loop", "movement", "bpm", "silent footage", "handheld", "motion")
+        kept = [
+            clause
+            for clause in clip_prompt.split(". ")
+            if not any(word in clause.lower() for word in motion_words)
+        ]
+        body = ". ".join(kept) or clip_prompt
+        return (
+            f"Single still photograph, vertical 9:16. {body}. "
+            "Sharp focus on the subject's face, no motion blur."
+        )
 
     # -- the face --------------------------------------------------------------
     # How many conditioning images a video shot may carry. One, and the number is a
@@ -204,7 +301,60 @@ class GenblazeGenerator:
     # A second reference frame would not strengthen the likeness, it would request a morph.
     PLATE_LIMIT = 1
 
-    def _plates_for(self, shot: Any, request: GenerationRequest, provider: Any):
+    @property
+    def _reference_limit(self) -> int:
+        """How many references a *still* may carry. One unless a slot is configured.
+
+        This is the honest boundary of what can be built without the vendor's docs in
+        hand, and it is worth stating exactly rather than papering over.
+
+        Genblaze can route any number of images — `route_images(array_slot=…)` exists and
+        works. What it cannot know is the *key* a given model expects them under, and GMI
+        ships no per-model payload schema in the package: every image model resolves
+        through a permissive fallback declaring `route_images(slots=("image",))`, a single
+        positional slot which silently drops the rest ("If `array_slot` is None, extras are
+        dropped").
+
+        So one reference is the only count this code can claim to have verified. A slot
+        name invented here would either 400 or, far worse, be ignored — a kit that reports
+        four references, is billed for one, and looks conditioned. `RK_REFERENCE_SLOT` is
+        how an operator turns it on *after* checking the model's actual payload against
+        GMI's catalogue, and `_plate_assets` records which slot was used in the manifest
+        so a wrong guess is visible in the record rather than only in the output.
+        """
+        return self._reference_max if self._reference_slot else 1
+
+    @staticmethod
+    def _accepts_images(provider: Any) -> tuple[bool, str | None]:
+        """Will this provider take an image input at all — from anywhere.
+
+        One question, because Genblaze treats it as one: `_check_step_capabilities` sets
+        `receives_chain` for `external_inputs`, `input_from`, *and* chain mode alike, and
+        raises `GenblazeError` for any of them if the provider has not declared
+        `accepts_chain_input`. So "can I hand it a plate" and "can I hand it the still from
+        the previous step" have the same answer, and asking them separately is how the
+        two-stage path grew a hole the single-stage path had already closed:
+        `VeoProvider` refuses both, and the still would have been rendered, billed, and
+        then killed the run it was rendered for.
+
+        `None` capabilities means unspecified, which Genblaze documents as "no
+        restriction" — permissive here rather than a refusal, and it is also what keeps
+        the mock path exercising this code rather than routing around it.
+        """
+        caps = provider.get_capabilities() if hasattr(provider, "get_capabilities") else None
+        if caps is None:
+            return True, None
+        name = type(provider).__name__
+        if not getattr(caps, "accepts_chain_input", False):
+            return False, f"{name} does not accept image inputs — the face is not sent"
+        inputs = getattr(caps, "supported_inputs", None)
+        if inputs and "image" not in inputs:
+            return False, f"{name} takes {', '.join(inputs)} only — the face is not sent"
+        return True, None
+
+    def _plates_for(
+        self, shot: Any, request: GenerationRequest, provider: Any, *, limit: int | None = None
+    ):
         """The artist's face, if this shot wants it and this provider will take it.
 
         The gate is the provider's own declared capability, because getting it wrong is not
@@ -230,7 +380,7 @@ class GenblazeGenerator:
         identity = request.identity
         if identity is None:
             return [], "no identity — this shot will not hold a face"
-        plates = identity.plates(limit=GenblazeGenerator.PLATE_LIMIT)
+        plates = identity.plates(limit=limit or GenblazeGenerator.PLATE_LIMIT)
         if not plates:
             return [], "identity has no reference frames — add one to hold the face"
 
@@ -246,18 +396,17 @@ class GenblazeGenerator:
                 "set RK_STORAGE_BACKEND=b2 to condition on the face"
             )
 
-        caps = provider.get_capabilities() if hasattr(provider, "get_capabilities") else None
-        if caps is not None:
-            name = type(provider).__name__
-            if not getattr(caps, "accepts_chain_input", False):
-                return [], f"{name} does not accept image inputs — the face is not sent"
-            inputs = getattr(caps, "supported_inputs", None)
-            if inputs and "image" not in inputs:
-                return [], f"{name} takes {', '.join(inputs)} only — the face is not sent"
+        accepts, refusal = self._accepts_images(provider)
+        if not accepts:
+            return [], refusal
 
         plate = plates[0]
-        where = f" ({plate.lighting})" if plate.lighting else ""
-        note = f"identity v{identity.version}{where}"
+        if len(plates) > 1:
+            classes = ", ".join(p.angle.value for p in plates)
+            note = f"identity v{identity.version} — {len(plates)} references ({classes})"
+        else:
+            where = f" ({plate.angle.value}, {plate.lighting})" if plate.lighting else ""
+            note = f"identity v{identity.version}{where}"
         if not plate.sha256:
             # Not a refusal — it still conditions. But an unhashed input means Genblaze
             # keys the cache and the manifest off a presigned URL that rotates, so the
@@ -305,7 +454,9 @@ class GenblazeGenerator:
     def plan(self, request: GenerationRequest) -> GenerationPlan:
         """What this run would send, and what it would cost. Spends nothing."""
         resolved = self._resolve(request)
-        plan = GenerationPlan(shots=[planned for planned, _ in resolved])
+        # Preludes are nested on the shot they lock, not listed beside it — see
+        # `PlannedShot.is_prelude`. Listing both would double the count and the quote.
+        plan = GenerationPlan(shots=[p for p, _ in resolved if not p.is_prelude])
 
         if not plan.runnable:
             missing = sorted({s.modality.value for s in plan.skipped})
@@ -364,6 +515,11 @@ class GenblazeGenerator:
 
         planned: list[tuple[Modality, str, str, float | None]] = []  # + seconds
         skipped: list[str] = []
+        # Where each identity-locking still landed in the pipeline, so the clip that
+        # follows it can name it as its input. Keyed by the `ShotSpec` index both stages
+        # share.
+        still_at: dict[int, int] = {}
+        step_index = 0
 
         for shot, provider in resolved:
             if not shot.runs:
@@ -410,11 +566,29 @@ class GenblazeGenerator:
             # `_resolve` because a presigned URL is a short-lived credential and the preview
             # screen must not be in the business of issuing them — `plan()` runs on every
             # keystroke of a re-price, and none of those runs is going to generate anything.
-            inputs = self._plate_assets(shot.reference_keys, request.identity)
-            if inputs:
-                kwargs["external_inputs"] = inputs
+            # Where this step's images come from. Exactly one of the two, never both: a
+            # clip locked by a still is conditioned on the still, and adding the raw plates
+            # alongside it would put two different images in the same positional slots and
+            # ask the model to interpolate between them.
+            feeding_still = still_at.get(shot.index)
+            if feeding_still is not None and not shot.is_prelude:
+                kwargs["input_from"] = feeding_still
+            else:
+                inputs = self._plate_assets(shot.reference_keys, request.identity)
+                if inputs:
+                    kwargs["external_inputs"] = inputs
+                    if len(inputs) > 1 and self._reference_slot:
+                        # Which key the extra references travelled under, recorded in the
+                        # manifest. If the slot turns out to be wrong for this model the
+                        # evidence is in the run's own record rather than only in a face
+                        # that came back looking like somebody else.
+                        kwargs["metadata"]["reference_slot"] = self._reference_slot
+                        kwargs["metadata"]["reference_count"] = len(inputs)
 
             pipeline = pipeline.step(provider, **kwargs)
+            if shot.is_prelude:
+                still_at[shot.index] = step_index
+            step_index += 1
             planned.append((shot.modality, model, prompt, rendered_seconds))
 
         if not planned:

@@ -398,6 +398,59 @@ rather than going quiet:
   a laptop.
 - **The identity has no frames.** Text-only, and it says so instead of looking conditioned.
 
+### The identity lock — getting the artist, not a description of them
+
+A video model conditioned on text drifts across the clip: the face at second six is not
+the face at second one, because nothing anchors it. A video model conditioned on a *first
+frame* is anchored — it inherits the identity rather than re-deriving it.
+
+So a loop is rendered in two stages. Stage one is a still, conditioned on the artist's
+reference plates, costing roughly a fifteenth of the clip. Stage two is the clip, generated
+from that still via `input_from`, which lands in Seedance's `first_frame`. The expensive,
+uncertain part happens once, cheaply, where a person can look at it and regenerate until it
+is right.
+
+A locked clip carries **no** plates of its own. Seedance's slots are positional, so a clip
+handed both the still and the raw reference has two different images in `first_frame` and
+`last_frame`, and is being asked to interpolate between them rather than to hold a face.
+
+The lock degrades rather than failing: no image provider, no reference frames, or a
+provider that refuses image inputs, and you get a plain plate-conditioned clip with the
+reason on the plan row. `input_from` is validated under the same capability rule as
+`external_inputs`, so a provider that refuses images refuses the still too — building one
+anyway would render and bill a frame whose only consumer then kills the run.
+
+Both stages are priced. The plan header shows shots *and* provider calls, because a
+two-stage shot is one thing you bought and two things you are charged for.
+
+**How far this goes.** Four techniques produce a recognisable person; only two are reachable
+from this stack. The two-stage lock is built. Multi-reference conditioning is plumbed but
+needs a verified payload key (below). Character fine-tuning has no training API on any of
+the five installed connectors. Face swap has no model in the GMI registry — the image
+families are inpainting and image-to-image edit — and would mean `inswapper`-class weights
+on our own compute against the delivered MP4. `PIPELINE-SPEC.md` §6b has the full table.
+
+### `RK_REFERENCE_SLOT`
+
+Sending several reference frames in one call is the standard zero-shot way to hold a
+likeness, and the frames are already collected and classed. The plumbing is built. The
+missing piece is a fact about the vendor, not about this code.
+
+Genblaze routes any number of images — `route_images(array_slot=…)` works. What it cannot
+know is the key a given model expects them under, and GMI ships no per-model payload
+schema: every image model resolves through a fallback declaring `route_images(slots=
+("image",))`, one positional slot, and the mapper's documented behaviour for the rest is
+*"If `array_slot` is None, extras are dropped."*
+
+So one reference is the only count this code can honestly claim, and that is the default.
+Inventing a key here gives you a 400, or — much worse — a kit that reports four references,
+is billed for one, and looks conditioned.
+
+Set `RK_REFERENCE_SLOT` once you have checked the model's actual payload in GMI's
+catalogue. The whole classed plate set then goes, and the slot name and count are written
+into the step metadata, so a wrong guess is visible in the run's own record rather than
+only in a face that came back looking like someone else.
+
 ### Silent loops
 
 A kit loop is a backdrop the master plays over, so a generated soundtrack is a defect.

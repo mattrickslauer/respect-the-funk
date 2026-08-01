@@ -479,6 +479,49 @@ the five installed connectors. Face swap has no model in the GMI registry — th
 families are inpainting and image-to-image edit — and would mean `inswapper`-class weights
 on our own compute against the delivered MP4. `PIPELINE-SPEC.md` §6b has the full table.
 
+### The still index — why the second kit is cheap
+
+The two-stage lock makes the still the expensive half: it is where the face is resolved,
+and the clip merely inherits it. A still is also a *pure function of its inputs* — who is
+in it, which version of each of them, and the scene — so rendering the same one twice is
+paying twice for an answer already stored.
+
+`Identity.locked_stills` is that index, keyed by `still_digest(identities, prompt)`. A kit
+that hits it skips the image call entirely: nothing is submitted, nothing is billed, the
+plan row reads `reusing a stored still, free`, and the clip is conditioned on the stored
+frame through `external_inputs` rather than through `input_from`.
+
+Identity **versions** are in the digest deliberately. Saving a new version of a face must
+*miss* the index rather than reuse a frame of how that person used to look — that is the
+one way a cache here could quietly undo the versioning discipline the rest of the model
+keeps. The scene is in it too, so a night-drive still is not offered for a golden-hour shot.
+
+The index lives on the identity line rather than on the kit, because its whole value is
+outliving the kit that paid for it. It is MEMORY-SPEC's "the second video is cheap" applied
+to the step that actually costs.
+
+### Several faces in one kit
+
+`Identity.name` gives an artist more than one line; `kits.request(identity_names=[…])`
+chooses which of them a kit is for, and it accepts more than one. Each face's compiled text
+composes into the prompt under its own name — two unlabelled silhouettes read to a model as
+one contradictory person, where `Amanda Kurt: … . Marco: …` reads as two people. The
+primary line has no name of its own, so in a group shot it is labelled with the artist's.
+
+Omitting `identity_names` means the primary line alone, which is what every kit meant before
+lines existed — so a solo artist is unchanged and adding a band member cannot alter whose
+face an existing kit renders. A named line with no versions is dropped rather than
+substituted: a kit that quietly renders a different *person* than its brief says is worse
+than one that renders one fewer shot.
+
+The brief records every face by id *and* name, so "which member was this kit for" is
+readable without a lookup.
+
+**The plates are the limit, not the list.** Each face contributes one reference and the
+provider's slot count caps the total — so today a duo sends one plate and the plan row says
+`2 faces — 1 reference sent; set RK_REFERENCE_SLOT to send the rest`. A duo silently
+conditioned on one member is exactly the failure that must not be invisible.
+
 ### `RK_REFERENCE_SLOT`
 
 Sending several reference frames in one call is the standard zero-shot way to hold a

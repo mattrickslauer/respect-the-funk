@@ -111,10 +111,10 @@ class KitService:
         *,
         song_id: str,
         video_count: int = 3,
-        hook_lines: list[str] | None = None,
         tts_text: str | None = None,
         section_ids: list[str] | None = None,
         overrides: dict[int, dict] | None = None,
+        identity_names: list[str] | None = None,
     ) -> tuple[GenerationPlan, list[ShotSpec]]:
         """The dry run. Resolves the whole request to wire payloads and spends nothing.
 
@@ -130,14 +130,14 @@ class KitService:
         """
         song = self._songs.get(principal, song_id)
         artist = self._artists.get(principal, song.artist_id)
-        identity = self._identities.current(principal, artist.id)
+        identities = self._identities.select(principal, artist.id, identity_names)
+        identity = identities[0] if identities else None
 
         section_ids = [sid for sid in (section_ids or []) if song.section(sid)]
         shots = default_shot_plan(
             song,
             identity,
             video_count=video_count,
-            hook_lines=hook_lines,
             tts_text=tts_text,
             max_shots=self._max_shots,
             section_ids=section_ids,
@@ -150,6 +150,7 @@ class KitService:
             tenant_id=principal.tenant_id,
             artist_name=artist.name,
             identity=identity,
+            identities=identities,
             song=song,
             shots=shots,
         )
@@ -175,11 +176,11 @@ class KitService:
         song_id: str,
         name: str | None = None,
         video_count: int = 3,
-        hook_lines: list[str] | None = None,
         tts_text: str | None = None,
         budget_cents: int | None = None,
         section_ids: list[str] | None = None,
         overrides: dict[int, dict] | None = None,
+        identity_names: list[str] | None = None,
     ) -> Kit:
         """Validate, persist a queued kit, enqueue. Must stay well under 200 ms."""
         song = self._songs.get(principal, song_id)
@@ -192,7 +193,8 @@ class KitService:
                 "needs auditable rights."
             )
 
-        identity = self._identities.current(principal, artist.id)
+        identities = self._identities.select(principal, artist.id, identity_names)
+        identity = identities[0] if identities else None
         # Sections are resolved against the song *now*, so a brief cannot record the id of
         # a section that was deleted before the request. The worker re-plans from the same
         # stored ids, and `briefs.hook_windows` drops any that have gone since.
@@ -201,7 +203,6 @@ class KitService:
             song,
             identity,
             video_count=video_count,
-            hook_lines=hook_lines,
             tts_text=tts_text,
             max_shots=self._max_shots,
             section_ids=section_ids,
@@ -231,7 +232,6 @@ class KitService:
             status=KitStatus.QUEUED,
             brief={
                 "video_count": video_count,
-                "hook_lines": hook_lines or [],
                 "tts_text": tts_text,
                 "section_ids": section_ids,
                 # The windows as they were when the kit was bought. The ids alone would
@@ -252,8 +252,18 @@ class KitService:
                     {"index": index, **{k: v for k, v in edits.items() if k in OVERRIDABLE}}
                     for index, edits in sorted((overrides or {}).items())
                 ],
+                # Which faces, by id *and* by name. The id is the durable reference — it
+                # names an exact version whose content cannot move — and the name is what
+                # a person reads. Recording only the id meant answering "which member was
+                # this kit for" required a lookup against records that may since have
+                # been deleted.
                 "identity_id": identity.id if identity else None,
                 "identity_version": identity.version if identity else None,
+                "identities": [
+                    {"id": i.id, "name": i.name, "version": i.version, "label": i.display_name}
+                    for i in identities
+                ],
+                "identity_names": identity_names,
                 "generator": getattr(self._generator, "name", "unknown"),
             },
         )
@@ -287,13 +297,19 @@ class KitService:
         try:
             song = self._songs.get(principal, kit.song_id)
             artist = self._artists.get(principal, kit.artist_id)
-            identity = self._identities.current(principal, artist.id)
+            # The same lines the brief was bought for. Re-selecting by name rather than
+            # by stored id is deliberate: it picks up a newer version of the same face if
+            # one has been saved since, which is the behaviour the versioning exists for,
+            # while `brief["identities"]` keeps the record of what was quoted.
+            identities = self._identities.select(
+                principal, artist.id, kit.brief.get("identity_names")
+            )
+            identity = identities[0] if identities else None
 
             shots = default_shot_plan(
                 song,
                 identity,
                 video_count=int(kit.brief.get("video_count", 3)),
-                hook_lines=list(kit.brief.get("hook_lines") or []),
                 tts_text=kit.brief.get("tts_text"),
                 max_shots=self._max_shots,
                 section_ids=list(kit.brief.get("section_ids") or []),
@@ -310,11 +326,22 @@ class KitService:
                     tenant_id=tenant_id,
                     artist_name=artist.name,
                     identity=identity,
+                    identities=identities,
                     song=song,
                     shots=shots,
                     metadata={"kit_name": kit.name},
                 )
             )
+
+            # The index, written where it outlives the kit that paid for it. A still is a
+            # pure function of who is in it and the scene, so the next kit in the same
+            # scene skips the image call entirely — which is MEMORY-SPEC's "the second
+            # video is cheap" applied to the step that actually costs.
+            for still in result.locked_stills:
+                for candidate in identities:
+                    if candidate.id in still.identity_ids:
+                        self._identities.record_still(principal, candidate.id, still)
+                        break
 
             kit.run_id = result.run_id
             kit.assets = result.assets

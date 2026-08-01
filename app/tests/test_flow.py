@@ -72,7 +72,7 @@ def test_full_spine(container, principal):
     song = songs.set_hook(principal, song.id, start_ms=30_000, end_ms=36_000)
     assert song.hook.duration_ms == 6_000
 
-    kit = kits.request(principal, song_id=song.id, video_count=2, hook_lines=["I've been losing sleep"])
+    kit = kits.request(principal, song_id=song.id, video_count=2)
     assert kit.status is KitStatus.QUEUED
     assert kit.brief["identity_version"] == 1
 

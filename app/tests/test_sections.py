@@ -163,7 +163,7 @@ def test_a_kit_deals_its_videos_across_the_chosen_hooks(container, principal, so
     stored = container.songs.add_section(principal, stored.id, start_ms=60_000, end_ms=70_000)
     ids = [s.id for s in stored.hook_sections]
 
-    shots = default_shot_plan(stored, None, video_count=3, hook_lines=[], section_ids=ids)
+    shots = default_shot_plan(stored, None, video_count=3, section_ids=ids)
     assert [s.seconds for s in shots] == [4.0, 8.0, 10.0]
     # Every loop says which hook it belongs to, which is the only way to read the plan.
     assert all(shot.label for shot in shots)
@@ -174,7 +174,7 @@ def test_more_videos_than_hooks_cycles_the_moods(container, principal, song):
     stored = container.songs.add_section(principal, stored.id, start_ms=30_000, end_ms=38_000)
     ids = [s.id for s in stored.hook_sections]
 
-    shots = default_shot_plan(stored, None, video_count=4, hook_lines=[], section_ids=ids)
+    shots = default_shot_plan(stored, None, video_count=4, section_ids=ids)
     assert [s.seconds for s in shots] == [4.0, 8.0, 4.0, 8.0]
     assert len({s.prompt for s in shots}) == 4, "four distinct moods, not two repeated"
 
@@ -246,7 +246,6 @@ def test_the_generate_form_buys_exactly_the_hooks_it_priced(client, container, p
             "song_id": song["id"],
             "artist_id": song["artist_id"],
             "video_count": "2",
-            "hook_lines": "",
             "section_ids": ids,
         },
     )

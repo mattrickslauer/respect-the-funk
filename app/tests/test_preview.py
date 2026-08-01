@@ -184,23 +184,30 @@ def test_a_run_with_no_provider_is_refused_before_the_button(container, principa
 
 
 def test_a_skipped_shot_is_shown_and_not_priced(container, principal, song, monkeypatch):
-    """Video only. The lyric card has no provider, so it costs nothing and says why."""
+    """A modality nothing can serve costs nothing, produces nothing, and says why."""
     from remixkit.adapters import providers as provider_table
 
     full = provider_table.resolve("mock")
     monkeypatch.setattr(
-        provider_table, "resolve", lambda backend: {Modality.VIDEO: full[Modality.VIDEO]}
+        provider_table,
+        "resolve",
+        # Video and image, no audio — so the voice shot has nothing to run on.
+        lambda backend: {m: full[m] for m in (Modality.VIDEO, Modality.IMAGE)},
     )
 
     plan, _ = container.kits.plan(
-        principal, song_id=song.id, video_count=1, hook_lines=["one line"]
+        principal, song_id=song.id, video_count=1, tts_text="a spoken line"
     )
 
     assert len(plan.runnable) == 1
     assert len(plan.skipped) == 1
-    assert plan.skipped[0].modality is Modality.IMAGE
-    assert "image" in plan.skipped[0].skipped_reason
-    assert plan.estimate_cents == plan.runnable[0].estimate_cents
+    assert plan.skipped[0].modality is Modality.AUDIO
+    assert "audio" in plan.skipped[0].skipped_reason
+    # The quote is the runnable shot and nothing else. This artist has no reference
+    # frames, so there is no identity-locking still to pay for either.
+    runnable = plan.runnable[0]
+    assert runnable.prelude is None
+    assert plan.estimate_cents == runnable.estimate_cents
 
 
 def test_consent_blocks_the_plan_not_just_the_queue(container, principal):
@@ -229,11 +236,11 @@ def test_the_screen_shows_the_whole_prompt_not_a_truncation(client, container, p
     # `&#34;` inside the textarea. That is correct output and a false negative here.
     page = html.unescape(
         client.get(
-            f"/console/artists/{made.id}/songs/{song.id}/generate?video_count=1&hook_lines="
+            f"/console/artists/{made.id}/songs/{song.id}/generate?video_count=1"
         ).text
     )
 
-    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1, hook_lines=[])
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
     assert plan.shots[0].prompt in page, "the plan on the page must be the plan on the wire"
     for term in VIDEO_NEGATIVES[:3]:
         assert term in page, "what the run suppresses is part of what it is about to buy"

@@ -17,6 +17,7 @@ from remixkit.domain.models import (
     BodyBuild,
     HeightBand,
     Identity,
+    LockedStill,
     Presentation,
     ReferenceFrame,
 )
@@ -75,6 +76,30 @@ class IdentityService:
             versions = lines.get(name.strip())
             return versions[0] if versions else None
         return next(iter(lines.values()))[0]
+
+    def select(
+        self, principal: Principal, artist_id: str, names: list[str] | None = None
+    ) -> list[Identity]:
+        """The faces a kit is for, in the order asked for.
+
+        `None` means the primary line alone, which is what every kit meant before lines
+        existed — so a solo artist's kit is unchanged and adding a band member cannot
+        alter whose face an existing kit renders.
+
+        A named line with no versions is dropped rather than substituted. The same rule
+        `briefs.hook_windows` follows for a deleted section: a kit that quietly renders a
+        different *person* than its brief says is worse than one that renders one fewer.
+        """
+        if names is None:
+            current = self.current(principal, artist_id)
+            return [current] if current else []
+
+        chosen: list[Identity] = []
+        for name in names:
+            identity = self.current(principal, artist_id, name)
+            if identity is not None:
+                chosen.append(identity)
+        return chosen
 
     def get(self, principal: Principal, identity_id: str) -> Identity:
         identity = self._repo.get(principal.tenant_id, COLLECTION, identity_id, Identity)
@@ -213,6 +238,25 @@ class IdentityService:
             build=source.build,
             height=source.height,
         )
+
+    def record_still(
+        self, principal: Principal, identity_id: str, still: LockedStill
+    ) -> Identity:
+        """Add a rendered still to this line's index, if it is not already there.
+
+        Does not mint a version, for the same reason adding a reference frame does not:
+        this is a *derived artefact* of a version that already exists, not a change to
+        what the artist is said to look like. Minting one would also invalidate the very
+        digest that produced it, since versions are part of the key — the index would
+        never hit twice.
+        """
+        identity = self.get(principal, identity_id)
+        if identity.still_for(still.digest) is not None:
+            return identity
+        identity.locked_stills.append(still)
+        identity.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, identity.id, identity)
+        return identity
 
     def delete(self, principal: Principal, identity_id: str) -> None:
         """Remove an identity version and its reference frames.

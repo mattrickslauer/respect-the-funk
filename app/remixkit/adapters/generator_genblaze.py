@@ -27,12 +27,13 @@ from typing import Any
 
 from remixkit.adapters import pricing
 from remixkit.adapters import providers as provider_table
-from remixkit.domain.models import Asset, Modality
+from remixkit.domain.models import Asset, LockedStill, Modality
 from remixkit.ports.generator import (
     GenerationPlan,
     GenerationRequest,
     GenerationResult,
     PlannedShot,
+    still_digest,
 )
 
 log = logging.getLogger(__name__)
@@ -126,10 +127,21 @@ class GenblazeGenerator:
         """Identity first, then the shot. Order matters to most image/video models —
         the subject description should not be trailing context."""
         parts: list[str] = []
-        if request.identity:
-            fragment = request.identity.prompt_fragment()
-            if fragment:
+        # Every face this kit is for, named when there is more than one. A duo described
+        # as two unlabelled silhouettes reads to a model as one contradictory person;
+        # "Amanda: … . Marco: …" reads as two people, which is what it is.
+        named = len(request.identities) > 1
+        for identity in request.identities:
+            fragment = identity.prompt_fragment()
+            if not fragment:
+                continue
+            if not named:
                 parts.append(fragment)
+                continue
+            # The primary line has no name of its own, and "Primary:" is not a person. In
+            # a group shot it is the artist the roster entry is named after.
+            who = identity.name.strip() or request.artist_name
+            parts.append(f"{who}: {fragment}")
         parts.append(shot_prompt)
         return ". ".join(p.strip(". ") for p in parts if p.strip())
 
@@ -147,7 +159,10 @@ class GenblazeGenerator:
         silently is how a brief for four videos quietly becomes a kit of two.
         """
         table = provider_table.resolve(self._backend)
-        identity_negatives = request.identity.negatives if request.identity else []
+        # Union across every face in the shot. Anti-drift terms are about what a person
+        # must not look like, so a duo needs both members' — and the de-duplication below
+        # keeps a term the two share from reaching the provider twice.
+        identity_negatives = [n for i in request.identities for n in i.negatives]
         resolved: list[tuple[PlannedShot, Any]] = []
 
         for index, shot in enumerate(request.shots):
@@ -254,6 +269,38 @@ class GenblazeGenerator:
             return None, None
 
         prompt = self._still_prompt(shot.prompt)
+
+        # The index. A still is a pure function of who is in it, which version of them,
+        # and the scene — so if one has already been rendered for exactly that, rendering
+        # it again is paying twice for a stored answer.
+        digest = still_digest(request.identities, prompt)
+        cached = next(
+            (s for i in request.identities if (s := i.still_for(digest)) is not None), None
+        )
+        if cached is not None:
+            return (
+                PlannedShot(
+                    index=index,
+                    modality=Modality.IMAGE,
+                    label=f"identity lock · {shot.label}" if shot.label else "identity lock",
+                    provider=type(image_provider).__name__,
+                    vendor=provider_table.vendor_of(image_provider),
+                    model=model,
+                    prompt=prompt,
+                    negative_prompt="",
+                    reference_keys=[cached.key],
+                    plate_note=f"{note} — reusing a stored still, free",
+                    is_prelude=True,
+                    still_digest=digest,
+                    # Free, and priced as free. A cached step that still quotes its
+                    # original price makes the index invisible in the one place its value
+                    # shows up.
+                    estimate_cents=0,
+                    reused_still=cached,
+                ),
+                image_provider,
+            )
+
         return (
             PlannedShot(
                 index=index,
@@ -263,11 +310,14 @@ class GenblazeGenerator:
                 vendor=provider_table.vendor_of(image_provider),
                 model=model,
                 prompt=prompt,
-                negative_prompt=", ".join(request.identity.negatives) if request.identity else "",
+                    negative_prompt=", ".join(
+                    dict.fromkeys(n for i in request.identities for n in i.negatives)
+                ),
                 params={"aspect_ratio": shot.aspect_ratio},
                 reference_keys=[plate.key for plate in plates],
                 plate_note=note,
                 is_prelude=True,
+                still_digest=digest,
                 estimate_cents=pricing.estimate_cents(Modality.IMAGE, model, None),
             ),
             image_provider,
@@ -377,12 +427,31 @@ class GenblazeGenerator:
         if provider is None:
             return [], None
 
-        identity = request.identity
-        if identity is None:
+        if not request.identities:
             return [], "no identity — this shot will not hold a face"
-        plates = identity.plates(limit=limit or GenblazeGenerator.PLATE_LIMIT)
+
+        # One plate per face, best-ranked class first. A duo needs two references and a
+        # solo artist needs one, so the budget is per identity rather than per shot — and
+        # `limit` above it still caps the total, because the number of images a provider
+        # accepts is a fact about the provider, not about how many people are in the shot.
+        cap = limit or GenblazeGenerator.PLATE_LIMIT
+        # Share the slots between the faces rather than spending them all on the first.
+        # One face gets the whole allowance and uses it for *angle* coverage; four faces
+        # get one each, because knowing there are four people in the shot matters more
+        # than knowing one of them in profile.
+        per_identity = max(1, cap // len(request.identities))
+        plates: list[Any] = []
+        for identity in request.identities:
+            plates.extend(identity.plates(limit=per_identity))
+        plates = plates[:cap]
+
+        identity = request.identities[0]
         if not plates:
-            return [], "identity has no reference frames — add one to hold the face"
+            return [], (
+                "no reference frames on any of these identities — add one to hold the face"
+                if len(request.identities) > 1
+                else "identity has no reference frames — add one to hold the face"
+            )
 
         # A conditioning image is fetched *by the provider*, from its own network. The
         # local adapter's `/files/…` is an app route rather than an address, so on a live
@@ -401,7 +470,19 @@ class GenblazeGenerator:
             return [], refusal
 
         plate = plates[0]
-        if len(plates) > 1:
+        wanted = len(request.identities)
+        if wanted > 1:
+            # The honest count. Every face's *text* composes into the prompt, but only as
+            # many plates as the provider has slots for actually travel — one, until
+            # `RK_REFERENCE_SLOT` is verified. A duo silently conditioned on one member is
+            # exactly the failure that must not be invisible.
+            note = (
+                f"{wanted} faces — {len(plates)} reference"
+                f"{'' if len(plates) == 1 else 's'} sent"
+            )
+            if len(plates) < wanted:
+                note += "; set RK_REFERENCE_SLOT to send the rest"
+        elif len(plates) > 1:
             classes = ", ".join(p.angle.value for p in plates)
             note = f"identity v{identity.version} — {len(plates)} references ({classes})"
         else:
@@ -414,7 +495,7 @@ class GenblazeGenerator:
             note += " — no content hash, so the manifest hash will not be stable"
         return plates, note
 
-    def _plate_assets(self, keys: list[str], identity: Any) -> list[Any]:
+    def _plate_assets(self, keys: list[str], identities: Any) -> list[Any]:
         """Turn stored plate keys into fetchable Genblaze assets.
 
         The URL is presigned at submission time and never persisted, for the same reason
@@ -428,12 +509,18 @@ class GenblazeGenerator:
         A plate that cannot be presigned is dropped rather than raised on. A broken
         reference image should cost a kit its likeness conditioning, not its whole run.
         """
-        if not keys or identity is None:
+        if not keys or not identities:
             return []
 
         from genblaze_core.models.asset import Asset as GBAsset
 
-        by_key = {frame.key: frame for frame in identity.reference_frames}
+        # Across every face, because a duo's plates come from two different records and
+        # the caller only handed back a flat list of keys.
+        by_key = {
+            frame.key: frame
+            for identity in identities
+            for frame in identity.reference_frames
+        }
         assets: list[Any] = []
         for key in keys:
             try:
@@ -450,6 +537,22 @@ class GenblazeGenerator:
                 )
             )
         return assets
+
+    def _stored_still_asset(self, still: Any) -> Any:
+        """An indexed still, as an asset a provider can fetch.
+
+        Same shape as a plate and for the same reasons — presigned at submission rather
+        than stored, and carrying its content hash so the manifest's canonical hash does
+        not move when the URL rotates.
+        """
+        from genblaze_core.models.asset import Asset as GBAsset
+
+        try:
+            url = self._storage.presign_get(still.key, expires_in=3600)
+        except Exception as exc:
+            log.warning("stored still %s could not be presigned (%s)", still.key, exc)
+            return None
+        return GBAsset(url=url, media_type="image/png", sha256=still.sha256)
 
     def plan(self, request: GenerationRequest) -> GenerationPlan:
         """What this run would send, and what it would cost. Spends nothing."""
@@ -519,9 +622,21 @@ class GenblazeGenerator:
         # follows it can name it as its input. Keyed by the `ShotSpec` index both stages
         # share.
         still_at: dict[int, int] = {}
+        reused: dict[int, Any] = {}
+        # Keyed by prompt because that is the only field that survives into the provider's
+        # own step record intact — matching by position would mis-attribute every still
+        # after the first failed step.
+        still_index: dict[str, tuple[str, list[str]]] = {}
         step_index = 0
 
         for shot, provider in resolved:
+            if shot.is_prelude and shot.reused_still is not None:
+                # Already in the index. Nothing is submitted and nothing is billed; the
+                # clip below reads the stored frame through `reference_keys` instead of
+                # through `input_from`, because there is no step to chain from.
+                log.info("kit %s: reusing stored still %s", request.kit_id, shot.reused_still.key)
+                reused[shot.index] = shot.reused_still
+                continue
             if not shot.runs:
                 skipped.append(shot.modality.value)
                 log.warning("skipping %s shot — %s", shot.modality.value, shot.skipped_reason)
@@ -571,10 +686,17 @@ class GenblazeGenerator:
             # alongside it would put two different images in the same positional slots and
             # ask the model to interpolate between them.
             feeding_still = still_at.get(shot.index)
+            stored_still = reused.get(shot.index)
             if feeding_still is not None and not shot.is_prelude:
                 kwargs["input_from"] = feeding_still
+            elif stored_still is not None and not shot.is_prelude:
+                # Same frame, different plumbing: an indexed still is an object in the
+                # bucket rather than the output of a step in this run.
+                asset = self._stored_still_asset(stored_still)
+                if asset is not None:
+                    kwargs["external_inputs"] = [asset]
             else:
-                inputs = self._plate_assets(shot.reference_keys, request.identity)
+                inputs = self._plate_assets(shot.reference_keys, request.identities)
                 if inputs:
                     kwargs["external_inputs"] = inputs
                     if len(inputs) > 1 and self._reference_slot:
@@ -588,6 +710,11 @@ class GenblazeGenerator:
             pipeline = pipeline.step(provider, **kwargs)
             if shot.is_prelude:
                 still_at[shot.index] = step_index
+                if shot.still_digest:
+                    still_index[prompt] = (
+                        shot.still_digest,
+                        [i.id for i in request.identities],
+                    )
             step_index += 1
             planned.append((shot.modality, model, prompt, rendered_seconds))
 
@@ -645,11 +772,15 @@ class GenblazeGenerator:
             log.exception("kit %s: pipeline raised", request.kit_id)
             return GenerationResult(run_id=None, assets=[], error=str(exc))
 
-        return self._collect(result, skipped)
+        return self._collect(result, skipped, still_index)
 
     # -- result mapping ---------------------------------------------------------
-    def _collect(self, result: Any, skipped: list[str]) -> GenerationResult:
+    def _collect(
+        self, result: Any, skipped: list[str], still_index: dict | None = None
+    ) -> GenerationResult:
         assets: list[Asset] = []
+        stills: list[LockedStill] = []
+        still_index = still_index or {}
 
         for step in result.succeeded_steps():
             # `or 0.0` used to sit here and it was the whole bug: an unpriced model
@@ -660,8 +791,22 @@ class GenblazeGenerator:
                 int(round(float(step.cost_usd) * 100)) if step.cost_usd is not None else None
             )
             cost_note = pricing.note_for(model_id)
+            indexed = still_index.get(step.prompt or "")
             for gb_asset in step.assets or []:
                 url = getattr(gb_asset, "url", None)
+                if indexed is not None:
+                    digest, identity_ids = indexed
+                    key = self._storage.key_from_url(url) if url else None
+                    if key:
+                        stills.append(
+                            LockedStill(
+                                digest=digest,
+                                key=key,
+                                sha256=getattr(gb_asset, "sha256", None),
+                                prompt=step.prompt or "",
+                                identity_ids=identity_ids,
+                            )
+                        )
                 assets.append(
                     Asset(
                         modality=Modality(str(step.modality)),
@@ -696,4 +841,5 @@ class GenblazeGenerator:
             manifest_key=self._storage.key_from_url(manifest_uri) if manifest_uri else None,
             manifest_verified=verified,
             error=error,
+            locked_stills=stills,
         )

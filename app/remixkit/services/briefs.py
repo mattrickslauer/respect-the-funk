@@ -62,9 +62,6 @@ VIDEO_NEGATIVES: list[str] = [
     "watermark",
 ]
 
-# A lyric card is the one shot that *should* carry words — exactly the ones it was given.
-IMAGE_NEGATIVES: list[str] = ["extra text", "misspelled words", "watermark", "signature"]
-
 
 def _tempo_phrase(song: Song) -> str:
     """How fast the picture should move, from the tempo that was actually measured.
@@ -132,13 +129,12 @@ def default_shot_plan(
     identity: Identity | None,
     *,
     video_count: int = 3,
-    hook_lines: list[str] | None = None,
     tts_text: str | None = None,
     max_shots: int = 8,
     section_ids: list[str] | None = None,
     artist_name: str | None = None,
 ) -> list[ShotSpec]:
-    """The default kit: a few vertical loops, a lyric card per hook line, optional TTS.
+    """The default kit: a few vertical loops cut to the hooks, and optional TTS.
 
     "Default" is the operative word. Every prompt this builds is a *starting point* the
     generate screen shows in full and lets a person rewrite before anything is bought.
@@ -177,9 +173,7 @@ def default_shot_plan(
                 label=f"{name} · {section_name}",
                 negatives=list(VIDEO_NEGATIVES),
                 # The loops are what a fan puts themselves into, so the artist is the one
-                # thing in them that must not drift. The lyric cards below deliberately do
-                # not opt in: a face reference on a typographic plate produces a portrait
-                # with words over it.
+                # thing in them that must not drift.
                 use_identity_plate=True,
                 # Settle the face in a still, then render the clip from it. A video model
                 # conditioned on text drifts across the clip; one conditioned on a first
@@ -189,20 +183,6 @@ def default_shot_plan(
                 # Costs an image per loop and degrades to a plain plate-conditioned clip
                 # when there is no image provider or no reference frame to lock from.
                 identity_lock=True,
-            )
-        )
-
-    for line in hook_lines or []:
-        line = line.strip()
-        if not line:
-            continue
-        shots.append(
-            ShotSpec(
-                modality=Modality.IMAGE,
-                prompt=f'Bold vertical lyric card, high contrast, large type, text: "{line}"',
-                aspect_ratio="9:16",
-                label="lyric card",
-                negatives=list(IMAGE_NEGATIVES),
             )
         )
 

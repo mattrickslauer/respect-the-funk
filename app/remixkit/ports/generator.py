@@ -9,6 +9,7 @@ how this ships before provider keys exist.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -60,6 +61,23 @@ class GenerationRequest:
     song: Song
     shots: list[ShotSpec] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Every face this kit is for, in order. `identity` stays as the first of them so that
+    # nothing which only knows about one identity has to change — a solo artist's request
+    # is byte-identical to what it was.
+    #
+    # More than one is a duo or a band in the same frame. What that can actually deliver
+    # depends on a provider fact rather than on this list: the text of every identity
+    # composes into the prompt, but the *plates* only all reach the wire once
+    # `RK_REFERENCE_SLOT` is set — until then one image slot exists and the rest are
+    # dropped silently by the mapper. `_plates_for` says which on the plan row.
+    identities: list[Identity] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        # One list, two names for its head. Callers may set either; they cannot disagree.
+        if not self.identities and self.identity is not None:
+            self.identities = [self.identity]
+        elif self.identities and self.identity is None:
+            self.identity = self.identities[0]
 
 
 @dataclass
@@ -69,6 +87,28 @@ class GenerationResult:
     manifest_key: str | None = None
     manifest_verified: bool | None = None
     error: str | None = None
+    # Stills rendered this run that are worth keeping for the next one. Returned rather
+    # than written here because the generator owns storage and the *service* owns
+    # documents — an adapter that persisted onto an identity would be reaching across the
+    # port it exists to be behind.
+    locked_stills: list[Any] = field(default_factory=list)
+
+
+def still_digest(identities: list[Identity], prompt: str) -> str:
+    """What makes an identity-locking still the *same* still.
+
+    Who is in it, which version of each, and the scene. Versions are in the key on
+    purpose: saving a new version of a face must miss the index rather than reuse a frame
+    of how that person used to look — which is the one way a cache here could quietly
+    undo the versioning discipline the rest of the model keeps.
+
+    Identity ids are sorted so that asking for a duo in either order hits the same entry;
+    the prompt is not, because word order changes what is rendered.
+    """
+    material = "|".join(
+        [*sorted(f"{i.id}@{i.version}" for i in identities), prompt.strip()]
+    )
+    return hashlib.sha256(material.encode()).hexdigest()[:32]
 
 
 @dataclass
@@ -117,6 +157,14 @@ class PlannedShot:
     # displays and prices them as part of the shot they belong to. Without this marker the
     # plan counts and charges each two-stage shot's still twice.
     is_prelude: bool = False
+    # Set when this still came out of the index rather than out of a provider. Carries the
+    # stored record so `generate` can feed the existing frame straight into the clip and
+    # skip the step entirely.
+    reused_still: Any = None
+    # The index key this still is stored under, set only on a prelude. Carried on the
+    # planned shot so `generate` can record a newly rendered frame under the same key the
+    # lookup used, rather than recomputing it and risking the two drifting apart.
+    still_digest: str | None = None
     estimate_cents: int = 0
     skipped_reason: str | None = None
 
@@ -169,8 +217,16 @@ class GenerationPlan:
 
     @property
     def steps(self) -> int:
-        """Provider calls, not shots. What the run will actually submit."""
-        return sum(2 if s.prelude else 1 for s in self.runnable)
+        """Provider calls, not shots. What the run will actually submit.
+
+        A still that came out of the index is not a call — nothing is sent and nothing is
+        billed — so counting it here would report the run as more work than it is, on the
+        one line that exists to say how much work it is.
+        """
+        return sum(
+            2 if (s.prelude is not None and s.prelude.reused_still is None) else 1
+            for s in self.runnable
+        )
 
 
 class Generator(Protocol):

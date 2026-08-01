@@ -129,19 +129,15 @@ def test_the_face_reaches_the_shot_that_wants_it(container, principal, song, art
         reference_frames=[frame("a", "neutral")],
     )
 
-    plan, _ = container.kits.plan(
-        principal, song_id=song.id, video_count=1, hook_lines=["one line"]
-    )
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
     video = next(s for s in plan.shots if s.modality is Modality.VIDEO)
-    card = next(s for s in plan.shots if s.modality is Modality.IMAGE)
 
     assert conditioned(video).reference_keys == ["remixkit/frames/a.png"]
     assert "identity v" in conditioned(video).plate_note
 
-    # A lyric card is a typographic plate. A face reference on it produces a portrait
-    # with words over it, so it deliberately does not opt in.
-    assert card.reference_keys == []
-    assert card.plate_note is None
+    # The clip itself carries none — it is conditioned on the still, and handing it the
+    # raw plates as well would put two different images in the same positional slots.
+    assert video.reference_keys == []
 
 
 def test_an_identity_with_no_frames_says_so_rather_than_going_quiet(
@@ -293,7 +289,7 @@ def test_the_plate_is_sent_as_an_image_asset_with_its_hash(container, principal,
     )
     identity = container.identities.current(principal, artist.id)
 
-    assets = container.generator._plate_assets(["remixkit/frames/amanda.png"], identity)
+    assets = container.generator._plate_assets(["remixkit/frames/amanda.png"], [identity])
 
     assert len(assets) == 1
     assert assets[0].sha256 == digest
@@ -315,7 +311,7 @@ def test_a_plate_that_cannot_be_presigned_is_dropped_not_raised(
 
     monkeypatch.setattr(container.storage, "presign_get", boom)
 
-    assert container.generator._plate_assets(["remixkit/frames/a.png"], identity) == []
+    assert container.generator._plate_assets(["remixkit/frames/a.png"], [identity]) == []
 
 
 def test_a_kit_with_a_plate_generates(container, principal, song, artist):
@@ -522,3 +518,145 @@ def test_a_locked_kit_generates_both_stages(container, principal, song, artist):
     assert ran.status.value == "ready", ran.error
     assert len(ran.assets) == 2, "the still and the clip"
     assert {a.modality.value for a in ran.assets} == {"image", "video"}
+
+
+# ------------------------------------------------------------------ several faces
+def test_a_kit_can_be_for_more_than_one_face(container, principal, song, artist):
+    """A duo. Every face's text composes into the prompt, named, because two unlabelled
+    silhouettes read to a model as one contradictory person."""
+    container.identities.create_version(
+        principal, artist.id, presentation="feminine", build="slight",
+        reference_frames=[frame("a", "neutral")],
+    )
+    container.identities.create_version(
+        principal, artist.id, name="Marco", presentation="masculine", build="solid",
+        reference_frames=[frame("b", "warm")],
+    )
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, identity_names=["", "Marco"]
+    )
+    shot = plan.shots[0]
+
+    assert "Amanda Kurt: feminine slight" in shot.prompt, "the primary line is the artist"
+    assert "Marco: masculine solid" in shot.prompt
+
+
+def test_a_group_shot_says_how_many_faces_actually_reached_the_wire(
+    container, principal, song, artist
+):
+    """The honest count. One image slot exists until `RK_REFERENCE_SLOT` is verified, so
+    a duo conditioned on one member is the failure that must not be invisible."""
+    for name in ("", "Marco"):
+        container.identities.create_version(
+            principal, artist.id, name=name,
+            reference_frames=[frame(f"f{name or 'p'}", "neutral")],
+        )
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, identity_names=["", "Marco"]
+    )
+    note = plan.shots[0].prelude.plate_note
+
+    assert "2 faces" in note and "1 reference" in note
+    assert "RK_REFERENCE_SLOT" in note
+
+
+def test_a_named_line_with_no_versions_is_dropped_not_substituted(
+    container, principal, song, artist
+):
+    """A kit that quietly renders a different *person* than its brief says is worse than
+    one that renders one fewer."""
+    container.identities.create_version(principal, artist.id, structural_features="singer")
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, identity_names=["Nobody"]
+    )
+    assert "no identity" in plan.shots[0].plate_note
+
+
+def test_a_kit_records_which_faces_it_was_for(container, principal, song, artist):
+    """By id *and* name. The id names an exact version whose content cannot move; the
+    name is what a person reads without a lookup."""
+    container.identities.create_version(principal, artist.id, structural_features="singer")
+    container.identities.create_version(principal, artist.id, name="Marco")
+
+    kit = container.kits.request(
+        principal, song_id=song.id, video_count=1, identity_names=["", "Marco"]
+    )
+
+    assert [f["label"] for f in kit.brief["identities"]] == ["Primary", "Marco"]
+    assert all(f["version"] == 1 for f in kit.brief["identities"])
+
+
+# ------------------------------------------------------------------ the still index
+def test_the_second_kit_in_the_same_scene_does_not_pay_for_the_still_again(
+    container, principal, song, artist
+):
+    """The index. A still is a pure function of who is in it and the scene, so rendering
+    it twice is paying twice for a stored answer."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+
+    first = container.kits.request(principal, song_id=song.id, video_count=1)
+    ran = container.kits.run(principal.tenant_id, first.id)
+    assert ran.status.value == "ready", ran.error
+    assert len(container.identities.current(principal, artist.id).locked_stills) == 1
+
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
+    still = plan.shots[0].prelude
+
+    assert still.reused_still is not None
+    assert still.estimate_cents == 0
+    assert "reusing a stored still" in still.plate_note
+    assert plan.steps == 1, "a reused still is not a provider call"
+
+
+def test_a_reused_still_is_not_generated_again(container, principal, song, artist):
+    """Asserted at the far end: the second run produces the clip only."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    container.kits.run(
+        principal.tenant_id, container.kits.request(principal, song_id=song.id, video_count=1).id
+    )
+
+    second = container.kits.request(principal, song_id=song.id, video_count=1)
+    ran = container.kits.run(principal.tenant_id, second.id)
+
+    assert ran.status.value == "ready", ran.error
+    assert [a.modality.value for a in ran.assets] == ["video"], "the still was re-rendered"
+
+
+def test_a_new_identity_version_misses_the_index(container, principal, song, artist):
+    """Versions are in the digest on purpose. Reusing a frame of how somebody *used* to
+    look is the one way a cache here could undo the versioning discipline."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    container.kits.run(
+        principal.tenant_id, container.kits.request(principal, song_id=song.id, video_count=1).id
+    )
+
+    container.identities.create_version(principal, artist.id, structural_features="new hair")
+
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
+    assert plan.shots[0].prelude.reused_still is None
+    assert plan.shots[0].prelude.estimate_cents > 0
+
+
+def test_a_different_scene_misses_the_index(container, principal, song, artist):
+    """The scene is in the digest too — a night drive still is not a golden-hour one."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    container.kits.run(
+        principal.tenant_id, container.kits.request(principal, song_id=song.id, video_count=1).id
+    )
+
+    # Two videos: the first mood is indexed, the second has never been rendered.
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=2)
+    reused = [s.prelude.reused_still is not None for s in plan.shots]
+
+    assert reused == [True, False]

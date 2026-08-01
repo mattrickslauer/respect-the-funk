@@ -23,7 +23,7 @@ def ready_kit(container):
     )
     song = container.songs.create(principal, artist.id, title="Losing Sleep")
     container.songs.set_hook(principal, song.id, start_ms=30_000, end_ms=36_000)
-    kit = container.kits.request(principal, song_id=song.id, video_count=1, hook_lines=["line"])
+    kit = container.kits.request(principal, song_id=song.id, video_count=1)
     kit = container.kits.run(principal.tenant_id, kit.id)
     assert kit.status is KitStatus.READY, kit.error
     return kit

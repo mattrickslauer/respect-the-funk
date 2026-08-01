@@ -121,10 +121,6 @@
             <label>Videos
               <input name="video_count" type="number" min="0" max="8" value="{{ video_count }}">
             </label>
-            <label>Hook lines <span class="hint">one per line — each becomes a lyric card</span>
-              <textarea name="hook_lines" rows="2"
-                        placeholder="I've been losing sleep">{{ hook_lines }}</textarea>
-            </label>
             <button class="btn btn-quiet" type="submit">Re-price</button>
           </div>
           {# Which hooks this kit is cut to. The videos are *dealt* across the chosen
@@ -278,10 +274,6 @@
         <input type="hidden" name="song_id" value="{{ song.id }}">
         <input type="hidden" name="artist_id" value="{{ artist.id }}">
         <input type="hidden" name="video_count" value="{{ video_count }}">
-        {# The same text the estimate was computed from. Without this the run bought a
-           different plan than the one on screen. Same for the sections: the queue button
-           carries exactly the hooks that were priced. #}
-        <textarea name="hook_lines" hidden>{{ hook_lines }}</textarea>
         {% for section_id in section_ids %}
           <input type="hidden" name="section_ids" value="{{ section_id }}">
         {% endfor %}

@@ -481,7 +481,6 @@ def request_kit(body: KitIn, principal: CurrentPrincipal, kits: Kits):
         song_id=body.song_id,
         name=body.name,
         video_count=body.video_count,
-        hook_lines=body.hook_lines,
         tts_text=body.tts_text,
         budget_cents=body.budget_cents,
         section_ids=body.section_ids,

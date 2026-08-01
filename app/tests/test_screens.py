@@ -140,7 +140,7 @@ def test_the_estimate_matches_what_the_service_would_charge(client, container, p
 
     domain_song = container.songs.get(principal, song["id"])
     shots = default_shot_plan(
-        domain_song, None, video_count=3, hook_lines=[domain_song.title]
+        domain_song, None, video_count=3
     )
     expected = container.kits.estimate_cents(shots)
 
@@ -160,14 +160,14 @@ def test_video_count_changes_the_estimate(client, song):
 def test_what_is_priced_is_what_is_bought(client, container, principal, song):
     """The screen's central claim, asserted end to end rather than per code path.
 
-    It was false: the page priced a lyric card built from the song title, and the queue
-    form submitted no `hook_lines` at all, so the kit that arrived had one shot fewer
-    than the table above the button. Both halves now read the same field.
+    It was false once and in a way worth remembering: the page priced a shot the queue
+    form did not submit, so the kit that arrived had one shot fewer than the table above
+    the button. Both halves read the same inputs now.
     """
     import re
 
     base = f"/console/artists/{song['artist_id']}/songs/{song['id']}/generate"
-    page = client.get(f"{base}?video_count=2&hook_lines=first+line%0Asecond+line").text
+    page = client.get(f"{base}?video_count=2").text
 
     priced_rows = len(re.findall(r'data-shot="\d+"', page))
     # Matched on `data-estimate` rather than on a styling class, so re-laying-out the page
@@ -181,29 +181,11 @@ def test_what_is_priced_is_what_is_bought(client, container, principal, song):
             "song_id": song["id"],
             "artist_id": song["artist_id"],
             "video_count": "2",
-            "hook_lines": "first line\nsecond line",
         },
     )
     kit = container.kits.list(principal)[0]
     assert kit.brief["shot_count"] == priced_rows
     assert f"{kit.brief['estimate_cents'] / 100:.2f}" == shown.group(1)
-    # Two videos and one lyric card per hook line — the plan the table showed.
-    assert kit.brief["shot_count"] == 4
-
-
-def test_hook_lines_are_editable_and_default_to_the_title(client, song):
-    import re
-
-    def shot_rows(html: str) -> int:
-        return len(re.findall(r'data-shot="\d+"', html))
-
-    base = f"/console/artists/{song['artist_id']}/songs/{song['id']}/generate"
-    first_load = client.get(base).text
-    assert 'name="hook_lines"' in first_load, "the field that decides the plan must be on the form"
-    assert shot_rows(first_load) == 4, "three videos and a lyric card from the title"
-
-    # An empty field is a real answer, not a missing one: two videos, no lyric cards.
-    assert shot_rows(client.get(f"{base}?video_count=2&hook_lines=").text) == 2
 
 
 def test_generate_is_blocked_without_consent(client):

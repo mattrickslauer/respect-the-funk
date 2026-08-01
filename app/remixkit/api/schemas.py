@@ -140,7 +140,6 @@ class KitIn(BaseModel):
     song_id: str
     name: str | None = None
     video_count: int = 3
-    hook_lines: list[str] = Field(default_factory=list)
     tts_text: str | None = None
     budget_cents: int | None = None
     # Which hooks this kit is cut to. Empty means the song's primary hook window, which is

@@ -329,6 +329,35 @@ class ReferenceFrame(BaseModel):
     content_type: str | None = None
 
 
+class LockedStill(BaseModel):
+    """A generated identity plate, kept so it is never generated twice.
+
+    This is the index. The two-stage shot renders a still that settles the face in a
+    scene, and then the clip is generated from it — so the still is the expensive,
+    identity-resolving half, and it is *deterministic in its inputs*: the same faces, the
+    same versions and the same scene prompt describe the same frame. Rendering it again is
+    paying twice for an answer already stored.
+
+    Keyed by a digest rather than by the prompt itself because the prompt is long, is
+    edited freely, and would make an unwieldy dictionary key; the digest also covers the
+    identity versions, so saving a new version of a face correctly misses the index rather
+    than reusing a frame of how that person used to look.
+
+    `approved` is the human gate, not a cache flag. A still somebody looked at and accepted
+    is worth far more than one that merely exists — it is the frame every future clip in
+    that scene will inherit — so the console can filter on it later without the model
+    having to be changed again.
+    """
+
+    digest: str          # identity ids + versions + the still prompt
+    key: str             # where the frame landed in the bucket
+    sha256: str | None = None
+    prompt: str = ""
+    identity_ids: list[str] = Field(default_factory=list)
+    approved: bool = False
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class Identity(Base):
     """The reusable "remap" — how this artist looks and reads on screen.
 
@@ -361,6 +390,17 @@ class Identity(Base):
     presentation: Presentation = Presentation.UNSPECIFIED
     build: BodyBuild = BodyBuild.UNSPECIFIED
     height: HeightBand = HeightBand.UNSPECIFIED
+
+    # The index — stills already rendered for this face, by scene digest. Kept on the
+    # identity rather than on the kit because its whole value is that it outlives the kit
+    # that paid for it: the second kit in the same scene is free, which is MEMORY-SPEC's
+    # "the second video is cheap" argument applied to the step that actually costs.
+    #
+    # Stored on the *line*, so a band member's stills are not offered for another member.
+    locked_stills: list[LockedStill] = Field(default_factory=list)
+
+    def still_for(self, digest: str) -> LockedStill | None:
+        return next((s for s in self.locked_stills if s.digest == digest), None)
 
     # How many characters the identity may spend of a shot's prompt.
     #

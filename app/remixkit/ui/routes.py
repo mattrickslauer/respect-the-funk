@@ -379,7 +379,6 @@ def generate_page(
     identities: Identities,
     kits: Kits,
     video_count: int = 3,
-    hook_lines: str | None = None,
     section_ids: Annotated[list[str], Query()] = [],
 ):
     """Cost *before* the button — wireframe gap #3.
@@ -390,11 +389,6 @@ def generate_page(
     `estimate_cents`. Two code paths that disagree about what a kit costs would be worse
     than no estimate, so there is only one.
 
-    `hook_lines` is a parameter rather than a constant for exactly that reason. It used
-    to be hard-coded to the song title here while the queue form submitted nothing, so
-    the page priced a lyric card the run never bought — the divergence this screen
-    exists to prevent. `None` means "first load": the title is the default, and the
-    queue button carries whatever value was priced.
     """
     try:
         artist = artists.get(principal, artist_id)
@@ -404,10 +398,6 @@ def generate_page(
 
     identity = identities.current(principal, artist_id)
     video_count = max(0, min(video_count, 8))
-    raw_hook_lines = song.title if hook_lines is None else hook_lines
-    # Split the same way `ui_create_kit` splits it, so the plan priced here and the plan
-    # bought there are built from an identical list.
-    lines = [line.strip() for line in raw_hook_lines.splitlines() if line.strip()]
     # Same filter the kit service applies, for the same reason: a section deleted between
     # loading this page and pricing it must not show up in the plan as a window.
     chosen = [sid for sid in section_ids if song.section(sid)]
@@ -417,7 +407,6 @@ def generate_page(
         principal,
         song_id=song_id,
         video_count=video_count,
-        hook_lines=lines,
         section_ids=chosen,
         overrides=overrides,
     )
@@ -432,7 +421,6 @@ def generate_page(
         plan=plan,
         overrides=overrides,
         video_count=video_count,
-        hook_lines=raw_hook_lines,
         section_ids=chosen,
         windows=hook_windows(song, chosen),
         estimate_cents=plan.estimate_cents,
@@ -1321,7 +1309,6 @@ async def ui_create_kit(
     song_id: str = Form(...),
     artist_id: str = Form(...),
     video_count: int = Form(3),
-    hook_lines: str = Form(""),
     section_ids: list[str] = Form(default=[]),
 ):
     """Buy the plan that was on the screen — including every prompt somebody rewrote.
@@ -1337,7 +1324,6 @@ async def ui_create_kit(
             principal,
             song_id=song_id,
             video_count=video_count,
-            hook_lines=[line.strip() for line in hook_lines.splitlines() if line.strip()],
             section_ids=section_ids,
             overrides=overrides,
         )

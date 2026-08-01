@@ -123,9 +123,17 @@ class GenblazeGenerator:
 
     # -- prompt shaping ---------------------------------------------------------
     @staticmethod
-    def _compose_prompt(request: GenerationRequest, shot_prompt: str) -> str:
+    def _compose_prompt(request: GenerationRequest, shot_prompt: str, shot: Any = None) -> str:
         """Identity first, then the shot. Order matters to most image/video models —
-        the subject description should not be trailing context."""
+        the subject description should not be trailing context.
+
+        A format whose asset is not *about* the artist gets none of it. A backdrop with a
+        deliberately empty centre frame does not become more templatable for being told
+        what the artist's face is like — it becomes a portrait brief with a contradiction
+        in it, which is a real way to spend 61 cents on the wrong picture.
+        """
+        if shot is not None and getattr(shot, "suppress_identity_text", False):
+            return shot_prompt
         parts: list[str] = []
         # Every face this kit is for, named when there is more than one. A duo described
         # as two unlabelled silhouettes reads to a model as one contradictory person;
@@ -200,13 +208,14 @@ class GenblazeGenerator:
                 provider=type(provider).__name__ if provider is not None else None,
                 vendor=provider_table.vendor_of(provider) if provider is not None else "none",
                 model=model,
-                prompt=self._compose_prompt(request, shot.prompt),
+                prompt=self._compose_prompt(request, shot.prompt, shot),
                 negative_prompt=negatives,
                 params=params,
                 requested_seconds=shot.seconds,
                 rendered_seconds=rendered_seconds,
                 reference_keys=[plate.key for plate in plates],
                 plate_note=plate_note,
+                recipe_slug=getattr(shot, "recipe_slug", None),
                 # Priced on the length that will be *rendered*, not the one asked for —
                 # otherwise the quote is for a clip the provider will not make.
                 estimate_cents=pricing.estimate_cents(shot.modality, model, rendered_seconds),
@@ -291,6 +300,7 @@ class GenblazeGenerator:
                     reference_keys=[cached.key],
                     plate_note=f"{note} — reusing a stored still, free",
                     is_prelude=True,
+                    recipe_slug=getattr(shot, "recipe_slug", None),
                     still_digest=digest,
                     # Free, and priced as free. A cached step that still quotes its
                     # original price makes the index invisible in the one place its value
@@ -317,6 +327,7 @@ class GenblazeGenerator:
                 reference_keys=[plate.key for plate in plates],
                 plate_note=note,
                 is_prelude=True,
+                recipe_slug=getattr(shot, "recipe_slug", None),
                 still_digest=digest,
                 estimate_cents=pricing.estimate_cents(Modality.IMAGE, model, None),
             ),
@@ -440,9 +451,10 @@ class GenblazeGenerator:
         # get one each, because knowing there are four people in the shot matters more
         # than knowing one of them in profile.
         per_identity = max(1, cap // len(request.identities))
+        wanted = getattr(shot, "face_angle", None)
         plates: list[Any] = []
         for identity in request.identities:
-            plates.extend(identity.plates(limit=per_identity))
+            plates.extend(identity.plates(limit=per_identity, prefer=wanted))
         plates = plates[:cap]
 
         identity = request.identities[0]
@@ -618,10 +630,17 @@ class GenblazeGenerator:
 
         planned: list[tuple[Modality, str, str, float | None]] = []  # + seconds
         skipped: list[str] = []
+        # What each submitted prompt was made from, so `_collect` can write it onto the
+        # asset. Keyed by prompt for the same reason the still index is: it is the only
+        # field that survives into the provider's own step record intact.
+        lineage: dict[str, dict[str, Any]] = {}
         # Where each identity-locking still landed in the pipeline, so the clip that
         # follows it can name it as its input. Keyed by the `ShotSpec` index both stages
         # share.
         still_at: dict[int, int] = {}
+        # The prelude prompt each shot index was chained from. The still's object key does
+        # not exist until the run has finished, so the link is resolved after collection.
+        still_prompt_at: dict[int, str] = {}
         reused: dict[int, Any] = {}
         # Keyed by prompt because that is the only field that survives into the provider's
         # own step record intact — matching by position would mis-attribute every still
@@ -707,9 +726,25 @@ class GenblazeGenerator:
                         kwargs["metadata"]["reference_slot"] = self._reference_slot
                         kwargs["metadata"]["reference_count"] = len(inputs)
 
+            lineage[prompt] = {
+                "recipe_slug": shot.recipe_slug,
+                "identity_refs": [
+                    {"id": i.id, "name": i.name, "version": i.version, "label": i.display_name}
+                    for i in request.identities
+                ],
+                "reference_keys": list(shot.reference_keys),
+                "derived_from": (
+                    [stored_still.key] if stored_still is not None and not shot.is_prelude else []
+                ),
+                # Resolved to a key after the run — see `_link_lineage`.
+                "from_prompt": (
+                    still_prompt_at.get(shot.index) if not shot.is_prelude else None
+                ),
+            }
             pipeline = pipeline.step(provider, **kwargs)
             if shot.is_prelude:
                 still_at[shot.index] = step_index
+                still_prompt_at[shot.index] = prompt
                 if shot.still_digest:
                     still_index[prompt] = (
                         shot.still_digest,
@@ -772,11 +807,15 @@ class GenblazeGenerator:
             log.exception("kit %s: pipeline raised", request.kit_id)
             return GenerationResult(run_id=None, assets=[], error=str(exc))
 
-        return self._collect(result, skipped, still_index)
+        return self._collect(result, skipped, still_index, lineage)
 
     # -- result mapping ---------------------------------------------------------
     def _collect(
-        self, result: Any, skipped: list[str], still_index: dict | None = None
+        self,
+        result: Any,
+        skipped: list[str],
+        still_index: dict | None = None,
+        lineage: dict | None = None,
     ) -> GenerationResult:
         assets: list[Asset] = []
         stills: list[LockedStill] = []
@@ -792,6 +831,7 @@ class GenblazeGenerator:
             )
             cost_note = pricing.note_for(model_id)
             indexed = still_index.get(step.prompt or "")
+            made_from = (lineage or {}).get(step.prompt or "", {})
             for gb_asset in step.assets or []:
                 url = getattr(gb_asset, "url", None)
                 if indexed is not None:
@@ -819,8 +859,22 @@ class GenblazeGenerator:
                         cost_cents=cost_cents,
                         cost_note=cost_note,
                         params=dict(step.params or {}),
+                        recipe_slug=made_from.get("recipe_slug"),
+                        identity_refs=made_from.get("identity_refs", []),
+                        reference_keys=made_from.get("reference_keys", []),
+                        derived_from=made_from.get("derived_from", []),
                     )
                 )
+
+        # A clip generated from a still rendered in this same run can only be linked now:
+        # the still's object key is assigned by the sink, so it does not exist at the time
+        # the step is built. Without this the two-stage lineage stops at the clip, which is
+        # the one link most worth having — it is the frame the likeness came from.
+        by_prompt = {a.prompt: a.key for a in assets if a.key}
+        for asset in assets:
+            source = (lineage or {}).get(asset.prompt or "", {}).get("from_prompt")
+            if source and by_prompt.get(source):
+                asset.derived_from = [by_prompt[source]]
 
         manifest = result.manifest
         try:

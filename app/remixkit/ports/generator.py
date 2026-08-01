@@ -50,6 +50,17 @@ class ShotSpec:
     # until it is right, and can be looked at by a person — and the clip inherits it
     # rather than re-deriving it.
     identity_lock: bool = False
+    # Which reference class this framing wants. `None` leaves the global ranking in
+    # charge — right for a format with no opinion about it, wrong for a selfie, which is
+    # front-on and was being handed a three-quarter because the ranking was global.
+    face_angle: Any = None
+    # Which format produced this shot. Recorded on the asset so a delivered file says what
+    # kind of thing it is without a lookup against a recipe that may since have been edited.
+    recipe_slug: str | None = None
+    # A format whose asset is not about the artist gets none of the identity — not the
+    # plate and not the compiled description either. A backdrop with an empty centre
+    # frame does not become more templatable for being told what the artist looks like.
+    suppress_identity_text: bool = False
 
 
 @dataclass
@@ -165,6 +176,8 @@ class PlannedShot:
     # planned shot so `generate` can record a newly rendered frame under the same key the
     # lookup used, rather than recomputing it and risking the two drifting apart.
     still_digest: str | None = None
+    # Which format produced this shot, carried through to the delivered asset.
+    recipe_slug: str | None = None
     estimate_cents: int = 0
     skipped_reason: str | None = None
 

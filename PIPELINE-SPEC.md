@@ -382,6 +382,61 @@ things follow, and both are ordinary engineering rather than caution:
 Neither is built. Both belong before this is pointed at anything published rather than
 after.
 
+## 6e. Formats as data
+
+The limit this app kept hitting was not a missing feature. It was that the *kind of asset*
+was a commit. `services/briefs` encoded one thing — a templatable backdrop loop, four fixed
+moods, `clean centre frame left empty for a subject` in the prompt, `speech` in the
+negatives — and every request that was not that was unrepresentable. Ask for the artist
+talking to camera and the pipeline would have paid a model to suppress speech.
+
+`Recipe` moves all of it into a row: prompt template, negatives, aspect, length policy,
+face policy, the reference class the framing wants, and the variant spread. `plan_from_recipe`
+is what is left of the planner once the opinion is out of it — deal the count across the
+chosen hooks, cycle the variants. Adding a format is adding a record.
+
+Four ship: **backdrop loop** (silent, nobody in it), **direct address** (selfie, speaking,
+fixed length, front reference), **performance** (cinematic, three-quarter reference), and
+**portrait still** (an image, cheap, reusable as a reference).
+
+Three things the split settled that were wrong while it was code:
+
+- **Negatives are per format.** Suppressing `speech` is right under a master and absurd in
+  a talking clip. `singing` is a defect in a backdrop and the subject of a performance clip.
+- **Length policy is per format.** A loop follows its measured hook window, because a loop
+  that is not the length of the hook is one a fan cannot cut to. A spoken line does not —
+  clipping a sentence to a bar cuts a word in half.
+- **The reference class is per format.** Ranking three-quarter first *everywhere* handed a
+  selfie the wrong frame; a phone at arm's length is front-on. The global order in
+  `FrameAngle.by_reference_quality` is now the fallback for formats with no opinion, not
+  the answer for all of them.
+
+`FacePolicy` replaces two booleans that could disagree: `none` (not even the description),
+`text`, `plate`, `locked`.
+
+## 6f. Provenance on the asset itself
+
+`Asset` carried model and prompt, which answers "how was this made" for a single
+text-to-video call and answers nothing once assets are conditioned on other assets. A clip
+generated from a still generated from a photograph of a real person has three ancestors.
+
+Four fields, written at collection time and travelling into the manifest, so they outlive
+the records they point at:
+
+```python
+recipe_slug     # which format this is an instance of
+identity_refs   # id + name + version of every face, at the version used
+reference_keys  # the frames it was conditioned on
+derived_from    # keys of assets it was generated from
+```
+
+The last one can only be filled after the run — the still's object key is assigned by the
+sink, so at step-build time it does not exist. It is the link most worth having: it names
+the frame the likeness came from.
+
+Provenance must also be able to say **nobody**. A backdrop records an empty identity list
+rather than no list, or "we do not know" and "no one" read identically on a delivered file.
+
 ## 7. Build order
 
 Each of these is independently useful and independently shippable.
@@ -392,6 +447,8 @@ Each of these is independently useful and independently shippable.
 4. ~~Character plates as `first_frame` — Amanda Kurt's face in a kit~~ **done**
 5. ~~One identity surface; photo classes; standardised silhouette; bounded prompt~~ **done**
 6. ~~Two-stage identity lock — the still that anchors the clip~~ **done** (§6b)
+6b. ~~Formats as data; provenance on the asset~~ **done** (§6e, §6f) — *not yet reachable
+   from the console: `KitService` still plans the backdrop format only*
 7. Silent delivery — the ffmpeg `-an` pass (§4)
 8. Consent scope + expiry, and the identity in the manifest (§6d)
 9. Proxy frames and shot-by-shot promotion (§5) — now a variation on the lock, not a

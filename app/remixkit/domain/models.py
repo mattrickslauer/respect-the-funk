@@ -184,6 +184,21 @@ class HeightBand(str, Enum):
     TALL = "tall"
 
 
+class FacePolicy(str, Enum):
+    """How much of an artist a given kind of asset needs.
+
+    Four answers, because "does this shot want the face" was previously two booleans on
+    `ShotSpec` that could disagree, and because the right answer genuinely differs per
+    kind of asset. A backdrop wants nobody in it. A performance clip wants the artist
+    unmistakably. A lyric card wants neither the face nor the description of one.
+    """
+
+    NONE = "none"            # no identity at all — not even the text
+    TEXT = "text"            # the compiled description, no reference image
+    PLATE = "plate"          # description + a reference image on the shot itself
+    LOCKED = "locked"        # description + a still rendered first, clip generated from it
+
+
 class Provenance(str, Enum):
     """Where a number came from. There is no third option, and that is the point.
 
@@ -235,6 +250,82 @@ class LikenessConsent(BaseModel):
         """A kit that holds the artist's face invariant needs this true. Enforced in
         services.kits, not by convention — BUILD-SPEC §4's rights rule applied to people."""
         return not self.granted
+
+
+class Recipe(Base):
+    """A kind of asset the label makes — as data rather than as code.
+
+    This is the correction to a real limit. Everything this app could generate was one
+    hardcoded opinion in `services/briefs`: a templatable backdrop loop, from a fixed
+    table of four moods, with `clean centre frame left empty for a subject` welded into
+    the prompt and `speech` in the negatives. Perfectly good for the one thing it was
+    written for, and it meant a label that wanted their artist *talking to camera* was
+    paying a model to suppress the thing they asked for. The shape of the asset was not a
+    setting; it was a commit.
+
+    So a recipe carries everything that used to be a decision in Python — the prompt, what
+    it must not contain, how long it runs, how much of the artist it needs, and which
+    reference class serves it best — and the planner becomes a function of it. Adding a
+    format is adding a row.
+
+    `builtin` marks the ones that ship. They can be copied and edited but not deleted, so
+    a tenant always has somewhere to start.
+    """
+
+    id: str = Field(default_factory=lambda: new_id("rcp"))
+    slug: str
+    name: str
+    intent: str = ""                       # one line: what this is for, in plain words
+    modality: Modality = Modality.VIDEO
+    builtin: bool = False
+
+    # What gets sent.
+    prompt_template: str = ""              # {artist} {title} {tempo} {section} {variant} {line}
+    negatives: list[str] = Field(default_factory=list)
+    aspect_ratio: str = "9:16"
+
+    # The spread. One asset per variant, cycled — this is what `MOODS` used to be, except
+    # it belongs to the format that uses it rather than to every format at once.
+    variants: list[str] = Field(default_factory=list)
+
+    # How long. `hook` follows the measured window, which is the whole templatability
+    # argument for a loop and meaningless for a spoken line — a sentence takes as long as
+    # it takes, and clipping it to a bar mid-word is worse than ignoring the grid.
+    seconds_from: str = "hook"             # "hook" | "fixed" | "none"
+    fixed_seconds: float | None = None
+
+    # How much of the artist.
+    face: FacePolicy = FacePolicy.NONE
+    face_angle: FrameAngle | None = None   # which reference class this framing actually wants
+
+    approval: ApprovalState = ApprovalState.DRAFT
+
+    @field_validator("slug")
+    @classmethod
+    def _slug_is_slug(cls, v: str) -> str:
+        return slugify(v)
+
+    def render(self, **fields: str) -> str:
+        """Fill the template, dropping clauses whose fields are empty.
+
+        A template is written for the richest case — a measured song, a named section, a
+        line of dialogue — and most assets are not that. Rendering `. . ` where a tempo
+        should have been is how a prompt acquires punctuation a model tries to interpret,
+        so an empty field takes its whole clause with it.
+        """
+        out: list[str] = []
+        for clause in self.prompt_template.split(". "):
+            try:
+                filled = clause.format(**{k: v or "" for k, v in fields.items()})
+            except (KeyError, IndexError):
+                # A placeholder this caller does not supply is not an error — it is a
+                # clause that does not apply to this asset.
+                continue
+            if "{" in clause and not filled.replace(".", "").strip():
+                continue
+            if filled.strip(". "):
+                out.append(filled.strip(". "))
+        return ". ".join(out)
 
 
 class Account(Base):
@@ -497,7 +588,7 @@ class Identity(Base):
         """What to call this line on screen. The primary line has no name and needs one."""
         return self.name.strip() or "Primary"
 
-    def plates(self, limit: int = 1) -> list[ReferenceFrame]:
+    def plates(self, limit: int = 1, prefer: FrameAngle | None = None) -> list[ReferenceFrame]:
         """The frames worth *sending* — the conditioning images, not the whole upload set.
 
         A prompt describing a face is a lossy encoding of a face. An image of the face is
@@ -536,9 +627,17 @@ class Identity(Base):
         # three-quarter, then front, then the profiles, then the back. Sorting by that
         # order rather than by upload order means a label can add frames in any sequence
         # and still get the best one sent.
+        # What the *shot* wants comes first; the global order is only the tie-break.
+        #
+        # Ranking three-quarter above everything everywhere was wrong and wrong in the way
+        # that matters: a selfie is a phone at arm's length, which is front-on, and it was
+        # being handed a three-quarter because the ranking knew nothing about the framing
+        # it was serving. A format that has an opinion states it; one that does not falls
+        # back to the order below, which is still the best general answer.
+        order = FrameAngle.by_reference_quality()
         ranked = sorted(
             [*by_hash.values(), *unhashed],
-            key=lambda f: FrameAngle.by_reference_quality().index(f.angle),
+            key=lambda f: (f.angle is not prefer, order.index(f.angle)),
         )
 
         chosen: list[ReferenceFrame] = []
@@ -958,6 +1057,22 @@ class Asset(BaseModel):
     cost_cents: int | None = 0
     cost_note: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
+
+    # --- provenance: what this asset was made from ---------------------------------
+    #
+    # The model and the prompt were already here, which answers "how was this made" for a
+    # text-to-video call and answers nothing at all once assets are conditioned on other
+    # assets. A clip generated from a still that was generated from a photograph of a real
+    # person has three ancestors, and "which base did this come out of" should be readable
+    # off the asset rather than reconstructed from a kit brief that may since have been
+    # edited or deleted.
+    #
+    # All four are recorded at collection time and travel into the manifest, so they
+    # survive the records they point at.
+    recipe_slug: str | None = None            # which format this is an instance of
+    identity_refs: list[dict[str, Any]] = Field(default_factory=list)  # id + name + version
+    reference_keys: list[str] = Field(default_factory=list)   # the frames it was conditioned on
+    derived_from: list[str] = Field(default_factory=list)     # keys of assets it was generated from
 
 
 class Kit(Base):

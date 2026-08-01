@@ -18,7 +18,14 @@ so adding a second hook to a brief does not double the invoice without anybody a
 
 from __future__ import annotations
 
-from remixkit.domain.models import HookWindow, Identity, Modality, Song
+from remixkit.domain.models import (
+    FacePolicy,
+    HookWindow,
+    Identity,
+    Modality,
+    Recipe,
+    Song,
+)
 from remixkit.ports.generator import ShotSpec
 
 # A spread, not a ranking. Named so the UI can show what it is about to buy.
@@ -122,6 +129,83 @@ def _loop_seconds(window: HookWindow) -> float:
     if not window.duration_ms:
         return DEFAULT_LOOP_S
     return max(MIN_LOOP_S, min(MAX_LOOP_S, round(window.duration_ms / 1000, 1)))
+
+
+def plan_from_recipe(
+    recipe: Recipe,
+    song: Song,
+    *,
+    count: int = 3,
+    max_shots: int = 8,
+    section_ids: list[str] | None = None,
+    artist_name: str | None = None,
+    line: str = "",
+) -> list[ShotSpec]:
+    """Shots for one format. The planner, with the product opinion taken out of it.
+
+    Everything that used to be a constant here — the mood spread, the framing clause, what
+    the shot must not contain, how long it runs, how much of the artist it needs — now
+    comes off the recipe. What is left is the part that is genuinely arithmetic: deal the
+    requested count across the chosen hooks so every named window gets a shot before any
+    window gets a second one, and cycle the variants for spread.
+
+    `line` is what a spoken format says. It is a parameter rather than a template field
+    baked into the recipe because the recipe is the *format* and the line is the content —
+    the same "direct address" recipe announces a show this month and thanks a city next
+    month.
+    """
+    windows = hook_windows(song, section_ids) or [("hook", song.hook)]
+    tempo = _tempo_phrase(song)
+    shots: list[ShotSpec] = []
+
+    variants = recipe.variants or [""]
+    # With one window there is nothing to tell a fifth asset from the first, so the variant
+    # spread is the ceiling. With several, the same variant over a different hook is a
+    # genuinely different shot and the ceiling rises with them.
+    slots = max(0, min(count, len(variants) * len(windows)))
+
+    for index in range(slots):
+        variant = variants[index % len(variants)]
+        section_name, window = windows[index % len(windows)]
+
+        seconds: float | None = None
+        if recipe.seconds_from == "hook":
+            seconds = _loop_seconds(window)
+        elif recipe.seconds_from == "fixed":
+            seconds = recipe.fixed_seconds
+
+        shots.append(
+            ShotSpec(
+                modality=recipe.modality,
+                prompt=recipe.render(
+                    artist=artist_name or "",
+                    title=song.title,
+                    tempo=tempo,
+                    section=section_name,
+                    variant=variant,
+                    line=line,
+                ),
+                seconds=seconds,
+                aspect_ratio=recipe.aspect_ratio,
+                label=f"{recipe.name} · {section_name}"
+                if recipe.seconds_from == "hook"
+                else recipe.name,
+                negatives=list(recipe.negatives),
+                use_identity_plate=recipe.face in (FacePolicy.PLATE, FacePolicy.LOCKED),
+                identity_lock=recipe.face is FacePolicy.LOCKED,
+                # The class this framing actually wants. `None` leaves the global ranking
+                # in charge, which is right for a format with no opinion and wrong for a
+                # selfie — a phone at arm's length is front-on, and ranking three-quarter
+                # first everywhere is what made it ask for the wrong reference.
+                face_angle=recipe.face_angle,
+                # A format that wants no identity at all does not get the text either.
+                # `NONE` is not "no picture of them", it is "this asset is not about them".
+                suppress_identity_text=recipe.face is FacePolicy.NONE,
+                recipe_slug=recipe.slug,
+            )
+        )
+
+    return shots[:max_shots]
 
 
 def default_shot_plan(

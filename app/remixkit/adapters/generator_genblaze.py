@@ -60,6 +60,7 @@ class GenblazeGenerator:
         max_run_cents: int = 0,
         reference_slot: str = "",
         reference_max: int = 4,
+        image_edit_model: str = "",
     ) -> None:
         self.name = f"genblaze:{backend}"
         self._storage = storage
@@ -69,6 +70,7 @@ class GenblazeGenerator:
         self._timeout = timeout_s
         self._max_concurrency = max_concurrency
         self._max_run_cents = max_run_cents
+        self._edit_model = (image_edit_model or "").strip()
         self._reference_slot = (reference_slot or "").strip()
         self._reference_max = max(1, reference_max)
 
@@ -205,7 +207,7 @@ class GenblazeGenerator:
                 and not provider_table.honours_reference(model)
             ):
                 swapped = provider_table.reference_model(
-                    provider, shot.modality, self._models.get(shot.modality, "")
+                    provider, shot.modality, self._edit_model
                 )
                 if swapped:
                     log.info(
@@ -300,7 +302,7 @@ class GenblazeGenerator:
         # right build. `accepts_chain_input` is a provider capability and was true; it says
         # nothing about the model, and the model is what decides.
         model = provider_table.reference_model(
-            image_provider, Modality.IMAGE, self._models.get(Modality.IMAGE, "")
+            image_provider, Modality.IMAGE, self._edit_model
         )
         if not model:
             return None, None
@@ -551,8 +553,10 @@ class GenblazeGenerator:
             and not provider_table.honours_reference(model)
         ):
             return [], (
-                f"{model} is text-to-image and would ignore the reference — "
-                "no likeness would be held"
+                f"{model} is text-to-image and would ignore the reference. "
+                "Set RK_IMAGE_EDIT_MODEL to an image-to-image model your account can "
+                f"reach (candidates: {', '.join(provider_table.REFERENCE_MODEL_CANDIDATES[:2])}) "
+                "— until then no likeness is held"
             )
 
         plate = plates[0]

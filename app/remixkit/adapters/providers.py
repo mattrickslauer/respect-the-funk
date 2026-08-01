@@ -182,9 +182,25 @@ IMAGE_TO_IMAGE: tuple[re.Pattern[str], ...] = (
     re.compile(r"^gpt-image", re.IGNORECASE),  # OpenAI image edit accepts a source image
 )
 
-# The model an identity-locking still is rendered with when the configured one cannot
-# honour a reference. GMI's documented image-to-image slug as of the 2026-03 catalog.
-DEFAULT_REFERENCE_MODEL = "seededit-3-0-i2i-250628"
+# Slugs from the shipped registry's `example_slugs`, offered as *candidates* and never
+# used automatically.
+#
+# `seededit-3-0-i2i-250628` was hardcoded here and 404'd on a real account:
+# `InvalidEndpointOrModel.NotFound`. The registry's own docstring says why that was always
+# going to happen — `known()` is "documentation grade, not a contract" — and GMI media
+# providers declare `DiscoverySupport.PARTIAL`, meaning there is no catalog endpoint to
+# ask. The only liveness check is the empty-payload probe, which is a billable generation
+# and is disabled for that reason.
+#
+# So which image-to-image model exists on a given account is a fact only the operator has.
+# These are what to look for in the GMI console; `RK_IMAGE_EDIT_MODEL` is where the answer
+# goes. Guessing again would just move the 404.
+REFERENCE_MODEL_CANDIDATES = (
+    "seededit-3-0-i2i-250628",
+    "reve-edit-20250915",
+    "reve-remix-20250915",
+    "flux-kontext-pro",
+)
 
 
 def honours_reference(model: str | None) -> bool:
@@ -201,20 +217,25 @@ def honours_reference(model: str | None) -> bool:
 def reference_model(provider: Any, modality: Modality, configured: str = "") -> str | None:
     """A model for this provider that will use a reference image, or None.
 
-    Preference order is operator > the provider's default if it already qualifies > the
-    documented image-to-image slug. `None` means this provider cannot condition on an
-    image at all, and the caller must refuse the lock rather than render something with no
-    likeness in it.
+    Operator first, then the provider's own default if it already qualifies. There is no
+    third step and that is the correction: a hardcoded guess here 404'd on a real account,
+    because the slug came from `example_slugs` — which the registry documents as
+    "documentation grade, not a contract" — and GMI ships no catalog endpoint to check it
+    against. A guess that fails at submit time is worse than a refusal at plan time: it
+    costs a queue slot, a worker, and the wait to find out.
+
+    OpenAI is the one vendor with a safe default, because `gpt-image-1` is the *same*
+    model it already uses for text-to-image and it accepts a source image — so nothing is
+    being guessed at.
+
+    `None` means "ask the operator", and the caller must refuse rather than render
+    something with no likeness in it.
     """
     if configured and honours_reference(configured):
         return configured
     default = default_model(provider, modality)
     if honours_reference(default):
         return default
-    if vendor_of(provider) == "gmicloud":
-        return DEFAULT_REFERENCE_MODEL
-    if vendor_of(provider) == "openai":
-        return "gpt-image-1"
     if vendor_of(provider) == "mock":
         # The mock reads nothing and renders nothing, so it cannot mislead about likeness.
         # Excluding it would mean the whole locked path is unreachable on a laptop.

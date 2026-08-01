@@ -543,9 +543,19 @@ distinction is the difference between the first attempt at this fix and the one 
 Refusing the plate made the failure legible and still rendered the picture — a portrait
 still went out on `seedream-5.0-lite` with no reference attached and came back as the same
 stranger it had produced before, now with an explanation nobody was reading.
-`providers.reference_model()` swaps GMI's text-to-image default for
-`seededit-3-0-i2i-250628`. A vendor with no image-to-image model at all — Imagen — returns
-`None`, and only then is the plate refused.
+`providers.reference_model()` swaps to **`RK_IMAGE_EDIT_MODEL`**, and there is no default.
+
+That absence is the correction to a second mistake. `seededit-3-0-i2i-250628` was hardcoded
+here and 404'd on a real account — `InvalidEndpointOrModel.NotFound` — because the slug came
+from the connector's `example_slugs`, which its own docstring calls *"documentation grade,
+not a contract"*. GMI media providers declare `DiscoverySupport.PARTIAL`: there is no
+catalog endpoint to check a slug against, and the only liveness test is the empty-payload
+probe, which is a billable generation and is off. Which image-to-image models an account
+can reach is a fact only the operator has, so guessing again would just move the 404.
+
+`providers.REFERENCE_MODEL_CANDIDATES` lists what to look for in the GMI console. Until the
+variable is set, the plan screen says the reference will not be held and names the setting
+— a refusal before the button rather than a failed run.
 
 An explicitly pinned per-shot model is never swapped: somebody who typed a model into the
 plan meant it, and silently running a different one would defeat the field. The refusal

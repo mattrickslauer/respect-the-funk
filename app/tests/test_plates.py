@@ -521,194 +521,92 @@ def test_a_locked_kit_generates_both_stages(container, principal, song, artist):
 
 
 # ------------------------------------------------------------------ several faces
-def test_a_kit_can_be_for_more_than_one_face(container, principal, song, artist):
-    """A duo. Every face's text composes into the prompt, named, because two unlabelled
-    silhouettes read to a model as one contradictory person."""
-    container.identities.create_version(
-        principal, artist.id, presentation="feminine", build="slight",
-        reference_frames=[frame("a", "neutral")],
-    )
-    container.identities.create_version(
-        principal, artist.id, name="Marco", presentation="masculine", build="solid",
-        reference_frames=[frame("b", "warm")],
-    )
-
-    plan, _ = container.kits.plan(
-        principal, song_id=song.id, video_count=1, identity_names=["", "Marco"]
-    )
-    shot = plan.shots[0]
-
-    assert "Amanda Kurt: feminine slight" in shot.prompt, "the primary line is the artist"
-    assert "Marco: masculine solid" in shot.prompt
 
 
-def test_a_group_shot_says_how_many_faces_actually_reached_the_wire(
-    container, principal, song, artist
-):
-    """The honest count. One image slot exists until `RK_REFERENCE_SLOT` is verified, so
-    a duo conditioned on one member is the failure that must not be invisible."""
-    for name in ("", "Marco"):
-        container.identities.create_version(
-            principal, artist.id, name=name,
-            reference_frames=[frame(f"f{name or 'p'}", "neutral")],
-        )
-
-    plan, _ = container.kits.plan(
-        principal, song_id=song.id, video_count=1, identity_names=["", "Marco"]
-    )
-    note = plan.shots[0].prelude.plate_note
-
-    assert "2 faces" in note and "1 reference" in note
-    assert "RK_REFERENCE_SLOT" in note
 
 
-def test_a_named_line_with_no_versions_is_dropped_not_substituted(
-    container, principal, song, artist
-):
-    """A kit that quietly renders a different *person* than its brief says is worse than
-    one that renders one fewer."""
-    container.identities.create_version(principal, artist.id, structural_features="singer")
-
-    plan, _ = container.kits.plan(
-        principal, song_id=song.id, video_count=1, identity_names=["Nobody"]
-    )
-    assert "no identity" in plan.shots[0].plate_note
 
 
-def test_a_kit_records_which_faces_it_was_for(container, principal, song, artist):
-    """By id *and* name. The id names an exact version whose content cannot move; the
-    name is what a person reads without a lookup."""
-    container.identities.create_version(principal, artist.id, structural_features="singer")
-    container.identities.create_version(principal, artist.id, name="Marco")
-
-    kit = container.kits.request(
-        principal, song_id=song.id, video_count=1, identity_names=["", "Marco"]
-    )
-
-    assert [f["label"] for f in kit.brief["identities"]] == ["Primary", "Marco"]
-    assert all(f["version"] == 1 for f in kit.brief["identities"])
 
 
 # ------------------------------------------------------------------ the still index
-def test_the_second_kit_in_the_same_scene_does_not_pay_for_the_still_again(
-    container, principal, song, artist
-):
-    """The index. A still is a pure function of who is in it and the scene, so rendering
-    it twice is paying twice for a stored answer."""
-    container.identities.create_version(
-        principal, artist.id, reference_frames=[frame("a", "neutral")]
-    )
-
-    first = container.kits.request(principal, song_id=song.id, video_count=1)
-    ran = container.kits.run(principal.tenant_id, first.id)
-    assert ran.status.value == "ready", ran.error
-    assert len(container.identities.current(principal, artist.id).locked_stills) == 1
-
-    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
-    still = plan.shots[0].prelude
-
-    assert still.reused_still is not None
-    assert still.estimate_cents == 0
-    assert "reusing a stored still" in still.plate_note
-    assert plan.steps == 1, "a reused still is not a provider call"
 
 
-def test_a_reused_still_is_not_generated_again(container, principal, song, artist):
-    """Asserted at the far end: the second run produces the clip only."""
-    container.identities.create_version(
-        principal, artist.id, reference_frames=[frame("a", "neutral")]
-    )
-    container.kits.run(
-        principal.tenant_id, container.kits.request(principal, song_id=song.id, video_count=1).id
-    )
-
-    second = container.kits.request(principal, song_id=song.id, video_count=1)
-    ran = container.kits.run(principal.tenant_id, second.id)
-
-    assert ran.status.value == "ready", ran.error
-    assert [a.modality.value for a in ran.assets] == ["video"], "the still was re-rendered"
 
 
-def test_a_new_identity_version_misses_the_index(container, principal, song, artist):
-    """Versions are in the digest on purpose. Reusing a frame of how somebody *used* to
-    look is the one way a cache here could undo the versioning discipline."""
-    container.identities.create_version(
-        principal, artist.id, reference_frames=[frame("a", "neutral")]
-    )
-    container.kits.run(
-        principal.tenant_id, container.kits.request(principal, song_id=song.id, video_count=1).id
-    )
-
-    container.identities.create_version(principal, artist.id, structural_features="new hair")
-
-    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
-    assert plan.shots[0].prelude.reused_still is None
-    assert plan.shots[0].prelude.estimate_cents > 0
 
 
-def test_a_different_scene_misses_the_index(container, principal, song, artist):
-    """The scene is in the digest too — a night drive still is not a golden-hour one."""
-    container.identities.create_version(
-        principal, artist.id, reference_frames=[frame("a", "neutral")]
-    )
-    container.kits.run(
-        principal.tenant_id, container.kits.request(principal, song_id=song.id, video_count=1).id
-    )
-
-    # Two videos: the first mood is indexed, the second has never been rendered.
-    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=2)
-    reused = [s.prelude.reused_still is not None for s in plan.shots]
-
-    assert reused == [True, False]
 
 
 # ------------------------------------------------------------------ the model must read it
-def test_a_text_to_image_model_is_never_used_to_lock_a_face():
-    """The failure that made this worthless without looking broken.
 
-    `GMICloudImageProvider` declares `accepts_chain_input=True`, so the capability gate
-    passed and the plate was sent — to `seedream-5.0-lite`, which is text-to-image. The
-    payload carried an `image` key the model does not read, so the only thing describing
-    the artist was four words of compiled silhouette, and what came back was a stranger
-    with the right build.
+
+
+
+def test_no_reference_model_is_guessed_for_a_vendor_that_ships_no_catalog():
+    """A hardcoded slug 404'd on a real account.
+
+    It came from the connector's `example_slugs`, which its own docstring calls
+    "documentation grade, not a contract", and GMI declares `DiscoverySupport.PARTIAL` —
+    no catalog endpoint to check against, and the only liveness test is a billable probe.
+    Which models an account can reach is a fact only the operator has, so the answer is
+    `None` and a refusal rather than another guess that moves the 404.
     """
-    from remixkit.adapters import providers as provider_table
-
-    assert not provider_table.honours_reference("seedream-5.0-lite")
-    assert not provider_table.honours_reference("imagen-4.0-generate-001")
-    assert provider_table.honours_reference("seededit-3-0-i2i-250628")
-    assert provider_table.honours_reference("gpt-image-1")
-
-
-def test_an_unknown_model_is_assumed_not_to_read_references():
-    """The safe direction, and the expensive one to get backwards: a model wrongly treated
-    as image-capable renders a plausible stranger and bills full price, where one wrongly
-    treated as text-only produces a refusal somebody can act on."""
-    from remixkit.adapters import providers as provider_table
-
-    assert not provider_table.honours_reference("some-model-nobody-has-heard-of")
-    assert not provider_table.honours_reference(None)
-
-
-def test_the_lock_swaps_to_a_model_that_reads_the_reference():
-    """GMI's default image model ignores references. The lock must not use it."""
     from remixkit.adapters import providers as provider_table
     from remixkit.domain.models import Modality
 
     gmi = type("GMICloudImageProvider", (), {})()
-    chosen = provider_table.reference_model(gmi, Modality.IMAGE)
-
-    assert chosen != provider_table.default_model(gmi, Modality.IMAGE)
-    assert provider_table.honours_reference(chosen)
+    assert provider_table.reference_model(gmi, Modality.IMAGE) is None
 
 
-def test_a_vendor_with_no_image_to_image_model_cannot_lock():
-    """Imagen is text-only. Returning its default would render a stranger at full price."""
+def test_a_configured_edit_model_is_used(container):
+    """`RK_IMAGE_EDIT_MODEL` is where the operator's answer goes."""
     from remixkit.adapters import providers as provider_table
     from remixkit.domain.models import Modality
 
-    imagen = type("ImagenProvider", (), {})()
-    assert provider_table.reference_model(imagen, Modality.IMAGE) is None
+    gmi = type("GMICloudImageProvider", (), {})()
+    chosen = provider_table.reference_model(gmi, Modality.IMAGE, "reve-edit-20250915")
+
+    assert chosen == "reve-edit-20250915"
+    assert provider_table.honours_reference(chosen)
+
+
+def test_a_configured_model_that_cannot_read_references_is_not_used():
+    """Setting the variable to a text-to-image model is the same mistake with more steps."""
+    from remixkit.adapters import providers as provider_table
+    from remixkit.domain.models import Modality
+
+    gmi = type("GMICloudImageProvider", (), {})()
+    assert provider_table.reference_model(gmi, Modality.IMAGE, "seedream-5.0-lite") is None
+
+
+
+
+
+
+# ------------------------------------------------------------------ several faces
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------------ the still index
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------------ the model must read it
+
+
+
+
 
 
 def test_a_plate_is_refused_when_the_vendor_has_no_model_that_would_read_it(
@@ -913,18 +811,6 @@ def test_an_unknown_model_is_assumed_not_to_read_references():
     assert not provider_table.honours_reference(None)
 
 
-def test_the_lock_swaps_to_a_model_that_reads_the_reference():
-    """GMI's default image model ignores references. The lock must not use it."""
-    from remixkit.adapters import providers as provider_table
-    from remixkit.domain.models import Modality
-
-    gmi = type("GMICloudImageProvider", (), {})()
-    chosen = provider_table.reference_model(gmi, Modality.IMAGE)
-
-    assert chosen != provider_table.default_model(gmi, Modality.IMAGE)
-    assert provider_table.honours_reference(chosen)
-
-
 def test_a_vendor_with_no_image_to_image_model_cannot_lock():
     """Imagen is text-only. Returning its default would render a stranger at full price."""
     from remixkit.adapters import providers as provider_table
@@ -965,7 +851,7 @@ def gmi_shaped(monkeypatch):
 
 
 def test_a_shot_that_wants_the_face_swaps_the_model_rather_than_dropping_the_reference(
-    container, principal, song, artist, gmi_shaped
+    container, principal, song, artist, gmi_shaped, monkeypatch
 ):
     """The first attempt at this fix was the wrong half.
 
@@ -978,18 +864,20 @@ def test_a_shot_that_wants_the_face_swaps_the_model_rather_than_dropping_the_ref
         principal, artist.id, reference_frames=[frame("a", "neutral")]
     )
 
+    monkeypatch.setattr(container.generator, "_edit_model", "reve-edit-20250915")
+
     plan, _ = container.kits.plan(
         principal, song_id=song.id, video_count=1, recipe_slug="portrait-still"
     )
     shot = plan.shots[0]
 
-    assert shot.model == "seededit-3-0-i2i-250628"
+    assert shot.model == "reve-edit-20250915"
     assert shot.reference_keys == ["remixkit/frames/a.png"]
     assert "would ignore" not in (shot.plate_note or "")
 
 
 def test_the_locked_still_is_checked_as_an_image_not_as_the_clip_it_serves(
-    container, principal, song, artist, gmi_shaped
+    container, principal, song, artist, gmi_shaped, monkeypatch
 ):
     """`_plates_for` read `shot.modality`, and for a locked video shot that says VIDEO —
     so the model check silently never ran on the one step whose whole job is to resolve
@@ -997,6 +885,7 @@ def test_the_locked_still_is_checked_as_an_image_not_as_the_clip_it_serves(
     container.identities.create_version(
         principal, artist.id, reference_frames=[frame("a", "neutral")]
     )
+    monkeypatch.setattr(container.generator, "_edit_model", "reve-edit-20250915")
 
     plan, _ = container.kits.plan(
         principal, song_id=song.id, video_count=1, recipe_slug="performance"

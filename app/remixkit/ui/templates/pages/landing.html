@@ -233,11 +233,19 @@ footer{padding:40px 0;border-top:1px solid var(--rule-2)}
       </svg>
       Remix<span>Kit</span>
     </a>
-    <nav class="links">
+    {# `aria-label` because this is the second nav on the page — the footer mark is the
+       other — and "navigation" twice with no distinguishing name is what a landmark list
+       reads as otherwise. #}
+    <nav class="links" aria-label="Sections">
       <a href="#evidence">Evidence</a>
       <a href="#loop">The loop</a>
       <a href="#testing">Testing</a>
       <a href="#measure">Measurement</a>
+      {# The only console surface that is deliberately public (routes.verify_page), and
+         the page arguing that provenance is disclosure never offered the tool that
+         demonstrates it. Someone reading the evidence section can check an asset from
+         here without an account, which is the claim being made two screens down. #}
+      <a href="/verify">Verify an asset</a>
     </nav>
     {# `viewer` is the verified session cookie (ui.routes._render), so an operator who is
        already signed in gets the console rather than a login form that would bounce them

@@ -19,10 +19,12 @@
 {% block content %}
 <header class="pagebar">
   <div class="pagebar-id">
-    <p class="eyebrow">
-      <a href="/console">Roster</a> /
-      <a href="/console/artists/{{ artist.id }}">{{ artist.name }}</a>
-    </p>
+    {% set crumbs = [
+         ("Roster", "/console"),
+         (artist.name, "/console/artists/" ~ artist.id),
+         ("Identity", ""),
+       ] %}
+    {% include "components/_crumbs.html" %}
     <h1>{{ identity.display_name if identity else "Identity" }}</h1>
     {% if identity %}
       {% with state = identity.approval %}{% include "components/_badge.html" %}{% endwith %}
@@ -35,7 +37,12 @@
   {% if lines %}
     <nav class="lines" aria-label="Identity lines">
       {% for name, versions in lines.items() %}
-        <a class="line {{ 'is-on' if identity and identity.name.strip() == name }}"
+        {# `is-on` draws the selected face; `aria-current` says so. The class alone left
+           the highlight invisible to anything not looking at the pixels, on a switcher
+           where "which member am I editing" is the whole question. #}
+        {% set on = identity and identity.name.strip() == name %}
+        <a class="line {{ 'is-on' if on }}"
+           {% if on %}aria-current="page"{% endif %}
            href="/console/artists/{{ artist.id }}/identity?line={{ name|urlencode }}">
           {{ versions[0].display_name }}
           <span class="hint">v{{ versions[0].version }}</span>
@@ -82,6 +89,10 @@
       </button>
       <button class="btn btn-primary" type="button" data-open="add-frame">Add frame</button>
     {% endif %}
+    {# Where a finished identity gets used. This screen ends with a face that holds and no
+       indication of what to do with it; the artist's own catalogue rows carry the generate
+       link for each song, so this is the shortest honest next step from here. #}
+    <a class="btn btn-quiet" href="/console/catalogue?artist_id={{ artist.id }}">Songs to generate →</a>
     <a class="btn" href="/console/artists/{{ artist.id }}">← {{ artist.name }}</a>
   </div>
 </header>

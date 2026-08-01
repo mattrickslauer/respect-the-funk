@@ -1,0 +1,28 @@
+{# The trail back up.
+
+   Five pages hand-rolled this as `<p class="eyebrow">` with literal " / " between the
+   links. That reads correctly and navigates correctly, and is wrong in two ways that
+   only show up off the screen: it is not a landmark, so nothing can jump to it or skip
+   it, and the slashes are text, so a screen reader announces "Roster slash Ada Lark
+   slash Losing Sleep" on every page load. Here the separator is drawn by CSS
+   (`.crumbs li + li::before`), which is the W3C pattern precisely because generated
+   content is presentational.
+
+   Callers set `crumbs` to a list of `(label, href)` immediately before including this.
+   An empty href means "this page" and renders as text with `aria-current="page"` rather
+   than as a link to where you already are.
+
+   Include it *inside* `.pagebar-id`, where the eyebrow it replaces used to sit. #}
+<nav class="eyebrow crumbs" aria-label="Breadcrumb">
+  <ol>
+    {% for label, href in crumbs %}
+      <li>
+        {% if href %}
+          <a href="{{ href }}">{{ label }}</a>
+        {% else %}
+          <span aria-current="page">{{ label }}</span>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+</nav>

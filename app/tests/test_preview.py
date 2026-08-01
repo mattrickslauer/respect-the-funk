@@ -384,3 +384,38 @@ def test_every_control_rides_the_queue_button(client, song, two_faces):
     assert 'value="Marco"' in queue_form
     assert 'name="tts_text"' in queue_form
     assert 'name="budget_cents"' in queue_form
+
+
+def test_repricing_with_an_empty_budget_field_works(client, song, two_faces):
+    """The reported bug. A blank `<input type="number">` submits as the empty string, and
+    an `int | None` parameter rejects that with a 422 — so the budget ceiling, whose whole
+    design is that leaving it blank means "no ceiling", broke Re-price for anyone who did
+    not set one.
+    """
+    response = client.get(
+        f"/console/artists/{two_faces.id}/songs/{song.id}/generate"
+        "?video_count=3&budget_cents=&tts_text="
+    )
+
+    assert response.status_code == 200
+    assert "is over the" not in response.text, "no ceiling means nothing to be over"
+
+
+@pytest.mark.parametrize("value", ["", "abc", "-5", "12.7", "500"])
+def test_the_budget_field_never_refuses_to_render_the_page(client, song, two_faces, value):
+    """It is a spend guard. Refusing the page because somebody typed "abc" into it would
+    hide the estimate they were opening the page to check."""
+    response = client.get(
+        f"/console/artists/{two_faces.id}/songs/{song.id}/generate?video_count=1"
+        f"&budget_cents={value}"
+    )
+    assert response.status_code == 200
+
+
+def test_queueing_with_a_blank_ceiling_is_not_a_refusal(client, container, principal, song, two_faces):
+    client.post(
+        "/ui/kits",
+        data={"song_id": song.id, "artist_id": two_faces.id, "video_count": "1",
+              "budget_cents": ""},
+    )
+    assert len(container.kits.list(principal)) == 1

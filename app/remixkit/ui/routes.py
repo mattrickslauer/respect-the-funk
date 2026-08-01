@@ -348,6 +348,29 @@ def identity_page(
 _OVERRIDE_FIELD = re.compile(r"^(prompt|model|seconds|identity_lock)_(\d+)$")
 
 
+def _optional_int(raw: str) -> int | None:
+    """An empty number field is "not set", not a parse error.
+
+    A blank `<input type="number">` submits as the empty string, and an `int | None`
+    parameter rejects that with a 422 — so the budget ceiling, whose whole design is that
+    leaving it blank means "no ceiling", made the Re-price button fail the moment anybody
+    pressed it without one. Declaring the parameter as text and coercing here is the only
+    place that distinction can be drawn, because by the time FastAPI has validated there
+    is no empty string left to interpret.
+
+    A value that is present but not a number is also treated as unset rather than refused.
+    The field is a spend guard: refusing to render the page because somebody typed "abc"
+    into it would hide the estimate they were about to check.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return max(0, int(float(raw)))
+    except (TypeError, ValueError):
+        return None
+
+
 def _shot_overrides(params: Any) -> dict[int, dict]:
     """Read `prompt_N` / `model_N` / `seconds_N` out of a form or query string.
 
@@ -386,7 +409,7 @@ def generate_page(
     identity_names: Annotated[list[str], Query()] = [],
     faces_chosen: str = "",
     tts_text: str = "",
-    budget_cents: int | None = None,
+    budget_cents: str = "",
     recipe_slug: str = "",
     line: str = "",
 ):
@@ -417,6 +440,7 @@ def generate_page(
         (r for r in recipe_list if r.slug == (recipe_slug or DEFAULT_SLUG)), recipe_list[0]
     )
 
+    ceiling = _optional_int(budget_cents)
     overrides = _shot_overrides(request.query_params)
     # `None` and `[]` are different answers — not asked means the primary line, an empty
     # tick-list means a kit with nobody in it — and a checkbox group sends nothing in
@@ -456,8 +480,8 @@ def generate_page(
         line=line,
         identity_names=faces,
         tts_text=tts_text,
-        budget_cents=budget_cents,
-        over_budget=budget_cents is not None and plan.estimate_cents > budget_cents,
+        budget_cents=ceiling,
+        over_budget=ceiling is not None and plan.estimate_cents > ceiling,
     )
 
 
@@ -1346,7 +1370,7 @@ async def ui_create_kit(
     identity_names: list[str] = Form(default=[]),
     faces_chosen: str = Form(""),
     tts_text: str = Form(""),
-    budget_cents: int | None = Form(default=None),
+    budget_cents: str = Form(""),
     name: str = Form(""),
     recipe_slug: str = Form(""),
     line: str = Form(""),
@@ -1368,7 +1392,7 @@ async def ui_create_kit(
             overrides=overrides,
             identity_names=list(identity_names) if faces_chosen else None,
             tts_text=tts_text or None,
-            budget_cents=budget_cents,
+            budget_cents=_optional_int(budget_cents),
             name=name or None,
             recipe_slug=recipe_slug or DEFAULT_SLUG,
             line=line,

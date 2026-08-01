@@ -184,6 +184,36 @@ class GenblazeGenerator:
             negatives = ", ".join(seen)
 
             provider, model = self._resolve_model(table, shot)
+
+            # A shot that wants the face must run on a model that reads the reference.
+            #
+            # Refusing the plate here — which is what the first attempt at this did — is
+            # the wrong half of the fix. It makes the failure legible and still renders
+            # the picture: a portrait still went out on `seedream-5.0-lite` with no
+            # reference attached, and came back as the same stranger it had produced
+            # before, now with an explanation nobody was looking at. Swap the model
+            # instead, and refuse only when the vendor has nothing that would work.
+            #
+            # An explicit per-shot model is never swapped. Somebody who typed a model into
+            # the plan meant it, and silently running a different one would defeat the
+            # whole point of the field; the refusal note still says what it will cost them.
+            if (
+                shot.use_identity_plate
+                and shot.modality is Modality.IMAGE
+                and not shot.model
+                and provider is not None
+                and not provider_table.honours_reference(model)
+            ):
+                swapped = provider_table.reference_model(
+                    provider, shot.modality, self._models.get(shot.modality, "")
+                )
+                if swapped:
+                    log.info(
+                        "shot %d: %s cannot read a reference — using %s to hold the face",
+                        index, model, swapped,
+                    )
+                    model = swapped
+
             rendered_seconds = provider_table.snap_duration(model, shot.seconds)
 
             params: dict[str, Any] = {}
@@ -280,7 +310,12 @@ class GenblazeGenerator:
         # image conditioning. How many actually reach the wire depends on the slot the
         # provider declares; see `_plate_assets`.
         plates, note = self._plates_for(
-            shot, request, image_provider, limit=self._reference_limit, model=model
+            shot,
+            request,
+            image_provider,
+            limit=self._reference_limit,
+            model=model,
+            modality=Modality.IMAGE,
         )
         if not plates:
             return None, None
@@ -429,6 +464,7 @@ class GenblazeGenerator:
         *,
         limit: int | None = None,
         model: str | None = None,
+        modality: Any = None,
     ):
         """The artist's face, if this shot wants it and this provider will take it.
 
@@ -499,7 +535,21 @@ class GenblazeGenerator:
         # invisible in the output until you look at the face. A text-to-image model handed
         # a reference renders a stranger who matches the description — which costs the same
         # as a likeness and looks like one until somebody who knows the artist sees it.
-        if shot.modality is Modality.IMAGE and not provider_table.honours_reference(model):
+        # The modality of the *step that carries the reference*, which is not always the
+        # shot's own. A locked video shot hands its plate to the still in front of it, and
+        # reading `shot.modality` there says VIDEO — so the check silently never ran on the
+        # one step whose whole job is to resolve the likeness.
+        carrier = modality or shot.modality
+        # The mock is exempt for the same reason `reference_model` exempts it: it reads
+        # nothing and renders nothing, so it cannot mislead anybody about a likeness, and
+        # holding it to this check would make the entire locked path unreachable on a
+        # laptop — which is precisely the shape of gap that let this bug ship.
+        is_mock = provider_table.vendor_of(provider) == "mock"
+        if (
+            carrier is Modality.IMAGE
+            and not is_mock
+            and not provider_table.honours_reference(model)
+        ):
             return [], (
                 f"{model} is text-to-image and would ignore the reference — "
                 "no likeness would be held"

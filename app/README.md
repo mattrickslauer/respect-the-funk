@@ -538,10 +538,23 @@ answers no**, which is the safe direction: a model wrongly treated as image-capa
 a plausible stranger and bills for it, where one wrongly treated as text-only produces a
 refusal on the plan screen that somebody can act on.
 
-An identity-locking still is therefore rendered with `providers.reference_model()`, which
-swaps GMI's text-to-image default for `seededit-3-0-i2i-250628`. A vendor with no
-image-to-image model at all — Imagen, today — returns `None`, and the lock is refused
-rather than rendering something with no likeness in it.
+**Any shot that wants the face swaps the model; it does not drop the reference.** That
+distinction is the difference between the first attempt at this fix and the one that works.
+Refusing the plate made the failure legible and still rendered the picture — a portrait
+still went out on `seedream-5.0-lite` with no reference attached and came back as the same
+stranger it had produced before, now with an explanation nobody was reading.
+`providers.reference_model()` swaps GMI's text-to-image default for
+`seededit-3-0-i2i-250628`. A vendor with no image-to-image model at all — Imagen — returns
+`None`, and only then is the plate refused.
+
+An explicitly pinned per-shot model is never swapped: somebody who typed a model into the
+plan meant it, and silently running a different one would defeat the field. The refusal
+note still says what it costs them.
+
+The check reads the modality of the *step carrying the reference*, not the shot's own. A
+locked video shot hands its plate to the still in front of it, so reading `shot.modality`
+there says VIDEO — and the check silently never ran on the one step whose entire job is to
+resolve the likeness.
 
 **`seededit-3-0-i2i-250628` is unpriced**, so it estimates at the unknown-model rate of
 $2.00/call. That is deliberate and it bites: three locked clips quote at 783¢ and are

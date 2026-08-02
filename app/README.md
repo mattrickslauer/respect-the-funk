@@ -259,6 +259,59 @@ authenticate there.
 
 ---
 
+## What a read costs, and what a failed one may claim
+
+A song that was in the bucket, under the right tenant, listed correctly by the roster
+beside it, returned **404**:
+
+```
+INFO: 127.0.0.1 - "GET /console/songs/sng_f438a34afbb9 HTTP/1.1" 404 Not Found
+```
+
+The song was fine. B2 had hit a daily cap:
+
+```
+Cannot download file, download bandwidth or transaction (Class B) cap exceeded.
+```
+
+B2 refuses a capped read with **403**, not 404 — and the chain from there was four layers
+of individually reasonable decisions. The S3 backend's `exists()` maps 403 to `False`, on
+purpose, because scoped keys holding `ReadFiles` without `ListFiles` answer 403 for HEAD on
+a key that is not there. The document repository read `False` as absent. The service turned
+absent into `NotFound`, and the console turned that into 404. **The catalogue took the
+blame for the storage**, and B2's own sentence — the only part anybody could act on — was
+discarded three frames down.
+
+Every signal pointed away from the truth: the object was present, `list()` kept working
+(listing is a different transaction class, with its own cap), and nothing in the app's logs
+said "B2".
+
+Three changes, and they are as much about cost as correctness:
+
+* **Absence is the vendor's word, not an inference.** `DocumentRepo` reads through one
+  `get`, and only a `NOT_FOUND` classification counts as missing. A cap, an expired key or
+  a partition is raised. `list()` keeps tolerating a document nobody can parse — one broken
+  row — but no longer swallows a bucket nobody can read, which used to render as a label
+  with no songs.
+* **One read per document instead of two.** `exists()`-then-`get()` billed twice and asked
+  the wrong question with the first. The cap that was reached is measured in transactions.
+* **Presigned URLs hold still.** SigV4 signs the wall clock to the second, so every render
+  minted a new URL for an unchanged object, and a browser caches by URL — so each page view
+  re-downloaded every reference frame and every clip *in full*. The bucket holds tens of
+  megabytes against a daily gigabyte, which is plenty until a 5MB frame is fetched again on
+  every render. A signed URL is now reused for half its life, and `put`/`delete` drop it so
+  a replaced object is re-signed rather than served stale.
+
+`preload="none"` on both players belongs to the same accounting: opening a song is not
+asking to hear it, and `metadata` spent a billable read on the master every time the page
+rendered — which, with htmx swapping fragments around it, is often.
+
+Storage failing is now a **503** quoting the vendor, not a 404 blaming the catalogue.
+Nothing is broken when a cap is reached; the bucket is refusing to answer for a while, and
+that is a condition with a clock on it.
+
+---
+
 ## What a run costs, and why that is a module
 
 `adapters/pricing.py` is one dated price book, registered into Genblaze's own

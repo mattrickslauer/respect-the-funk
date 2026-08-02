@@ -16,7 +16,9 @@
       {% elif asset.modality.value == "image" %}
         <img src="{{ asset_url(asset) }}" alt="{{ asset.prompt|truncate(80) }}" loading="lazy">
       {% else %}
-        <audio src="{{ asset_url(asset) }}" controls preload="metadata"></audio>
+        {# `none` for the same reason as the master player: opening a kit is not asking to
+           hear every take in it, and `metadata` spends a read per clip per render. #}
+        <audio src="{{ asset_url(asset) }}" controls preload="none"></audio>
       {% endif %}
       <figcaption>
         <span class="mod">{{ asset.modality.value }}</span>

@@ -18,7 +18,12 @@
 {% set src = master_url(song) %}
 {% if src %}
   <div class="player" id="song-player">
-    <audio id="rk-master" src="{{ src }}" controls preload="metadata"></audio>
+    {# `preload="none"`, because opening a song is not asking to hear it. `metadata` spends
+       a billable read on the master every time this page renders — and the page re-renders
+       on every htmx swap around it — to learn a duration nobody has asked for yet. The
+       browser fetches on the first press instead, which is the moment somebody wants the
+       audio and the only moment the bytes are worth what they cost. #}
+    <audio id="rk-master" src="{{ src }}" controls preload="none"></audio>
     <div class="player-transport">
       <button class="btn btn-quiet play" type="button"
               data-play="whole" data-start="0" data-label="the whole song"

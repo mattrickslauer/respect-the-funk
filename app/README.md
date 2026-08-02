@@ -655,17 +655,47 @@ Step 1 (openai-sora/sora-2): Sora submit failed: Error code: 400 -
   Invalid type for 'input_reference': expected an object, but got a file instead.
 ```
 
-The installed SDK sides with the rejection. `openai` 2.52.0 types the parameter as
-`Union[FileTypes, ImageInputReferenceParam]` — the object arm being `{"file_id"}` or
-`{"image_url"}`, the latter documented as *"a fully qualified URL or base64-encoded data
-URL"*. The file arm is the compatibility half, and the server has stopped honouring it.
-0.3.4 is the latest connector release and still sends it.
+So it wants an object. Handing one to `client.videos.create()` was then refused by the SDK,
+before any request left the process:
+
+```
+Expected entry at `input_reference` to be bytes, an io.IOBase instance, PathLike
+  or a tuple but received <class 'dict'> instead.
+```
+
+Which reads like a contradiction and is not. `Videos.create()` unconditionally sets
+`Content-Type: multipart/form-data` and unconditionally runs
+`extract_files(body, paths=[["input_reference"]])`, which *pops* the value and asserts it
+is file content. The generated method implements only the file half of a parameter its own
+type declares as a union, so the object is not a choice it offers.
+
+**The spec settles it.** From the OpenAPI document the SDK is generated from (`.stats.yml`
+→ `CreateVideoMultipartBody`), `POST /v1/videos` declares exactly one request content type:
+
+```yaml
+input_reference:
+  anyOf:
+    - {type: string, format: binary}          # the upload
+    - $ref: ImageRefParam                     # "exactly one of image_url or file_id"
+```
+
+`ImageRefParam.image_url` is *"a fully qualified URL or base64-encoded data URL"*, capped at
+`maxLength: 20971520`. JSON was never on the table — the object is a **multipart field**,
+not a JSON body, and the SDK's own serializer brackets nested values, so the field is
+`input_reference[image_url]`.
+
+That encoding is not invented here: it is what `BaseClient._serialize_multipartform`
+produces from the same spec, and the tests build the real request and read the field name
+back off the wire. Three shapes were shipped against a stubbed client and all three passed
+their tests; asserting on bytes is what finally had teeth.
 
 `adapters/provider_sora.py` subclasses the provider and overrides `submit` — that one
-parameter, nothing else. Validation, SSRF checks, seconds and size handling, error mapping,
-discovery, polling and download stay inherited, because this is a correction rather than a
-second implementation. **When the connector ships the object form, deleting the module
-should be the whole of the change.**
+parameter, nothing else — issuing the request one level below the typed method so the body
+can say what the spec allows. Auth, base URL, retries, response parsing, validation, SSRF
+checks, seconds and size handling, error mapping, discovery, polling and download all stay
+inherited, and a shot with no reference never leaves the connector's own typed path.
+**When `videos.create()` learns to send the object arm, deleting the module should be the
+whole of the change.**
 
 The two kinds of reference are not interchangeable, and telling them apart is most of the
 file:

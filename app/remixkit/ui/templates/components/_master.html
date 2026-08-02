@@ -1,9 +1,12 @@
-{# The master, and the only JavaScript in this console.
+{# The master: getting it in, and hearing it once it is.
 
    A presigned upload is a request the *browser* makes to the bucket — the whole point of
    §2b rule 2 is that a 128 MB WAV never touches this process — so something in the page
    has to ask for the URL, PUT the bytes, and then tell the app they landed. htmx cannot
-   do the middle step, so these ~30 lines exist and nothing else does.
+   do the middle step, so these ~30 lines exist.
+
+   The player below is the other thing this panel owns, and the only other script on this
+   page; the argument for it is in components/_player.html.
 
    Three requests, in order:
      1. POST /ui/songs/…/master/upload-url  → { url, key }
@@ -21,6 +24,11 @@
   {% else %}
     <p class="empty">No master uploaded. Nothing can be measured until there is one.</p>
   {% endif %}
+
+  {# The player lives inside this panel because it is this file being played, and because
+     the panel re-renders itself the moment an upload lands — which is the render that
+     first has something to play. The buttons that drive it are all over the page. #}
+  {% include "components/_player.html" %}
 
   {% if note %}<p class="small unmeasured">{{ note }}</p>{% endif %}
   {% if not analysis_available %}

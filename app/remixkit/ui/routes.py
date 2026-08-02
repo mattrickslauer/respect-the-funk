@@ -98,6 +98,32 @@ def asset_url(asset) -> str:
 
 templates.env.globals["asset_url"] = asset_url
 
+
+def master_url(song) -> str:
+    """A URL the browser can play this song's master from, minted at render time.
+
+    The same rule as `asset_url`, for the same reason: on B2 this is a presigned URL with
+    an expiry, so the durable thing is the key on the song and the URL is derived from it
+    on every render. A song with no master returns the empty string, which is what the
+    player renders as "nothing to play yet" rather than as a broken element.
+
+    It is a template global rather than a route's context because the sections list, the
+    master panel and the arrangement are all swapped independently by htmx, and each of
+    them can carry a play button — threading a URL through five handlers would mean a
+    fragment that quietly loses playback the first time somebody adds a sixth.
+    """
+    key = getattr(song, "master_key", None)
+    if not key:
+        return ""
+    try:
+        return get_container().storage.presign_get(key, expires_in=3600)
+    except Exception:
+        log.warning("could not presign master %s", key)
+        return ""
+
+
+templates.env.globals["master_url"] = master_url
+
 # The `hx-trigger` list every page's live-refresh element carries, built from the event
 # vocabulary rather than written out in the layout — so adding an event makes it live on
 # every screen at once instead of being a template edit somebody forgets. `from:body`
@@ -1964,8 +1990,48 @@ async def receive_local_file(key: str, request: Request, principal: CurrentPrinc
     return Response(status_code=200)
 
 
+_RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
+
+
+def _ranged(request: Request, data: bytes, media_type: str) -> Response:
+    """The object, or the slice of it a media element asked for.
+
+    Seeking is what makes a section playable. An `<audio>` told to start 124 seconds in
+    will only jump there if the server answers ranges; without `Accept-Ranges` the browser
+    downloads the whole master first, which on a 128 MB WAV is the difference between
+    auditioning a hook and waiting for one.
+
+    Only the single-range form is answered — a media element never sends more — and a
+    header this does not parse falls through to the whole object rather than to a 416,
+    because refusing a fetch over a header we chose not to understand is worse than
+    serving it.
+    """
+    total = len(data)
+    headers = {"accept-ranges": "bytes"}
+    match = _RANGE.match(request.headers.get("range", "").strip())
+    if not match or not total:
+        return Response(content=data, media_type=media_type, headers=headers)
+
+    first, last = match.group(1), match.group(2)
+    if first == "":
+        # `bytes=-N` — the final N bytes, which is how a player reads a trailing index.
+        start, end = max(total - int(last or 0), 0), total - 1
+    else:
+        start = int(first)
+        end = int(last) if last else total - 1
+    end = min(end, total - 1)
+    if start > end:
+        return Response(
+            status_code=416, headers={**headers, "content-range": f"bytes */{total}"}
+        )
+    headers["content-range"] = f"bytes {start}-{end}/{total}"
+    return Response(
+        content=data[start : end + 1], status_code=206, media_type=media_type, headers=headers
+    )
+
+
 @router.get("/files/{key:path}")
-def serve_local_file(key: str, principal: CurrentPrincipal):
+def serve_local_file(key: str, request: Request, principal: CurrentPrincipal):
     """Dev-only asset serving for `storage_backend=local`.
 
     On B2 the browser gets a presigned URL and this route is never reached — which is
@@ -2002,6 +2068,8 @@ def serve_local_file(key: str, principal: CurrentPrincipal):
         "mp3": "audio/mpeg",
         "wav": "audio/wav",
         "json": "application/json",
+        "flac": "audio/flac",
+        "m4a": "audio/mp4",
         "yaml": "application/yaml",
     }.get(suffix, "application/octet-stream")
-    return Response(content=data, media_type=media_type)
+    return _ranged(request, data, media_type)

@@ -49,6 +49,16 @@
           </div>
 
           <div class="row-actions">
+            {# Every section plays on its own, against the same master the whole song
+               plays from — see components/_player.html. Only rendered when there is a
+               master: a play button over nothing is a button that does nothing. #}
+            {% if song.master_key %}
+              <button class="btn btn-quiet play" type="button"
+                      data-play="{{ section.id }}"
+                      data-start="{{ section.start_ms }}" data-end="{{ section.end_ms }}"
+                      data-label="{{ section.display_name }}"
+                      aria-pressed="false">Play</button>
+            {% endif %}
             {% if section.is_hook_material and not primary %}
               <button class="btn btn-quiet"
                       hx-post="/ui/songs/{{ song.id }}/sections/{{ section.id }}/primary"

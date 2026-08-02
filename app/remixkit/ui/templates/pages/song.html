@@ -91,8 +91,9 @@
      CSS-only tabs. The radios are siblings of `.panes` rather than of the panels
      themselves, so htmx can keep swapping `#song-hooks` (sections and recommendations
      are one target — see components/_hooks.html) without the swap ever landing on the
-     element holding the selected-tab state. No JavaScript is involved, which matters:
-     the only script in this console is the presigned upload, and it earns its place.
+     element holding the selected-tab state. No JavaScript is involved in the tabs, which
+     matters: the scripts this page carries are the presigned upload and the player, and
+     each is there because what it does has no HTML declaration at all.
 
      The radio ids and the `pane-N` classes are the console's shared tab vocabulary, not
      this page's: the CSS matches the Nth radio to the Nth label and the Nth pane, so a

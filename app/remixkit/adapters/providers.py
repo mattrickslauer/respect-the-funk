@@ -440,7 +440,14 @@ def _available_vendors() -> dict[Modality, dict[str, Any]]:
         try:
             from genblaze_openai import DalleProvider, OpenAITTSProvider, SoraProvider
 
-            table[Modality.VIDEO]["openai"] = SoraProvider(models=pricing.priced_registry(SoraProvider))
+            from remixkit.adapters.provider_sora import sora_provider_class
+
+            # Sora's start frame goes over as an object, not an upload — the API rejects
+            # the file form the connector still sends. See `adapters/provider_sora`.
+            # Priced against the shipped class, since the subclass is the same catalogue.
+            table[Modality.VIDEO]["openai"] = sora_provider_class()(
+                models=pricing.priced_registry(SoraProvider)
+            )
             table[Modality.IMAGE]["openai"] = DalleProvider(models=pricing.priced_registry(DalleProvider))
             table[Modality.AUDIO]["openai"] = OpenAITTSProvider(
                 models=pricing.priced_registry(OpenAITTSProvider)

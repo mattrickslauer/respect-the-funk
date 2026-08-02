@@ -645,6 +645,39 @@ cannot raise a vendor's maximum and a request over it dies after the plate is re
 the queue slot is spent. A model nobody has measured declares nothing and falls back to the
 deployment default rather than inheriting a neighbour's allowance.
 
+### Sora's start frame is an object, not an upload
+
+The same correction one layer up, on the other vendor. `genblaze-openai` uploads the start
+frame as a file, which is what the Videos API used to take:
+
+```
+Step 1 (openai-sora/sora-2): Sora submit failed: Error code: 400 -
+  Invalid type for 'input_reference': expected an object, but got a file instead.
+```
+
+The installed SDK sides with the rejection. `openai` 2.52.0 types the parameter as
+`Union[FileTypes, ImageInputReferenceParam]` — the object arm being `{"file_id"}` or
+`{"image_url"}`, the latter documented as *"a fully qualified URL or base64-encoded data
+URL"*. The file arm is the compatibility half, and the server has stopped honouring it.
+0.3.4 is the latest connector release and still sends it.
+
+`adapters/provider_sora.py` subclasses the provider and overrides `submit` — that one
+parameter, nothing else. Validation, SSRF checks, seconds and size handling, error mapping,
+discovery, polling and download stay inherited, because this is a correction rather than a
+second implementation. **When the connector ships the object form, deleting the module
+should be the whole of the change.**
+
+The two kinds of reference are not interchangeable, and telling them apart is most of the
+file:
+
+| arriving as | is | sent as |
+| --- | --- | --- |
+| `https://…` | a plate, presigned out of B2 | `image_url`, untouched — the address is the point |
+| `file://…` | a chained still, before the sink has uploaded it | a base64 data URL, since there is no address to give |
+
+The connector downloaded the https case and re-uploaded the bytes. A URL the API accepts
+makes that round trip pure cost, and for a user's photograph it was megabytes of it.
+
 ### Live re-pricing
 
 Every control on the generate form changes what a run costs, and a page that only tells you

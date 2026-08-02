@@ -111,7 +111,11 @@ def builtin_recipes() -> list[Recipe]:
             prompt_template=(
                 "Hyper-realistic vertical selfie video, shot on a phone held at arm's length. "
                 "{artist} looking straight into the lens and speaking casually, {variant}. "
-                'She says, in a natural conversational tone: "{line}". '
+                # No pronoun. A format is seeded once per tenant and then used by every
+                # artist on the roster, so a pronoun written into it is a guess applied to
+                # people it was never asked about — and it reaches the provider, which
+                # renders what it is told. The artist is already named in the clause above.
+                'Speaking in a natural conversational tone: "{line}". '
                 "Available light, slight handheld motion, candid and unposed, no camera moves"
             ),
             negatives=list(SPOKEN_NEGATIVES),

@@ -40,16 +40,28 @@
             <span class="stat-sub">loops default to 6s</span>{% endif %}</dd>
     </div>
     <div class="stat">
-      <dt>Identity</dt>
-      {# A version number alone said nothing about whether the face would actually be
-         sent. An identity with text and no reference frames renders exactly as one with
-         four, and only the second holds a likeness. #}
-      <dd>{% if identity and identity.has_plates %}v{{ identity.version }}
-            <span class="stat-sub">{{ identity.reference_frames|length }} frame{{ "" if identity.reference_frames|length == 1 else "s" }} · face conditioned</span>
-          {% elif identity %}v{{ identity.version }}
-            <span class="stat-sub unmeasured">no reference frames — text only</span>
-          {% else %}<span class="unmeasured">none</span>
-            <span class="stat-sub">shots will not hold a face</span>{% endif %}</dd>
+      <dt>Faces</dt>
+      {# The faces *this plan* is for — not the artist's newest identity, which is what
+         this said before and was a different question. With every box in the picker
+         cleared this read "v1 · 5 frames · face conditioned" over a plan whose every shot
+         said the face was not going, and the pagebar is the louder of the two.
+
+         A version number alone is also not enough: an identity with text and no reference
+         frames renders exactly as one with four, and only the second holds a likeness. #}
+      {% set plated = plan_identities|selectattr("has_plates")|list %}
+      <dd>{% if not plan_identities %}<span class="unmeasured">none ticked</span>
+            <span class="stat-sub">shots will not hold a face</span>
+          {% elif plan_identities|length == 1 %}
+            {{ plan_identities[0].display_name }} v{{ plan_identities[0].version }}
+            {% if plated %}
+              <span class="stat-sub">{{ plan_identities[0].reference_frames|length }} frame{{ "" if plan_identities[0].reference_frames|length == 1 else "s" }} · face conditioned</span>
+            {% else %}
+              <span class="stat-sub unmeasured">no reference frames — text only</span>
+            {% endif %}
+          {% else %}{{ plan_identities|length }} faces
+            <span class="stat-sub {{ '' if plated|length == plan_identities|length else 'unmeasured' }}">
+              {{ plated|length }} of {{ plan_identities|length }} with reference frames</span>
+          {% endif %}</dd>
     </div>
   </dl>
 </header>
@@ -177,10 +189,20 @@
              template actually has a slot for it — a field that changes nothing is worse
              than an absent one, because it looks like it changed something. #}
           {% if "{line}" in recipe.prompt_template %}
-            <label>What she says <span class="hint">spoken in the clip, word for word</span>
+            <label>What they say <span class="hint">spoken in the clip, word for word</span>
               <textarea name="line" id="line" rows="2"
                         placeholder="Hope to see you at my show…">{{ line }}</textarea>
             </label>
+          {% elif line %}
+            {# The line survives a format change in the URL, and a format with no slot for
+               it renders nothing that says so. Somebody who typed an announcement, then
+               switched to Backdrop loop, had a screen that looked the same and a kit with
+               the announcement nowhere in it. #}
+            <p class="notice small">
+              <strong>{{ recipe.name }} has nobody speaking in it</strong>, so the line
+              you wrote is not in any prompt below. Pick a format that quotes it — or use
+              the voice-over field, which is spoken whatever the format.
+            </p>
           {% endif %}
 
           <div class="plan-row">
@@ -225,8 +247,26 @@
             <div class="sections-pick" role="group" aria-label="Faces this kit is for">
               <p class="hint pick-note">
                 Faces — each contributes its description to every prompt, and one
-                reference each to the still that locks them.
+                reference each to the still that locks them. Untick every box for a kit
+                with nobody in it.
               </p>
+              {# Ticking none is a real answer, and for a backdrop it is the right one. It
+                 is also indistinguishable, from the picker alone, from having forgotten —
+                 and the difference is a format's whole output. So it is stated here, once,
+                 in the terms of the format that is actually selected, rather than left to
+                 be inferred from a plate note further down every shot card. #}
+              {% if identity_names is not none and not identity_names %}
+                <p class="notice {{ 'notice-error' if recipe.face.value != 'none' else '' }} small">
+                  {% if recipe.face.value == "none" %}
+                    <strong>No face ticked.</strong> {{ recipe.name }} wants nobody in it,
+                    so this is the matching choice.
+                  {% else %}
+                    <strong>No face ticked, and {{ recipe.name }} is a format about the
+                    artist.</strong> Every shot below will render a stranger — no
+                    description, no reference frame, and no identity-locked still.
+                  {% endif %}
+                </p>
+              {% endif %}
               {% for line_name, versions in lines.items() %}
                 <label class="tick">
                   <input type="checkbox" name="identity_names" value="{{ line_name }}"
@@ -380,11 +420,38 @@
                    the same field on purpose: a preview you cannot correct is a preview
                    that only tells you afterwards. Empty means "use the default", which is
                    why clearing the box restores the generated prompt rather than sending
-                   an empty one. #}
-                <label class="step-prompt">Prompt <span class="hint">as sent — edits ride the button</span>
+                   an empty one.
+
+                   Which of the two states this box is in used to be unreadable, and it is
+                   the difference between a prompt that follows the format and one that is
+                   frozen against it. So it is labelled, and an edited box says how to give
+                   it back.
+
+                   `sent_prompt_…` is the value rendered here, echoed so the handler can
+                   tell its own prefill from a rewrite — see `_shot_overrides`, which is
+                   also where the bug this fixes is described. `position_key_…` is what
+                   this position means right now, so an edit made against a different
+                   format's shot is dropped rather than applied to whatever stands here.
+                   Both are hidden and both join `#repricer`, so they travel with the
+                   re-price *and* with the queue button, which posts that same form. #}
+                {% set edited = overrides.get(step.index, {}).get('prompt') %}
+                <label class="step-prompt">
+                  {{ "Spoken line" if step.modality.value == "audio" else "Prompt" }}
+                  {% if edited %}
+                    <span class="hint">edited — clear the box to go back to the
+                      {{ step.recipe_slug or "format" }} default</span>
+                  {% elif step.modality.value == "audio" %}
+                    <span class="hint">read aloud, word for word — this is what the voice says</span>
+                  {% else %}
+                    <span class="hint">as sent — edits ride the button</span>
+                  {% endif %}
                   <textarea name="prompt_{{ step.index }}" id="prompt_{{ step.index }}" rows="3"
                             form="repricer">{{ step.prompt }}</textarea>
                 </label>
+                <input type="hidden" form="repricer"
+                       name="sent_prompt_{{ step.index }}" value="{{ step.prompt }}">
+                <input type="hidden" form="repricer"
+                       name="position_key_{{ step.index }}" value="{{ step.position_key }}">
                 <div class="step-knobs">
                   <label class="step-model">Model <span class="hint">blank = {{ step.model or "none resolved" }}</span>
                     <input name="model_{{ step.index }}" id="model_{{ step.index }}" form="repricer"
@@ -507,10 +574,19 @@
             {% endfor %}
           {% else %}<span class="hint">no hook set — loops default to 6s</span>{% endif %}
         </dd>
-        <dt>Identity</dt>
+        {# The same question the pagebar answers, and for the same reason it is asked about
+           `plan_identities` rather than the artist's newest face: this list is the run's
+           preconditions, so it has to describe the run. #}
+        <dt>Faces</dt>
         <dd>
-          {% if identity %}v{{ identity.version }}
-          {% else %}<span class="hint">none — shots will not hold a face</span>{% endif %}
+          {% if not plan_identities %}
+            <span class="hint">none ticked — shots will not hold a face</span>
+          {% else %}
+            {% for face in plan_identities %}
+              {{ face.display_name }} v{{ face.version }}
+              <span class="hint">{{ face.reference_frames|length }} frame{{ "" if face.reference_frames|length == 1 else "s" }}</span>{{ "" if loop.last else " · " }}
+            {% endfor %}
+          {% endif %}
         </dd>
       </dl>
       <div class="links">

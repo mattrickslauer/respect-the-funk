@@ -457,3 +457,178 @@ def test_queueing_with_a_blank_ceiling_is_not_a_refusal(client, container, princ
               "budget_cents": ""},
     )
     assert len(container.kits.list(principal)) == 1
+
+
+# ------------------------------------------------------------ the prompt box
+#
+# The box is prefilled with the composed prompt, because a preview you cannot correct is
+# one that only tells you afterwards. That made every submission carry a prompt, and every
+# submission therefore look like a rewrite — so the plan stopped tracking the brief the
+# moment the screen re-priced once, which it does on every keystroke.
+#
+# Two things followed, and both reached a provider. The identity fragment is *shown* in the
+# box and *prepended* by the composer, so each round trip added another copy: a screen
+# touched four times sent `feminine slight average build.` four times before it got to the
+# shot. And an old format's prompt stayed pinned under a new format's name and price —
+# including onto a voice-over, where a TTS provider was handed a camera direction to read
+# aloud in the artist's voice.
+def _box(page: str, index: int = 0) -> str:
+    """What the prompt box on the page actually holds, unescaped.
+
+    Read out of the markup rather than recomputed, because the whole claim under test is
+    about the value that makes the round trip — what the server rendered is the only thing
+    a browser can hand back.
+    """
+    match = re.search(rf'<textarea name="prompt_{index}"[^>]*>(.*?)</textarea>', page, re.S)
+    assert match, f"no prompt box for shot {index} on the page"
+    return html.unescape(match.group(1))
+
+
+def _generate(client, song, artist, **params):
+    return client.get(f"/console/artists/{artist.id}/songs/{song.id}/generate", params=params)
+
+
+def test_the_screen_echoes_what_it_filled_the_prompt_box_with(client, song, two_faces):
+    """The mechanism the two tests below depend on, asserted directly.
+
+    Without the echo the server cannot tell its own prefill from a rewrite, because both
+    arrive as `prompt_0` with a value in it.
+    """
+    page = _generate(client, song, two_faces, video_count=1).text
+
+    assert 'name="sent_prompt_0"' in page
+    assert 'name="position_key_0"' in page
+
+
+def test_re_pricing_an_untouched_box_does_not_pin_or_duplicate_the_prompt(
+    client, song, two_faces
+):
+    """The compounding bug. Three round trips must leave the string exactly as it was."""
+    params = {"video_count": 1, "faces_chosen": 1, "identity_names": ""}
+    box = _box(_generate(client, song, two_faces, **params).text)
+    assert box.count("feminine slight") == 1, "the fixture's identity, prepended once"
+
+    first = box
+    for _ in range(3):
+        box = _box(
+            _generate(client, song, two_faces, prompt_0=box, sent_prompt_0=box, **params).text
+        )
+        assert box.count("feminine slight") == 1, "the identity is being prepended again"
+    assert box == first, "an untouched box drifted across re-pricing"
+
+
+def test_switching_format_leaves_an_untouched_prompt_free_to_follow_it(client, song, two_faces):
+    """A pinned prompt is how a plan comes to disagree with its own heading: the card said
+    Direct address, priced a direct address, and sent a performance clip."""
+    params = {"video_count": 1, "faces_chosen": 1, "identity_names": ""}
+    box = _box(_generate(client, song, two_faces, recipe_slug="performance", **params).text)
+    assert "performance clip" in box.lower()
+
+    switched = _box(
+        _generate(
+            client, song, two_faces,
+            recipe_slug="direct-address", line="See you at the Bowl on the 15th",
+            prompt_0=box, sent_prompt_0=box, **params,
+        ).text
+    )
+
+    assert "See you at the Bowl on the 15th" in switched
+    assert "performance clip" not in switched.lower()
+
+
+def test_an_edited_prompt_is_sent_exactly_as_typed(client, container, principal, song, two_faces):
+    """The other half: a real edit still wins, and is not composed a second time.
+
+    The box was showing the identity when it was typed into, so the string coming back
+    already opens with it. Prepending again is what produced the duplication.
+    """
+    mine = "Static wide shot of an empty Miami balcony at dusk, no camera movement"
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1,
+        identity_names=[""], overrides={0: {"prompt": mine}},
+    )
+
+    assert plan.shots[0].prompt == mine
+
+
+def test_an_edit_does_not_follow_its_position_into_a_different_shot(
+    container, principal, song, two_faces
+):
+    """Index 1 of a two-clip performance brief and index 1 of a direct address with a
+    voice-over are not the same shot, and the second one is read aloud.
+
+    An override that survived the switch had ElevenLabs speaking "Cinematic vertical
+    performance clip … slow push in" in the artist's voice, which is audible only after
+    delivery.
+    """
+    from remixkit.ports.generator import position_key
+
+    stale = "Cinematic vertical performance clip, medium shot, slow push in"
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1,
+        recipe_slug="direct-address", line="Hello everyone",
+        tts_text="See you at the Bowl on the 15th",
+        overrides={1: {"prompt": stale, "position_key": position_key(Modality.VIDEO, "performance")}},
+    )
+
+    spoken = [step for step in plan.shots if step.modality is Modality.AUDIO]
+    assert spoken, "the brief asked for a voice-over"
+    assert stale not in spoken[0].prompt, "a camera direction would have been read aloud"
+    assert "See you at the Bowl on the 15th" in spoken[0].prompt
+
+
+def test_an_edit_still_applies_when_the_position_still_means_the_same_thing(
+    container, principal, song, two_faces
+):
+    """The guard drops edits that no longer fit; it must not drop the ones that do."""
+    from remixkit.ports.generator import position_key
+
+    mine = "Static wide shot of an empty Miami balcony at dusk"
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="performance",
+        overrides={0: {"prompt": mine, "position_key": position_key(Modality.VIDEO, "performance")}},
+    )
+
+    assert plan.shots[0].prompt == mine
+
+
+def test_queueing_an_untouched_plan_stores_no_prompt_overrides(
+    client, container, principal, song, two_faces
+):
+    """The button posts the priced form itself, so it carries the prefilled boxes too — and
+    a brief that records them has frozen the prompt for the worker as well as the screen."""
+    plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1, identity_names=[""])
+    sent = plan.shots[0].prompt
+
+    client.post(
+        "/ui/kits",
+        data={"song_id": song.id, "artist_id": two_faces.id, "video_count": "1",
+              "faces_chosen": "1", "identity_names": "",
+              "prompt_0": sent, "sent_prompt_0": sent,
+              "position_key_0": plan.shots[0].position_key},
+    )
+    kit = container.kits.list(principal)[0]
+
+    assert kit.brief["shot_overrides"] == []
+
+
+# ---------------------------------------------------------- who is in the kit
+def test_the_screen_says_when_no_face_is_ticked(client, song, two_faces):
+    """The pagebar used to describe the artist's newest identity whatever the picker said,
+    so a kit with every box cleared read "v1 · 5 frames · face conditioned" over a plan
+    whose every shot said the face was not going."""
+    page = _generate(client, song, two_faces, video_count=1, faces_chosen=1).text
+
+    assert "none ticked" in page
+    assert "render a stranger" in page, "the format selected is one about the artist"
+    assert "face conditioned" not in page
+
+
+def test_the_screen_names_the_face_the_plan_is_actually_for(client, song, two_faces):
+    page = _generate(
+        client, song, two_faces, video_count=1, faces_chosen=1, identity_names="Marco"
+    ).text
+
+    assert "Marco" in page
+    assert "none ticked" not in page

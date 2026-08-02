@@ -22,6 +22,18 @@ class ShotSpec:
 
     modality: Modality
     prompt: str
+    # Whether `prompt` is already the whole string a provider receives.
+    #
+    # A prompt that came back off the preview screen was *shown* composed — identity
+    # first, then the shot — because the box's entire claim is that it holds what will be
+    # sent. Composing it a second time prepends the identity to a string that already
+    # opens with it, and the duplication compounds: the screen re-prices on every
+    # keystroke and round-trips the box each time, so a plan touched four times reached
+    # the provider with the silhouette in it four times.
+    #
+    # Set by `briefs.apply_overrides` and nowhere else. A prompt the planner wrote is
+    # composed; a prompt a person edited is final.
+    prompt_verbatim: bool = False
     seconds: float | None = None
     aspect_ratio: str = "9:16"
     model: str | None = None  # None → the adapter's configured default for this modality
@@ -132,6 +144,25 @@ def still_digest(identities: list[Identity], prompt: str) -> str:
     return hashlib.sha256(material.encode()).hexdigest()[:32]
 
 
+def position_key(modality: Modality, recipe_slug: str | None) -> str:
+    """What a per-shot edit was written *against*, beyond its position in the plan.
+
+    Overrides are keyed by index, which holds only while the plan keeps its shape. Changing
+    format re-deals the whole list: with "Performance clip" at a count of two, index 1 is a
+    second cinematic loop; switch to "Direct address" with a voice-over and index 1 is the
+    spoken line. The rewritten video prompt then landed on the TTS shot, and ElevenLabs was
+    asked to read "Cinematic vertical performance clip … slow push in" out loud in the
+    artist's voice — a real kit, bought, and the failure is only audible after delivery.
+
+    So an edit carries the format and modality of the shot it was made on, and is dropped
+    rather than applied when the position no longer means the same thing. Dropping is the
+    same call `apply_overrides` already makes for an index that has gone away entirely, for
+    the same reason: losing an edit is visible on a screen that shows every prompt, and
+    silently moving one onto a different shot is not.
+    """
+    return f"{recipe_slug or ''}:{modality.value}"
+
+
 @dataclass
 class PlannedShot:
     """One shot resolved to exactly what would go on the wire — without sending it.
@@ -199,6 +230,16 @@ class PlannedShot:
     @property
     def runs(self) -> bool:
         return self.skipped_reason is None
+
+    @property
+    def position_key(self) -> str:
+        """What this position currently means — see `position_key` above.
+
+        A property rather than the screen formatting the string itself, so the value the
+        console echoes into the form and the value `apply_overrides` compares it against
+        cannot drift into two spellings of the same idea.
+        """
+        return position_key(self.modality, self.recipe_slug)
 
     @property
     def duration_was_snapped(self) -> bool:

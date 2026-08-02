@@ -135,7 +135,17 @@ class GenblazeGenerator:
         deliberately empty centre frame does not become more templatable for being told
         what the artist's face is like — it becomes a portrait brief with a contradiction
         in it, which is a real way to spend 61 cents on the wrong picture.
+
+        A prompt somebody edited is not composed at all. The console shows the composed
+        string in the box precisely so that what is on screen is what goes on the wire, so
+        anything that comes back out of that box is already a whole prompt with the
+        identity at the front of it. Composing again prepends a second copy — and since
+        the screen round-trips the box on every re-price, the copies accumulate: a plan
+        edited four times reached Sora reading `feminine slight average build.` four times
+        before it got to the shot. See `ShotSpec.prompt_verbatim`.
         """
+        if shot is not None and getattr(shot, "prompt_verbatim", False):
+            return shot_prompt
         if shot is not None and getattr(shot, "suppress_identity_text", False):
             return shot_prompt
         parts: list[str] = []

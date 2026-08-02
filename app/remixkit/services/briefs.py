@@ -26,7 +26,7 @@ from remixkit.domain.models import (
     Recipe,
     Song,
 )
-from remixkit.ports.generator import ShotSpec
+from remixkit.ports.generator import ShotSpec, position_key
 
 # A spread, not a ranking. Named so the UI can show what it is about to buy.
 MOODS: list[tuple[str, str]] = [
@@ -295,6 +295,14 @@ def default_shot_plan(
 # change which provider runs and make the label meaningless.
 OVERRIDABLE = ("prompt", "model", "seconds", "identity_lock")
 
+# Not an override — the shape of the shot an override was written against, carried
+# alongside it so a position that has since come to mean something else can be told apart
+# from one that still means what it did. See `ports.generator.position_key`. Deliberately
+# outside `OVERRIDABLE`, so it neither reaches a `ShotSpec` field nor gets persisted into
+# the brief: by the time a kit is queued, the plan's shape is fixed by that brief and the
+# worker re-plans the same list from it.
+POSITION_KEY = "position_key"
+
 # Fields whose value is a yes/no rather than a string. They need their own coercion
 # because a checkbox that is simply *absent* when unticked cannot express "off" — absence
 # already means "use the default", and for a field that defaults to on those are opposite
@@ -337,6 +345,13 @@ def apply_overrides(
     neighbour. Silently moving somebody's rewritten prompt onto a different hook is worse
     than losing it, because losing it is visible on the screen that shows every prompt.
 
+    That rule was only half enforced: a position can also survive while ceasing to mean the
+    same thing. Switching format re-deals the list, and an edit made on index 1 of a
+    two-clip performance brief was applied to index 1 of a direct-address brief — the
+    voice-over — so a TTS provider was handed a video prompt to read aloud. An override that
+    arrives with a `position_key` is now checked against the shot standing there, and
+    dropped on a mismatch for the same reason a vanished index is.
+
     An empty or whitespace-only value is not an override — it is a field somebody cleared,
     and the default belongs back in it.
     """
@@ -347,6 +362,9 @@ def apply_overrides(
         if not 0 <= index < len(shots):
             continue
         shot = shots[index]
+        expected = edits.get(POSITION_KEY)
+        if expected and expected != position_key(shot.modality, shot.recipe_slug):
+            continue
         for field_name in OVERRIDABLE:
             if field_name not in edits:
                 continue
@@ -372,4 +390,8 @@ def apply_overrides(
                 except (TypeError, ValueError):
                     continue
             setattr(shot, field_name, value)
+            if field_name == "prompt":
+                # What a person typed is the finished string, not a fragment to prepend the
+                # identity to — the box they typed it in was showing the composed prompt.
+                shot.prompt_verbatim = True
     return shots

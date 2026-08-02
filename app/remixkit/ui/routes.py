@@ -55,7 +55,7 @@ from remixkit.domain.models import (
     SectionRole,
 )
 from remixkit.adapters import scoring as scoring_mux
-from remixkit.services.briefs import hook_windows
+from remixkit.services.briefs import OVERRIDABLE, POSITION_KEY, hook_windows
 from remixkit.services.recipes import DEFAULT_SLUG
 from remixkit.services.errors import Conflict, ServiceError
 from remixkit.ui import events
@@ -457,6 +457,11 @@ def identity_page(
 # round trip through both without a serialiser is worth preferring here.
 _OVERRIDE_FIELD = re.compile(r"^(prompt|model|seconds|identity_lock)_(\d+)$")
 
+# What the screen was showing when the form was submitted, echoed back beside each edit.
+# Not values a person set — the server's own last answer, returned so this handler can tell
+# an edit from a field it filled in itself. See `_shot_overrides`.
+_ECHO_FIELD = re.compile(r"^(sent_prompt|position_key)_(\d+)$")
+
 
 def _optional_int(raw: str) -> int | None:
     """An empty number field is "not set", not a parse error.
@@ -511,7 +516,36 @@ def _shot_overrides(params: Any) -> dict[int, dict]:
     `briefs.apply_overrides` (which clamps a length and drops an index that no longer
     exists). A malformed index is not an error worth a 422 on a screen whose job is to
     show a price.
+
+    **A prefilled field is not an edit.** The prompt box is rendered holding the composed
+    prompt, because a preview you cannot correct is one that only tells you afterwards —
+    but that made every submission carry a prompt, so every submission looked like a
+    rewrite. The consequences were not cosmetic: the plan re-prices on every keystroke,
+    and each round trip pinned the current text as an override, so the prompt stopped
+    tracking the brief. Changing format left the old format's prompt on the wire under
+    the new format's name and price, and the identity fragment — which the box shows and
+    the composer prepends — accumulated one copy per round trip.
+
+    So the box's rendered value rides back with it as `sent_prompt_N`, and a `prompt_N`
+    equal to it is what the server itself put there: not an override, and the shot keeps
+    planning from the brief. This is dirty-tracking done on the server, which is the only
+    side that knows what it rendered; doing it in the browser would put a second opinion
+    about the plan on the one screen whose argument is that there is only one.
+
+    `position_key_N` rides along for `apply_overrides` — what the shot at that index was
+    when the edit was made. Compared there rather than here because this function has the
+    form and that one has the plan.
     """
+    echoed: dict[int, dict[str, str]] = {}
+    for key in params.keys():
+        match = _ECHO_FIELD.match(key)
+        if not match:
+            continue
+        field_name, raw_index = match.groups()
+        value = params[key]
+        if isinstance(value, str):
+            echoed.setdefault(int(raw_index), {})[field_name] = value
+
     out: dict[int, dict] = {}
     for key in params.keys():
         match = _OVERRIDE_FIELD.match(key)
@@ -521,8 +555,24 @@ def _shot_overrides(params: Any) -> dict[int, dict]:
         value = params[key]
         if isinstance(value, str) and not value.strip():
             continue
-        out.setdefault(int(raw_index), {})[field_name] = value
-    return out
+        index = int(raw_index)
+        echo = echoed.get(index, {}).get("sent_prompt")
+        if (
+            field_name == "prompt"
+            and isinstance(value, str)
+            and echo is not None
+            and value.strip() == echo.strip()
+        ):
+            continue
+        out.setdefault(index, {})[field_name] = value
+
+    for index, edits in out.items():
+        key = echoed.get(index, {}).get("position_key")
+        if key:
+            edits[POSITION_KEY] = key
+    # An entry carrying only the echo is not an override, and storing one would write a
+    # bare `{"index": 0}` into every brief.
+    return {i: e for i, e in out.items() if any(f in e for f in OVERRIDABLE)}
 
 
 @router.get("/console/artists/{artist_id}/songs/{song_id}/generate", response_class=HTMLResponse)
@@ -560,7 +610,6 @@ def generate_page(
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
-    identity = identities.current(principal, artist_id)
     count, count_field = _count_field(video_count, high=8)
     # Same filter the kit service applies, for the same reason: a section deleted between
     # loading this page and pricing it must not show up in the plan as a window.
@@ -579,6 +628,14 @@ def generate_page(
     # either case. `faces_chosen` is the marker that tells them apart. It cannot be the
     # empty string in `identity_names`, because that is the primary line's real name.
     faces = list(identity_names) if faces_chosen else None
+    # The faces this plan is actually for, resolved the same way the plan resolves them.
+    #
+    # The screen used to describe `identities.current(...)` — the artist's newest primary
+    # face — under a heading that read like a statement about the run. So a kit with every
+    # box cleared showed "Identity v1 · 5 frames · face conditioned" in the pagebar while
+    # every shot below it said "no identity — this shot will not hold a face", and the
+    # louder of the two was the one that was wrong.
+    plan_identities = identities.select(principal, artist.id, faces)
 
     plan, shots = kits.plan(
         principal,
@@ -600,7 +657,11 @@ def generate_page(
         nav_song=song,
         artist=artist,
         song=song,
-        identity=identity,
+        # No `identity`. This screen asked for the artist's newest primary face and then
+        # described it as though it were a fact about the run — which it stops being the
+        # moment the picker is touched. `plan_identities` is the same question asked of the
+        # plan, and it is the only one the screen has any business answering.
+        plan_identities=plan_identities,
         shots=shots,
         plan=plan,
         overrides=overrides,

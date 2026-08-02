@@ -75,6 +75,24 @@ def create_app() -> FastAPI:
     app.include_router(api_router)
     app.include_router(ui_router)
 
+    @app.middleware("http")
+    async def _one_snapshot_per_request(request: Request, call_next):
+        """Read each document once per request, however many times it is asked for.
+
+        B2 bills transactions rather than bytes — 2,500 Class B a day before it refuses —
+        so what a page costs is the number of documents it touches. The console was
+        touching several of them twice: the nav resolves the roster, the body resolves it
+        again, a panel resolves it a third time, and every one of those was a paid read of
+        bytes already in memory. On the artist page it was every document, exactly twice.
+
+        The boundary is the request because that is where it is also *correct*: a response
+        whose nav disagrees with its body about a song's title is a bug, not a saving.
+        Nothing survives the response, so a write lands on the next page load with no
+        invalidation to get wrong.
+        """
+        with get_container().repo.request_scope():
+            return await call_next(request)
+
     @app.exception_handler(ServiceError)
     async def _service_error(request: Request, exc: ServiceError):
         """A refusal is not a 500. JSON clients get a body; htmx callers get the

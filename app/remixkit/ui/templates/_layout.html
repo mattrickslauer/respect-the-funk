@@ -18,12 +18,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}RemixKit — artist console{% endblock %}</title>
-{# Before the stylesheet and before first paint, deliberately. The rail's collapsed state
-   is a preference that has to survive navigation, and this console is server-rendered —
-   so without this the rail would render open and snap shut on every page load, which is
-   the flash this three-line script exists to prevent. It is the second script in the
-   console and it earns its place the same way the first one does. #}
-<script>try{document.documentElement.dataset.nav=localStorage.getItem("rk-nav")||"open"}catch(e){}</script>
+{# Before the stylesheet and before first paint, deliberately. How much of the rail is
+   showing — collapsed to a strip, and which of its sections are folded shut — is a
+   preference that has to survive navigation, and this console is server-rendered, so
+   without this the rail would render open and snap shut on every page load. That flash is
+   what these two lines exist to prevent, and it is why both states are written onto
+   `<html>` rather than onto the rail: nothing here has been parsed yet, and the rail is
+   re-rendered out-of-band on every mutation besides. `rk-nav-shut` is a space-separated
+   list of section keys, stored in exactly the form the attribute selectors read it in
+   (see console.css) so that neither side has to parse anything. #}
+<script>try{var d=document.documentElement,s=localStorage;
+d.dataset.nav=s.getItem("rk-nav")||"open";
+d.dataset.navShut=s.getItem("rk-nav-shut")||""}catch(e){}</script>
 <script src="/static/htmx.min.js" defer></script>
 <link rel="stylesheet" href="/static/console.css">
 </head>
@@ -114,13 +120,27 @@
 
 {# The console's whole client-side budget, in one place.
 
-   Two behaviours, both of which the platform will not do for us: remembering whether the
-   rail is collapsed, and opening whatever htmx has just swapped into `#layer` as a real
-   modal. Everything structural about that modal — focus trapping, Escape, inertness,
-   the top layer — belongs to <dialog>, because it already does all four correctly and a
-   hand-rolled version of any of them is a bug waiting. #}
+   Three behaviours, none of which the platform will do for us: remembering whether the
+   rail is collapsed, remembering which of its sections are folded shut, and opening
+   whatever htmx has just swapped into `#layer` as a real modal. Everything structural
+   about that modal — focus trapping, Escape, inertness, the top layer — belongs to
+   <dialog>, because it already does all four correctly and a hand-rolled version of any
+   of them is a bug waiting. #}
 <script>
 document.addEventListener("click", (e) => {
+  // One section of the rail folding. The visible state is CSS keyed off `<html>`, so all
+  // this does is edit a word list, persist it, and put the buttons' `aria-expanded` back
+  // in step with it — see components/_sidebar.html.
+  const section = e.target.closest("[data-sec-toggle]");
+  if (section) {
+    const root = document.documentElement;
+    const shut = new Set((root.dataset.navShut || "").split(" ").filter(Boolean));
+    const key = section.dataset.secToggle;
+    shut.has(key) ? shut.delete(key) : shut.add(key);
+    root.dataset.navShut = [...shut].join(" ");
+    try { localStorage.setItem("rk-nav-shut", root.dataset.navShut); } catch (err) {}
+    syncSections();
+  }
   if (e.target.closest("[data-nav-toggle]")) {
     const root = document.documentElement;
     const open = root.dataset.nav !== "collapsed";
@@ -136,6 +156,22 @@ document.addEventListener("click", (e) => {
   // clicks whose target is the dialog element itself are clicks on the backdrop around
   // it — which is what makes this a hit test rather than a coordinate comparison.
   if (e.target.matches("dialog.overlay")) closeLayer();
+});
+
+// The server has no way of knowing what anybody has folded, so it renders every section
+// expanded and this says which of them are not. It runs on the rail it finds, whether that
+// is the one the document arrived with or the one an out-of-band swap has just replaced it
+// with — the *appearance* survives that swap by itself, being a rule on `<html>`, and this
+// is what stops the announced state from drifting away from it.
+function syncSections() {
+  const shut = new Set((document.documentElement.dataset.navShut || "").split(" ").filter(Boolean));
+  for (const button of document.querySelectorAll("[data-sec-toggle]")) {
+    button.setAttribute("aria-expanded", String(!shut.has(button.dataset.secToggle)));
+  }
+}
+syncSections();
+document.body.addEventListener("htmx:oobAfterSwap", (e) => {
+  if (e.target.id === "sidebar") syncSections();
 });
 
 function closeLayer() {

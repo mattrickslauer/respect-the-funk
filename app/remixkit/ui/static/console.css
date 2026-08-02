@@ -116,14 +116,13 @@ html[data-nav="collapsed"]{--rail-w:52px}
   box-shadow:inset 2px 0 0 var(--gold)}
 .navitem.is-on{color:var(--ink)}
 
-.navtree,.navbranch{list-style:none}
+.navtree,.navleaves{list-style:none}
 .navtree{margin:2px 0 8px}
 .navitem-artist{font-size:13px}
 /* Indented by a rule rather than by padding alone: at four levels the eye needs a line to
    follow, and the line is also what says the branch belongs to the artist above it. */
 .navbranch{margin:1px 0 5px 18px;border-left:1px solid var(--rule-2);padding-left:5px}
 .navitem-sub{font-size:12.5px;padding:4px 8px}
-.navitem-kits .count{margin-left:auto}
 .dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
 .dot-ok{background:var(--ok)}
 .dot-blocked{background:var(--err)}
@@ -133,6 +132,58 @@ html[data-nav="collapsed"]{--rail-w:52px}
 @keyframes dot-pulse{50%{opacity:0.35}}
 .navitem-more{color:var(--ink-3);font-style:italic}
 @media (prefers-reduced-motion:reduce){.dot-run{animation:none}}
+
+/* ---- sections that fold ----
+   Every part of the tree is a `.navgroup`: a head, and a `.navbody` under it that the
+   head folds away. Two shapes of head, because two of these are also somewhere you can
+   go — the roster and the open artist have a link in the row and a separate `.twisty`
+   beside it, and the ones that are only a label (Songs, Kits, Workspace) are a button
+   the whole width of the row. */
+.navhead{display:flex;align-items:center;gap:1px}
+.navhead>.navitem{flex:1;min-width:0}
+/* One glyph rotated, not two glyphs swapped: the shut state reads as a direction, and
+   there is no moment mid-transition where the rail shows a character that means nothing. */
+.twist{flex:none;width:11px;text-align:center;font-size:10.5px;line-height:1;color:var(--ink-3);
+  transition:transform 0.12s ease}
+.twisty{flex:none;display:flex;align-items:center;background:none;border:0;cursor:pointer;
+  padding:6px 3px;border-radius:4px;line-height:1}
+.twisty:hover{background:var(--panel)}
+.twisty:hover .twist,.navitem-group:hover .twist{color:var(--gold)}
+/* A label for the rows beneath it, so it is set like one: display face, small, spaced —
+   the same treatment `.eyebrow` gets for the same job on a page. */
+.navitem-group{width:100%;text-align:left;background:none;border:0;cursor:pointer;gap:5px;
+  font-family:var(--display);font-size:10.5px;letter-spacing:0.13em;text-transform:uppercase;
+  color:var(--ink-3);padding:6px 8px 6px 4px;margin-top:3px}
+.navitem-group:hover{background:var(--panel);color:var(--ink-2)}
+.navitem-group .count{font-size:10px;padding:0 6px;min-width:18px;letter-spacing:0}
+/* The leaves sit under their own head rather than under the artist's, so they need the
+   indent the head does not. */
+.navbody>.navleaves{padding-left:11px}
+
+/* Which sections are folded, keyed off `<html>` — see components/_sidebar.html for why
+   the state cannot live in the rail's own markup. Each key is named twice here, once for
+   the body it hides and once for the caret it turns, and a section added to the template
+   without being added here simply never folds.
+
+   Both lists are held above the width where the rail is a tree at all: below it the rail
+   is an icon strip whose sections have nothing in them to fold, and a Workspace somebody
+   folded shut on a laptop would otherwise reach a phone as an empty column. Same reason
+   the rail's own collapsed state stands the sections down — it is already showing the one
+   thing at this width that folding would take away. */
+@media (min-width:1001px){
+  html[data-nav-shut~="roster"]:not([data-nav="collapsed"]) .sidebar [data-sec="roster"]>.navbody,
+  html[data-nav-shut~="artist"]:not([data-nav="collapsed"]) .sidebar [data-sec="artist"]>.navbody,
+  html[data-nav-shut~="songs"]:not([data-nav="collapsed"]) .sidebar [data-sec="songs"]>.navbody,
+  html[data-nav-shut~="kits"]:not([data-nav="collapsed"]) .sidebar [data-sec="kits"]>.navbody,
+  html[data-nav-shut~="workspace"]:not([data-nav="collapsed"]) .sidebar [data-sec="workspace"]>.navbody{display:none}
+
+  html[data-nav-shut~="roster"] .sidebar [data-sec-toggle="roster"] .twist,
+  html[data-nav-shut~="artist"] .sidebar [data-sec-toggle="artist"] .twist,
+  html[data-nav-shut~="songs"] .sidebar [data-sec-toggle="songs"] .twist,
+  html[data-nav-shut~="kits"] .sidebar [data-sec-toggle="kits"] .twist,
+  html[data-nav-shut~="workspace"] .sidebar [data-sec-toggle="workspace"] .twist{transform:rotate(-90deg)}
+}
+@media (prefers-reduced-motion:reduce){.twist{transition:none}}
 
 /* What this process is, said once. It was a full-width banner above every page and a
    line at the foot of every rail, which is three copies counting the deployment screen. */
@@ -155,9 +206,15 @@ html[data-nav="collapsed"]{--rail-w:52px}
    the rail's private class names — `.count` is the badge on a tab strip and on a nav item
    alike — so collapsing the rail also stripped the counts off the song page's tabs, which
    is a page telling you less because a rail got narrower. */
+/* The section heads go with the tree: a twisty for something that is not on screen is a
+   control for nothing, and a group label with its four links reduced to icons is a word
+   in a strip that has no words in it. The Workspace links themselves stay — they are the
+   four icons this width exists to keep. */
 html[data-nav="collapsed"] .sidebar .brand-name,
 html[data-nav="collapsed"] .sidebar .navlabel,
-html[data-nav="collapsed"] .sidebar .navtree,
+html[data-nav="collapsed"] .sidebar [data-sec="roster"]>.navbody,
+html[data-nav="collapsed"] .sidebar .twisty,
+html[data-nav="collapsed"] .sidebar .navitem-group,
 html[data-nav="collapsed"] .sidebar .count,
 html[data-nav="collapsed"] .sidebar .envline,
 html[data-nav="collapsed"] .sidebar .whoami{display:none}
@@ -324,7 +381,8 @@ body.shell .frame{height:100dvh;overflow:hidden}
      tablet. The stored preference is left alone — this is the viewport overriding it for
      as long as the viewport is this size, not a change to what the person chose. */
   :root,html[data-nav="collapsed"]{--rail-w:52px}
-  .sidebar .brand-name,.sidebar .navlabel,.sidebar .navtree,
+  .sidebar .brand-name,.sidebar .navlabel,.sidebar [data-sec="roster"]>.navbody,
+  .sidebar .twisty,.sidebar .navitem-group,
   .sidebar .count,.sidebar-foot .envline,.sidebar-foot .whoami{display:none}
   .sidebar-top{padding:0 6px;justify-content:center}
   .sidebar .navitem{justify-content:center;padding:8px 0}

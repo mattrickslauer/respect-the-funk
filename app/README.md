@@ -341,6 +341,29 @@ spends the same 2,500 daily transactions the deployed app needs, and when they r
 every read 403s for everybody at once — including whoever you are showing the app to. A
 separate dev bucket would not help. A different backend does.
 
+Local storage costs nothing and shows nothing, though — every artist, song, identity and
+kit lives in the bucket, so a laptop pointed at a directory starts with an empty catalogue.
+`remixkit.tools.sync_from_b2` closes that gap by paying for the tenant **once**:
+
+```
+python -m remixkit.tools.sync_from_b2 --dry-run          # what it would cost, reads nothing
+python -m remixkit.tools.sync_from_b2                    # the catalogue
+python -m remixkit.tools.sync_from_b2 --media            # ...plus frames and masters
+python -m remixkit.tools.sync_from_b2 --media --runs     # ...plus generated output
+```
+
+Measured against this bucket: **15** objects for the catalogue, **20** with media, **33**
+with run output. A console page costs about 25 reads, so the entire tenant is cheaper to
+copy once than to browse twice — and after it, nothing is spent again.
+
+It is one-way and stays that way. This reads B2 and writes local disk, never the reverse:
+the local copy is a working convenience, not a replica, and if it diverges the answer is to
+delete the directory and run it again. Anything that made a laptop a candidate for upload
+would turn dev into a way to corrupt production, which is far worse than an empty console.
+Re-runs skip what is already local, so adding one song costs one read, and an object that
+cannot be read is logged and stepped over rather than aborting the other forty-four —
+a cap reached mid-sync is the likeliest failure, and the run resumes.
+
 So `RK_STORAGE_BACKEND` defaults to `local` and the startup banner names it when a dev
 process is pointed at B2 anyway:
 

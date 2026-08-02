@@ -287,36 +287,63 @@ def test_every_default_video_model_can_render_a_default_loop():
 
 # ------------------------------------------------------- Sora's input_reference
 #
-# The API stopped accepting the file form the connector sends:
+# Three rejections, in order, because each refuted the fix before it.
 #
-#     Step 1 (openai-sora/sora-2): Sora submit failed: Error code: 400 - {'error':
-#     {'message': "Invalid type for 'input_reference': expected an object, but got a
-#     file instead.", 'param': 'input_reference', 'code': 'invalid_type'}}
+#   1. The connector uploads the frame as a file, and the server refused it:
+#        Invalid type for 'input_reference': expected an object, but got a file instead.
+#   2. Sending the object through `videos.create()` was refused by the SDK, before any
+#      request went out:
+#        Expected entry at `input_reference` to be bytes, an io.IOBase instance, PathLike
+#        or a tuple but received <class 'dict'> instead.
+#   3. Which is not a contradiction. `POST /v1/videos` declares exactly one request content
+#      type — multipart/form-data — and `input_reference` as `anyOf[binary, ImageRefParam]`.
+#      The object is a multipart *field*, and the typed method only implements the file
+#      half of its own union.
 #
-# `openai` 2.52.0 types the parameter as `Union[FileTypes, ImageInputReferenceParam]`,
-# and the server now honours only the object arm.
+# So these assert on the bytes that reach the wire rather than on what a stub was handed.
+# A test against a fake client passed for every one of the three shapes above.
 
 
 @pytest.fixture
 def sora():
     """The corrected provider, with no client and no credential."""
-    openai_sdk = pytest.importorskip("genblaze_openai")
+    pytest.importorskip("genblaze_openai")
+    import genblaze_openai
+
     from remixkit.adapters import pricing
     from remixkit.adapters.provider_sora import sora_provider_class
 
     cls = sora_provider_class()
-    return cls(models=pricing.priced_registry(openai_sdk.SoraProvider))
+    return cls(models=pricing.priced_registry(genblaze_openai.SoraProvider))
 
 
-class _Videos:
-    """Records what `videos.create` was called with."""
+@pytest.fixture
+def wire(sora, monkeypatch):
+    """Install a real `openai.OpenAI` whose transport records the request it would send.
 
-    def __init__(self):
-        self.params: dict = {}
+    Real client, real serializer, fake socket — so the multipart encoding under test is
+    the SDK's own rather than this file's idea of it.
+    """
+    import httpx
+    import openai
 
-    def create(self, **params):
-        self.params = params
-        return type("Response", (), {"id": "video_123"})()
+    sent: list = []
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "video_123", "created_at": 0, "model": "sora-2", "object": "video",
+                "progress": 0, "seconds": "8", "size": "720x1280", "status": "queued",
+            },
+        )
+
+    client = openai.OpenAI(
+        api_key="sk-test", http_client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    monkeypatch.setattr(sora, "_get_client", lambda: client)
+    return sent
 
 
 def _asset(url):
@@ -335,52 +362,74 @@ def _step(model="sora-2", prompt="a portrait", **params):
     )
 
 
-def test_a_url_reference_is_sent_as_an_object_not_a_file(sora, monkeypatch):
-    """The 400, in one assertion: an object, and never an open file."""
-    videos = _Videos()
-    monkeypatch.setattr(
-        sora, "_get_client", lambda: type("Client", (), {"videos": videos})()
-    )
+def _body(request):
+    return request.content.decode("utf-8", "replace")
 
-    step = _step()
+
+def test_a_url_reference_travels_as_a_multipart_field_not_a_file(sora, wire):
+    """All three rejections in one assertion: multipart transport, object shape, and a
+    field rather than an upload."""
+    step = _step(seconds=8, size="720x1280")
     step.inputs = [_asset("https://b2/still.png")]
+
     assert sora.submit(step) == "video_123"
 
-    reference = videos.params["input_reference"]
-    assert reference == {"image_url": "https://b2/still.png"}
-    assert not hasattr(reference, "read"), "a file handle is what the API refused"
+    request = wire[0]
+    assert request.headers["content-type"].startswith("multipart/form-data")
+    body = _body(request)
+    assert 'name="input_reference[image_url]"' in body
+    assert "https://b2/still.png" in body
+    assert "filename=" not in body, "an upload is what the server refused"
 
 
-def test_a_chained_still_is_inlined_because_it_has_no_address_yet(sora, monkeypatch, tmp_path):
+def test_a_chained_still_is_inlined_because_it_has_no_address_yet(sora, wire, tmp_path, monkeypatch):
     """A chain input is the previous step's output before the sink has uploaded it — a
     local path, so there is no URL to hand OpenAI and the bytes travel instead."""
     still = tmp_path / "still.png"
     still.write_bytes(b"\x89PNG\r\n\x1a\nnot-really-a-png")
     monkeypatch.setattr(sora, "_output_dir", tmp_path)
 
-    reference = sora._input_reference(still.as_uri())
+    step = _step()
+    step.inputs = [_asset(still.as_uri())]
+    assert sora.submit(step) == "video_123"
 
-    assert reference["image_url"].startswith("data:image/png;base64,")
-    encoded = reference["image_url"].split(",", 1)[1]
+    body = _body(wire[0])
+    assert 'name="input_reference[image_url]"' in body
+    prefix = "data:image/png;base64,"
+    assert prefix in body
+    encoded = body.split(prefix, 1)[1].split("\r\n", 1)[0]
     assert base64.b64decode(encoded) == still.read_bytes()
 
 
-def test_a_shot_with_no_reference_sends_no_reference(sora, monkeypatch):
-    """Sora renders unlocked shots too, and a missing face is the plan screen's refusal
-    to make rather than a 400 raised with the run half spent."""
-    videos = _Videos()
-    monkeypatch.setattr(
-        sora, "_get_client", lambda: type("Client", (), {"videos": videos})()
-    )
+def test_a_reference_too_large_to_send_is_refused_by_name(sora, tmp_path, monkeypatch):
+    """`ImageRefParam.image_url` is capped at 20MiB, and base64 costs a third on top of a
+    photograph. A refusal naming the frame beats a 400 naming a field."""
+    from genblaze_core.exceptions import ProviderError
 
+    from remixkit.adapters import provider_sora
+
+    monkeypatch.setattr(provider_sora, "MAX_IMAGE_URL", 32)
+    still = tmp_path / "still.png"
+    still.write_bytes(b"x" * 4096)
+    monkeypatch.setattr(sora, "_output_dir", tmp_path)
+
+    with pytest.raises(ProviderError, match="over the"):
+        sora._input_reference(still.as_uri())
+
+
+def test_a_shot_with_no_reference_stays_on_the_connectors_typed_path(sora, wire):
+    """Sora renders unlocked shots too. Nothing to correct means nothing overridden, and a
+    missing face is the plan screen's refusal to make rather than a 400 with the run half
+    spent."""
     assert sora.submit(_step()) == "video_123"
-    assert "input_reference" not in videos.params
+
+    body = _body(wire[0])
+    assert "input_reference" not in body
 
 
 def test_the_correction_keeps_the_name_the_rest_of_the_table_looks_up(sora):
-    """Two lookups key on the class name — `DEFAULT_MODELS` for the video model and
-    `vendor_of` for which vendor answered — so renaming the subclass would silently cost
-    Sora its default model and its vendor."""
+    """Two lookups key on the class name — the default video model and which vendor
+    answered — so renaming the subclass would silently cost Sora both."""
     assert type(sora).__name__ == "SoraProvider"
     assert providers.vendor_of(sora) == "openai"
-    assert providers.DEFAULT_MODELS[type(sora).__name__][Modality.VIDEO] == "sora-2"
+    assert providers.default_model(sora, Modality.VIDEO) == "sora-2"

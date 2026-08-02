@@ -15,6 +15,7 @@ from urllib.parse import quote
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from genblaze_core.exceptions import StorageError
 
 from remixkit.api.v1 import router as api_router
 from remixkit.auth.provider import AuthError
@@ -25,6 +26,7 @@ from remixkit.settings import get_settings
 from remixkit.ui.routes import CONSOLE_PATH, LOGIN_PATH, router as ui_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("remixkit")
 
 STATIC_DIR = Path(__file__).parent / "ui" / "static"
 
@@ -78,6 +80,27 @@ def create_app() -> FastAPI:
         """A refusal is not a 500. JSON clients get a body; htmx callers get the
         component the UI routes already render for them."""
         return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+
+    @app.exception_handler(StorageError)
+    async def _storage_error(request: Request, exc: StorageError):
+        """Storage failing is a 503, and it says so in the vendor's own words.
+
+        This handler exists because the alternative was tried in production: a B2 daily
+        cap made every read 403, the layers below read 403 as "no such object", and the
+        console reported that songs which were sitting in the bucket did not exist. The
+        catalogue took the blame for the storage, and the message that would have ended
+        the investigation in a minute — *"download bandwidth or transaction (Class B) cap
+        exceeded"* — was thrown away three frames down.
+
+        503 rather than 500 because nothing is broken: the bucket is refusing to answer
+        right now, and that is a condition with a clock on it. `str(exc)` carries B2's own
+        sentence, which is the only part of this anybody can act on.
+        """
+        log.warning("storage unavailable (%s): %s", exc.error_code, exc)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": f"Storage is not answering — {exc}"},
+        )
 
     @app.exception_handler(AuthError)
     async def _auth_error(request: Request, exc: AuthError) -> Response:

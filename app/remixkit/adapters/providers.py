@@ -249,12 +249,34 @@ REFERENCE_MODEL_CANDIDATES: dict[Modality, tuple[str, ...]] = {
 }
 
 
-# Models whose reference slot is an *array*, so several frames reach the wire rather than
-# one. Confirmed for Bria by GMI's own rejection naming `images` — see
-# `adapters/model_families`. This is the answer `RK_REFERENCE_SLOT` was holding out for on
-# these models, and unlike a guessed slug it came from the vendor.
-MULTI_REFERENCE: tuple[re.Pattern[str], ...] = (
-    re.compile(r"^bria-(?!genfill$|eraser$)", re.IGNORECASE),
+# How many reference images a model's slot actually holds, where the vendor has said.
+#
+# An array slot is not a multi-image slot, and reading it as one is what broke the run
+# this table was rewritten for. The first rejection said the *shape*:
+#
+#     bria-fibo-edit → 400: invalid payload parameters: images (Required parameter is
+#     missing)
+#
+# `images`, plural, so the payload carries a list — and the previous version of this table
+# inferred from the plural that the list could be long. The vendor answered that
+# separately, and it was the opposite:
+#
+#     bria-fibo-edit → 400: invalid payload parameters: images
+#     (Number of images 4 exceeds maximum allowed value 1)
+#
+# A JSON array with `maxItems: 1` is still a JSON array. The plural named the container,
+# never its capacity, and nothing about the first 400 licensed the second. So the count
+# gets its own entry here, quoted from the rejection that stated it, and a family with no
+# entry declares nothing rather than inheriting a neighbour's allowance.
+#
+# The number is a ceiling and not only a permission: it caps `RK_REFERENCE_MAX` too, since
+# an operator raising a limit cannot raise the vendor's, and a run that submits over it
+# dies at the provider having already spent the queue slot and the plate render.
+REFERENCE_LIMITS: tuple[tuple[re.Pattern[str], int], ...] = (
+    # The whole fibo edit family plus Bria's standalone utilities. One image, per the 400
+    # above. `genfill`/`eraser` keep the connector's own singular `image` slot and are
+    # excluded here for the same reason they are excluded from the family pattern.
+    (re.compile(r"^bria-(?!genfill$|eraser$)", re.IGNORECASE), 1),
 )
 
 
@@ -267,8 +289,27 @@ def requires_reference(model: str | None) -> bool:
     return honours_reference(model, Modality.IMAGE)
 
 
+def reference_limit(model: str | None) -> int | None:
+    """The most reference images this model will take, or `None` where nobody has said.
+
+    `None` is not "unlimited" and not "one" — it is the absence of evidence, and the two
+    callers read it differently on purpose. `_references_for` falls back to the deployment
+    default, which is one unless an operator has verified a slot; the plan screen says so
+    in words. What `None` must never do is grant a count, which is the whole distance
+    between this and the boolean it replaced.
+    """
+    if not model:
+        return None
+    for pattern, count in REFERENCE_LIMITS:
+        if pattern.search(model):
+            return count
+    return None
+
+
 def takes_multiple_references(model: str | None) -> bool:
-    return bool(model) and any(p.search(model) for p in MULTI_REFERENCE)
+    """Does this model's slot hold more than one frame — stated, not inferred."""
+    limit = reference_limit(model)
+    return limit is not None and limit > 1
 
 
 def honours_reference(model: str | None, modality: Modality = Modality.IMAGE) -> bool:

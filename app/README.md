@@ -518,9 +518,15 @@ The brief records every face by id *and* name, so "which member was this kit for
 readable without a lookup.
 
 **The plates are the limit, not the list.** Each face contributes one reference and the
-provider's slot count caps the total — so today a duo sends one plate and the plan row says
-`2 faces — 1 reference sent; set RK_REFERENCE_SLOT to send the rest`. A duo silently
-conditioned on one member is exactly the failure that must not be invisible.
+model's slot count caps the total — so today a duo sends one plate and the plan row says
+`2 faces — 1 reference sent`. A duo silently conditioned on one member is exactly the
+failure that must not be invisible.
+
+What follows that row is the *reason*, because only one of the two is actionable. An
+unstated slot count is a configuration question — `; set RK_REFERENCE_SLOT to send the
+rest`. A count the vendor has published is not — `; bria-fibo-edit takes 1`, and no setting
+will move it. Advising a knob that cannot change the number is worse than saying nothing:
+it gets set, the count is identical, and the row stops being believed.
 
 ### Both stages have to read the reference
 
@@ -620,10 +626,24 @@ So Bria's fibo family takes `images` as an **array**, and the connector ships a 
 `bria-genfill`/`bria-eraser` only. Registered on the same forked registry as the prices,
 checked before the connector's own, and never overriding a more specific shipped family.
 
-That array is also the multi-reference answer `RK_REFERENCE_SLOT` was waiting for on this
-model — a slot taking a list is a slot taking several references, which is what a likeness
-needs. So the reference count is a property of the *model*: `bria-fibo-edit` gets the whole
-classed set, `seededit-3-0-i2i-250628` gets one, whatever the setting says.
+The array's **length is a separate fact**, and reading it off the plural cost the next run.
+`images` was taken as the multi-reference answer `RK_REFERENCE_SLOT` had been waiting for,
+the classed set went out four frames wide, and the vendor said:
+
+```
+bria-fibo-edit -> 400: invalid payload parameters: images
+                       (Number of images 4 exceeds maximum allowed value 1)
+```
+
+`maxItems: 1`. An API states a container and its capacity separately, and only one of them
+had ever been stated to us — the plural named the key, never how much it holds.
+
+So the count is a property of the *model* and is quoted rather than derived:
+`providers.REFERENCE_LIMITS` carries it, the family's mapper trims to it, and it is a
+**ceiling before it is an allowance** — it caps `RK_REFERENCE_MAX` too, because an operator
+cannot raise a vendor's maximum and a request over it dies after the plate is rendered and
+the queue slot is spent. A model nobody has measured declares nothing and falls back to the
+deployment default rather than inheriting a neighbour's allowance.
 
 ### Live re-pricing
 
@@ -660,6 +680,11 @@ Set `RK_REFERENCE_SLOT` once you have checked the model's actual payload in GMI'
 catalogue. The whole classed plate set then goes, and the slot name and count are written
 into the step metadata, so a wrong guess is visible in the run's own record rather than
 only in a face that came back looking like someone else.
+
+It cannot exceed a limit the vendor has stated, though. `bria-fibo-edit` takes one image
+whatever this is set to — the setting says how many frames a deployment *wants* to send,
+never how many the model will accept, and the plan row names the model rather than this
+knob when the model is what capped the count.
 
 ### Formats
 

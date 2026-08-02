@@ -474,15 +474,25 @@ class GenblazeGenerator:
     def _references_for(self, model: str | None) -> int:
         """How many frames this particular model will actually take.
 
-        Per model rather than per deployment, because it is a property of the model. Bria's
-        fibo family declares an `images` array — confirmed by the vendor rejecting the
-        singular form — so the whole classed reference set can condition one still, which
-        is the strongest likeness signal available without training. A model with one
-        positional slot still gets one, whatever the setting says.
+        Per model rather than per deployment, because it is a property of the model — and
+        a *stated* property, since the only two things known about a slot come from the
+        vendor refusing something. Bria's `images` is an array (it rejected the singular
+        form) that holds exactly one (it rejected four). Both facts live in
+        `providers.REFERENCE_LIMITS`; neither was derivable from the other.
+
+        The declared count is a ceiling before it is an allowance. `RK_REFERENCE_MAX` is a
+        deployment's appetite and cannot exceed the model's capacity, so it is clamped
+        rather than trusted: an over-count is not a worse picture, it is a 400 raised after
+        the plate has been rendered and the queue slot spent. Where nobody has stated a
+        count, the deployment default stands — one, unless an operator has verified a slot.
         """
-        if provider_table.takes_multiple_references(model):
-            return self._reference_max
-        return self._reference_limit
+        declared = provider_table.reference_limit(model)
+        if declared is None:
+            return self._reference_limit
+        # A declared array grants the classed set; its declared maximum then caps it, and
+        # caps the operator's setting with it.
+        wanted = max(self._reference_limit, self._reference_max) if declared > 1 else declared
+        return min(wanted, declared)
 
     @staticmethod
     def _accepts_images(provider: Any) -> tuple[bool, str | None]:
@@ -623,7 +633,17 @@ class GenblazeGenerator:
                 f"{'' if len(plates) == 1 else 's'} sent"
             )
             if len(plates) < wanted:
-                note += "; set RK_REFERENCE_SLOT to send the rest"
+                # Which advice is true depends on *why* the rest stayed behind. A model
+                # whose capacity the vendor has stated cannot be talked into taking more,
+                # and telling an operator to set a knob that will not move the number is
+                # worse than saying nothing — they will set it, see the same count, and
+                # distrust the row. Only an unstated limit is a configuration question.
+                declared = provider_table.reference_limit(model)
+                note += (
+                    f"; {model} takes {declared}"
+                    if declared is not None and declared <= len(plates)
+                    else "; set RK_REFERENCE_SLOT to send the rest"
+                )
         elif len(plates) > 1:
             classes = ", ".join(p.angle.value for p in plates)
             note = f"identity v{identity.version} — {len(plates)} references ({classes})"

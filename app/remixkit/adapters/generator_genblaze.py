@@ -60,6 +60,8 @@ class GenblazeGenerator:
         max_run_cents: int = 0,
         reference_slot: str = "",
         reference_max: int = 4,
+        image_edit_model: str = "",
+        video_edit_model: str = "",
     ) -> None:
         self.name = f"genblaze:{backend}"
         self._storage = storage
@@ -69,6 +71,8 @@ class GenblazeGenerator:
         self._timeout = timeout_s
         self._max_concurrency = max_concurrency
         self._max_run_cents = max_run_cents
+        self._edit_model = (image_edit_model or "").strip()
+        self._video_edit_model = (video_edit_model or "").strip()
         self._reference_slot = (reference_slot or "").strip()
         self._reference_max = max(1, reference_max)
 
@@ -184,6 +188,37 @@ class GenblazeGenerator:
             negatives = ", ".join(seen)
 
             provider, model = self._resolve_model(table, shot)
+
+            # A shot that wants the face must run on a model that reads the reference.
+            #
+            # Refusing the plate here — which is what the first attempt at this did — is
+            # the wrong half of the fix. It makes the failure legible and still renders
+            # the picture: a portrait still went out on `seedream-5.0-lite` with no
+            # reference attached, and came back as the same stranger it had produced
+            # before, now with an explanation nobody was looking at. Swap the model
+            # instead, and refuse only when the vendor has nothing that would work.
+            #
+            # An explicit per-shot model is never swapped. Somebody who typed a model into
+            # the plan meant it, and silently running a different one would defeat the
+            # whole point of the field; the refusal note still says what it will cost them.
+            if (
+                shot.use_identity_plate
+                and not shot.model
+                and provider is not None
+                and not provider_table.honours_reference(model, shot.modality)
+            ):
+                swapped = provider_table.reference_model(
+                    provider,
+                    shot.modality,
+                    self._edit_model if shot.modality is Modality.IMAGE else self._video_edit_model,
+                )
+                if swapped:
+                    log.info(
+                        "shot %d: %s cannot read a reference — using %s to hold the face",
+                        index, model, swapped,
+                    )
+                    model = swapped
+
             rendered_seconds = provider_table.snap_duration(model, shot.seconds)
 
             params: dict[str, Any] = {}
@@ -192,14 +227,29 @@ class GenblazeGenerator:
             if shot.modality is not Modality.AUDIO:
                 params["aspect_ratio"] = shot.aspect_ratio
 
+            # Resolved before the refusal below, because one of the refusals depends on
+            # whether a reference was actually attached.
+            plates, plate_note = self._plates_for(shot, request, provider, model=model)
+
             if provider is None:
                 reason = f"no {shot.modality.value} provider is credentialed"
             elif not model:
                 reason = f"no model known for {shot.modality.value} on {type(provider).__name__}"
+            elif (
+                shot.modality is Modality.IMAGE
+                and provider_table.requires_reference(model)
+                and not plates
+            ):
+                # An edit model with nothing to edit is a 400, not a worse picture — Bria
+                # says so by name: `images (Required parameter is missing)`. Refusing here
+                # costs nothing; discovering it costs a queue slot, a worker and a wait.
+                reason = (
+                    f"{model} is an edit model and needs a reference image, and none is "
+                    f"attached ({plate_note or 'no reference'}) — add a reference frame, "
+                    "or choose a format that does not lock a face"
+                )
             else:
                 reason = None
-
-            plates, plate_note = self._plates_for(shot, request, provider, model=model)
 
             planned = PlannedShot(
                 index=index,
@@ -225,7 +275,18 @@ class GenblazeGenerator:
             # under the same rule as a plate — so a provider that refuses images refuses
             # the still too, and building one anyway would render and bill a frame whose
             # only consumer then kills the run.
-            if shot.identity_lock and planned.runs and self._accepts_images(provider)[0]:
+            # And the clip that consumes the still has to be able to read it. Locking a
+            # face into a frame and handing it to a text-to-video model spends the image
+            # call for nothing — which is exactly what `seedance-2-0-260128` did.
+            clip_reads = self._backend == "mock" or provider_table.honours_reference(
+                model, Modality.VIDEO
+            )
+            if (
+                shot.identity_lock
+                and planned.runs
+                and clip_reads
+                and self._accepts_images(provider)[0]
+            ):
                 planned.prelude, prelude_provider = self._identity_still(
                     shot, request, table, index
                 )
@@ -270,7 +331,7 @@ class GenblazeGenerator:
         # right build. `accepts_chain_input` is a provider capability and was true; it says
         # nothing about the model, and the model is what decides.
         model = provider_table.reference_model(
-            image_provider, Modality.IMAGE, self._models.get(Modality.IMAGE, "")
+            image_provider, Modality.IMAGE, self._edit_model
         )
         if not model:
             return None, None
@@ -280,7 +341,12 @@ class GenblazeGenerator:
         # image conditioning. How many actually reach the wire depends on the slot the
         # provider declares; see `_plate_assets`.
         plates, note = self._plates_for(
-            shot, request, image_provider, limit=self._reference_limit, model=model
+            shot,
+            request,
+            image_provider,
+            limit=self._references_for(model),
+            model=model,
+            modality=Modality.IMAGE,
         )
         if not plates:
             return None, None
@@ -393,6 +459,19 @@ class GenblazeGenerator:
         """
         return self._reference_max if self._reference_slot else 1
 
+    def _references_for(self, model: str | None) -> int:
+        """How many frames this particular model will actually take.
+
+        Per model rather than per deployment, because it is a property of the model. Bria's
+        fibo family declares an `images` array — confirmed by the vendor rejecting the
+        singular form — so the whole classed reference set can condition one still, which
+        is the strongest likeness signal available without training. A model with one
+        positional slot still gets one, whatever the setting says.
+        """
+        if provider_table.takes_multiple_references(model):
+            return self._reference_max
+        return self._reference_limit
+
     @staticmethod
     def _accepts_images(provider: Any) -> tuple[bool, str | None]:
         """Will this provider take an image input at all — from anywhere.
@@ -429,6 +508,7 @@ class GenblazeGenerator:
         *,
         limit: int | None = None,
         model: str | None = None,
+        modality: Any = None,
     ):
         """The artist's face, if this shot wants it and this provider will take it.
 
@@ -499,10 +579,24 @@ class GenblazeGenerator:
         # invisible in the output until you look at the face. A text-to-image model handed
         # a reference renders a stranger who matches the description — which costs the same
         # as a likeness and looks like one until somebody who knows the artist sees it.
-        if shot.modality is Modality.IMAGE and not provider_table.honours_reference(model):
+        # The modality of the *step that carries the reference*, which is not always the
+        # shot's own. A locked video shot hands its plate to the still in front of it, and
+        # reading `shot.modality` there says VIDEO — so the check silently never ran on the
+        # one step whose whole job is to resolve the likeness.
+        carrier = modality or shot.modality
+        # The mock is exempt for the same reason `reference_model` exempts it: it reads
+        # nothing and renders nothing, so it cannot mislead anybody about a likeness, and
+        # holding it to this check would make the entire locked path unreachable on a
+        # laptop — which is precisely the shape of gap that let this bug ship.
+        is_mock = provider_table.vendor_of(provider) == "mock"
+        if not is_mock and not provider_table.honours_reference(model, carrier):
+            setting = "RK_IMAGE_EDIT_MODEL" if carrier is Modality.IMAGE else "RK_VIDEO_EDIT_MODEL"
+            candidates = provider_table.REFERENCE_MODEL_CANDIDATES.get(carrier, ())
+            kind = "text-to-image" if carrier is Modality.IMAGE else "text-to-video"
             return [], (
-                f"{model} is text-to-image and would ignore the reference — "
-                "no likeness would be held"
+                f"{model} is {kind} and would discard the reference. "
+                f"Set {setting} to a model your account can reach "
+                f"(candidates: {', '.join(candidates[:2])}) — until then no likeness is held"
             )
 
         plate = plates[0]

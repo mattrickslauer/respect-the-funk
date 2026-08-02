@@ -139,6 +139,26 @@ class Settings(BaseSettings):
     # only after checking the model's actual payload in GMI's catalogue: a wrong key is
     # either a 400 or, worse, a kit that reports four references and was conditioned on
     # one. See `adapters/generator_genblaze._reference_limit`.
+    # The image-to-image model an identity-locking still is rendered with, e.g.
+    # "seededit-3-0-i2i-250628". Empty means the face is not conditioned on a reference at
+    # all, and the plan screen says so rather than a run failing.
+    #
+    # There is no default and there deliberately is not one. A hardcoded slug 404'd on a
+    # real account (`InvalidEndpointOrModel.NotFound`) because the value came from the
+    # connector's `example_slugs`, which its own docstring calls "documentation grade, not
+    # a contract" — and GMI media providers declare `DiscoverySupport.PARTIAL`, so there is
+    # no catalog endpoint to check a slug against. The only liveness test is the
+    # empty-payload probe, which is a billable generation and is off.
+    #
+    # Which models an account can reach is therefore a fact only the operator has. See
+    # `providers.REFERENCE_MODEL_CANDIDATES` for what to look for in the GMI console.
+    image_edit_model: str = ""
+    # The image-to-video model a locked clip runs on, e.g. "kling-o1-reference-to-video".
+    # The default video model matters here for the same reason: GMI's hub tags
+    # `seedance-2-0-260128` Text-to-Video only, so the still the lock paid to render is
+    # discarded by the clip that was supposed to inherit it.
+    video_edit_model: str = ""
+
     reference_slot: str = ""
     reference_max: int = 4
 

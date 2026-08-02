@@ -522,6 +522,35 @@ provider's slot count caps the total — so today a duo sends one plate and the 
 `2 faces — 1 reference sent; set RK_REFERENCE_SLOT to send the rest`. A duo silently
 conditioned on one member is exactly the failure that must not be invisible.
 
+### Both stages have to read the reference
+
+Two models sit between an artist's photograph and a finished clip, and **each one can
+silently discard it**. Getting the first right changed nothing until the second was too.
+
+| stage | GMI default | hub tags it | result |
+|---|---|---|---|
+| still | `seedream-5.0-lite` | Text-to-Image | reference ignored |
+| clip | `seedance-2-0-260128` | **Text-to-Video only** | the still is discarded |
+
+The second is the one that hid the first. The connector declares `first_frame`/`last_frame`
+for every `seedance-*` slug — true of the 1.x line, not of 2.0 — so the lock rendered a
+frame, paid for it, and handed it to a model that throws it away.
+
+Set both, from GMI's Model Hub rather than from any list in this repo:
+
+```
+RK_IMAGE_EDIT_MODEL=bria-fibo-edit                  # or gpt-image-2-edit, seededit-3-0-i2i-250628
+RK_VIDEO_EDIT_MODEL=kling-o1-reference-to-video     # or kling-o1-image-to-video, vidu-q2-pro-i2v
+```
+
+`kling-o1-reference-to-video` is the one shaped for this problem — reference-to-video
+rather than animate-this-frame. `GMI-MiniMeTalks-Workflow` ($0.02, Image-to-Video) is worth
+trying for a talking head specifically.
+
+Unset, the plan screen names the missing setting and says no likeness is held. Nothing is
+guessed: a hardcoded slug 404'd once already, and GMI declares `DiscoverySupport.PARTIAL`
+so there is no catalog endpoint to check one against.
+
 ### Accepting a reference and reading one
 
 `GMICloudImageProvider` declares `accepts_chain_input=True`, so the capability gate passes
@@ -538,16 +567,78 @@ answers no**, which is the safe direction: a model wrongly treated as image-capa
 a plausible stranger and bills for it, where one wrongly treated as text-only produces a
 refusal on the plan screen that somebody can act on.
 
-An identity-locking still is therefore rendered with `providers.reference_model()`, which
-swaps GMI's text-to-image default for `seededit-3-0-i2i-250628`. A vendor with no
-image-to-image model at all — Imagen, today — returns `None`, and the lock is refused
-rather than rendering something with no likeness in it.
+**Any shot that wants the face swaps the model; it does not drop the reference.** That
+distinction is the difference between the first attempt at this fix and the one that works.
+Refusing the plate made the failure legible and still rendered the picture — a portrait
+still went out on `seedream-5.0-lite` with no reference attached and came back as the same
+stranger it had produced before, now with an explanation nobody was reading.
+`providers.reference_model()` swaps to **`RK_IMAGE_EDIT_MODEL`**, and there is no default.
+
+That absence is the correction to a second mistake. `seededit-3-0-i2i-250628` was hardcoded
+here and 404'd on a real account — `InvalidEndpointOrModel.NotFound` — because the slug came
+from the connector's `example_slugs`, which its own docstring calls *"documentation grade,
+not a contract"*. GMI media providers declare `DiscoverySupport.PARTIAL`: there is no
+catalog endpoint to check a slug against, and the only liveness test is the empty-payload
+probe, which is a billable generation and is off. Which image-to-image models an account
+can reach is a fact only the operator has, so guessing again would just move the 404.
+
+`providers.REFERENCE_MODEL_CANDIDATES` lists what to look for in the GMI console. Until the
+variable is set, the plan screen says the reference will not be held and names the setting
+— a refusal before the button rather than a failed run.
+
+An explicitly pinned per-shot model is never swapped: somebody who typed a model into the
+plan meant it, and silently running a different one would defeat the field. The refusal
+note still says what it costs them.
+
+The check reads the modality of the *step carrying the reference*, not the shot's own. A
+locked video shot hands its plate to the still in front of it, so reading `shot.modality`
+there says VIDEO — and the check silently never ran on the one step whose entire job is to
+resolve the likeness.
 
 **`seededit-3-0-i2i-250628` is unpriced**, so it estimates at the unknown-model rate of
 $2.00/call. That is deliberate and it bites: three locked clips quote at 783¢ and are
 refused by the 500¢ `RK_MAX_RUN_CENTS` ceiling. Reconcile the real rate against a GMI
 invoice and register it in `adapters/pricing.PRICE_BOOK` — the same discipline every other
 model in that table went through. Until then, the refusal is the system working.
+
+### Payload shapes the connector does not ship
+
+Genblaze routes input assets per model family, and a model with no matching family falls
+through to a permissive fallback emitting `{"image": <url>}`. When the vendor wants
+something else the request is rejected — or accepted and ignored.
+
+`adapters/model_families.py` corrects those, and every entry is **evidence rather than
+inference**. That distinction is why the module exists: two earlier attempts guessed a slug
+and a slot name from the connector's `example_slugs` and both failed in production. A
+rejection that names the missing parameter cannot be wrong about it.
+
+```
+bria-fibo-edit -> 400: invalid payload parameters: images (Required parameter is missing)
+```
+
+So Bria's fibo family takes `images` as an **array**, and the connector ships a family for
+`bria-genfill`/`bria-eraser` only. Registered on the same forked registry as the prices,
+checked before the connector's own, and never overriding a more specific shipped family.
+
+That array is also the multi-reference answer `RK_REFERENCE_SLOT` was waiting for on this
+model — a slot taking a list is a slot taking several references, which is what a likeness
+needs. So the reference count is a property of the *model*: `bria-fibo-edit` gets the whole
+classed set, `seededit-3-0-i2i-250628` gets one, whatever the setting says.
+
+### Live re-pricing
+
+Every control on the generate form changes what a run costs, and a page that only tells you
+after a reload is a page people stop reading. The form re-prices itself with htmx on any
+change — still a GET to the same handler, so the estimate is still the server's answer and
+there is no second implementation of the arithmetic.
+
+Two regions swap: the plan, and the pagebar stats out-of-band, because the estimate lives
+outside the scrolling area on purpose — the number that decides whether to press the button
+must not scroll away from it.
+
+The debounce is on text inputs only. A tick or a radio is a finished decision; a prompt
+being typed is not, and re-pricing per keystroke would be a request per character for an
+answer nobody is reading yet.
 
 ### `RK_REFERENCE_SLOT`
 

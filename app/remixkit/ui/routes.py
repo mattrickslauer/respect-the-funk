@@ -173,16 +173,24 @@ def _screen(request: Request, name: str, principal, *, nav_artist=None, nav_song
     But each also has to survive being a URL: a bookmark, a link in Slack, a judge
     arriving at `/verify` with no account.
 
-    So there is one route and two frames. htmx sets `HX-Request` on the requests it makes
-    and nothing else does, which makes it the honest signal for "this was opened from
-    inside the console" — and the `href` on every one of those links is the same URL, so
-    with no JavaScript at all the link is still an ordinary navigation to the full page.
+    So there is one route and two frames, chosen by where the caller said to put the
+    answer: htmx sends `HX-Target` carrying the id of the element it will swap, and only
+    a link asking to open a layer names `layer`. The `href` on every one of those links
+    is the same URL, so with no JavaScript at all the link is an ordinary navigation to
+    the full page.
+
+    Keying on the target rather than on `HX-Request` matters here, because this screen
+    has a second htmx caller: the generate form re-prices itself against this same
+    handler, targeting `#plan-body`. On `HX-Request` alone a re-price from the full page
+    would be answered with a dialog — it would happen to work, since `hx-select` pulls
+    the same two regions out of either frame, but only by accident, and the first person
+    to add a third caller would find out the hard way.
 
     The body is the same template either way (`components/_<name>_body.html`), for the
     reason every fragment in this console is shared: two definitions of what a kit costs
     would eventually disagree about it.
     """
-    if request.headers.get("HX-Request"):
+    if request.headers.get("HX-Target") == "layer":
         return _render(request, f"overlays/{name}.html", overlay=True, **ctx)
     return _page(
         request, f"pages/{name}.html", principal,

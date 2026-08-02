@@ -521,6 +521,127 @@ def test_a_locked_kit_generates_both_stages(container, principal, song, artist):
 
 
 # ------------------------------------------------------------------ several faces
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------------ the still index
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------------ the model must read it
+
+
+
+
+def test_no_reference_model_is_guessed_for_a_vendor_that_ships_no_catalog():
+    """A hardcoded slug 404'd on a real account.
+
+    It came from the connector's `example_slugs`, which its own docstring calls
+    "documentation grade, not a contract", and GMI declares `DiscoverySupport.PARTIAL` —
+    no catalog endpoint to check against, and the only liveness test is a billable probe.
+    Which models an account can reach is a fact only the operator has, so the answer is
+    `None` and a refusal rather than another guess that moves the 404.
+    """
+    from remixkit.adapters import providers as provider_table
+    from remixkit.domain.models import Modality
+
+    gmi = type("GMICloudImageProvider", (), {})()
+    assert provider_table.reference_model(gmi, Modality.IMAGE) is None
+
+
+def test_a_configured_edit_model_is_used(container):
+    """`RK_IMAGE_EDIT_MODEL` is where the operator's answer goes."""
+    from remixkit.adapters import providers as provider_table
+    from remixkit.domain.models import Modality
+
+    gmi = type("GMICloudImageProvider", (), {})()
+    chosen = provider_table.reference_model(gmi, Modality.IMAGE, "reve-edit-20250915")
+
+    assert chosen == "reve-edit-20250915"
+    assert provider_table.honours_reference(chosen)
+
+
+def test_a_configured_model_that_cannot_read_references_is_not_used():
+    """Setting the variable to a text-to-image model is the same mistake with more steps."""
+    from remixkit.adapters import providers as provider_table
+    from remixkit.domain.models import Modality
+
+    gmi = type("GMICloudImageProvider", (), {})()
+    assert provider_table.reference_model(gmi, Modality.IMAGE, "seedream-5.0-lite") is None
+
+
+
+
+
+
+# ------------------------------------------------------------------ several faces
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------------ the still index
+
+
+
+
+
+
+
+
+# ------------------------------------------------------------------ the model must read it
+
+
+
+
+
+
+def test_a_plate_is_refused_when_the_vendor_has_no_model_that_would_read_it(
+    container, principal, song, artist, monkeypatch
+):
+    """Imagen is text-only and Google ships no image-to-image model, so there is nothing
+    to swap to. Attaching the reference anyway would render a stranger at full price."""
+    from remixkit.adapters import providers as provider_table
+
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    real = provider_table.resolve("mock")
+
+    class ImagenProvider:
+        def __init__(self, inner): self._i = inner
+        def __getattr__(self, name): return getattr(self._i, name)
+        def get_capabilities(self): return self._i.get_capabilities()
+
+    monkeypatch.setattr(
+        provider_table,
+        "resolve",
+        lambda backend: {**real, Modality.IMAGE: ImagenProvider(real[Modality.IMAGE])},
+    )
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="portrait-still"
+    )
+    shot = plan.shots[0]
+
+    assert shot.reference_keys == []
+    assert "would discard the reference" in shot.plate_note
+
+
+# ------------------------------------------------------------------ several faces
 def test_a_kit_can_be_for_more_than_one_face(container, principal, song, artist):
     """A duo. Every face's text composes into the prompt, named, because two unlabelled
     silhouettes read to a model as one contradictory person."""
@@ -690,18 +811,6 @@ def test_an_unknown_model_is_assumed_not_to_read_references():
     assert not provider_table.honours_reference(None)
 
 
-def test_the_lock_swaps_to_a_model_that_reads_the_reference():
-    """GMI's default image model ignores references. The lock must not use it."""
-    from remixkit.adapters import providers as provider_table
-    from remixkit.domain.models import Modality
-
-    gmi = type("GMICloudImageProvider", (), {})()
-    chosen = provider_table.reference_model(gmi, Modality.IMAGE)
-
-    assert chosen != provider_table.default_model(gmi, Modality.IMAGE)
-    assert provider_table.honours_reference(chosen)
-
-
 def test_a_vendor_with_no_image_to_image_model_cannot_lock():
     """Imagen is text-only. Returning its default would render a stranger at full price."""
     from remixkit.adapters import providers as provider_table
@@ -711,23 +820,363 @@ def test_a_vendor_with_no_image_to_image_model_cannot_lock():
     assert provider_table.reference_model(imagen, Modality.IMAGE) is None
 
 
-def test_a_plate_on_an_image_shot_is_refused_when_the_model_would_ignore_it(
-    container, principal, song, artist, monkeypatch
-):
-    """Accepting an image and reading one are different things, and the difference is
-    invisible in the output until somebody who knows the artist looks at the face."""
+# ------------------------------------------------------------------ the swap, not the drop
+@pytest.fixture
+def gmi_shaped(monkeypatch):
+    """A provider table with the live GMI class names.
+
+    The mock providers are deliberately exempt from the reference check — excluding them
+    would make the whole locked path unreachable on a laptop — so observing the swap needs
+    providers that resolve through `DEFAULT_MODELS` and `vendor_of` the way production
+    does.
+    """
     from remixkit.adapters import providers as provider_table
 
+    real = provider_table.resolve("mock")
+
+    class GMICloudImageProvider:
+        def __init__(self, inner): self._i = inner
+        def __getattr__(self, name): return getattr(self._i, name)
+        def get_capabilities(self): return self._i.get_capabilities()
+
+    class GMICloudVideoProvider(GMICloudImageProvider):
+        pass
+
+    table = {
+        Modality.IMAGE: GMICloudImageProvider(real[Modality.IMAGE]),
+        Modality.VIDEO: GMICloudVideoProvider(real[Modality.VIDEO]),
+    }
+    monkeypatch.setattr(provider_table, "resolve", lambda backend: table)
+    return table
+
+
+def test_a_shot_that_wants_the_face_swaps_the_model_rather_than_dropping_the_reference(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """The first attempt at this fix was the wrong half.
+
+    It refused the plate when the model could not read it, which made the failure legible
+    and still rendered the picture — a portrait still went out on `seedream-5.0-lite` with
+    no reference and came back as the same stranger it had produced before, now with an
+    explanation nobody was looking at.
+    """
     container.identities.create_version(
         principal, artist.id, reference_frames=[frame("a", "neutral")]
     )
-    # Force the resolved image model to one that does not read references.
-    monkeypatch.setattr(provider_table, "honours_reference", lambda model: False)
+
+    monkeypatch.setattr(container.generator, "_edit_model", "reve-edit-20250915")
 
     plan, _ = container.kits.plan(
         principal, song_id=song.id, video_count=1, recipe_slug="portrait-still"
     )
     shot = plan.shots[0]
 
+    assert shot.model == "reve-edit-20250915"
+    assert shot.reference_keys == ["remixkit/frames/a.png"]
+    assert "would ignore" not in (shot.plate_note or "")
+
+
+def test_the_locked_still_is_checked_as_an_image_not_as_the_clip_it_serves(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """`_plates_for` read `shot.modality`, and for a locked video shot that says VIDEO —
+    so the model check silently never ran on the one step whose whole job is to resolve
+    the likeness."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    monkeypatch.setattr(container.generator, "_edit_model", "reve-edit-20250915")
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="performance"
+    )
+    still = plan.shots[0].prelude
+
+    assert still is not None
+    assert provider_reads_references(still.model)
+    assert still.reference_keys == ["remixkit/frames/a.png"]
+
+
+def provider_reads_references(model: str) -> bool:
+    from remixkit.adapters import providers as provider_table
+
+    return provider_table.honours_reference(model)
+
+
+def test_an_explicitly_pinned_model_is_never_swapped(
+    container, principal, song, artist, gmi_shaped
+):
+    """Somebody who typed a model into the plan meant it. Silently running a different one
+    would defeat the field — the refusal note still says what it costs them."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="portrait-still",
+        overrides={0: {"model": "seedream-5.0-lite"}},
+    )
+    shot = plan.shots[0]
+
+    assert shot.model == "seedream-5.0-lite"
     assert shot.reference_keys == []
-    assert "would ignore the reference" in shot.plate_note
+    assert "would discard the reference" in shot.plate_note
+
+
+# ------------------------------------------------------------------ the clip must read it too
+def test_a_text_to_video_model_discards_the_still_the_lock_paid_for():
+    """The half that made a corrected still change nothing.
+
+    GMI's hub tags `seedance-2-0-260128` Text-to-Video only, while the connector declares
+    `first_frame`/`last_frame` for every `seedance-*` slug — true of the 1.x line and not
+    of 2.0. So the lock rendered a frame, paid for it, and handed it to a model that
+    throws it away.
+    """
+    from remixkit.adapters import providers as provider_table
+    from remixkit.domain.models import Modality
+
+    assert not provider_table.honours_reference("seedance-2-0-260128", Modality.VIDEO)
+    assert provider_table.honours_reference("seedance-1-5-pro-251215", Modality.VIDEO)
+    assert provider_table.honours_reference("kling-o1-reference-to-video", Modality.VIDEO)
+
+
+def test_no_still_is_rendered_for_a_clip_that_would_discard_it(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """Paying for a frame whose only consumer throws it away is worse than not locking."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    monkeypatch.setattr(container.generator, "_edit_model", "bria-fibo-edit")
+    monkeypatch.setattr(container.generator, "_backend", "genblaze")  # leave the mock exemption
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="performance"
+    )
+    assert plan.shots[0].prelude is None, "a still was rendered for a model that discards it"
+
+
+def test_both_stages_swap_when_configured(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """The whole chain, on models the catalog actually lists."""
+    container.identities.create_version(
+        principal, artist.id, reference_frames=[frame("a", "neutral")]
+    )
+    monkeypatch.setattr(container.generator, "_edit_model", "bria-fibo-edit")
+    monkeypatch.setattr(container.generator, "_video_edit_model", "kling-o1-reference-to-video")
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="performance"
+    )
+    clip = plan.shots[0]
+
+    assert clip.model == "kling-o1-reference-to-video"
+    assert clip.prelude is not None
+    assert clip.prelude.model == "bria-fibo-edit"
+    assert clip.prelude.reference_keys == ["remixkit/frames/a.png"]
+
+
+# ------------------------------------------------------------------ payload shapes
+def test_the_bria_family_sends_images_as_an_array():
+    """GMI rejected the singular form by name:
+
+        bria-fibo-edit -> 400: invalid payload parameters: images (Required parameter is
+        missing)
+
+    The connector ships a family for `bria-genfill`/`bria-eraser` only; everything else
+    Bria publishes lands on the permissive fallback and goes out as `image`. A rejection
+    that names the missing parameter is the one source that cannot be wrong about it.
+    """
+    from genblaze_core.models.asset import Asset as GBAsset
+    from genblaze_gmicloud import GMICloudImageProvider
+
+    from remixkit.adapters import pricing
+
+    registry = pricing.priced_registry(GMICloudImageProvider)
+    one = GBAsset(url="https://b2/a.png", media_type="image/png", sha256="a" * 64)
+
+    assert registry.get("bria-fibo-edit").input_mapping([one]) == {"images": ["https://b2/a.png"]}
+    # The connector's own inpaint family is more specific and must not be overridden.
+    assert registry.get("bria-genfill").input_mapping([one]) == {"image": "https://b2/a.png"}
+
+
+def test_an_array_slot_carries_the_whole_reference_set():
+    """A slot that takes a list is a multi-reference slot, which is what a likeness needs
+    and what `RK_REFERENCE_SLOT` was holding out for — except this one came from the
+    vendor rather than from a guess."""
+    from genblaze_core.models.asset import Asset as GBAsset
+    from genblaze_gmicloud import GMICloudImageProvider
+
+    from remixkit.adapters import pricing
+
+    registry = pricing.priced_registry(GMICloudImageProvider)
+    frames = [
+        GBAsset(url=f"https://b2/{n}.png", media_type="image/png", sha256=n * 64)
+        for n in ("a", "b", "c")
+    ]
+
+    assert registry.get("bria-fibo-edit").input_mapping(frames) == {
+        "images": ["https://b2/a.png", "https://b2/b.png", "https://b2/c.png"]
+    }
+
+
+def test_a_model_with_an_array_slot_gets_the_whole_classed_set(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """Per model rather than per deployment: how many references travel is a property of
+    the model, and one positional slot still gets one whatever the setting says."""
+    from remixkit.domain.models import FrameAngle, ReferenceFrame
+
+    frames = [
+        ReferenceFrame(
+            key=f"remixkit/frames/{angle.value}.png", angle=angle,
+            sha256=angle.value.ljust(64, "0")[:64], content_type="image/png",
+        )
+        for angle in (FrameAngle.FRONT, FrameAngle.THREE_QUARTER_LEFT, FrameAngle.PROFILE_RIGHT)
+    ]
+    container.identities.create_version(principal, artist.id, reference_frames=frames)
+    monkeypatch.setattr(container.generator, "_edit_model", "bria-fibo-edit")
+    monkeypatch.setattr(container.generator, "_video_edit_model", "kling-o1-image-to-video")
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="performance"
+    )
+    still = plan.shots[0].prelude
+
+    assert len(still.reference_keys) == 3, "an array slot should carry the whole set"
+    assert "3 references" in still.plate_note
+
+
+def test_a_single_slot_model_still_gets_one(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    from remixkit.adapters import providers as provider_table
+
+    container.identities.create_version(
+        principal, artist.id,
+        reference_frames=[frame("a", "neutral"), frame("b", "warm")],
+    )
+    monkeypatch.setattr(container.generator, "_edit_model", "seededit-3-0-i2i-250628")
+    monkeypatch.setattr(container.generator, "_video_edit_model", "kling-o1-image-to-video")
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="performance"
+    )
+
+    assert not provider_table.takes_multiple_references("seededit-3-0-i2i-250628")
+    assert len(plan.shots[0].prelude.reference_keys) == 1
+
+
+def test_an_edit_model_with_no_reference_is_refused_before_submission(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """An edit model with nothing to edit is a 400, not a worse picture.
+
+    Bria said so by name — `images (Required parameter is missing)` — and the run reached
+    the provider to find out, spending a queue slot and a worker on an answer the plan
+    screen already had.
+    """
+    # An identity with no reference frames at all.
+    container.identities.create_version(principal, artist.id, structural_features="oval face")
+    monkeypatch.setattr(container.generator, "_edit_model", "bria-fibo-edit")
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="portrait-still"
+    )
+    shot = plan.shots[0]
+
+    assert not shot.runs
+    assert "needs a reference image" in shot.skipped_reason
+    # The plan total is what a person is asked to approve, and a run that cannot happen
+    # must not be quoted. The shot keeps its own would-be price, which is what the screen
+    # needs to explain the refusal.
+    assert plan.estimate_cents == 0
+    assert plan.blocker
+
+
+def test_the_reference_survives_all_the_way_into_the_provider_payload():
+    """The check every previous version of this fix stopped one step short of.
+
+    Routing an input into the payload is not enough: the spec's `param_allowlist` filters
+    the result immediately afterwards, and `ParamSurface.for_modality` builds that list
+    from the params that are *universally meaningful* for a modality — which cannot
+    include a vendor's input slot name. So the mapper inserted `images`, the filter removed
+    it, and the request went out missing the parameter the model requires.
+
+    The only trace was a log line:
+
+        Dropping non-allowlisted params for bria-fibo-edit: ['images']
+
+    Testing the mapper in isolation passed throughout. This asserts on
+    `prepare_payload`, which is what `submit()` actually sends.
+    """
+    from genblaze_core.models.asset import Asset as GBAsset
+    from genblaze_core.models.enums import Modality as GBModality
+    from genblaze_core.models.step import Step
+    from genblaze_gmicloud import GMICloudImageProvider
+
+    from remixkit.adapters import pricing
+
+    provider = GMICloudImageProvider(models=pricing.priced_registry(GMICloudImageProvider))
+    frames = [
+        GBAsset(url=f"https://b2/{n}.png", media_type="image/png", sha256=n * 64)
+        for n in ("a", "b")
+    ]
+
+    step = Step(
+        provider="gmicloud-image", model="bria-fibo-edit", prompt="a portrait",
+        modality=GBModality.IMAGE, params={"aspect_ratio": "9:16"},
+    )
+    step.inputs = frames
+
+    payload = provider.prepare_payload(step)
+    assert payload.get("images") == ["https://b2/a.png", "https://b2/b.png"]
+
+
+def test_the_shipped_families_still_send_their_own_slot():
+    """A user family is checked first, so a broad pattern can quietly take over a model the
+    connector already handled correctly."""
+    from genblaze_core.models.asset import Asset as GBAsset
+    from genblaze_core.models.enums import Modality as GBModality
+    from genblaze_core.models.step import Step
+    from genblaze_gmicloud import GMICloudImageProvider
+
+    from remixkit.adapters import pricing
+
+    provider = GMICloudImageProvider(models=pricing.priced_registry(GMICloudImageProvider))
+    one = GBAsset(url="https://b2/a.png", media_type="image/png", sha256="a" * 64)
+
+    for model in ("bria-genfill", "seededit-3-0-i2i-250628"):
+        step = Step(provider="gmicloud-image", model=model, prompt="x",
+                    modality=GBModality.IMAGE, params={})
+        step.inputs = [one]
+        assert provider.prepare_payload(step).get("image") == "https://b2/a.png", model
+
+
+def test_the_bria_family_renames_prompt_to_instruction():
+    """Bria's fibo models are *edit* models: pictures plus a statement of what to change.
+
+    They reject a request carrying neither:
+
+        422: Either 'instruction' or 'structured_instruction' must be provided.
+
+    `prompt` is the canonical name across every other provider here, so the rename belongs
+    on the family — a shot should not have to know which vendor is going to answer it.
+    """
+    from genblaze_core.models.asset import Asset as GBAsset
+    from genblaze_core.models.enums import Modality as GBModality
+    from genblaze_core.models.step import Step
+    from genblaze_gmicloud import GMICloudImageProvider
+
+    from remixkit.adapters import pricing
+
+    provider = GMICloudImageProvider(models=pricing.priced_registry(GMICloudImageProvider))
+    step = Step(provider="gmicloud-image", model="bria-fibo-edit", prompt="a portrait",
+                modality=GBModality.IMAGE, params={})
+    step.inputs = [GBAsset(url="https://b2/a.png", media_type="image/png", sha256="a" * 64)]
+
+    payload = provider.prepare_payload(step)
+    assert payload.get("instruction") == "a portrait"
+    assert "prompt" not in payload
+    assert payload.get("images") == ["https://b2/a.png"]

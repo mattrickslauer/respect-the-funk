@@ -265,7 +265,9 @@ def test_a_song_in_the_rail_stays_current_while_pricing_a_kit(client, song, cons
 
 
 # ------------------------------------------------------------------ layers
-_HTMX = {"HX-Request": "true"}
+# What htmx sends when a `layer()` link fires: the id of the element it will swap.
+# `HX-Target` rather than `HX-Request` is what `_screen` keys on — see its docstring.
+_HTMX = {"HX-Request": "true", "HX-Target": "layer"}
 
 _SECONDARY = ["/verify", "/console/kits/{kit_id}",
               "/console/artists/{artist_id}/songs/{song_id}/generate"]
@@ -383,3 +385,21 @@ def test_collapsing_the_rail_only_hides_things_in_the_rail():
             if selector and "data-nav" in selector and ".sidebar" not in selector:
                 leaked.append(selector)
     assert not leaked, f"collapsed-rail rules that reach outside the rail: {leaked}"
+
+
+def test_repricing_the_plan_does_not_come_back_as_a_dialog(client, song, consented):
+    """The generate screen's second htmx caller.
+
+    The form re-prices itself against this same handler, targeting `#plan-body`. Keyed on
+    `HX-Request` the answer would be an overlay — which happens to work, because
+    `hx-select` pulls the same regions out of either frame, and that accident is exactly
+    what this pins down before somebody relies on it.
+    """
+    generate = f"/console/artists/{consented['id']}/songs/{song['id']}/generate"
+    repriced = client.get(
+        generate, headers={"HX-Request": "true", "HX-Target": "plan-body"}
+    )
+    assert repriced.status_code == 200
+    assert "<dialog" not in repriced.text, "a re-price was answered with a layer"
+    assert 'id="plan-body"' in repriced.text, "the re-price response has nothing to select"
+    assert 'id="plan-stats"' in repriced.text, "the out-of-band estimate is missing"

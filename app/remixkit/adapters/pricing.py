@@ -166,7 +166,29 @@ PRICE_BOOK: dict[str, tuple[Any, str]] = {
     # billed $2.44, i.e. $0.61 for a 6s clip. All four *failed* — see the note below on
     # audio — and were charged in full, which is the hard evidence behind this module's
     # premise that a submitted step is a billed step.
+    # GMI's Model Hub lists this at $0.07 per *request*, against the $0.61 for a 6-second
+    # clip that was reconciled from an actual invoice on 2026-07-31 — a factor of nine.
+    #
+    # The invoice wins, and the rule is worth stating because the temptation runs the other
+    # way: a list price is what a vendor advertises, an invoice is what they charged. This
+    # table exists so the number shown before the button matches the ledger after it, and
+    # only one of those two sources is the ledger. If GMI has genuinely repriced since,
+    # reconcile against a fresh invoice and change it here with that as the note — do not
+    # take the catalog's word for it.
     "seedance-2-0-260128": (per_second(0.1017), f"$0.61/6s, invoice-reconciled {PRICED_ON}"),
+    # The rest are list prices, and say so. A list price is a far better estimate than the
+    # $2.00 unknown-model default — which would refuse a three-clip kit at the ceiling —
+    # and it is not evidence. Each carries its source so a reader knows which kind of
+    # number they are looking at.
+    "seedance-2-0-fast-260128": (per_call(0.056), "GMI Model Hub list, 2026-08-01"),
+    "seedance-1-5-pro-251215": (per_call(0.051), "GMI Model Hub list, 2026-08-01"),
+    "seedance-1-0-pro-fast-251015": (per_call(0.022), "GMI Model Hub list, 2026-08-01"),
+    # The image-to-video models a locked clip can actually run on.
+    "kling-o1-reference-to-video": (per_call(0.168), "GMI Model Hub list, 2026-08-01"),
+    "kling-o1-image-to-video": (per_call(0.084), "GMI Model Hub list, 2026-08-01"),
+    "vidu-q2-pro-i2v": (per_call(0.05), "GMI Model Hub list, 2026-08-01"),
+    "pixverse-v6-i2v": (per_call(0.035), "GMI Model Hub list, 2026-08-01"),
+    "GMI-MiniMeTalks-Workflow": (per_call(0.02), "GMI Model Hub list, 2026-08-01"),
     "seedance-1-0-pro-fast-251015": (per_second(0.09), f"fast tier, list {PRICED_ON}, UNVERIFIED"),
     "Kling-Text2Video-V2.1-Master": (per_second(0.09), f"list {PRICED_ON}"),
     "Kling-Image2Video-V2.1-Master": (per_second(0.09), f"list {PRICED_ON}"),
@@ -178,6 +200,11 @@ PRICE_BOOK: dict[str, tuple[Any, str]] = {
     # -- image (per output) ----------------------------------------------------------
     "gpt-image-1": (per_call(0.19), f"OpenAI list, high quality 1024x1536, {PRICED_ON}"),
     "seedream-5.0-lite": (per_call(0.04), f"invoice-reconciled {PRICED_ON}"),
+    # The image-edit models an identity-locking still can run on.
+    "bria-fibo-edit": (per_call(0.04), "GMI Model Hub list, 2026-08-01"),
+    "gpt-image-2-edit": (per_call(0.06), "GMI Model Hub list, 2026-08-01"),
+    "seededit-3-0-i2i-250628": (per_call(0.05), "GMI Model Hub list, 2026-08-01"),
+    "hunyuan-image-to-image": (per_call(0.08), "GMI Model Hub list, 2026-08-01"),
     "imagen-4.0-generate-001": (per_call(0.04), f"Vertex list {PRICED_ON}"),
     # -- audio -----------------------------------------------------------------------
     "eleven_multilingual_v2": (per_call(0.02), f"est. per short TTS clip, {PRICED_ON}"),
@@ -196,7 +223,13 @@ def priced_registry(provider_cls: Any):
     Forked rather than mutated: `models_default()` is shared class state, and registering
     onto it would leak this app's price opinions into every other consumer in the process.
     """
+    from remixkit.adapters import model_families
+
     registry = provider_cls.models_default().fork()
+    # Payload shapes the connector does not ship. Registered on the same fork as the
+    # prices, because both are this app's corrections to a shared default and neither
+    # should leak into another consumer in the process.
+    model_families.register(registry)
     for model_id, (strategy, _note) in PRICE_BOOK.items():
         try:
             registry.register_pricing(model_id, strategy)

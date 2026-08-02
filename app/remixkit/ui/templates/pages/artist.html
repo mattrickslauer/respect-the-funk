@@ -13,8 +13,15 @@
 {% block main_class %}shell-main{% endblock %}
 {% block footer %}{% endblock %}
 
+{# Everything on this page that is a *reading* of a collection rather than a control on
+   one. The four stats, the heading and the tab counts are all derived numbers, and every
+   one of them was wrong the moment a song or a kit was added until somebody navigated.
+   `#songs` is deliberately absent: the rows are live, the attach form inside it is not.
+   See the live-refresh element in _layout.html. #}
+{% block live %},#page-bar,#page-tabs,#song-rows,#kits,#consent{% endblock %}
+
 {% block content %}
-<header class="pagebar">
+<header class="pagebar" id="page-bar">
   <div class="pagebar-id">
     {% set crumbs = [("Roster", "/console"), (artist.name, "")] %}
     {% include "components/_crumbs.html" %}
@@ -68,7 +75,7 @@
     <input type="radio" name="rk-pane" id="pane-1" class="tab-state" checked>
     <input type="radio" name="rk-pane" id="pane-2" class="tab-state">
 
-    <nav class="tabs">
+    <nav class="tabs" id="page-tabs">
       <label for="pane-1">Songs <span class="count">{{ songs|length }}</span></label>
       <label for="pane-2">Kits <span class="count">{{ kits|length }}</span></label>
       {# Identity is a link, not a pane.

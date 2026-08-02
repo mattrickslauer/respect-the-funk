@@ -10,8 +10,12 @@
 {% block main_class %}shell-main{% endblock %}
 {% block footer %}{% endblock %}
 
+{# The three counts and the cards. The registration form in the rail is not listed: it is
+   the one thing on this page somebody types into, and it is what fires the event. #}
+{% block live %},#page-bar,#roster{% endblock %}
+
 {% block content %}
-<header class="pagebar">
+<header class="pagebar" id="page-bar">
   <div class="pagebar-id">
     <p class="eyebrow">{{ env.tenant }}</p>
     <h1>Roster</h1>

@@ -416,9 +416,11 @@ def test_an_identity_can_be_approved(client, container, principal, artist):
     identity in the console was permanently a draft."""
     record = container.identities.create_version(principal, artist["id"], structural_features="x")
 
-    assert client.post(
-        f"/ui/identities/{record.id}/approval", data={"state": "approved"}
-    ).status_code == 200
+    # 204, not 200: the buttons carry no `hx-target`, so a body would be swapped into the
+    # button itself. It answers "done, swap nothing" and announces the change instead.
+    response = client.post(f"/ui/identities/{record.id}/approval", data={"state": "approved"})
+    assert response.status_code == 204
+    assert "rk:identity" in response.headers["HX-Trigger"]
     assert container.identities.get(principal, record.id).approval.value == "approved"
 
 

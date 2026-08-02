@@ -55,6 +55,41 @@
    closes — so the page underneath is never rebuilt to show a kit or a price. #}
 <div id="layer"></div>
 
+{# ---- what keeps the rest of the screen honest ----
+
+   Every console mutation returns the one region its form targeted, and used to leave the
+   rest of the page describing state that no longer existed: attach a song and the nav
+   tree, the Songs count in the header, the tab strip and the catalogue all still showed
+   the roster as it was a moment ago. Each fragment was individually correct; the screen
+   was wrong.
+
+   So mutations announce which collection they touched (`ui/events.py`), and this element
+   listens for all of them, re-requests *the page it is already on*, and swaps out only
+   the regions the page named in its `live` block. `hx-select-oob` takes them from one
+   response, so a create costs a single extra render no matter how many regions it
+   invalidates — and a region that does not appear in the response is skipped rather than
+   erroring, which is what lets one list serve a page whose regions vary by state.
+
+   Re-reading the page rather than adding a fragment route per region is what keeps this
+   from being a second definition of every screen. The regions are rendered by the same
+   template that rendered them a moment ago, from the same handler, so a live update and
+   a reload cannot disagree — and a page becomes live by naming ids it already has.
+
+   Only regions that are *display* belong in a `live` block. Anything holding a form
+   somebody may be part-way through typing into must not be swapped out from under them,
+   which is why the lists below are rows and headers rather than whole panels.
+
+   The rail is in the list here rather than in each page's block because it is on every
+   screen and goes stale on all five events. Pages that add nothing — sign-in, the
+   landing page, the verifier — keep the element and simply never see it fire, having no
+   collection on screen that a mutation could invalidate. #}
+<div id="rk-live" hidden
+     hx-get="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}"
+     hx-trigger="{{ live_events }}"
+     hx-select="#rk-live"
+     hx-swap="outerHTML"
+     hx-select-oob="#sidebar{% block live %}{% endblock %}"></div>
+
 {# Overridable so a shell page can drop it: a footer inside a viewport-locked layout is
    either always on screen stealing rows, or in a scroll region nobody reaches. Every
    console page drops it, and the deployment line it used to carry now lives at the foot

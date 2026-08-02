@@ -22,9 +22,19 @@
 {% block main_class %}shell-main{% endblock %}
 {% block footer %}{% endblock %}
 
+{# The five header facts and the five tab counts are all readings of this song, and every
+   surface that edits one of them is on this page — so before this they went stale against
+   an edit made two panels away. The rail's own panels (`#song-measurement`, `#song-hook`)
+   are here too: setting a hook window in the work area moves the same record the rail
+   form shows, and the two used to disagree until a reload.
+
+   The forms behind "Set by hand" are outside these ids, so a live update never reaches
+   into a disclosure somebody has open. See _layout.html. #}
+{% block live %},#page-bar,#page-tabs,#song-measurement,#song-hook,#song-kits{% endblock %}
+
 {% block content %}
 {# ---- identity bar: who this is, and every number that gates a decision ---- #}
-<header class="pagebar">
+<header class="pagebar" id="page-bar">
   <div class="pagebar-id">
     {% set crumbs = [
          ("Roster", "/console"),
@@ -99,7 +109,7 @@
     <input type="radio" name="rk-pane" id="pane-4" class="tab-state">
     <input type="radio" name="rk-pane" id="pane-5" class="tab-state">
 
-    <nav class="tabs">
+    <nav class="tabs" id="page-tabs">
       <label for="pane-1">Sections
         <span class="count">{{ song.sections|length }}</span></label>
       <label for="pane-2">Recommendations
@@ -139,7 +149,7 @@
          which is a full-width act. #}
       {% include "components/_lyric_lines.html" %}
 
-      <section class="panel pane-5">
+      <section class="panel pane-5" id="song-kits">
         <div class="panel-head">
           <h3>Kits</h3>
           <a class="btn btn-quiet"

@@ -7,7 +7,11 @@
     bottleneck gets hidden instead of measured.
   </p>
 
-  <div class="rows">
+  {# The rows carry the id, not the panel, because the panel also holds the attach form —
+     four text inputs somebody may be part-way through. A live update that replaced the
+     whole panel would take what they had typed with it (see the `live` block in
+     pages/artist.html). #}
+  <div class="rows" id="song-rows">
     {% for song in songs %}
       {% include "components/_song_row.html" %}
     {% else %}

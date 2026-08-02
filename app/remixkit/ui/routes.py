@@ -463,6 +463,28 @@ def _optional_int(raw: str) -> int | None:
         return None
 
 
+def _count_field(raw: str, *, high: int) -> tuple[int, str]:
+    """A count being typed into, and the number it currently means.
+
+    The same empty-string problem as `_optional_int`, arrived at from the other side. The
+    shot count is not optional — no number means no shots — but now that the plan prices
+    itself as the field is edited, a blank box is a state every edit passes *through*:
+    clearing "3" to type "4" leaves the field empty for as long as it takes to press the
+    next key, and an `int` parameter answers that with a 422. The estimate would simply
+    stop moving, which is the failure mode live pricing exists to remove.
+
+    Returns the clamped count and what the field should say. They differ only when the
+    box is empty: echoing "0" back into a field somebody is mid-way through retyping
+    moves their caret for them, so a blank box stays blank and prices nothing until it
+    has a number in it. An out-of-range number is echoed as the clamp, because there the
+    box and the plan below it would otherwise disagree about what is being bought.
+    """
+    if not (raw or "").strip():
+        return 0, ""
+    count = max(0, min(_optional_int(raw) or 0, high))
+    return count, str(count)
+
+
 def _shot_overrides(params: Any) -> dict[int, dict]:
     """Read `prompt_N` / `model_N` / `seconds_N` out of a form or query string.
 
@@ -496,7 +518,7 @@ def generate_page(
     identities: Identities,
     kits: Kits,
     container_recipes: Recipes,
-    video_count: int = 3,
+    video_count: str = "3",
     section_ids: Annotated[list[str], Query()] = [],
     identity_names: Annotated[list[str], Query()] = [],
     faces_chosen: str = "",
@@ -521,7 +543,7 @@ def generate_page(
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     identity = identities.current(principal, artist_id)
-    video_count = max(0, min(video_count, 8))
+    count, count_field = _count_field(video_count, high=8)
     # Same filter the kit service applies, for the same reason: a section deleted between
     # loading this page and pricing it must not show up in the plan as a window.
     chosen = [sid for sid in section_ids if song.section(sid)]
@@ -543,7 +565,7 @@ def generate_page(
     plan, shots = kits.plan(
         principal,
         song_id=song_id,
-        video_count=video_count,
+        video_count=count,
         section_ids=chosen,
         overrides=overrides,
         identity_names=faces,
@@ -564,7 +586,8 @@ def generate_page(
         shots=shots,
         plan=plan,
         overrides=overrides,
-        video_count=video_count,
+        video_count=count,
+        count_field=count_field,
         section_ids=chosen,
         windows=hook_windows(song, chosen),
         estimate_cents=plan.estimate_cents,
@@ -1461,7 +1484,10 @@ async def ui_create_kit(
     kits: Kits,
     song_id: str = Form(...),
     artist_id: str = Form(...),
-    video_count: int = Form(3),
+    # Text, then coerced, for the reason `_count_field` gives: this button now submits the
+    # priced form itself rather than a copy of it, so it receives that form's fields with
+    # that form's blanks in them.
+    video_count: str = Form("3"),
     section_ids: list[str] = Form(default=[]),
     identity_names: list[str] = Form(default=[]),
     faces_chosen: str = Form(""),
@@ -1483,7 +1509,7 @@ async def ui_create_kit(
         kits.request(
             principal,
             song_id=song_id,
-            video_count=video_count,
+            video_count=_count_field(video_count, high=8)[0],
             section_ids=section_ids,
             overrides=overrides,
             identity_names=list(identity_names) if faces_chosen else None,

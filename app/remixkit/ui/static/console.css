@@ -414,7 +414,7 @@ body.shell .frame{height:100dvh;overflow:hidden}
 /* Fields of unequal height on one row. `.form-inline` bottom-aligns them, which leaves a
    one-line label floating level with the bottom of a two-line one; an explicit grid puts
    each control in its own column and aligns the *controls*, not the labels. */
-.plan-row{display:grid;grid-template-columns:104px minmax(0,1fr) auto;gap:10px;align-items:end}
+.plan-row{display:grid;grid-template-columns:104px minmax(0,1fr) 130px auto;gap:10px;align-items:end}
 @media (max-width:1000px){.plan-row{grid-template-columns:1fr}}
 .form-inline label{flex:1;min-width:126px}
 label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--ink-3)}

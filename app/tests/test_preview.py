@@ -373,17 +373,55 @@ def test_the_kit_can_be_named(client, container, principal, song, two_faces):
 
 def test_every_control_rides_the_queue_button(client, song, two_faces):
     """A control that changes the plan but does not travel with the purchase buys a
-    different kit than the one priced — the divergence this screen exists to prevent."""
+    different kit than the one priced — the divergence this screen exists to prevent.
+
+    The controls used to be copied into the queue form as hidden inputs, rendered from the
+    same context as the estimate. That was only true of the screen that was last loaded:
+    once the plan re-prices itself in place, the copies are of an older plan than the one
+    on display. So the button submits the priced form itself, and this asserts the two
+    halves of that — that it says so, and that the form it names holds every control.
+    """
     page = client.get(
         f"/console/artists/{two_faces.id}/songs/{song.id}/generate"
         "?video_count=1&faces_chosen=1&identity_names=Marco&tts_text=hello&budget_cents=900"
     ).text
     queue_form = page.split('hx-post="/ui/kits"', 1)[1].split("</form>", 1)[0]
+    priced = page.split('id="repricer"', 1)[1].split("</form>", 1)[0]
 
-    assert 'name="faces_chosen"' in queue_form
-    assert 'value="Marco"' in queue_form
-    assert 'name="tts_text"' in queue_form
-    assert 'name="budget_cents"' in queue_form
+    assert 'hx-include="#repricer"' in queue_form
+    for control in ("recipe_slug", "video_count", "faces_chosen", "identity_names",
+                    "tts_text", "budget_cents"):
+        assert f'name="{control}"' in priced, f"{control} does not travel with the purchase"
+    # The per-shot edits live in the step cards and join the form by `form="repricer"`,
+    # which puts them in its FormData without putting them in its subtree.
+    assert 'form="repricer"' in page.split('id="repricer"', 1)[1]
+
+
+def test_the_queue_button_carries_no_second_copy_of_the_plan(client, song, two_faces):
+    """The regression this shape exists to make impossible. A hidden copy of a control is
+    right until the plan is re-priced without a reload, and then it is a purchase of the
+    screen somebody saw a minute ago."""
+    page = client.get(
+        f"/console/artists/{two_faces.id}/songs/{song.id}/generate?video_count=1&tts_text=hello"
+    ).text
+    queue_form = page.split('hx-post="/ui/kits"', 1)[1].split("</form>", 1)[0]
+
+    for copied in ("video_count", "recipe_slug", "tts_text", "budget_cents",
+                   "section_ids", "identity_names"):
+        assert f'name="{copied}"' not in queue_form, f"{copied} is duplicated onto the button"
+
+
+def test_the_shot_count_survives_being_retyped(client, song, two_faces):
+    """Clearing "3" to type "4" leaves the field empty between two keystrokes, and the
+    plan now re-prices on every one of them. An `int` parameter answers that with a 422,
+    which live pricing shows as the estimate quietly ceasing to move."""
+    response = client.get(
+        f"/console/artists/{two_faces.id}/songs/{song.id}/generate?video_count="
+    )
+
+    assert response.status_code == 200
+    field = response.text.split('name="video_count"', 1)[1].split(">", 1)[0]
+    assert 'value=""' in field, "a box being retyped was refilled with a number nobody typed"
 
 
 def test_repricing_with_an_empty_budget_field_works(client, song, two_faces):

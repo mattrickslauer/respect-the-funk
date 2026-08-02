@@ -321,8 +321,13 @@ def test_the_format_rides_the_queue_button(client, artist, song):
         f"/console/artists/{artist.id}/songs/{song.id}/generate?recipe_slug=direct-address"
     ).text
     queue_form = page.split('hx-post="/ui/kits"', 1)[1].split("</form>", 1)[0]
+    priced = page.split('id="repricer"', 1)[1].split("</form>", 1)[0]
 
-    assert 'name="recipe_slug" value="direct-address"' in queue_form
+    # The button submits the priced form rather than a copy of it, so the format rides on
+    # the picker itself — the same element the plan below was built from.
+    assert 'hx-include="#repricer"' in queue_form
+    picked = priced.split('value="direct-address"', 1)[1].split(">", 1)[0]
+    assert "checked" in picked, "the priced format is not the one the picker shows"
 
 
 def test_a_spoken_line_rides_alongside_as_its_own_format(container, principal, identity, song):

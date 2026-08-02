@@ -31,6 +31,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 log = logging.getLogger("remixkit.sync")
 
@@ -60,6 +61,23 @@ def _plan(source, prefixes: list[str], media: bool) -> list[str]:
     return sorted(set(keys))
 
 
+class SyncResult(NamedTuple):
+    """What the run actually did. `failed` is the field that earns the type.
+
+    The first version returned three numbers and none of them was failures, so a run in
+    which the cap refused every single object printed `copied 0, skipped 0 already local`
+    — true, cheerful, and wrong about what happened. The per-object warnings were there to
+    read, but a summary that does not mention twenty failures is a summary that says the
+    tenant was empty. The one condition this tool was built to survive is the one its own
+    report glossed over.
+    """
+
+    copied: int
+    skipped: int
+    failed: int
+    total_bytes: int
+
+
 def sync(
     source,
     destination,
@@ -68,8 +86,8 @@ def sync(
     media: bool = False,
     dry_run: bool = False,
     force: bool = False,
-) -> tuple[int, int, int]:
-    """Copy `prefixes` from `source` to `destination`. Returns (copied, skipped, bytes).
+) -> SyncResult:
+    """Copy `prefixes` from `source` to `destination`.
 
     Already-present objects are skipped without being read, which is what makes this safe
     to re-run: a second sync after adding one song costs one Class B, not forty-five. The
@@ -78,7 +96,7 @@ def sync(
     the same name only by the app itself. `--force` is for when that assumption breaks.
     """
     keys = _plan(source, prefixes, media)
-    copied = skipped = total = 0
+    copied = skipped = failed = total = 0
 
     for key in keys:
         if not force and destination.exists(key):
@@ -91,15 +109,17 @@ def sync(
             data = source.get(key)
         except Exception as exc:
             # One unreadable object must not cost the other forty-four. A cap reached
-            # mid-sync is the likeliest cause, and the run is resumable by design.
-            log.warning("skipped %s (%s)", key, exc)
+            # mid-sync is the likeliest cause, and the run is resumable by design — but it
+            # is counted, because a failure nobody totals is a failure nobody notices.
+            failed += 1
+            log.warning("could not read %s (%s)", key, exc)
             continue
         destination.put(key, data)
         copied += 1
         total += len(data)
         log.info("%s (%s)", key, _human(len(data)))
 
-    return copied, skipped, total
+    return SyncResult(copied, skipped, failed, total)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -174,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"B2 {settings.b2_bucket!r} → {destination.root}")
     print(f"tenant {tenant!r}, {'documents + media' if args.media else 'documents only'}")
 
-    copied, skipped, total = sync(
+    result = sync(
         source,
         destination,
         prefixes,
@@ -185,13 +205,27 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.dry_run:
         print(
-            f"\nwould copy {copied} object(s), skip {skipped} already local.\n"
-            f"cost: ~{copied} Class B transactions of the 2,500 daily allowance."
+            f"\nwould copy {result.copied} object(s), skip {result.skipped} already local.\n"
+            f"cost: ~{result.copied} Class B transactions of the 2,500 daily allowance."
         )
-    else:
-        print(f"\ncopied {copied} object(s) ({_human(total)}), skipped {skipped} already local.")
-        if copied:
-            print("Restart the app — the console now reads this from disk and B2 is untouched.")
+        return 0
+
+    print(
+        f"\ncopied {result.copied} object(s) ({_human(result.total_bytes)}), "
+        f"skipped {result.skipped} already local, failed {result.failed}."
+    )
+    if result.copied:
+        print("Restart the app — the console now reads this from disk and B2 is untouched.")
+    if result.failed:
+        # Non-zero, because the likeliest cause is the daily cap and the likeliest next
+        # move is to run this again later. Saying so beats leaving somebody to notice that
+        # a "successful" sync produced an empty directory.
+        print(
+            f"\n{result.failed} object(s) could not be read — see the warnings above. If that "
+            "is the B2 cap, the counters reset at UTC midnight; re-run then. Nothing already "
+            "copied will be paid for twice."
+        )
+        return 1
     return 0
 
 

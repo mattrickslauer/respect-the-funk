@@ -177,6 +177,20 @@ class Container:
             warnings.append("Generation is MOCKED — assets are synthetic, no provider is called.")
         if self.settings.storage_backend == "local":
             warnings.append("Storage is a local directory, not B2.")
+        if self.settings.env == "dev" and self.settings.storage_backend == "b2":
+            # B2's caps are **account-wide**, not per bucket, so a dev process reading the
+            # production bucket is not merely untidy — it is spending the same 2,500 daily
+            # Class B transactions the deployed app needs. That is how the console came
+            # down: an afternoon of `--reload` and htmx swaps against prod storage, and
+            # then every read 403ing for everybody, including anyone being shown the app.
+            #
+            # A separate dev *bucket* would not help. Only a different backend does.
+            warnings.append(
+                f"Dev process is reading PRODUCTION storage (bucket {self.settings.b2_bucket!r}"
+                f"{f', secrets {self.settings.ssm_path}' if self.settings.ssm_path else ''}) — "
+                "B2 caps are per account, so local browsing spends the deployed app's "
+                "daily transactions. Set RK_STORAGE_BACKEND=local for routine work."
+            )
         if getattr(self.storage, "ephemeral", False):
             warnings.append("Storage is ephemeral (/tmp) — data will not survive a restart.")
         if self.settings.auth_backend == "none":

@@ -310,6 +310,46 @@ Storage failing is now a **503** quoting the vendor, not a 404 blaming the catal
 Nothing is broken when a cap is reached; the bucket is refusing to answer for a while, and
 that is a condition with a clock on it.
 
+### One snapshot per request
+
+B2 bills *transactions*, not bytes — 2,500 Class B a day — so what a page costs is the
+number of documents it touches. Measured against one artist and five songs:
+
+| page | Class B | distinct | repeated |
+| --- | ---: | ---: | ---: |
+| `/console` | 2 | 1 | 1 |
+| `/console/catalogue` | 8 | 6 | 2 |
+| `/console/songs/{id}` | 8 | 6 | 2 |
+| `/console/artists/{id}` | **12** | 6 | **6** |
+
+Those are floors, and the repeats are proportional: the artist page read *every* document
+exactly twice. Nobody wrote it that way — the nav resolves the roster, the body resolves it
+again, a panel resolves it a third time, each correct alone and none aware the last one
+just paid.
+
+So a read is remembered for the length of one request. The boundary is the request because
+that is also where it is *correct*: a response whose nav disagrees with its body about a
+song's title is a bug, not a saving. Nothing survives the response, so a write lands on the
+next page load and there is no invalidation to get wrong — and within a request, `put` and
+`delete` drop the key, because most handlers render what they just saved. A refusal is
+never cached: a 403 is a fact about the storage right now, not about the key.
+
+### Dev does not read production storage
+
+**B2's caps are per account, not per bucket.** A laptop browsing the production bucket
+spends the same 2,500 daily transactions the deployed app needs, and when they run out
+every read 403s for everybody at once — including whoever you are showing the app to. A
+separate dev bucket would not help. A different backend does.
+
+So `RK_STORAGE_BACKEND` defaults to `local` and the startup banner names it when a dev
+process is pointed at B2 anyway:
+
+```
+Dev process is reading PRODUCTION storage (bucket 'respect-the-funk', secrets
+/remixkit/prod) — B2 caps are per account, so local browsing spends the deployed app's
+daily transactions. Set RK_STORAGE_BACKEND=local for routine work.
+```
+
 ---
 
 ## What a run costs, and why that is a module

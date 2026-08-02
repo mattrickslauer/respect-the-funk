@@ -22,6 +22,8 @@ Two honest limits, stated rather than discovered later:
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import TypeVar
 
 import yaml
@@ -30,6 +32,10 @@ from pydantic import BaseModel
 from remixkit.ports.storage import Storage
 
 T = TypeVar("T", bound=BaseModel)
+
+# Module-level so every `DocumentRepo` in a process shares the request boundary, and so a
+# repo built per request still sees the scope the middleware opened.
+_SCOPE: ContextVar[dict[str, bytes | None] | None] = ContextVar("document_scope", default=None)
 
 
 def _is_missing(exc: Exception) -> bool:
@@ -51,11 +57,53 @@ def _is_missing(exc: Exception) -> bool:
 
 
 class DocumentRepo:
+    """YAML documents over the storage port, with each read paid for once per request.
+
+    Reads here are billed one API call per document — B2 counts *transactions*, not bytes,
+    and allows 2,500 Class B a day before it starts refusing. So what a page costs is the
+    number of documents it touches, and the console was touching several of them twice:
+
+        page                      Class B   distinct   repeated
+        /console                        2          1          1
+        /console/catalogue              8          6          2
+        /console/songs/{id}             8          6          2
+        /console/artists/{id}          12          6          6
+
+    Measured against one artist and five songs, so those are floors, and the repeats are
+    proportional — the artist page read *every* document exactly twice. Nobody wrote it
+    that way. The nav resolves the roster, the body resolves it again, and a panel resolves
+    it a third time, each correct in isolation and none aware the last one just paid.
+
+    So a read is remembered for the length of one request. That is the natural boundary
+    rather than a convenient one: within a single response, seeing the same document twice
+    with different contents would be a bug on its own — a nav that disagrees with the body
+    about a song's title. Across requests nothing is cached, so a write is visible on the
+    very next page load and there is no invalidation to get wrong.
+    """
+
     name = "documents"
 
     def __init__(self, storage: Storage, *, prefix: str = "remixkit") -> None:
         self._storage = storage
         self._prefix = prefix.strip("/")
+        # None means "not inside a request" — reads go straight through, which is what
+        # the worker and the CLI want. `request_scope()` is what turns it on.
+        self._scope: ContextVar[dict[str, bytes | None] | None] = _SCOPE
+
+    @contextmanager
+    def request_scope(self):
+        """Remember each key's bytes for the duration of this block.
+
+        A `ContextVar` rather than an attribute, because the container is shared and the
+        server is concurrent: two requests in flight must not see each other's snapshot,
+        and a plain dict on `self` would hand one request's documents to another. Reset by
+        token so nesting cannot leak a scope into whatever ran before it.
+        """
+        token = self._scope.set({})
+        try:
+            yield
+        finally:
+            self._scope.reset(token)
 
     def _key(self, tenant_id: str, collection: str, doc_id: str) -> str:
         return f"{self._prefix}/tenants/{tenant_id}/{collection}/{doc_id}.yaml"
@@ -67,11 +115,12 @@ class DocumentRepo:
         payload = yaml.safe_dump(
             doc.model_dump(mode="json"), sort_keys=False, allow_unicode=True
         ).encode()
-        self._storage.put(
-            self._key(tenant_id, collection, doc_id),
-            payload,
-            content_type="application/yaml",
-        )
+        key = self._key(tenant_id, collection, doc_id)
+        self._storage.put(key, payload, content_type="application/yaml")
+        # A handler that saves and then re-reads — which is most of them, since the
+        # response renders what was just written — must see the new bytes and not the
+        # snapshot taken before the write.
+        self._forget(key)
 
     def get(self, tenant_id: str, collection: str, doc_id: str, model: type[T]) -> T | None:
         """The document, or `None` when the object genuinely is not there.
@@ -122,13 +171,34 @@ class DocumentRepo:
         return out
 
     def _read(self, key: str) -> bytes | None:
-        """`storage.get`, with a genuine miss told apart from a refusal to answer."""
+        """`storage.get`, paid for once per request, with a miss told apart from a refusal.
+
+        A miss is cached as `None` too. Absence is an answer, and re-asking for a document
+        that was not there a moment ago costs exactly as much as asking for one that was.
+        """
+        scope = self._scope.get()
+        if scope is not None and key in scope:
+            return scope[key]
         try:
-            return self._storage.get(key)
+            raw = self._storage.get(key)
         except Exception as exc:
-            if _is_missing(exc):
-                return None
-            raise
+            if not _is_missing(exc):
+                # Deliberately not cached. A refusal is a fact about the storage right
+                # now, not about the key, and remembering it would turn one 403 into a
+                # request that keeps reporting failure after the cap has reset.
+                raise
+            raw = None
+        if scope is not None:
+            scope[key] = raw
+        return raw
+
+    def _forget(self, key: str) -> None:
+        """Drop a key from the request's snapshot, because this request just wrote it."""
+        scope = self._scope.get()
+        if scope is not None:
+            scope.pop(key, None)
 
     def delete(self, tenant_id: str, collection: str, doc_id: str) -> None:
-        self._storage.delete(self._key(tenant_id, collection, doc_id))
+        key = self._key(tenant_id, collection, doc_id)
+        self._storage.delete(key)
+        self._forget(key)

@@ -520,9 +520,15 @@ def download_asset(kit_id: str, asset_id: str, principal: CurrentPrincipal, deli
     headers = {
         "Content-Disposition": f'attachment; filename="{_ascii(result.filename)}"',
         "X-RemixKit-Provenance": "embedded" if result.manifest_embedded else "absent",
+        # Whether the master is under this clip or the model's own soundtrack is. Stated
+        # rather than implied: the two files are the same length, the same size and the
+        # same picture, and nothing else in the response tells them apart.
+        "X-RemixKit-Audio": "master" if result.scored else "as-generated",
     }
     if result.note:
         headers["X-RemixKit-Provenance-Note"] = _ascii(result.note)
+    if result.audio_note:
+        headers["X-RemixKit-Audio-Note"] = _ascii(result.audio_note)
     return Response(content=result.data, media_type=result.media_type, headers=headers)
 
 

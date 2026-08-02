@@ -1074,6 +1074,32 @@ class Asset(BaseModel):
     reference_keys: list[str] = Field(default_factory=list)   # the frames it was conditioned on
     derived_from: list[str] = Field(default_factory=list)     # keys of assets it was generated from
 
+    # --- the record under the picture ----------------------------------------------
+    #
+    # A kit loop is a backdrop the master plays over, so a clip carrying a soundtrack the
+    # model composed for itself is a defect — that is the 2026-07-31 finding, and the
+    # negatives in `briefs.VIDEO_NEGATIVES` were only ever a conditioning signal against
+    # it. `services.scoring` writes a second object per video: the same frames, with the
+    # master's own audio mapped in place of whatever the provider returned.
+    #
+    # `key` still points at the provider's bytes and is never overwritten. That is what
+    # keeps the content hash in the manifest meaning what it says; the scored copy is a
+    # derived object with its own key, and `playable_key` is the one a person should be
+    # shown or handed.
+    scored_key: str | None = None
+    audio_source_key: str | None = None   # the master those seconds came from
+    audio_start_ms: int | None = None     # where in the record this clip starts
+    audio_end_ms: int | None = None       # the end of the hook window it was cut to
+    # Always set on a video asset, whichever way it went. "The master was laid under it"
+    # and "the master could not be laid under it" look identical on a screen that only
+    # renders the successful case, and the second one is a clip scored by a model.
+    audio_note: str | None = None
+
+    @property
+    def playable_key(self) -> str | None:
+        """What to show, download, and hand to a fan — the scored cut when there is one."""
+        return self.scored_key or self.key
+
 
 class Kit(Base):
     """A pack of templatable assets for one release = one Genblaze Run.

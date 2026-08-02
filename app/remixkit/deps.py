@@ -38,6 +38,7 @@ from remixkit.services.identities import IdentityService
 from remixkit.services.kits import JOB_TYPE, KitService
 from remixkit.services.recipes import RecipeService
 from remixkit.services.recommendations import RecommendationService
+from remixkit.services.scoring import ScoringService
 from remixkit.services.songs import SongService
 from remixkit.services.transcription import (
     JOB_TYPE as TRANSCRIPTION_JOB_TYPE,
@@ -113,6 +114,11 @@ class Container:
         )
         self.recommendations = RecommendationService()
         self.recipes = RecipeService(self.repo)
+        # The record that goes under the picture. Built before the kits it serves because
+        # a kit's run is where a clip is scored — see `KitService.run`.
+        self.scoring = ScoringService(
+            self.storage, self.songs, enabled=settings.score_with_master
+        )
         self.kits = KitService(
             self.repo,
             self.queue,
@@ -123,6 +129,7 @@ class Container:
             self.storage,
             self.recipes,
             max_shots=settings.max_shots_per_kit,
+            scoring=self.scoring,
         )
         # Cascading an artist delete has to go through the owning services so each
         # cleans up its own bucket objects — a song's master, an identity's frames, a
@@ -138,7 +145,7 @@ class Container:
 
         self.artists.on_cascade(_cascade_artist)
 
-        self.delivery = DeliveryService(self.storage, self.kits)
+        self.delivery = DeliveryService(self.storage, self.kits, self.scoring)
         self.catalogue = CatalogueService(artists=self.artists, songs=self.songs, kits=self.kits)
         self.verify = VerifyService()
 

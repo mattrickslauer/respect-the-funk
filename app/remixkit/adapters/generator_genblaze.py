@@ -266,6 +266,8 @@ class GenblazeGenerator:
                 reference_keys=[plate.key for plate in plates],
                 plate_note=plate_note,
                 recipe_slug=getattr(shot, "recipe_slug", None),
+                hook_start_ms=getattr(shot, "hook_start_ms", None),
+                hook_end_ms=getattr(shot, "hook_end_ms", None),
                 # Priced on the length that will be *rendered*, not the one asked for —
                 # otherwise the quote is for a clip the provider will not make.
                 estimate_cents=pricing.estimate_cents(shot.modality, model, rendered_seconds),
@@ -846,6 +848,12 @@ class GenblazeGenerator:
 
             lineage[prompt] = {
                 "recipe_slug": shot.recipe_slug,
+                # Which seconds of the master this clip is a backdrop for. Carried onto the
+                # asset rather than left in the step metadata because the thing that reads
+                # it — `services.scoring` — works from the kit's assets, and the brief's
+                # `hook_windows` cannot say which of them this particular shot was dealt.
+                "hook_start_ms": shot.hook_start_ms,
+                "hook_end_ms": shot.hook_end_ms,
                 "identity_refs": [
                     {"id": i.id, "name": i.name, "version": i.version, "label": i.display_name}
                     for i in request.identities
@@ -981,6 +989,8 @@ class GenblazeGenerator:
                         identity_refs=made_from.get("identity_refs", []),
                         reference_keys=made_from.get("reference_keys", []),
                         derived_from=made_from.get("derived_from", []),
+                        audio_start_ms=made_from.get("hook_start_ms"),
+                        audio_end_ms=made_from.get("hook_end_ms"),
                     )
                 )
 

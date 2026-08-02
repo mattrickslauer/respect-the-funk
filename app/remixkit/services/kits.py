@@ -19,6 +19,7 @@ Two gates before anything is enqueued:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from remixkit.adapters import pricing
 from remixkit.auth.provider import Principal
@@ -72,6 +73,7 @@ class KitService:
         recipes: RecipeService,
         *,
         max_shots: int = 8,
+        scoring: Any = None,
     ) -> None:
         self._repo = repo
         self._queue = queue
@@ -82,6 +84,9 @@ class KitService:
         self._storage = storage
         self._recipes = recipes
         self._max_shots = max_shots
+        # Optional so a worker built without it still runs kits — it degrades to clips
+        # carrying whatever the model returned, which is what every kit did before.
+        self._scoring = scoring
 
     # -- reads ------------------------------------------------------------------
     def list(self, principal: Principal, *, artist_id: str | None = None) -> list[Kit]:
@@ -394,6 +399,17 @@ class KitService:
 
             kit.run_id = result.run_id
             kit.assets = result.assets
+
+            # The record goes under the picture here, before the kit is written and
+            # therefore before any screen can show a loop without it. A kit loop is a
+            # backdrop the master plays over; a clip carrying a soundtrack the model
+            # composed for itself is the 2026-07-31 defect, and negatives were only ever a
+            # conditioning signal against it. This is the deterministic half.
+            #
+            # It cannot fail the kit: an unscored clip is still a clip that was paid for,
+            # and every video says on `audio_note` which of the two it is.
+            if self._scoring is not None:
+                self._scoring.score_kit(principal, kit, song)
             kit.manifest_key = result.manifest_key
             kit.manifest_verified = result.manifest_verified
             kit.error = result.error
@@ -466,8 +482,14 @@ class KitService:
 
     @staticmethod
     def _owned_keys(kit: Kit) -> list[str]:
-        """Every object in the bucket this kit is responsible for."""
+        """Every object in the bucket this kit is responsible for.
+
+        Both copies of a video: the provider's own bytes and the scored cut written beside
+        them. Orphaning the second one would leave the label paying storage for objects no
+        screen can reach, which is the failure a bucket-as-database makes invisible.
+        """
         keys = [asset.key for asset in kit.assets if asset.key]
+        keys += [asset.scored_key for asset in kit.assets if asset.scored_key]
         if kit.manifest_key:
             keys.append(kit.manifest_key)
         return keys

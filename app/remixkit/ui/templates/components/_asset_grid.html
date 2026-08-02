@@ -8,7 +8,11 @@
   {% for asset in kit.assets %}
     <figure class="asset">
       {% if asset.modality.value == "video" %}
-        <video src="{{ asset_url(asset) }}" controls preload="metadata" playsinline muted></video>
+        {# Not muted. `asset_url` serves the scored cut when there is one, and the whole
+           point of a kit loop is the record playing under it — a player that starts muted
+           hides the one thing worth checking. A clip that could not be scored is the
+           `audio_note` below, said in words rather than left to be discovered. #}
+        <video src="{{ asset_url(asset) }}" controls preload="metadata" playsinline></video>
       {% elif asset.modality.value == "image" %}
         <img src="{{ asset_url(asset) }}" alt="{{ asset.prompt|truncate(80) }}" loading="lazy">
       {% else %}
@@ -18,6 +22,11 @@
         <span class="mod">{{ asset.modality.value }}</span>
         <span class="model">{{ asset.provider }} · {{ asset.model }}</span>
         <span class="cost">{{ asset.cost_cents }}¢</span>
+        {% if asset.audio_note %}
+          <span class="audio {{ 'ok' if asset.scored_key else 'warn' }}" title="{{ asset.audio_note }}">
+            {{ "master audio" if asset.scored_key else "no master audio" }}
+          </span>
+        {% endif %}
         {% if asset.sha256 %}<code class="sha" title="content hash — identical inputs reuse this object">{{ asset.sha256[:10] }}</code>{% endif %}
         <a class="dl" href="/api/v1/kits/{{ kit.id }}/assets/{{ asset.id }}/download"
            title="Downloads with the run's manifest embedded in the file — provenance travels with it">

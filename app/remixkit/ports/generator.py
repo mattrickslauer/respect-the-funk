@@ -61,6 +61,16 @@ class ShotSpec:
     # plate and not the compiled description either. A backdrop with an empty centre
     # frame does not become more templatable for being told what the artist looks like.
     suppress_identity_text: bool = False
+    # Which stretch of the master this shot is cut to, in milliseconds from the top of the
+    # record. The kit deals its shots round-robin across the hooks a brief names, so this
+    # is *per shot* and cannot be recovered from `Song.hook` — the second loop of a
+    # two-hook brief belongs to a different part of the song than the first.
+    #
+    # Nothing about it reaches a provider. It exists because the delivered clip carries the
+    # master's own audio (`services.scoring`), and the seconds to lay under a clip are the
+    # seconds the clip was planned for.
+    hook_start_ms: int | None = None
+    hook_end_ms: int | None = None
 
 
 @dataclass
@@ -178,6 +188,11 @@ class PlannedShot:
     still_digest: str | None = None
     # Which format produced this shot, carried through to the delivered asset.
     recipe_slug: str | None = None
+    # The stretch of the master this shot is cut to, carried from the `ShotSpec` so the
+    # plan screen can say which seconds of the record will be under each loop *before* the
+    # button, and so `_collect` can write it onto the asset that gets scored.
+    hook_start_ms: int | None = None
+    hook_end_ms: int | None = None
     estimate_cents: int = 0
     skipped_reason: str | None = None
 

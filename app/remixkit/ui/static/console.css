@@ -471,6 +471,11 @@ input::placeholder,textarea::placeholder{color:#5d5872}
 .asset figcaption,.frames figcaption{padding:7px 8px;font-size:11px;color:var(--ink-3);display:flex;flex-direction:column;gap:2px}
 .asset .mod{font-family:var(--display);letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);font-size:10px}
 .asset .model{color:var(--ink-2)}
+/* Whether the record is under the picture. A clip that could not be scored reads as a
+   warning rather than as silence, because silence is what it looks like otherwise. */
+.asset .audio{font-size:10.5px}
+.asset .audio.ok{color:var(--ink-2)}
+.asset .audio.warn{color:var(--warn)}
 .sha{font-size:10.5px}
 
 .htmx-request{opacity:0.55;transition:opacity 120ms}

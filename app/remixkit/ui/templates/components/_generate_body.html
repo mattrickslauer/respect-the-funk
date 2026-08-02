@@ -313,6 +313,27 @@
                         {{ step.plate_note }}
                       </dd>
                     {% endif %}
+                    {# What will be *heard*. A loop is a backdrop the master plays over,
+                       and the version of this kit that got bought on 2026-07-31 came back
+                       scored with an instrumental the model wrote itself. The master is
+                       laid under every clip on delivery now, so the fact worth showing
+                       before the button is whether there is a master to lay — and which
+                       seconds of it this particular loop was dealt. #}
+                    {% if step.modality.value == "video" %}
+                      <dt>Audio</dt>
+                      <dd class="small {{ '' if song.master_key else 'unmeasured' }}">
+                        {% if not song.master_key %}
+                          No master uploaded — this clip will carry whatever the model
+                          composes. Upload the mastered track on the song first.
+                        {% elif step.hook_start_ms is not none %}
+                          the master from
+                          {{ "%d:%04.1f"|format(step.hook_start_ms // 60000, (step.hook_start_ms % 60000) / 1000) }},
+                          laid under the picture on delivery
+                        {% else %}
+                          the master from the top — no hook window is measured on this song
+                        {% endif %}
+                      </dd>
+                    {% endif %}
                     {% if step.negative_prompt %}
                       <dt>Negatives</dt>
                       <dd class="small">{{ step.negative_prompt }}</dd>

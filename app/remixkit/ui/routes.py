@@ -54,6 +54,7 @@ from remixkit.domain.models import (
     ReferenceFrame,
     SectionRole,
 )
+from remixkit.adapters import scoring as scoring_mux
 from remixkit.services.briefs import hook_windows
 from remixkit.services.recipes import DEFAULT_SLUG
 from remixkit.services.errors import Conflict, ServiceError
@@ -73,13 +74,20 @@ def asset_url(asset) -> str:
 
     So the durable thing is the key, and the URL is derived from it on every render.
     On local storage this is the `/files/...` route and costs nothing.
+
+    `playable_key` rather than `key`, so a video plays the cut with the master under it.
+    The raw provider output is still the thing the manifest hashes and is still in the
+    bucket; it is just not what anybody should be shown, since a loop without the record
+    is the one defect this product exists to avoid shipping. `getattr` because this helper
+    also renders reference frames, which have a key and nothing derived from it.
     """
     container = get_container()
-    if asset.key:
+    key = getattr(asset, "playable_key", None) or getattr(asset, "key", None)
+    if key:
         try:
-            return container.storage.presign_get(asset.key, expires_in=3600)
+            return container.storage.presign_get(key, expires_in=3600)
         except Exception:
-            log.warning("could not presign %s", asset.key)
+            log.warning("could not presign %s", key)
     # `getattr` rather than `.url`: this helper also renders ReferenceFrame, which has a
     # key and no url. Reaching for a missing attribute here would turn a presign failure
     # into a 500 on the identity page.
@@ -609,8 +617,22 @@ def settings_page(request: Request, principal: CurrentPrincipal):
             # the only one with no mock: see adapters/audio_unavailable.py.
             ("Analysis", "RK_ANALYSIS_BACKEND", container.analyzer.name, "numpy",
              "numpy (pip install -e '.[audio]') and ffmpeg on PATH for anything but a WAV."),
+            # Whether a kit's loops will carry the record or whatever the model composed.
+            # It belongs on this page for the same reason analysis does: the gap is a
+            # missing binary rather than a missing credential, and it is invisible from the
+            # output — a clip scored by the model plays perfectly well.
+            ("Scoring", "RK_SCORE_WITH_MASTER", _scoring_state(container), "on",
+             "ffmpeg on PATH, and an uploaded master on the song — the record is laid "
+             "under every kit clip."),
         ],
     )
+
+
+def _scoring_state(container) -> str:
+    """`on` only when this process can actually do it, not when it intends to."""
+    if not getattr(container.scoring, "enabled", False):
+        return "off"
+    return "on" if scoring_mux.available() else "no ffmpeg"
 
 
 # ---------------------------------------------------------------- sign in

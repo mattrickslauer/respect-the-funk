@@ -202,6 +202,13 @@ def plan_from_recipe(
                 # `NONE` is not "no picture of them", it is "this asset is not about them".
                 suppress_identity_text=recipe.face is FacePolicy.NONE,
                 recipe_slug=recipe.slug,
+                # Which hook this shot was dealt, kept as numbers rather than only as a
+                # name in the label. The delivered asset carries the master's own audio,
+                # and this is the answer to "from where" — per shot, because the deal is
+                # round-robin and the third shot of a two-hook brief is the first hook
+                # again while the second one is not.
+                hook_start_ms=window.start_ms,
+                hook_end_ms=window.end_ms,
             )
         )
 
@@ -267,6 +274,10 @@ def default_shot_plan(
                 # Costs an image per loop and degrades to a plain plate-conditioned clip
                 # when there is no image provider or no reference frame to lock from.
                 identity_lock=True,
+                # The seconds of the record this loop is a backdrop for. See
+                # `plan_from_recipe` — same reason, same per-shot deal.
+                hook_start_ms=window.start_ms,
+                hook_end_ms=window.end_ms,
             )
         )
 

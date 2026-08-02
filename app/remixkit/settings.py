@@ -166,6 +166,17 @@ class Settings(BaseSettings):
     image_provider: str = ""
     audio_provider: str = ""
 
+    # ---- scoring ---------------------------------------------------------------
+    # Lay the uploaded master under every video a kit produces, cut to the hook the shot
+    # was planned for (`services.scoring`). On by default because it is what a kit is for:
+    # the loops are backdrops the record plays over, and a clip carrying a soundtrack the
+    # model composed for itself is the 2026-07-31 defect rather than a bonus.
+    #
+    # Off is for a deployment whose worker has no ffmpeg, or for the rare kit that wants
+    # the provider's own bytes untouched. It does not change what is generated — only what
+    # is written beside it and what a download hands back.
+    score_with_master: bool = True
+
     # ---- analysis --------------------------------------------------------------
     # How much of a master to measure. Ten minutes covers any single and bounds the cost
     # of a full-track comb fit on a file somebody uploaded by mistake.

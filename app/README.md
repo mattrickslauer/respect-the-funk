@@ -716,18 +716,46 @@ value, because the empty string is *the primary line's real name*: using it woul
 add the primary to every kit and make "Marco alone" unreachable. And the primary is
 pre-ticked on first load, because the boxes have to describe the plan underneath them.
 
-### Silent loops
+### The master under the picture
 
-A kit loop is a backdrop the master plays over, so a generated soundtrack is a defect.
-Video shots carry `music, soundtrack, singing, speech, …` as `negative_prompt` and a
-`silent footage` clause in the prompt.
+A kit loop is a backdrop the master plays over. A clip that comes back carrying a
+soundtrack the model composed for itself is the 2026-07-31 defect — a night drive scored
+with a lofi instrumental, over a song the model had never heard.
 
-**This is best-effort, and the console should not be read as promising more.**
-`negative_prompt` is a conditioning signal, and no provider here documents it as binding on
-the audio track — Veo, Sora 2 and Seedance all return video with a native audio track by
-default. The deterministic fix is to drop the track on delivery (`ffmpeg -c copy -an`, a
-container rewrite rather than a re-encode); it is specified in `PIPELINE-SPEC.md` §4 and not
-yet built.
+Two halves, and only one of them was ever going to be enough.
+
+**Asking.** Video shots carry `music, soundtrack, singing, speech, …` as `negative_prompt`
+and a `silent footage` clause in the prompt. This is best-effort and the console should not
+be read as promising more: `negative_prompt` is a conditioning signal, and no provider here
+documents it as binding on the audio track — Veo, Sora 2 and Seedance all return video with
+a native audio track by default.
+
+**Doing.** `services/scoring.py` writes a second object next to every video a kit produces:
+the same frames, with the uploaded master's own seconds mapped in place of whatever came
+back.
+
+```
+ffmpeg -i clip.mp4 -ss <hook start> -i master.wav \
+       -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -af apad -shortest scored.mp4
+```
+
+The picture is stream-copied, so the frames delivered are the frames the provider rendered
+and the manifest's content hash still describes them. `-map` is exhaustive: the model's
+audio is not muted, it is absent. The cut starts at **that shot's** hook — a brief naming
+two hooks deals its loops across them, so `ShotSpec.hook_start_ms` travels through the plan
+onto the asset — and runs as long as the picture does, padding silence rather than wrapping
+back to bar 1.
+
+`Asset.key` is never overwritten; the scored cut is `Asset.scored_key`, and
+`Asset.playable_key` is what the console plays and what `/download` hands back
+(`X-RemixKit-Audio: master`). A kit that ran before this landed is scored on the way out
+instead, without storing anything.
+
+Every video says which happened on `Asset.audio_note`, including the two ways it can fail:
+no master uploaded for the song, or no `ffmpeg` in this process. A clip silently unscored
+and a clip scored by the model look identical on screen, which is how the original defect
+survived being looked at. `RK_SCORE_WITH_MASTER=0` turns the whole thing off, and says so
+on the asset too.
 
 ## Two front doors
 

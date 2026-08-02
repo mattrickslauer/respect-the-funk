@@ -16,8 +16,14 @@
 {% block main_class %}shell-main{% endblock %}
 {% block footer %}{% endblock %}
 
+{# This page is entirely a reading of three collections — it is the screen most obviously
+   wrong after an edit made anywhere else, and the one whose whole purpose is to be the
+   current answer to "what needs work". The filter form in the rail is a plain GET and is
+   left alone. #}
+{% block live %},#page-bar,#catalogue-gaps{% endblock %}
+
 {% block content %}
-<header class="pagebar">
+<header class="pagebar" id="page-bar">
   <div class="pagebar-id">
     <p class="eyebrow">{{ env.tenant }}</p>
     <h1>Catalogue</h1>
@@ -50,7 +56,7 @@
 <div class="deck deck-r">
   <div class="workarea">
     <div class="stack">
-      <section class="panel">
+      <section class="panel" id="catalogue-gaps">
         <div class="panel-head">
           <h3>Gaps</h3>
           <span class="hint">

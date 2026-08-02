@@ -58,6 +58,8 @@ from remixkit.adapters import scoring as scoring_mux
 from remixkit.services.briefs import hook_windows
 from remixkit.services.recipes import DEFAULT_SLUG
 from remixkit.services.errors import Conflict, ServiceError
+from remixkit.ui import events
+from remixkit.ui.events import announce
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
@@ -95,6 +97,14 @@ def asset_url(asset) -> str:
 
 
 templates.env.globals["asset_url"] = asset_url
+
+# The `hx-trigger` list every page's live-refresh element carries, built from the event
+# vocabulary rather than written out in the layout — so adding an event makes it live on
+# every screen at once instead of being a template edit somebody forgets. `from:body`
+# because `HX-Trigger` fires the event on the element that made the request, and the
+# element listening is somewhere else entirely; body is where they meet.
+templates.env.globals["live_events"] = ", ".join(f"{name} from:body" for name in events.ALL)
+
 router = APIRouter(tags=["console"])
 log = logging.getLogger(__name__)
 
@@ -779,7 +789,10 @@ def ui_create_artist(
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_roster.html", artists=artists.list(principal))
+    return announce(
+        _render(request, "components/_roster.html", artists=artists.list(principal)),
+        events.ARTISTS,
+    )
 
 
 @router.delete("/ui/artists/{artist_id}", response_class=HTMLResponse)
@@ -799,7 +812,16 @@ def ui_delete_artist(
         artists.delete(principal, artist_id, cascade=cascade)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_roster.html", artists=artists.list(principal))
+    # All four collections, because a cascade takes the artist's songs, identities and
+    # kits with them — and announcing only the roster would leave the nav tree holding a
+    # branch of records that no longer resolve.
+    return announce(
+        _render(request, "components/_roster.html", artists=artists.list(principal)),
+        events.ARTISTS,
+        events.SONGS,
+        events.KITS,
+        events.IDENTITY,
+    )
 
 
 @router.post("/ui/artists/{artist_id}/consent", response_class=HTMLResponse)
@@ -822,7 +844,11 @@ def ui_set_consent(
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_consent.html", artist=artist)
+    # Consent is an artist-level fact that four other regions draw: the nav dot, the
+    # roster card, this page's Consent stat, and the catalogue's blocked count.
+    return announce(
+        _render(request, "components/_consent.html", artist=artist), events.ARTISTS
+    )
 
 
 @router.post("/ui/artists/{artist_id}/identity", response_class=HTMLResponse)
@@ -880,12 +906,15 @@ def ui_save_identity(
         )
         return response
 
-    return _render(
-        request,
-        "components/_identity.html",
-        identity=identity,
-        identities=identities.list_for_artist(principal, artist_id),
-        artist_id=artist_id,
+    return announce(
+        _render(
+            request,
+            "components/_identity.html",
+            identity=identity,
+            identities=identities.list_for_artist(principal, artist_id),
+            artist_id=artist_id,
+        ),
+        events.IDENTITY,
     )
 
 
@@ -914,11 +943,14 @@ def ui_create_song(
         return _error_fragment(request, ServiceError("BPM must be a number."))
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(
-        request,
-        "components/_songs.html",
-        songs=songs.list_for_artist(principal, artist_id),
-        artist_id=artist_id,
+    return announce(
+        _render(
+            request,
+            "components/_songs.html",
+            songs=songs.list_for_artist(principal, artist_id),
+            artist_id=artist_id,
+        ),
+        events.SONGS,
     )
 
 
@@ -935,7 +967,10 @@ def ui_set_hook(
         song = songs.set_hook(principal, song_id, start_ms=start_ms, end_ms=end_ms)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_song_row.html", song=song, artist_id=song.artist_id)
+    return announce(
+        _render(request, "components/_song_row.html", song=song, artist_id=song.artist_id),
+        events.SONG,
+    )
 
 
 @router.post("/ui/identities/{identity_id}/frames", response_class=HTMLResponse)
@@ -1005,7 +1040,9 @@ async def ui_add_reference_frame(
         identity = identities.add_reference_frame(principal, identity_id, frame)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_frames.html", identity=identity)
+    return announce(
+        _render(request, "components/_frames.html", identity=identity), events.IDENTITY
+    )
 
 
 @router.post("/ui/songs/{song_id}/measurement", response_class=HTMLResponse)
@@ -1032,7 +1069,9 @@ def ui_set_measurement(
         return _error_fragment(request, Conflict("Drop must be a whole number of milliseconds."))
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_measurement.html", song=song)
+    return announce(
+        _render(request, "components/_measurement.html", song=song), events.SONG
+    )
 
 
 @router.post("/ui/songs/{song_id}/hook-window", response_class=HTMLResponse)
@@ -1054,7 +1093,7 @@ def ui_set_hook_window(
         song = songs.set_hook(principal, song_id, start_ms=start_ms, end_ms=end_ms)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_hook.html", song=song)
+    return announce(_render(request, "components/_hook.html", song=song), events.SONG)
 
 
 # ---------------------------------------------------------------- section fragments
@@ -1109,7 +1148,7 @@ def ui_add_section(
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _hooks_fragment(request, song, recommendations)
+    return announce(_hooks_fragment(request, song, recommendations), events.SONG)
 
 
 @router.post("/ui/songs/{song_id}/sections/{section_id}", response_class=HTMLResponse)
@@ -1137,7 +1176,7 @@ def ui_update_section(
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _hooks_fragment(request, song, recommendations)
+    return announce(_hooks_fragment(request, song, recommendations), events.SONG)
 
 
 @router.delete("/ui/songs/{song_id}/sections/{section_id}", response_class=HTMLResponse)
@@ -1153,7 +1192,7 @@ def ui_delete_section(
         song = songs.remove_section(principal, song_id, section_id)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _hooks_fragment(request, song, recommendations)
+    return announce(_hooks_fragment(request, song, recommendations), events.SONG)
 
 
 @router.post("/ui/songs/{song_id}/sections/{section_id}/primary", response_class=HTMLResponse)
@@ -1187,7 +1226,7 @@ def ui_set_primary_section(
         return _error_fragment(request, Conflict("A window is a whole number of milliseconds."))
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _hooks_fragment(request, song, recommendations)
+    return announce(_hooks_fragment(request, song, recommendations), events.SONG)
 
 
 # ---------------------------------------------------------------- master + analysis
@@ -1235,13 +1274,16 @@ def ui_complete_master(
         song = analysis.request(principal, song.id)
     except ServiceError as exc:
         note = str(exc)
-    return _render(
-        request,
-        "components/_master.html",
-        song=song,
-        analysis_available=analysis.available,
-        analysis_reason=analysis.unavailable_reason,
-        note=note,
+    return announce(
+        _render(
+            request,
+            "components/_master.html",
+            song=song,
+            analysis_available=analysis.available,
+            analysis_reason=analysis.unavailable_reason,
+            note=note,
+        ),
+        events.SONG,
     )
 
 
@@ -1256,12 +1298,15 @@ def ui_request_analysis(
         song = analysis.request(principal, song_id)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(
-        request,
-        "components/_analysis.html",
-        song=song,
-        analysis_available=analysis.available,
-        analysis_reason=analysis.unavailable_reason,
+    return announce(
+        _render(
+            request,
+            "components/_analysis.html",
+            song=song,
+            analysis_available=analysis.available,
+            analysis_reason=analysis.unavailable_reason,
+        ),
+        events.SONG,
     )
 
 
@@ -1295,7 +1340,12 @@ def ui_analysis_panel(
         AnalysisStatus.FAILED,
     )
     if settled:
+        # Two audiences, one header. `rk:analysis-done` is the narrow one the hooks and
+        # arrangement panels have always listened for; `rk:song` is the broad one that
+        # repaints the header's Master and Cuts-to stats and the tab counts, which a
+        # landing measurement changes just as much and which nothing was telling.
         response.headers["HX-Trigger"] = "rk:analysis-done"
+        announce(response, events.SONG)
     return response
 
 
@@ -1358,7 +1408,7 @@ def ui_request_transcription(
         except ServiceError:
             return _error_fragment(request, exc)
         return _lyrics_panel(request, song, transcription, note=str(exc))
-    return _lyrics_panel(request, song, transcription)
+    return announce(_lyrics_panel(request, song, transcription), events.SONG)
 
 
 @router.get("/ui/songs/{song_id}/transcription", response_class=HTMLResponse)
@@ -1386,7 +1436,11 @@ def ui_transcription_panel(
         AnalysisStatus.FAILED,
     )
     if settled:
+        # As with the analysis panel: the narrow event repaints the lyric pane, the broad
+        # one the Lyrics tab count — which is the number of lines the model was unsure of,
+        # and so the one thing on that tab worth interrupting somebody for.
         response.headers["HX-Trigger"] = "rk:lyrics-done"
+        announce(response, events.SONG)
     return response
 
 
@@ -1420,7 +1474,7 @@ def ui_add_lyric_line(
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _lyrics_fragment(request, song)
+    return announce(_lyrics_fragment(request, song), events.SONG)
 
 
 @router.post("/ui/songs/{song_id}/lyrics/lines/{line_id}", response_class=HTMLResponse)
@@ -1440,7 +1494,7 @@ def ui_update_lyric_line(
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _lyrics_fragment(request, song)
+    return announce(_lyrics_fragment(request, song), events.SONG)
 
 
 @router.delete("/ui/songs/{song_id}/lyrics/lines/{line_id}", response_class=HTMLResponse)
@@ -1451,7 +1505,7 @@ def ui_delete_lyric_line(
         song = songs.remove_lyric_line(principal, song_id, line_id)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _lyrics_fragment(request, song)
+    return announce(_lyrics_fragment(request, song), events.SONG)
 
 
 @router.post("/ui/songs/{song_id}/lyrics/text", response_class=HTMLResponse)
@@ -1472,7 +1526,7 @@ def ui_set_lyrics_text(
         song = songs.set_lyrics_text(principal, song_id, text)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _lyrics_fragment(request, song)
+    return announce(_lyrics_fragment(request, song), events.SONG)
 
 
 # ---------------------------------------------------------------- kit fragments
@@ -1481,6 +1535,7 @@ async def ui_create_kit(
     request: Request,
     principal: CurrentPrincipal,
     kits: Kits,
+    songs: Songs,
     song_id: str = Form(...),
     artist_id: str = Form(...),
     video_count: int = Form(3),
@@ -1517,8 +1572,19 @@ async def ui_create_kit(
         )
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(
-        request, "components/_kits.html", kits=kits.list(principal, artist_id=artist_id), artist_id=artist_id
+    # `songs` is what the panel's generate form builds its picker from. Rendering this
+    # fragment without it did not fail — Jinja resolved the name to undefined, `{% if
+    # songs %}` took the empty branch, and queueing a kit replaced the form with "Attach
+    # a song before generating a kit" on a page listing the song it had just used.
+    return announce(
+        _render(
+            request,
+            "components/_kits.html",
+            kits=kits.list(principal, artist_id=artist_id),
+            songs=songs.list_for_artist(principal, artist_id),
+            artist_id=artist_id,
+        ),
+        events.KITS,
     )
 
 
@@ -1529,12 +1595,21 @@ def ui_kit_row(request: Request, kit_id: str, principal: CurrentPrincipal, kits:
     Polling rather than websockets on purpose: BUILD-SPEC §2b lists real-time
     websockets under deliberately deferred, and a kit takes minutes, so a 3-second
     poll on one row costs nothing and removes a whole class of infrastructure.
+
+    A run *landing* is announced once, when the row comes back terminal — which is also
+    the last time this route is asked for that kit, since the replacement markup carries
+    no trigger. That is what repaints the nav's running dot, the Kits counts and the
+    catalogue, none of which the row swap can reach. Announcing on every poll instead
+    would re-render the whole page every three seconds for the length of the run.
     """
     try:
         kit = kits.get(principal, kit_id)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_kit_row.html", kit=kit)
+    response = _render(request, "components/_kit_row.html", kit=kit)
+    if kit.status.value not in ("queued", "running"):
+        announce(response, events.KITS)
+    return response
 
 
 @router.post("/ui/kits/{kit_id}/approval", response_class=HTMLResponse)
@@ -1553,7 +1628,10 @@ def ui_approve_kit(
         return _error_fragment(request, ServiceError(f"{state!r} is not an approval state."))
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_kit_row.html", kit=kit)
+    # Approval is the editorial axis, and it is counted a page away: the catalogue's "no
+    # approved kit" gap is the label's daily question, and clearing one here used to
+    # leave that number wrong until somebody reloaded.
+    return announce(_render(request, "components/_kit_row.html", kit=kit), events.KITS)
 
 
 # ---------------------------------------------------------------- destroy
@@ -1583,7 +1661,11 @@ def ui_update_artist(
         artist = artists.update(principal, artist_id, name=name, bio=bio)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_artist_head.html", artist=artist)
+    # A rename is the change with the widest reach in the console: the nav tree, the
+    # breadcrumb, the page heading and every catalogue row that names this artist.
+    return announce(
+        _render(request, "components/_artist_head.html", artist=artist), events.ARTISTS
+    )
 
 
 @router.post("/ui/songs/{song_id}", response_class=HTMLResponse)
@@ -1599,7 +1681,9 @@ def ui_update_song(
         song = songs.update(principal, song_id, title=title)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_song_head.html", song=song)
+    return announce(
+        _render(request, "components/_song_head.html", song=song), events.SONGS
+    )
 
 
 @router.delete("/ui/songs/{song_id}", response_class=HTMLResponse)
@@ -1661,7 +1745,9 @@ def ui_delete_reference_frame(
         identity = identities.remove_reference_frame(principal, identity_id, index)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(request, "components/_frames.html", identity=identity)
+    return announce(
+        _render(request, "components/_frames.html", identity=identity), events.IDENTITY
+    )
 
 
 @router.post("/ui/identities/{identity_id}/restore", response_class=HTMLResponse)
@@ -1695,6 +1781,12 @@ def ui_approve_identity(
 
     `set_approval` has been on the service since it was written with nothing able to call
     it, so every identity in the console was permanently a draft.
+
+    Answered with 204 and an announcement rather than the full-page `HX-Refresh` this
+    used to send. The refresh worked, and it was the one control in the console that
+    threw the whole screen away to change one badge — which on this page means losing the
+    scroll position in a three-column workspace and re-reading every version in history
+    to redraw a word. The regions that actually show approval say so themselves now.
     """
     try:
         identities.set_approval(principal, identity_id, ApprovalState(state))
@@ -1705,9 +1797,10 @@ def ui_approve_identity(
         return _error_fragment(request, ServiceError(f"{state!r} is not an approval state."))
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    response = HTMLResponse("")
-    response.headers["HX-Refresh"] = "true"
-    return response
+    # 204 rather than an empty body: these buttons carry no `hx-target`, so htmx would
+    # swap the response into the button itself and leave it captionless. A 204 is the
+    # documented "I did it, swap nothing" answer, and the header still fires.
+    return announce(Response(status_code=204), events.IDENTITY)
 
 
 @router.delete("/ui/kits/{kit_id}", response_class=HTMLResponse)
@@ -1716,6 +1809,7 @@ def ui_delete_kit(
     kit_id: str,
     principal: CurrentPrincipal,
     kits: Kits,
+    songs: Songs,
     force: bool = False,
 ):
     """Removes the kit and the assets and manifest it owns in the bucket.
@@ -1730,11 +1824,19 @@ def ui_delete_kit(
         kits.delete(principal, kit_id, force=force)
     except ServiceError as exc:
         return _error_fragment(request, exc)
-    return _render(
-        request,
-        "components/_kits.html",
-        kits=kits.list(principal, artist_id=artist_id),
-        artist_id=artist_id,
+    # The row's delete button targets `#kits`, which exists on the artist page and not on
+    # the song page — where the same row is listed inside a pane of its own. There the
+    # swap finds nothing and htmx drops it; the announcement is what repaints that list,
+    # so deleting a kit from a song now works on both screens.
+    return announce(
+        _render(
+            request,
+            "components/_kits.html",
+            kits=kits.list(principal, artist_id=artist_id),
+            songs=songs.list_for_artist(principal, artist_id),
+            artist_id=artist_id,
+        ),
+        events.KITS,
     )
 
 

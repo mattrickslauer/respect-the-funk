@@ -902,5 +902,14 @@ Everything PRODUCT.md defers: attribution links, `/r/{code}`, the disclosure gat
 leaderboards, rewards, composite sessions, K-factor. Those are role 2, and they are
 what would force a relational database. Their absence is why there is no database tier.
 
-Also absent by design: a websocket (kit status polls one row every 3s), a CDN, and a
-"which archetype goes viral" recommender — research calls that folklore.
+Also absent by design: a websocket, a CDN, and a "which archetype goes viral"
+recommender — research calls that folklore.
+
+The console is still live without one. A mutation names the collection it changed in an
+`HX-Trigger` header (`remixkit/ui/events.py`), and each page names the regions it keeps
+current in a `live` block; one hidden element re-reads the page and swaps just those
+regions out of the response, so attaching a song updates the nav tree, the header counts,
+the tab strip and the catalogue in the same breath as the list. That is push to the
+person who acted, which is where every staleness bug was actually seen — a second
+editor's change still arrives on your next navigation. Long-running jobs keep polling
+their own row every 3s, and announce themselves once when they land.

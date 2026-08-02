@@ -234,7 +234,12 @@ def test_a_settled_analysis_wakes_the_sections_panel(client, container, principa
     container.analysis.run(principal.tenant_id, song.id)
 
     panel = client.get(f"/ui/songs/{song.id}/analysis")
-    assert panel.headers["HX-Trigger"] == "rk:analysis-done"
+    # Membership rather than equality: a settled analysis now wakes two audiences, the
+    # sections panel by name and every region reading this song by `rk:song`, and the
+    # header is a list. Asserting the whole string would fail the next time a third
+    # listener is added, which is not what this test is about.
+    fired = [name.strip() for name in panel.headers["HX-Trigger"].split(",")]
+    assert "rk:analysis-done" in fired
     assert "125.00 BPM" in panel.text
     assert "fake:" in panel.text, "the method is shown, not hidden behind the number"
 

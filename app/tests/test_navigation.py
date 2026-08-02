@@ -365,6 +365,77 @@ def test_the_kit_breadcrumb_survives_a_deleted_song(client, container, principal
     assert kit["name"] in trail, "the trail should still end on the kit itself"
 
 
+# ------------------------------------------------------------------ folding sections
+def test_every_section_of_the_rail_has_something_that_folds_it(client, kit, song, consented):
+    """A `.navgroup` with no toggle is a section nobody can shut.
+
+    The rail is built out of one shape repeated — a head, and a `.navbody` under it — and
+    the head is the only thing that folds it. The two are written apart in the template
+    (the roster's head is a link with a twisty beside it; Songs, Kits and Workspace are a
+    button that is the whole row), which is exactly the arrangement where one can be added
+    without the other and nothing complains.
+    """
+    rail = _sidenav(client.get(f"/console/artists/{consented['id']}").text)
+    groups = re.findall(r'data-sec="([^"]+)"', rail)
+    toggles = re.findall(r'data-sec-toggle="([^"]+)"', rail)
+
+    assert set(groups) == {"roster", "artist", "songs", "kits", "workspace"}
+    assert sorted(groups) == sorted(toggles), "a section and its toggle have gone out of step"
+    for key in groups:
+        # What the button says it controls has to be on the page, or the announcement is
+        # a promise to a screen reader that the markup does not keep.
+        assert f'id="navsec-{key}"' in rail, f"{key}'s toggle controls an id that is not there"
+        assert f'aria-controls="navsec-{key}"' in rail, f"{key}'s toggle names no region"
+
+
+def test_a_folding_section_is_one_the_stylesheet_knows_how_to_fold():
+    """The keys are named in two files and neither imports the other.
+
+    Folding is CSS keyed off `data-nav-shut` on `<html>` — see components/_sidebar.html for
+    why the state cannot live in the rail's own markup — and the stylesheet has to name
+    each key to hide its body. A section added to the template and not to console.css
+    renders a twisty that turns, persists a preference, and folds nothing at all.
+    """
+    from pathlib import Path
+
+    template = Path("remixkit/ui/templates/components/_sidebar.html").read_text()
+    css = Path("remixkit/ui/static/console.css").read_text()
+
+    for key in set(re.findall(r'data-sec="([^"]+)"', template)):
+        assert f'data-nav-shut~="{key}"' in css, f"nothing in console.css folds the {key} section"
+
+
+def test_the_rail_ships_every_section_open(client, kit, song, consented):
+    """The server does not know what anybody has folded, and must not pretend to.
+
+    What is folded is a preference on `<html>`, restored before first paint; the rail
+    itself is re-rendered out of band on every mutation, so a fold state baked into this
+    markup would spring open on somebody's next save. Every toggle therefore leaves here
+    expanded, and the layout's `syncSections` is what puts the announcement back in step.
+    """
+    rail = _sidenav(client.get(f"/console/artists/{consented['id']}").text)
+    assert 'aria-expanded="false"' not in rail, "the rail shipped an opinion about what is folded"
+
+
+def test_songs_and_kits_are_named_sections_and_say_how_many(client, kit, song, consented):
+    """They used to run together as one list of sub-items under the artist.
+
+    A song and a kit are different kinds of thing that happen to render the same way, and
+    at a dozen songs the kits were simply off the bottom of the rail. Each is its own
+    section now, and each head carries the full count — the kit list is capped at five, so
+    without the count the cap is a silent lie about how many there are.
+    """
+    for _ in range(6):
+        client.post("/api/v1/kits", json={"song_id": song["id"], "video_count": 1})
+
+    rail = _sidenav(client.get(f"/console/artists/{consented['id']}").text)
+    for label, count in (("Songs", 1), ("Kits", 7)):
+        head = rail.split(f">{label}<", 1)
+        assert len(head) == 2, f"the rail has no {label} section"
+        assert f'<span class="count">{count}</span>' in head[1][:120], f"{label} does not say how many"
+    assert "2 more kits" in rail, "the capped kits are not accounted for"
+
+
 # ------------------------------------------------------------------ the rail's reach
 def test_collapsing_the_rail_only_hides_things_in_the_rail():
     """A static check, in the spirit of `test_nothing_reaches_for_a_bare_z_index`.

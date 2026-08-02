@@ -13,9 +13,41 @@
    song, or song to kit, used to be two navigations through the artist page and is now
    one click on something already on screen.
 
-   Collapsing is CSS keyed off `html[data-nav]`, set before first paint by the inline
-   script in the layout head, so the rail does not flash open on every navigation. #}
+   Everything below the brand is a `.navgroup`: a head, and a `.navbody` the head folds
+   away. Songs and kits used to run together as one undifferentiated list of sub-items
+   under an artist — a song and a kit are different kinds of thing, and the rail said so
+   nowhere — so each is now a named section with its own count and its own twisty, and so
+   are the roster, the open artist, and the four screens that are not a record. An artist
+   with a dozen songs no longer pushes their kits off the bottom of the rail: fold Songs
+   and the kits are back on screen.
+
+   Both kinds of collapsing — the whole rail, and one section of it — are CSS keyed off an
+   attribute on `<html>`, set before first paint by the inline script in the layout head.
+   State on `<html>` rather than in this markup is deliberate: the rail is re-rendered
+   out-of-band on every mutation (see `_layout.html`'s `#rk-live`), and anything somebody
+   had folded shut would spring open on their next save if the state lived in here. #}
 <aside class="sidebar" id="sidebar">
+
+  {# One twisty, for the heads that are also a link and so cannot be the button themselves.
+     `aria-expanded` is the state and the caret is the decoration; the label stays put
+     rather than flipping between "Expand" and "Collapse", because the attribute is what
+     the state is announced from and two sources for one fact eventually disagree. #}
+  {% macro twisty(key, label) -%}
+    <button class="twisty" type="button" data-sec-toggle="{{ key }}"
+            aria-controls="navsec-{{ key }}" aria-expanded="true"
+            aria-label="{{ label }} section"><span class="twist" aria-hidden="true">▾</span></button>
+  {%- endmacro %}
+
+  {# And one head for the sections that are only a heading — no page of their own to link
+     to, so the whole row is the button. #}
+  {% macro grouphead(key, label, count=none) -%}
+    <button class="navitem navitem-group" type="button" data-sec-toggle="{{ key }}"
+            aria-controls="navsec-{{ key }}" aria-expanded="true">
+      <span class="twist" aria-hidden="true">▾</span>
+      <span class="navlabel">{{ label }}</span>
+      {% if count %}<span class="count">{{ count }}</span>{% endif %}
+    </button>
+  {%- endmacro %}
 
   <div class="sidebar-top">
     <a class="brand" href="/console">
@@ -39,122 +71,171 @@
 
   <nav class="sidenav" aria-label="Console">
     {# ---- roster, and the branch you are standing on ---- #}
-    <a class="navitem navitem-section {{ 'is-on' if path == '/console' }}"
-       href="/console" {% if path == "/console" %}aria-current="page"{% endif %}>
-      <span class="navicon" aria-hidden="true">☰</span>
-      <span class="navlabel">Roster</span>
-      {% if nav and nav.artists %}<span class="count">{{ nav.artists|length }}</span>{% endif %}
-    </a>
+    <div class="navgroup" data-sec="roster">
+      <div class="navhead">
+        <a class="navitem navitem-section {{ 'is-on' if path == '/console' }}"
+           href="/console" {% if path == "/console" %}aria-current="page"{% endif %}>
+          <span class="navicon" aria-hidden="true">☰</span>
+          <span class="navlabel">Roster</span>
+          {% if nav and nav.artists %}<span class="count">{{ nav.artists|length }}</span>{% endif %}
+        </a>
+        {{ twisty("roster", "Roster") }}
+      </div>
 
-    {% if nav and nav.artists %}
-      <ul class="navtree">
-        {% for a in nav.artists %}
-          {% set open = nav.artist and a.id == nav.artist.id %}
-          <li class="{{ 'is-open' if open }}">
-            <a class="navitem navitem-artist {{ 'is-on' if open and path.endswith(a.id) }}"
-               href="/console/artists/{{ a.id }}"
-               {% if open and path == "/console/artists/" ~ a.id %}aria-current="page"{% endif %}>
+      {% if nav and nav.artists %}
+        <div class="navbody" id="navsec-roster">
+          <ul class="navtree">
+            {% for a in nav.artists %}
+              {% set open = nav.artist and a.id == nav.artist.id %}
               {# The one fact on the roster that decides whether anything else can be
                  acted on, carried into the nav as a dot rather than a word — a tree is
-                 scanned, not read. #}
-              <span class="dot {{ 'dot-ok' if a.consent.granted else 'dot-blocked' }}"
-                    aria-hidden="true"></span>
-              <span class="navlabel">{{ a.name }}</span>
-            </a>
-
-            {% if open %}
-              <ul class="navbranch">
-                <li>
-                  <a class="navitem navitem-sub {{ 'is-on' if path.endswith('/identity') }}"
-                     href="/console/artists/{{ a.id }}/identity"
-                     {% if path.endswith("/identity") %}aria-current="page"{% endif %}>
-                    <span class="navlabel">Identity</span>
+                 scanned, not read. Written once and used in both branches below, because
+                 an open artist and a closed one differ in what hangs off the row, not in
+                 what the row says. #}
+              {% set artistrow %}
+                <span class="dot {{ 'dot-ok' if a.consent.granted else 'dot-blocked' }}"
+                      aria-hidden="true"></span>
+                <span class="navlabel">{{ a.name }}</span>
+              {% endset %}
+              <li>
+                {% if not open %}
+                  <a class="navitem navitem-artist" href="/console/artists/{{ a.id }}">
+                    {{ artistrow }}
                   </a>
-                </li>
+                {% else %}
+                  <div class="navgroup" data-sec="artist">
+                    <div class="navhead">
+                      <a class="navitem navitem-artist {{ 'is-on' if path.endswith(a.id) }}"
+                         href="/console/artists/{{ a.id }}"
+                         {% if path == "/console/artists/" ~ a.id %}aria-current="page"{% endif %}>
+                        {{ artistrow }}
+                      </a>
+                      {{ twisty("artist", a.name) }}
+                    </div>
 
-                {% for s in nav.songs %}
-                  <li>
-                    {# A song is current whether you are on it or on the generate screen
-                       that hangs off it — the overlay does not move you elsewhere, and a
-                       tree that said otherwise would be lying about where you are. #}
-                    {% set here = nav.song and s.id == nav.song.id %}
-                    <a class="navitem navitem-sub {{ 'is-on' if here }}"
-                       href="/console/songs/{{ s.id }}"
-                       {% if here and path == "/console/songs/" ~ s.id %}aria-current="page"{% endif %}>
-                      <span class="navlabel">{{ s.title }}</span>
-                      {% if not s.bpm %}
-                        <span class="dot dot-blocked" aria-hidden="true"
-                              title="not measured"></span>
-                      {% endif %}
-                    </a>
-                  </li>
-                {% endfor %}
+                    <div class="navbody" id="navsec-artist">
+                      <div class="navbranch">
+                        <a class="navitem navitem-sub {{ 'is-on' if path.endswith('/identity') }}"
+                           href="/console/artists/{{ a.id }}/identity"
+                           {% if path.endswith("/identity") %}aria-current="page"{% endif %}>
+                          <span class="navlabel">Identity</span>
+                        </a>
 
-                {# Kits are leaves, not a link to a page that lists them, because a kit
-                   opens in the layer — so from anywhere inside an artist, any recent kit
-                   is one click and does not cost you the screen you are on. Capped at
-                   five: the nav is for the ones still in mind, and the artist's Kits tab
-                   is the list of all of them, which is what the overflow row goes to. #}
-                {% if nav.kits %}
-                  {% for k in nav.kits[:5] %}
-                    <li>
-                      <a class="navitem navitem-sub" {{ layer("/console/kits/" ~ k.id) }}>
-                        <span class="navlabel">{{ k.name }}</span>
-                        {% if k.status.value in ("queued", "running") %}
-                          <span class="dot dot-run" aria-hidden="true"
-                                title="{{ k.status.value }}"></span>
-                        {% elif k.status.value == "failed" %}
-                          <span class="dot dot-blocked" aria-hidden="true" title="failed"></span>
+                        {% if nav.songs %}
+                          <div class="navgroup" data-sec="songs">
+                            {{ grouphead("songs", "Songs", nav.songs|length) }}
+                            <div class="navbody" id="navsec-songs">
+                              <ul class="navleaves">
+                                {% for s in nav.songs %}
+                                  <li>
+                                    {# A song is current whether you are on it or on the
+                                       generate screen that hangs off it — the overlay does
+                                       not move you elsewhere, and a tree that said
+                                       otherwise would be lying about where you are. #}
+                                    {% set here = nav.song and s.id == nav.song.id %}
+                                    <a class="navitem navitem-sub {{ 'is-on' if here }}"
+                                       href="/console/songs/{{ s.id }}"
+                                       {% if here and path == "/console/songs/" ~ s.id %}aria-current="page"{% endif %}>
+                                      <span class="navlabel">{{ s.title }}</span>
+                                      {% if not s.bpm %}
+                                        <span class="dot dot-blocked" aria-hidden="true"
+                                              title="not measured"></span>
+                                      {% endif %}
+                                    </a>
+                                  </li>
+                                {% endfor %}
+                              </ul>
+                            </div>
+                          </div>
                         {% endif %}
-                      </a>
-                    </li>
-                  {% endfor %}
-                  {% if nav.kits|length > 5 %}
-                    <li>
-                      <a class="navitem navitem-sub navitem-more"
-                         href="/console/artists/{{ a.id }}">
-                        <span class="navlabel">{{ nav.kits|length - 5 }} more kits</span>
-                      </a>
-                    </li>
-                  {% endif %}
-                {% endif %}
-              </ul>
-            {% endif %}
-          </li>
-        {% endfor %}
-      </ul>
-    {% endif %}
 
-    {# ---- the sections that are not a record ---- #}
-    <a class="navitem navitem-section {{ 'is-on' if section == '/console/catalogue' }}"
-       href="/console/catalogue"
-       {% if section == "/console/catalogue" %}aria-current="page"{% endif %}>
-      <span class="navicon" aria-hidden="true">▤</span>
-      <span class="navlabel">Catalogue</span>
-    </a>
-    <a class="navitem navitem-section {{ 'is-on' if section == '/verify' }}"
-       href="/verify" {% if section == "/verify" %}aria-current="page"{% endif %}>
-      <span class="navicon" aria-hidden="true">✓</span>
-      <span class="navlabel">Verify</span>
-    </a>
-    <a class="navitem navitem-section {{ 'is-on' if section == '/console/settings' }}"
-       href="/console/settings"
-       {% if section == "/console/settings" %}aria-current="page"{% endif %}>
-      <span class="navicon" aria-hidden="true">⚙</span>
-      <span class="navlabel">Deployment</span>
-      {% if env.warnings %}<span class="count count-blocked">{{ env.warnings|length }}</span>{% endif %}
-    </a>
-    <a class="navitem navitem-section" href="/docs">
-      <span class="navicon" aria-hidden="true">{ }</span>
-      <span class="navlabel">API</span>
-    </a>
+                        {# Kits are leaves, not a link to a page that lists them, because a
+                           kit opens in the layer — so from anywhere inside an artist, any
+                           recent kit is one click and does not cost you the screen you are
+                           on. Capped at five: the section is for the ones still in mind,
+                           and the artist's Kits tab is the list of all of them, which is
+                           what the overflow row goes to. The head counts all of them, so
+                           the cap is stated rather than silent. #}
+                        {% if nav.kits %}
+                          <div class="navgroup" data-sec="kits">
+                            {{ grouphead("kits", "Kits", nav.kits|length) }}
+                            <div class="navbody" id="navsec-kits">
+                              <ul class="navleaves">
+                                {% for k in nav.kits[:5] %}
+                                  <li>
+                                    <a class="navitem navitem-sub" {{ layer("/console/kits/" ~ k.id) }}>
+                                      <span class="navlabel">{{ k.name }}</span>
+                                      {% if k.status.value in ("queued", "running") %}
+                                        <span class="dot dot-run" aria-hidden="true"
+                                              title="{{ k.status.value }}"></span>
+                                      {% elif k.status.value == "failed" %}
+                                        <span class="dot dot-blocked" aria-hidden="true" title="failed"></span>
+                                      {% endif %}
+                                    </a>
+                                  </li>
+                                {% endfor %}
+                                {% if nav.kits|length > 5 %}
+                                  <li>
+                                    <a class="navitem navitem-sub navitem-more"
+                                       href="/console/artists/{{ a.id }}">
+                                      <span class="navlabel">{{ nav.kits|length - 5 }} more kits</span>
+                                    </a>
+                                  </li>
+                                {% endif %}
+                              </ul>
+                            </div>
+                          </div>
+                        {% endif %}
+                      </div>
+                    </div>
+                  </div>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    </div>
+
+    {# ---- the sections that are not a record ----
+       Four links with nothing under them, so the thing that folds is the set of them.
+       They stay last and they stay a group: on a roster deep enough to scroll, this is
+       what somebody folds to get the four fixed destinations back onto one screen. #}
+    <div class="navgroup" data-sec="workspace">
+      {{ grouphead("workspace", "Workspace") }}
+      <div class="navbody" id="navsec-workspace">
+        <a class="navitem navitem-section {{ 'is-on' if section == '/console/catalogue' }}"
+           href="/console/catalogue"
+           {% if section == "/console/catalogue" %}aria-current="page"{% endif %}>
+          <span class="navicon" aria-hidden="true">▤</span>
+          <span class="navlabel">Catalogue</span>
+        </a>
+        <a class="navitem navitem-section {{ 'is-on' if section == '/verify' }}"
+           href="/verify" {% if section == "/verify" %}aria-current="page"{% endif %}>
+          <span class="navicon" aria-hidden="true">✓</span>
+          <span class="navlabel">Verify</span>
+        </a>
+        <a class="navitem navitem-section {{ 'is-on' if section == '/console/settings' }}"
+           href="/console/settings"
+           {% if section == "/console/settings" %}aria-current="page"{% endif %}>
+          <span class="navicon" aria-hidden="true">⚙</span>
+          <span class="navlabel">Deployment</span>
+          {% if env.warnings %}<span class="count count-blocked">{{ env.warnings|length }}</span>{% endif %}
+        </a>
+        <a class="navitem navitem-section" href="/docs">
+          <span class="navicon" aria-hidden="true">{ }</span>
+          <span class="navlabel">API</span>
+        </a>
+      </div>
+    </div>
   </nav>
 
   {# ---- the foot: what this process is, and who is holding it ----
      The warning banner used to be a full-width row above every page, and `_rail_env`
      reprinted the same three backends at the foot of every rail. One place now. The
      count is a link because the deployment page is the same information with the fix for
-     each spelled out. #}
+     each spelled out. It sits outside the folding sections deliberately: it is the line
+     that has to be true no matter what anybody has folded away. #}
   <div class="sidebar-foot">
     {% if env.warnings %}
       <a class="envwarn" href="/console/settings"

@@ -683,6 +683,34 @@ def test_a_group_shot_says_how_many_faces_actually_reached_the_wire(
     assert "RK_REFERENCE_SLOT" in note
 
 
+def test_a_group_shot_blames_the_model_when_the_model_is_what_capped_it(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """Only one of the two reasons is actionable, so the row must not confuse them.
+
+    An unstated slot count is a configuration question. A count the vendor has published
+    is not, and pointing at `RK_REFERENCE_SLOT` there sends somebody to set a knob that
+    cannot change the number — after which they see the same count and stop believing the
+    row.
+    """
+    for name in ("", "Marco"):
+        container.identities.create_version(
+            principal, artist.id, name=name,
+            reference_frames=[frame(f"f{name or 'p'}", "neutral")],
+        )
+    monkeypatch.setattr(container.generator, "_edit_model", "bria-fibo-edit")
+    monkeypatch.setattr(container.generator, "_video_edit_model", "kling-o1-image-to-video")
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, identity_names=["", "Marco"]
+    )
+    note = plan.shots[0].prelude.plate_note
+
+    assert "2 faces" in note and "1 reference" in note
+    assert "bria-fibo-edit takes 1" in note
+    assert "RK_REFERENCE_SLOT" not in note
+
+
 def test_a_named_line_with_no_versions_is_dropped_not_substituted(
     container, principal, song, artist
 ):
@@ -1001,10 +1029,16 @@ def test_the_bria_family_sends_images_as_an_array():
     assert registry.get("bria-genfill").input_mapping([one]) == {"image": "https://b2/a.png"}
 
 
-def test_an_array_slot_carries_the_whole_reference_set():
-    """A slot that takes a list is a multi-reference slot, which is what a likeness needs
-    and what `RK_REFERENCE_SLOT` was holding out for — except this one came from the
-    vendor rather than from a guess."""
+def test_an_array_slot_is_not_a_multi_reference_slot():
+    """An array of one is still an array, and the plural key never said otherwise.
+
+        bria-fibo-edit -> 400: invalid payload parameters: images
+        (Number of images 4 exceeds maximum allowed value 1)
+
+    The previous version of this test asserted the opposite, having read `maxItems` off
+    the fact that the key ends in an s. The container and its capacity are stated
+    separately by the API, and only one of them had been stated to us.
+    """
     from genblaze_core.models.asset import Asset as GBAsset
     from genblaze_gmicloud import GMICloudImageProvider
 
@@ -1016,16 +1050,26 @@ def test_an_array_slot_carries_the_whole_reference_set():
         for n in ("a", "b", "c")
     ]
 
-    assert registry.get("bria-fibo-edit").input_mapping(frames) == {
-        "images": ["https://b2/a.png", "https://b2/b.png", "https://b2/c.png"]
+    # Still a list — the singular `image` was rejected by name and that has not changed.
+    assert registry.get("bria-fibo-edit").input_mapping(frames) == {"images": ["https://b2/a.png"]}
+    assert registry.get("bria-fibo-edit").input_mapping(frames[:1]) == {
+        "images": ["https://b2/a.png"]
     }
 
 
-def test_a_model_with_an_array_slot_gets_the_whole_classed_set(
+def test_a_declared_maximum_caps_the_classed_set(
     container, principal, song, artist, gmi_shaped, monkeypatch
 ):
-    """Per model rather than per deployment: how many references travel is a property of
-    the model, and one positional slot still gets one whatever the setting says."""
+    """The run this whole change exists for.
+
+        Step 0 (gmicloud-image/bria-fibo-edit): GMICloud submit failed (400): invalid
+        payload parameters: images (Number of images 4 exceeds maximum allowed value 1)
+
+    A classed identity has several frames and the model's slot is an array, so every frame
+    went out and the vendor refused the request — after the plates were rendered and the
+    queue slot was spent. How many travel is a property of the model, and the model has
+    said what it is.
+    """
     from remixkit.domain.models import FrameAngle, ReferenceFrame
 
     frames = [
@@ -1044,8 +1088,41 @@ def test_a_model_with_an_array_slot_gets_the_whole_classed_set(
     )
     still = plan.shots[0].prelude
 
-    assert len(still.reference_keys) == 3, "an array slot should carry the whole set"
-    assert "3 references" in still.plate_note
+    assert len(still.reference_keys) == 1, "the vendor's maximum is 1"
+    # Spent on the angle the shot asked for rather than on whichever frame sorts first —
+    # with one slot, which frame fills it is the entire likeness decision.
+    assert still.reference_keys == ["remixkit/frames/three-quarter-left.png"]
+
+
+def test_a_declared_maximum_outranks_the_operator_setting(
+    container, principal, song, artist, gmi_shaped, monkeypatch
+):
+    """`RK_REFERENCE_MAX` is a deployment's appetite, not the model's capacity.
+
+    An operator who has verified a slot and raised the count still cannot raise the
+    vendor's `maxItems`, and a request over it is a 400 rather than a bigger render — so
+    the declared limit clamps the setting instead of the other way round.
+    """
+    from remixkit.domain.models import FrameAngle, ReferenceFrame
+
+    frames = [
+        ReferenceFrame(
+            key=f"remixkit/frames/{angle.value}.png", angle=angle,
+            sha256=angle.value.ljust(64, "0")[:64], content_type="image/png",
+        )
+        for angle in (FrameAngle.FRONT, FrameAngle.THREE_QUARTER_LEFT, FrameAngle.PROFILE_RIGHT)
+    ]
+    container.identities.create_version(principal, artist.id, reference_frames=frames)
+    monkeypatch.setattr(container.generator, "_edit_model", "bria-fibo-edit")
+    monkeypatch.setattr(container.generator, "_video_edit_model", "kling-o1-image-to-video")
+    monkeypatch.setattr(container.generator, "_reference_slot", "images")
+    monkeypatch.setattr(container.generator, "_reference_max", 4)
+
+    plan, _ = container.kits.plan(
+        principal, song_id=song.id, video_count=1, recipe_slug="performance"
+    )
+
+    assert len(plan.shots[0].prelude.reference_keys) == 1
 
 
 def test_a_single_slot_model_still_gets_one(
@@ -1131,7 +1208,9 @@ def test_the_reference_survives_all_the_way_into_the_provider_payload():
     step.inputs = frames
 
     payload = provider.prepare_payload(step)
-    assert payload.get("images") == ["https://b2/a.png", "https://b2/b.png"]
+    # An array, and one long: the mapper trims to the vendor's `maxItems` so a caller that
+    # hands over more than the plan counted produces a valid request rather than a 400.
+    assert payload.get("images") == ["https://b2/a.png"]
 
 
 def test_the_shipped_families_still_send_their_own_slot():

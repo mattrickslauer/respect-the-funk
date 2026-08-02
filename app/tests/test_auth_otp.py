@@ -451,6 +451,50 @@ def test_documents_are_never_served_as_files(otp_client, otp_container, mailer):
     assert FIRST_USER not in response.text
 
 
+def test_a_tenants_own_media_is_served(otp_client, otp_container, mailer):
+    """The regression this fixes. Identity reference frames live under `tenants/` and the
+    identity page links to every one of them, so refusing the whole prefix rendered an
+    artist with five broken images while the bytes sat on disk.
+
+    Invisible on B2, where frames are presigned and this route is never reached — which is
+    how a dev-only path rots without anybody noticing.
+    """
+    token = sign_in(otp_container, mailer)
+    key = "remixkit/tenants/test-label/identities/idn_1/frames/abc.jpeg"
+    otp_container.storage.put(key, b"\xff\xd8\xff-jpeg-bytes", content_type="image/jpeg")
+
+    response = otp_client.get(f"/files/{key}", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert response.content == b"\xff\xd8\xff-jpeg-bytes"
+    assert response.headers["content-type"] == "image/jpeg"
+
+
+def test_another_tenants_media_is_not(otp_client, otp_container, mailer):
+    """The handler takes an arbitrary key from the URL, so serving a tenant's media means
+    checking it is *their* tenant — otherwise a signed-in user reads someone else's
+    photographs by typing the path."""
+    token = sign_in(otp_container, mailer)
+    key = "remixkit/tenants/someone-else/identities/idn_9/frames/xyz.jpeg"
+    otp_container.storage.put(key, b"not-yours", content_type="image/jpeg")
+
+    response = otp_client.get(f"/files/{key}", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 404, "another tenant's frames are not this caller's"
+    assert b"not-yours" not in response.content
+
+
+def test_documents_are_still_refused_inside_your_own_tenant(otp_client, otp_container, mailer):
+    """Widening this to media must not widen it to the repository's private storage."""
+    token = sign_in(otp_container, mailer)
+    key = "remixkit/tenants/test-label/artists/art_1.yaml"
+    otp_container.storage.put(key, b"id: art_1\n", content_type="application/yaml")
+
+    response = otp_client.get(f"/files/{key}", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 404
+
+
 def test_the_login_page_bounces_someone_already_signed_in(otp_client, mailer):
     otp_client.post("/ui/auth/request-code", data={"email": FIRST_USER})
     otp_client.post("/ui/auth/verify-code", data={"email": FIRST_USER, "code": mailer.last_code})

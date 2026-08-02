@@ -23,7 +23,7 @@ from typing import Any
 
 from remixkit.adapters import pricing
 from remixkit.auth.provider import Principal
-from remixkit.domain.models import ApprovalState, Kit, KitStatus
+from remixkit.domain.models import ApprovalState, Kit, KitAttempt, KitStatus
 from remixkit.ports.generator import (
     GenerationPlan,
     GenerationRequest,
@@ -328,6 +328,106 @@ class KitService:
             {"tenant_id": principal.tenant_id, "kit_id": kit.id},
             dedupe_key=kit.id,
         )
+        return kit
+
+    def retry(self, principal: Principal, kit_id: str) -> Kit:
+        """Run a failed kit again, from the brief it was bought with.
+
+        Most of what fails here is not the brief. A provider 400s on a field the
+        connector sends in the wrong shape, a submit times out, a bucket write races a
+        credential rotation — and every one of those was, until now, a dead row. The only
+        way forward was to build the same brief again through the generate screen and
+        hope it was remembered exactly, which for a kit with eight rewritten prompts it
+        would not be. The brief is already stored, `run()` already re-plans from it, and
+        the worker already treats a redelivered kit as a no-op; the piece that was missing
+        was a way to say "again".
+
+        **Same kit, not a copy.** A retry keeps the id, the name and the brief, so the row
+        somebody is looking at is the row that starts moving, and the two attempts do not
+        become two kits a person has to tell apart. What it does not keep is the failed
+        attempt's *output*: `run()` overwrites `assets` and the ledger, so the previous
+        attempt is recorded on `kit.attempts` (including what it cost) and its objects are
+        deleted from the bucket here rather than left orphaned.
+
+        **Only a failed kit.** A queued or running one is already on its way and a second
+        message would be a second charge for the same work. A ready one is refused too:
+        re-running it would spend the money again to replace assets that may already be
+        approved or published, and "generate another" is the honest way to ask for that.
+
+        The gates from `request()` are re-checked rather than assumed, because time has
+        passed — consent can be withdrawn between a run and its retry, and refusing to
+        regenerate an artist's face after the rights went away is the whole point of
+        having the gate.
+        """
+        kit = self.get(principal, kit_id)
+
+        if kit.status in (KitStatus.QUEUED, KitStatus.RUNNING):
+            raise Conflict(
+                f"{kit.name!r} is {kit.status.value} — it is already on its way. Wait for "
+                "it to land before retrying."
+            )
+        if kit.status is KitStatus.READY:
+            raise Conflict(
+                f"{kit.name!r} generated cleanly. Re-running it would charge for the same "
+                "assets again and replace the ones already delivered — use "
+                "'Generate another' for a fresh kit."
+            )
+
+        artist = self._artists.get(principal, kit.artist_id)
+        if artist.consent.blocks_generation:
+            raise RightsError(
+                f"{artist.name} has no recorded likeness consent. Record it on the artist "
+                "before retrying — a kit holds the artist's face invariant, and that "
+                "needs auditable rights."
+            )
+        # The song has to still be there: `run()` re-plans from it, and a brief whose
+        # section ids resolve against nothing is not a kit anybody can retry.
+        self._songs.get(principal, kit.song_id)
+
+        if not getattr(self._queue, "can_execute", True):
+            raise Conflict(getattr(self._queue, "unavailable_reason", "The job queue cannot execute jobs."))
+
+        kit.attempts.append(
+            KitAttempt(
+                number=kit.attempt,
+                status=kit.status,
+                error=kit.error,
+                cost_cents=kit.total_cost_cents,
+                asset_count=len(kit.assets),
+                run_id=kit.run_id,
+            )
+        )
+        for key in self._owned_keys(kit):
+            try:
+                self._storage.delete(key)
+            except Exception as exc:
+                # Exactly the tolerance `delete()` applies, for the same reason: a partial
+                # run's objects are frequently already missing, and one unreachable key
+                # must not stop the retry.
+                log.warning("kit %s: could not delete %s before retry (%s)", kit_id, key, exc)
+
+        kit.status = KitStatus.QUEUED
+        kit.error = None
+        kit.assets = []
+        kit.total_cost_cents = 0
+        kit.run_id = None
+        kit.manifest_key = None
+        kit.manifest_verified = None
+        kit.touch()
+        self._repo.put(principal.tenant_id, COLLECTION, kit.id, kit)
+
+        # A dedupe key of the kit id alone would be right exactly once. SQS FIFO holds a
+        # `MessageDeduplicationId` for five minutes, so a retry issued straight after a
+        # fast failure — which is what a person does when they have just fixed the cause —
+        # would be accepted by the queue and silently dropped, leaving the row at `queued`
+        # with nothing coming. The attempt number is what makes each retry its own message
+        # while keeping redelivery of *that* message a no-op (§2b rule 4).
+        self._queue.enqueue(
+            JOB_TYPE,
+            {"tenant_id": principal.tenant_id, "kit_id": kit.id},
+            dedupe_key=f"{kit.id}:{kit.attempt}",
+        )
+        log.info("kit %s queued for attempt %s", kit.id, kit.attempt)
         return kit
 
     # -- the slow path (worker) -------------------------------------------------

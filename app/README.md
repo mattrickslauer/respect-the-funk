@@ -400,6 +400,42 @@ failed step is billed; the observed answer is that it is. So the only safe assum
 that a submitted step is a charged step, and the only safe place to refuse is before
 submission.
 
+## Running a failed kit again
+
+A failed run used to be a terminal row. The console rendered whatever the provider said —
+`Sora submit failed: Expected entry at 'input_reference' to be bytes … received <class
+'dict'>` — and offered exactly one thing to do about it: delete the kit. Getting back to
+where you were meant rebuilding the brief through the generate screen, which for a kit
+carrying eight rewritten prompts is not something anybody reproduces exactly.
+
+Nothing was missing except the button. `kit.brief` is what the worker re-plans from,
+`run()` already rebuilds the whole request from it, and redelivery is already a no-op. So
+**Retry run** re-queues the same kit — same id, same name, same brief — and the row comes
+back `queued`, carrying the same 3-second poll that draws a first run.
+
+Three things a retry can quietly get wrong, and what this does about each:
+
+* **Charging twice.** Only a `failed` kit retries. A queued or running one is already on
+  its way, and a `ready` one would spend the money again to replace assets that may
+  already be approved — "Generate another" is the honest way to ask for that.
+* **Losing what the failed attempt cost.** `run()` overwrites `assets` and re-costs from
+  them, so a kit that burned two video steps before failing would read as though it had
+  only ever cost the successful run. The discarded attempt is recorded on `kit.attempts`
+  with its error, its run id and its price; `kit.spent_cents` adds it back, and the kit
+  page lists every earlier attempt under the ledger. Its *objects* do not survive — they
+  are deleted from the bucket at retry time, because `run()` would otherwise orphan them.
+* **Being swallowed by the queue.** SQS FIFO holds a `MessageDeduplicationId` for five
+  minutes. The kit id alone was the right dedupe key exactly once: a retry issued straight
+  after a fast failure — which is precisely when somebody has just fixed the cause — would
+  be accepted and silently dropped. The key is `kit_id:attempt`.
+
+The consent gate is re-checked rather than inherited. Time passes between a failure and
+the retry, a retry generates the artist's face again, so it has to answer the rights
+question again.
+
+`POST /api/v1/kits/{id}/retry` is the same thing over JSON — 202, and the id does not
+change, so a caller polling `GET /kits/{id}` watches one document run twice.
+
 ## Seeing the run before buying it
 
 `/console/artists/{id}/songs/{id}/generate` is a dry run. It resolves the whole brief to

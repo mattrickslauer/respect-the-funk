@@ -492,6 +492,17 @@ def get_kit(kit_id: str, principal: CurrentPrincipal, kits: Kits):
     return kits.get(principal, kit_id)
 
 
+@router.post("/kits/{kit_id}/retry", status_code=status.HTTP_202_ACCEPTED)
+def retry_kit(kit_id: str, principal: CurrentPrincipal, kits: Kits):
+    """Queue a failed kit again, from the brief it was bought with.
+
+    202 for the same reason `POST /kits` is: the work is queued, not done. The kit id
+    does not change, so a caller polling `GET /kits/{id}` watches the same document go
+    `queued → running → ready` a second time.
+    """
+    return kits.retry(principal, kit_id)
+
+
 @router.put("/kits/{kit_id}/approval")
 def approve_kit(kit_id: str, body: ApprovalIn, principal: CurrentPrincipal, kits: Kits):
     return kits.set_approval(principal, kit_id, body.state)

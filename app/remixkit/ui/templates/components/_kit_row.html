@@ -34,6 +34,11 @@
       <strong>{{ "$%.2f"|format(kit.total_cost_cents / 100) }}</strong>
       {% if kit.assets %}<span class="hint">({{ "%.1f"|format(kit.total_cost_cents / kit.assets|length) }}¢ per delivered asset)</span>{% endif %}
       {% if kit.run_id %} · run <code>{{ kit.run_id[:12] }}</code>{% endif %}
+      {# A retried kit has spent money that its own asset grid cannot account for, and a
+         total that silently omits it is precise and wrong. #}
+      {% if kit.attempts %} · attempt {{ kit.attempt }}<span class="hint">
+        ({{ "$%.2f"|format(kit.abandoned_cost_cents / 100) }} spent on
+        {{ kit.attempts|length }} discarded)</span>{% endif %}
     </p>
 
     {% if kit.error %}<p class="small err">{{ kit.error }}</p>{% endif %}
@@ -65,6 +70,17 @@
        button and a select, and a heading that happens to be a link is not an obvious
        way in next to two controls that announce themselves. #}
     <a class="btn btn-quiet" {{ layer("/console/kits/" ~ kit.id) }}>Open kit</a>
+    {# A failed run used to be a terminal row: read the error, delete the kit, rebuild the
+       brief by hand. The brief is stored, so this runs the same one again — same kit, same
+       id, same name — and the row comes back `queued` carrying the poll that draws it. #}
+    {% if kit.status.value == "failed" %}
+      <button class="btn btn-quiet"
+              hx-post="/ui/kits/{{ kit.id }}/retry"
+              hx-target="#kit-{{ kit.id }}"
+              hx-swap="outerHTML">
+        Retry run
+      </button>
+    {% endif %}
     <button class="btn btn-danger btn-quiet"
             hx-delete="/ui/kits/{{ kit.id }}{% if kit.approval.value != 'draft' %}?force=true{% endif %}"
             hx-target="#kits"

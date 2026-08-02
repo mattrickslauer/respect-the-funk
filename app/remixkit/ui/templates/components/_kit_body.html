@@ -24,8 +24,14 @@
     </div>
     <div class="stat">
       <dt>Cost</dt>
+      {# The number here is what the *delivered* assets cost. A retried kit has also paid
+         for attempts that delivered nothing, and the sub-line says so rather than letting
+         the headline quietly under-report what the label was charged. #}
       <dd>{{ "$%.2f"|format(kit.total_cost_cents / 100) }}
-        {% if kit.assets %}
+        {% if kit.attempts %}
+          <span class="stat-sub">{{ "$%.2f"|format(kit.spent_cents / 100) }} spent over
+            {{ kit.attempt }} attempts</span>
+        {% elif kit.assets %}
           <span class="stat-sub">{{ "%.1f"|format(kit.total_cost_cents / kit.assets|length) }}¢ each</span>
         {% endif %}</dd>
     </div>
@@ -53,7 +59,26 @@
 </header>
 
 {% if kit.error %}
-  <div class="notice notice-error shell-notice"><strong>The run failed.</strong> {{ kit.error }}</div>
+  {# The error and the way out of it, in the same notice. Most of what fails here is not
+     the brief — a provider rejects a field, a submit times out — so the useful next move
+     is almost always "run this again", and it was the one thing this screen could not do.
+
+     The button's target depends on which frame this body is in: over a list there is a
+     layer to redraw, and on the page there is not, so the route answers that one with a
+     reload. See `ui.routes.ui_retry_kit`. #}
+  <div class="notice notice-error shell-notice notice-act">
+    <span><strong>The run failed.</strong> {{ kit.error }}</span>
+    {# On `failed` rather than on the message: a kit can finish `ready` and still carry a
+       note on `error`, and offering to re-run a kit whose assets were delivered would be
+       offering to spend the money again for nothing — which the service refuses anyway. #}
+    {% if kit.status.value == "failed" %}
+      <button class="btn btn-quiet"
+              hx-post="/ui/kits/{{ kit.id }}/retry"
+              {% if overlay %}hx-target="#layer" hx-swap="innerHTML"{% else %}hx-swap="none"{% endif %}>
+        Retry run
+      </button>
+    {% endif %}
+  </div>
 {% endif %}
 
 <div class="deck deck-r">
@@ -120,6 +145,31 @@
           </table>
         {% else %}
           <p class="empty">Nothing was delivered, so nothing was charged.</p>
+        {% endif %}
+
+        {# Retries are not free, and the attempt that failed is the one whose cost has
+           nowhere else to appear: `run()` replaces `assets` wholesale, so without this
+           table a kit that burned two video steps before failing and then succeeded would
+           read as though it had only ever cost the successful run. #}
+        {% if kit.attempts %}
+          <div class="panel-head">
+            <h3>Earlier attempts</h3>
+            <span class="hint">{{ "$%.2f"|format(kit.abandoned_cost_cents / 100) }} spent, nothing delivered</span>
+          </div>
+          <table class="table">
+            <thead><tr><th>Attempt</th><th>Ended</th><th>Assets</th><th>Cost</th><th>Why it stopped</th></tr></thead>
+            <tbody>
+              {% for past in kit.attempts %}
+                <tr>
+                  <td>{{ past.number }}</td>
+                  <td>{{ past.at.strftime("%Y-%m-%d %H:%M") }}</td>
+                  <td>{{ past.asset_count }}</td>
+                  <td>{{ "$%.3f"|format(past.cost_cents / 100) }}</td>
+                  <td class="err">{{ past.error or past.status.value }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         {% endif %}
       </section>
     </div>

@@ -31,7 +31,7 @@ different fixes:
 | # | Failure | Fix | Status |
 |---|---------|-----|--------|
 | 1 | The prompt named no song, artist, tempo, or language. `MOODS` is four fixed strings shared by every artist in the catalogue. | Song-aware defaults + **editable prompts** | built |
-| 2 | Nothing told the model not to generate audio. Veo, Sora 2 and Seedance all return a native audio track. | Negatives + prompt clause; deterministic mux-out on delivery | partly built (§4) |
+| 2 | Nothing told the model not to generate audio, and nothing put the actual record under the picture. Veo, Sora 2 and Seedance all return a native audio track. | Negatives + prompt clause; the master muxed in over them | built (§4) |
 | 3 | `Identity.reference_frames` — Amanda Kurt's face — is uploadable, storable, rendered in the console, and **read by nothing**. `_compose_prompt` is text-only. | Character plates as image conditioning (§3) | built |
 
 The fourth failure is the one that made the other three expensive: **the screen showed a
@@ -236,26 +236,44 @@ at $0.04, and the frame you approve is literally the frame the clip starts from.
 
 ---
 
-## 4. Silence (partly built)
+## 4. The master under the picture (built)
 
-A kit loop is a backdrop the master plays over. Audio in it is a defect, not a bonus.
+A kit loop is a backdrop the master plays over. Audio the *model* wrote is a defect, not a
+bonus — and this section originally proposed deleting it (`ffmpeg -c copy -an`), which was
+the right diagnosis and the wrong cure. A silent loop is not the product either. By the
+time a kit is bought the master has been uploaded, measured, sectioned and hook-windowed;
+a clip that does not carry it is a stock backdrop with this song's prompt attached, which
+is exactly what the "Un Poquito Más" kit was.
 
-Built: `briefs.VIDEO_NEGATIVES` sends `music, soundtrack, singing, speech, …` as
-`negative_prompt`, and the composed prompt carries a `silent footage` clause.
-
-**This is best-effort and should not be described as more.** `negative_prompt` is a
-conditioning signal; no provider here documents it as binding on the audio track. The
-deterministic fix is to drop the track on delivery:
+So the track is not dropped, it is **replaced**. `services/scoring.py`, on every video a
+run produces:
 
 ```
-ffmpeg -i in.mp4 -c copy -an out.mp4
+ffmpeg -i clip.mp4 -ss <that shot's hook> -i master.wav \
+       -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -af apad -shortest scored.mp4
 ```
 
-Stream-copy, so it is a container rewrite rather than a re-encode — fast, lossless, and
-ffmpeg is already a dependency (`adapters/mock_media`). The work is the download/re-upload
-round trip through storage, which is why it is not in this change. Until it lands, a
-generated clip may still arrive scored, and the console should say so rather than implying
-the negatives settled it.
+* **The picture is stream-copied.** A container rewrite plus an audio encode, not a
+  re-render — the frames delivered are the frames the provider rendered, and the manifest's
+  content hash still describes them.
+* **`-map` is exhaustive.** Whatever Veo, Sora or Seedance composed is not muted, it is
+  absent from the output. That is the determinism this section asked for, from the other
+  side.
+* **The window is the shot's own.** A brief naming two hooks deals its loops across them,
+  so `Song.hook` is the wrong answer for half of them; `ShotSpec.hook_start_ms` travels
+  through `PlannedShot` onto `Asset.audio_start_ms`, and the plan screen shows which
+  seconds of the record each loop will carry *before* the button.
+* **The provider's bytes are never overwritten.** `Asset.key` stays; the cut is
+  `Asset.scored_key`, `playable_key` is what a screen or a download reaches for, and
+  `KitService._owned_keys` deletes both.
+
+The negatives stay where they are. Asking for silent footage is still worth doing — it is
+one fewer thing for the model to spend its budget rendering — but nothing now depends on
+whether the provider honoured it.
+
+Every video carries `Asset.audio_note` whichever way it went, because the two failures
+(no master uploaded for the song, no ffmpeg in the process) look exactly like success on a
+screen that only renders the successful case. `RK_SCORE_WITH_MASTER=0` turns it off.
 
 ---
 

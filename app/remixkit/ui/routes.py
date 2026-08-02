@@ -2043,16 +2043,34 @@ def serve_local_file(key: str, request: Request, principal: CurrentPrincipal):
     of the URL, so leaving it open would have made it the one way around the login —
     fetch the bytes directly and skip the page that would have asked who you are.
 
-    Documents are refused outright, signed in or not. The YAML under `tenants/` is the
-    repository's private storage — accounts, artists, kits — and nothing in the console
-    ever links to it. Generated assets live under Genblaze's `runs/` prefix and song
-    masters under `masters/`, so this costs no legitimate fetch.
+    Documents are refused, signed in or not. The YAML under `tenants/` is the repository's
+    private storage — accounts, artists, kits — and nothing in the console ever links to
+    it, so refusing it costs no legitimate fetch.
+
+    The *prefix* used to be refused, though, and that claim was true when it was written
+    and quietly stopped being true. Identity reference frames live under
+    `tenants/{tenant}/identities/{id}/frames/`, and the identity page links to every one of
+    them — so a laptop on local storage rendered an artist with five broken images while
+    the bytes sat on disk. Nobody saw it on B2, where those frames are presigned and this
+    route is never reached, which is exactly how a dev-only path rots.
+
+    So the rule is what it always meant: not *this prefix*, but *documents, and other
+    people's things*. A tenant's media is served to that tenant and nobody else — the
+    handler takes an arbitrary key from the URL, so without the ownership check a signed-in
+    user of one tenant could read another's photographs by typing the path. `runs/` and
+    `masters/` are unchanged.
     """
     container = get_container()
     if container.settings.storage_backend != "local":
         raise HTTPException(status_code=404, detail="Not available on this storage backend")
-    if key.startswith(f"{container.settings.key_prefix}/tenants/"):
-        raise HTTPException(status_code=404, detail="No such object")
+    tenants_root = f"{container.settings.key_prefix}/tenants/"
+    if key.startswith(tenants_root):
+        own = f"{tenants_root}{principal.tenant_id}/"
+        # A document is a document whoever asks; another tenant's media is not this
+        # caller's to see. 404 rather than 403 for both, because a distinguishable refusal
+        # tells an unauthorised caller which keys exist.
+        if not key.startswith(own) or key.endswith(".yaml"):
+            raise HTTPException(status_code=404, detail="No such object")
     try:
         data = container.storage.get(key)
     except (FileNotFoundError, OSError) as exc:

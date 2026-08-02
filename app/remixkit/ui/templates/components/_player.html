@@ -1,0 +1,177 @@
+{# The master, playable — the whole record, and any window of it on its own.
+
+   One `<audio>` for the page, not one per section. A section is a window into the same
+   file, so a player per row would mean six elements each fetching the same 128 MB master,
+   six playheads that can run at once, and no way to say what is playing. Instead every
+   play button anywhere on the page carries `data-start`/`data-end` in ms and this element
+   is told to go there — which is also why the buttons keep working after htmx swaps the
+   list they live in out from under them.
+
+   The native `controls` stay. They are the scrubber, the volume and the keyboard handling
+   that a hand-rolled transport gets wrong, and they are how you play the whole song from
+   wherever you are; the buttons beside them are the thing the platform has no idea about,
+   which is that this file has named windows in it.
+
+   This is the console's third script and it earns its place the same way the other two do:
+   what it does — seek to a millisecond, stop at a millisecond, loop between two — has no
+   HTML declaration and no htmx equivalent. #}
+{% set src = master_url(song) %}
+{% if src %}
+  <div class="player" id="song-player">
+    <audio id="rk-master" src="{{ src }}" controls preload="metadata"></audio>
+    <div class="player-transport">
+      <button class="btn btn-quiet play" type="button"
+              data-play="whole" data-start="0" data-label="the whole song"
+              aria-pressed="false">Whole song</button>
+      {# Auditioning a hook is listening to it four times, not once. #}
+      <label class="tick"><input type="checkbox" id="rk-loop"> Loop the section</label>
+    </div>
+    <p class="small player-now" id="rk-now" aria-live="polite">Nothing playing.</p>
+  </div>
+{% else %}
+  <p class="small player-now">Upload a master and the song — and every section of it —
+    plays here.</p>
+{% endif %}
+
+{# Outside the `{% if %}` deliberately. A script that arrives inside injected HTML does not
+   execute, and this panel replaces itself when an upload lands — so a listener registered
+   only when a master already exists would be missing on exactly the render that first has
+   something to play. Registered once at page load, it finds the element when clicked. #}
+<script>
+if (!window.__rkPlayer) {
+  window.__rkPlayer = true;
+
+  // What is armed, not what is playing: the browser owns the playhead. `stop` is null for
+  // the whole song, which is the difference between "stop at the end of the chorus" and
+  // "let it run".
+  let armed = null;   // the `data-play` id of the window we set up, or null
+  let from = 0;       // where that window starts, in seconds — where a loop returns to
+  let stop = null;    // where it ends, in seconds
+  let placed = null;  // the last position *we* moved the playhead to, in seconds
+  let ticking = false; // whether a frame loop is already running
+  let ended = false;  // the window just ran out, so the pause about to arrive is ours
+  let label = "";
+
+  const el = () => document.getElementById("rk-master");
+  const secs = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+
+  const say = (text) => {
+    const now = document.getElementById("rk-now");
+    if (now) now.textContent = text;
+  };
+
+  // The buttons are re-rendered by htmx on every section edit, so state is painted onto
+  // whatever is in the DOM now rather than remembered on the element that was clicked.
+  const paint = () => {
+    const audio = el();
+    const live = audio && !audio.paused && !audio.ended;
+    document.querySelectorAll("[data-play]").forEach((button) => {
+      const on = live && button.dataset.play === armed;
+      button.classList.toggle("is-playing", on);
+      button.setAttribute("aria-pressed", String(on));
+    });
+  };
+
+  // Setting `currentTime` before the browser knows how long the file is does nothing —
+  // silently — and then the section plays from the top of the record instead.
+  const seek = (audio, at) => {
+    placed = at;
+    if (audio.readyState >= 1) audio.currentTime = at;
+    else audio.addEventListener("loadedmetadata", () => { audio.currentTime = at; }, {once: true});
+  };
+
+  // `timeupdate` fires about four times a second, which would overrun the end of a window
+  // by up to 250ms — audible, and wrong in the one place this feature has to be exact.
+  const watch = () => {
+    const audio = el();
+    if (!audio || audio.paused) { ticking = false; return; }
+    if (stop !== null && audio.currentTime >= stop) {
+      if (document.getElementById("rk-loop")?.checked) {
+        seek(audio, from);
+      } else {
+        ended = true;
+        audio.pause();
+        seek(audio, from);
+        say(`Played ${label} to the end of its window.`);
+        ticking = false;
+        return;
+      }
+    }
+    say(`Playing ${label} · ${secs(audio.currentTime)}${stop === null ? "" : ` / ${secs(stop)}`}`);
+    requestAnimationFrame(watch);
+  };
+
+  const tick = () => {
+    if (ticking) return;   // `play` and `playing` both arrive; one loop is enough
+    ticking = true;
+    requestAnimationFrame(watch);
+  };
+
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-play]");
+    if (!button) return;
+    const audio = el();
+    if (!audio) return;
+    event.preventDefault();
+
+    // A second click on what is already playing pauses it, and leaves the window armed —
+    // the next click resumes inside it rather than starting the song over.
+    if (armed === button.dataset.play && !audio.paused) {
+      audio.pause();
+      return;
+    }
+
+    armed = button.dataset.play;
+    from = Number(button.dataset.start || 0) / 1000;
+    stop = button.dataset.end ? Number(button.dataset.end) / 1000 : null;
+    label = button.dataset.label || "the whole song";
+    ended = false;
+    // Resume where it was left rather than restart, but only inside the armed window:
+    // outside it, a resume would play something other than what the button names.
+    const at = audio.currentTime;
+    if (!(at > from && (stop === null || at < stop))) seek(audio, from);
+    audio.play().catch((error) => say(`Could not play the master: ${error.message}`));
+  });
+
+  // Anything that moves the playhead by hand — the scrubber, the keyboard — releases the
+  // window. Otherwise dragging past the end of a chorus stops the record on a boundary
+  // nobody can see, which reads as a broken player.
+  //
+  // "By hand" is decided by comparing where the playhead landed with where this script
+  // last put it, rather than by a flag set before each seek: a `currentTime` assignment
+  // that changes nothing fires no event, and a flag would then be left armed to swallow
+  // the next real drag.
+  //
+  // Media events do not bubble. These listen on the capture phase, which reaches a
+  // descendant's non-bubbling events, so the audio element can be replaced by an htmx
+  // swap without taking its listeners with it.
+  document.addEventListener("seeking", (event) => {
+    if (event.target.id !== "rk-master") return;
+    if (placed !== null && Math.abs(event.target.currentTime - placed) < 0.05) {
+      placed = null;
+      return;
+    }
+    placed = null;
+    if (stop !== null) {
+      stop = null;
+      armed = "whole";
+      label = "the whole song";
+      paint();
+    }
+  }, true);
+
+  for (const name of ["play", "playing", "pause", "ended"]) {
+    document.addEventListener(name, (event) => {
+      if (event.target.id !== "rk-master") return;
+      paint();
+      if (name === "play" || name === "playing") tick();
+      // `ended` here is the *file* running out, not a window closing.
+      if (name === "pause") {
+        if (!ended) say(`Paused ${label} · ${secs(event.target.currentTime)}`);
+        ended = false;
+      }
+      if (name === "ended") { armed = null; stop = null; say("Nothing playing."); }
+    }, true);
+  }
+}
+</script>

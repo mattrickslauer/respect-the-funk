@@ -1,0 +1,67 @@
+<header class="pagebar">
+  <div class="pagebar-id">
+    <p class="eyebrow">Provenance</p>
+    <h1>Verify an asset</h1>
+  </div>
+
+  <dl class="stats">
+    <div class="stat">
+      <dt>Checks</dt>
+      <dd>signature · canonical hash
+        <span class="stat-sub">against the recorded run</span></dd>
+    </div>
+    <div class="stat">
+      <dt>Accepts</dt>
+      <dd>any delivered asset, or a manifest
+        <span class="stat-sub">read from inside the media file where embedded</span></dd>
+    </div>
+  </dl>
+
+  {% if not overlay %}
+    {# In a layer the console is the thing behind this, and Escape is how you get back
+       to it — a button that navigates away would close the overlay by leaving. #}
+    <div class="pagebar-cta">
+      <a class="btn" href="/console">Console →</a>
+    </div>
+  {% endif %}
+</header>
+
+<div class="deck deck-r">
+  <div class="workarea">
+    <div class="stack">
+      <form class="panel form"
+            hx-post="/ui/verify"
+            hx-target="#report"
+            hx-swap="innerHTML"
+            hx-encoding="multipart/form-data">
+        <div class="panel-head"><h3>Upload</h3></div>
+        <div class="form-inline tight">
+          <label>Asset or manifest <input type="file" name="file" required></label>
+          <button class="btn btn-primary" type="submit">Verify</button>
+        </div>
+      </form>
+      <div id="report">{% if report %}{% include "components/_verify_report.html" %}{% endif %}</div>
+    </div>
+  </div>
+
+  <aside class="rail">
+    <section class="panel">
+      <div class="panel-head"><h3>What a pass means</h3></div>
+      <p class="small">
+        The manifest's signature and canonical hash match the run that produced it — so
+        the provider, model, and prompt recorded against this asset are the ones that
+        actually made it.
+      </p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h3>What a fail means</h3></div>
+      <p class="small">
+        Not necessarily tampering. An asset re-encoded by a social platform loses its
+        embedded manifest, which is a known limit of embedding rather than evidence of a
+        forged claim.
+      </p>
+    </section>
+
+  </aside>
+</div>

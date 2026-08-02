@@ -1,0 +1,27 @@
+{# One kit, over the list it was opened from.
+
+   A kit is looked at from three places — the roster's recent list, the artist's Kits tab,
+   the song's Kits tab — and in all three the question is "did this one work, and what did
+   it cost", asked of one row in a list of rows. Answering it used to mean leaving the
+   list. Here the list is still behind, so the next kit is one Escape and one click away
+   rather than a navigation and a scroll back to where you were.
+
+   The approval control comes with it, which is the reason this is a modal rather than a
+   drawer: clearing a kit for publication is a decision, and a decision gets the screen. #}
+<dialog class="overlay overlay-wide" aria-labelledby="overlay-title">
+  <div class="overlay-head">
+    <div class="overlay-id">
+      <p class="eyebrow">
+        {% if artist %}{{ artist.name }}{% endif %}
+        {%- if artist and song %} · {% endif %}
+        {%- if song %}{{ song.title }}{% endif %}
+      </p>
+      <h2 id="overlay-title">{{ kit.name }}</h2>
+    </div>
+    <a class="btn btn-quiet" href="/console/kits/{{ kit.id }}">Open as page</a>
+    <button class="overlay-x" type="button" data-close-layer aria-label="Close">×</button>
+  </div>
+  <div class="overlay-body">
+    {% include "components/_kit_body.html" %}
+  </div>
+</dialog>

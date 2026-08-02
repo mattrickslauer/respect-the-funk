@@ -1,3 +1,4 @@
+{% from "components/_macros.html" import layer %}
 {# The narrow variant of a kit, for the roster sidebar.
 
    A separate component rather than responsive CSS on `_kit_row.html`, because the two
@@ -8,7 +9,7 @@
 {# Goes to the kit, not to the artist who owns it. It named a kit, showed that kit's
    status and that kit's cost, and then opened a roster page that mentions neither —
    "recent kits" that cannot be opened is a list of things you have to go and find. #}
-<a class="kit-summary" href="/console/kits/{{ kit.id }}">
+<a class="kit-summary" {{ layer("/console/kits/" ~ kit.id) }}>
   <span class="kit-summary-name">{{ kit.name }}</span>
   <span class="kit-summary-meta">
     <span class="badge badge-{{ kit.status.value }}">{{ kit.status.value }}</span>

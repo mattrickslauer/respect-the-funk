@@ -1,0 +1,23 @@
+{# The verifier, over whatever you were reading.
+
+   This one earns the layer more than the other two. Checking an asset is something you
+   do *about* something else — a kit whose provenance line says "not checked", a file
+   somebody sent you while you were looking at the run that made it — and it takes one
+   upload and returns one verdict. Sending someone to a different screen and back for
+   that is the round trip a layer exists to remove.
+
+   Still a page at `/verify`, and deliberately so: a judge with no account arrives there
+   directly, which is the whole reason the route is public. #}
+<dialog class="overlay" aria-labelledby="overlay-title">
+  <div class="overlay-head">
+    <div class="overlay-id">
+      <p class="eyebrow">Provenance</p>
+      <h2 id="overlay-title">Verify an asset</h2>
+    </div>
+    <a class="btn btn-quiet" href="/verify">Open as page</a>
+    <button class="overlay-x" type="button" data-close-layer aria-label="Close">×</button>
+  </div>
+  <div class="overlay-body">
+    {% include "components/_verify_body.html" %}
+  </div>
+</dialog>

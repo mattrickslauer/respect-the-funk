@@ -1,12 +1,18 @@
+{% from "components/_macros.html" import layer %}
 {# One measured master. Measurement and hook window are set here once and reused by
    every kit built from this song — which is why they belong on the song rather than
    on the generate form.
 
    This page carries more functionality than any other in the console, and it is the one
    the workspace layout was worked out on — a fixed identity bar of the numbers a
-   decision depends on, a rail of standing facts, and one tabbed work area. Every console
-   page is that shape now; this one keeps the rail on the left, because the master and
-   the measurement are what the work area is being edited against.
+   decision depends on, a rail of standing facts, and one tabbed work area.
+
+   The rail used to be on the left, because the master and the measurement are what the
+   work area is edited against and that argument put them nearest the eye. Navigation is
+   a left column now, so keeping it there meant a 228px rail, then a 312px rail, then the
+   sections — 540px of standing facts before the list you came to edit. It sits right with
+   every other page's, which also means the deck is one shape across the console instead
+   of two.
 
    Nothing was removed. What moved is when you see it: forms that are only used once a
    value is wrong sit behind a disclosure, so the list of what *is* stays readable. #}
@@ -66,11 +72,90 @@
 
   <div class="pagebar-cta">
     <a class="btn btn-primary"
-       href="/console/artists/{{ artist.id }}/songs/{{ song.id }}/generate">Generate a kit</a>
+       {{ layer("/console/artists/" ~ artist.id ~ "/songs/" ~ song.id ~ "/generate") }}>Generate a kit</a>
   </div>
 </header>
 
-<div class="deck">
+<div class="deck deck-r">
+  {# ---- work area ----
+     CSS-only tabs. The radios are siblings of `.panes` rather than of the panels
+     themselves, so htmx can keep swapping `#song-hooks` (sections and recommendations
+     are one target — see components/_hooks.html) without the swap ever landing on the
+     element holding the selected-tab state. No JavaScript is involved, which matters:
+     the only script in this console is the presigned upload, and it earns its place.
+
+     The radio ids and the `pane-N` classes are the console's shared tab vocabulary, not
+     this page's: the CSS matches the Nth radio to the Nth label and the Nth pane, so a
+     page adds tabs without adding stylesheet. Which is also why `pane-2` is set on
+     `_recommendations.html` rather than here — it lives inside the swap wrapper.
+
+     A pane's position in `.panes` is irrelevant; its class is what selects it. That is
+     what lets Arrangement sit third in the tab strip — next to the sections it explains —
+     while `_hooks.html` keeps emitting panes 1 and 2 as one htmx target. #}
+  <div class="workarea">
+    <input type="radio" name="rk-pane" id="pane-1" class="tab-state" checked>
+    <input type="radio" name="rk-pane" id="pane-2" class="tab-state">
+    <input type="radio" name="rk-pane" id="pane-3" class="tab-state">
+    <input type="radio" name="rk-pane" id="pane-4" class="tab-state">
+    <input type="radio" name="rk-pane" id="pane-5" class="tab-state">
+
+    <nav class="tabs">
+      <label for="pane-1">Sections
+        <span class="count">{{ song.sections|length }}</span></label>
+      <label for="pane-2">Recommendations
+        {% if report.computed %}<span class="count">{{ report.candidates|length }}</span>
+        {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
+      <label for="pane-3">Arrangement
+        {% if song.analysis and song.analysis.bars %}
+          <span class="count">{{ song.analysis.bars|length }}</span>
+        {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
+      {# The count is the lines to check, not the lines there are, when there is anything
+         to check. A transcript's line count is not news; the number of lines the model was
+         unsure of is the only thing on this tab worth interrupting somebody for. #}
+      <label for="pane-4">Lyrics
+        {% if song.lyrics and song.lyrics.uncertain_lines %}
+          <span class="count count-blocked">{{ song.lyrics.uncertain_lines|length }}</span>
+        {% elif song.has_lyrics %}<span class="count">{{ song.lyrics.lines|length }}</span>
+        {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
+      <label for="pane-5">Kits
+        <span class="count">{{ kits|length }}</span></label>
+    </nav>
+
+    <div class="panes">
+      {% include "components/_hooks.html" %}
+
+      {# The picture of the song and the same measurement written out, in one sitting:
+         the chart is what the boundaries were cut from, and the sheet is that reading in
+         the form a brief or an agent is handed. Looking at one without the other was
+         never the task. The wrapper carries the pane class because `_arrangement.html`
+         replaces itself by `outerHTML` when a measurement lands. #}
+      <div class="pane-3">
+        {% include "components/_arrangement.html" %}
+        {% include "components/_sheet.html" %}
+      </div>
+
+      {# The words, and every one of them editable. Its own tab rather than a strip under
+         the sections because a transcript is read top to bottom and corrected in place,
+         which is a full-width act. #}
+      {% include "components/_lyric_lines.html" %}
+
+      <section class="panel pane-5">
+        <div class="panel-head">
+          <h3>Kits</h3>
+          <a class="btn btn-quiet"
+             {{ layer("/console/artists/" ~ artist.id ~ "/songs/" ~ song.id ~ "/generate") }}>Generate a kit</a>
+        </div>
+        {% if kits %}
+          <div class="rows">
+            {% for kit in kits %}{% include "components/_kit_row.html" %}{% endfor %}
+          </div>
+        {% else %}
+          <p class="empty">Nothing generated from this song yet.</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+
   {# ---- rail: the standing facts, and the forms that change them ---- #}
   <aside class="rail">
     {# Owned masters only, and the bytes never pass through the application — the browser
@@ -158,86 +243,6 @@
     </section>
 
     {% include "components/_song_head.html" %}
-    {% include "components/_rail_env.html" %}
   </aside>
-
-  {# ---- work area ----
-     CSS-only tabs. The radios are siblings of `.panes` rather than of the panels
-     themselves, so htmx can keep swapping `#song-hooks` (sections and recommendations
-     are one target — see components/_hooks.html) without the swap ever landing on the
-     element holding the selected-tab state. No JavaScript is involved, which matters:
-     the only script in this console is the presigned upload, and it earns its place.
-
-     The radio ids and the `pane-N` classes are the console's shared tab vocabulary, not
-     this page's: the CSS matches the Nth radio to the Nth label and the Nth pane, so a
-     page adds tabs without adding stylesheet. Which is also why `pane-2` is set on
-     `_recommendations.html` rather than here — it lives inside the swap wrapper.
-
-     A pane's position in `.panes` is irrelevant; its class is what selects it. That is
-     what lets Arrangement sit third in the tab strip — next to the sections it explains —
-     while `_hooks.html` keeps emitting panes 1 and 2 as one htmx target. #}
-  <div class="workarea">
-    <input type="radio" name="rk-pane" id="pane-1" class="tab-state" checked>
-    <input type="radio" name="rk-pane" id="pane-2" class="tab-state">
-    <input type="radio" name="rk-pane" id="pane-3" class="tab-state">
-    <input type="radio" name="rk-pane" id="pane-4" class="tab-state">
-    <input type="radio" name="rk-pane" id="pane-5" class="tab-state">
-
-    <nav class="tabs">
-      <label for="pane-1">Sections
-        <span class="count">{{ song.sections|length }}</span></label>
-      <label for="pane-2">Recommendations
-        {% if report.computed %}<span class="count">{{ report.candidates|length }}</span>
-        {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
-      <label for="pane-3">Arrangement
-        {% if song.analysis and song.analysis.bars %}
-          <span class="count">{{ song.analysis.bars|length }}</span>
-        {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
-      {# The count is the lines to check, not the lines there are, when there is anything
-         to check. A transcript's line count is not news; the number of lines the model was
-         unsure of is the only thing on this tab worth interrupting somebody for. #}
-      <label for="pane-4">Lyrics
-        {% if song.lyrics and song.lyrics.uncertain_lines %}
-          <span class="count count-blocked">{{ song.lyrics.uncertain_lines|length }}</span>
-        {% elif song.has_lyrics %}<span class="count">{{ song.lyrics.lines|length }}</span>
-        {% else %}<span class="count count-blocked">!</span>{% endif %}</label>
-      <label for="pane-5">Kits
-        <span class="count">{{ kits|length }}</span></label>
-    </nav>
-
-    <div class="panes">
-      {% include "components/_hooks.html" %}
-
-      {# The picture of the song and the same measurement written out, in one sitting:
-         the chart is what the boundaries were cut from, and the sheet is that reading in
-         the form a brief or an agent is handed. Looking at one without the other was
-         never the task. The wrapper carries the pane class because `_arrangement.html`
-         replaces itself by `outerHTML` when a measurement lands. #}
-      <div class="pane-3">
-        {% include "components/_arrangement.html" %}
-        {% include "components/_sheet.html" %}
-      </div>
-
-      {# The words, and every one of them editable. Its own tab rather than a strip under
-         the sections because a transcript is read top to bottom and corrected in place,
-         which is a full-width act. #}
-      {% include "components/_lyric_lines.html" %}
-
-      <section class="panel pane-5">
-        <div class="panel-head">
-          <h3>Kits</h3>
-          <a class="btn btn-quiet"
-             href="/console/artists/{{ artist.id }}/songs/{{ song.id }}/generate">Generate a kit</a>
-        </div>
-        {% if kits %}
-          <div class="rows">
-            {% for kit in kits %}{% include "components/_kit_row.html" %}{% endfor %}
-          </div>
-        {% else %}
-          <p class="empty">Nothing generated from this song yet.</p>
-        {% endif %}
-      </section>
-    </div>
-  </div>
 </div>
 {% endblock %}

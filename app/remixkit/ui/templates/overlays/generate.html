@@ -1,0 +1,28 @@
+{# Pricing a kit, over the song it is priced from.
+
+   Same body as `pages/generate.html` — one definition, two call sites, exactly as the
+   fragment components work. What differs is only the frame around it: a page puts this
+   in the shell with a breadcrumb, and this puts it in the top layer with the song still
+   underneath.
+
+   That difference is the point of the screen. The whole argument for a preview is that
+   the price is on screen before the spend, and deciding whether $0.42 is worth it means
+   looking at the hook lengths and the sections it would cut to — which are on the page
+   this used to navigate away from. Now they are behind it, and Escape puts you back.
+
+   `href` on the expand link, not `hx-get`: it is the way *out* of the layer to a full
+   page, so it must be an ordinary navigation. #}
+<dialog class="overlay overlay-wide" aria-labelledby="overlay-title">
+  <div class="overlay-head">
+    <div class="overlay-id">
+      <p class="eyebrow">{{ artist.name }} · {{ song.title }}</p>
+      <h2 id="overlay-title">Generate a kit</h2>
+    </div>
+    <a class="btn btn-quiet"
+       href="/console/artists/{{ artist.id }}/songs/{{ song.id }}/generate">Open as page</a>
+    <button class="overlay-x" type="button" data-close-layer aria-label="Close">×</button>
+  </div>
+  <div class="overlay-body">
+    {% include "components/_generate_body.html" %}
+  </div>
+</dialog>

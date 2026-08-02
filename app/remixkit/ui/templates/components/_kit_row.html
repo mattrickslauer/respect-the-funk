@@ -1,3 +1,4 @@
+{% from "components/_macros.html" import layer %}
 {# One kit.
 
    Polls itself while queued or running — `hx-trigger="every 3s"` on the row, which
@@ -22,7 +23,7 @@
          per-asset cost ledger, and the manifest. Nothing in the console linked to it, so
          everything on it was reachable only by typing the URL. The name is the link
          because the name is what someone looking for a particular kit reads. #}
-      <h4><a href="/console/kits/{{ kit.id }}">{{ kit.name }}</a></h4>
+      <h4><a {{ layer("/console/kits/" ~ kit.id) }}>{{ kit.name }}</a></h4>
       <span class="badge badge-{{ kit.status.value }}">{{ kit.status.value }}</span>
       {% with state = kit.approval %}{% include "components/_badge.html" %}{% endwith %}
       {% if kit.manifest_verified %}<span class="badge badge-verified" title="manifest.verify() passed">provenance verified</span>{% endif %}
@@ -63,7 +64,7 @@
     {# Spelled out as well as sitting on the name, because this row carries a delete
        button and a select, and a heading that happens to be a link is not an obvious
        way in next to two controls that announce themselves. #}
-    <a class="btn btn-quiet" href="/console/kits/{{ kit.id }}">Open kit</a>
+    <a class="btn btn-quiet" {{ layer("/console/kits/" ~ kit.id) }}>Open kit</a>
     <button class="btn btn-danger btn-quiet"
             hx-delete="/ui/kits/{{ kit.id }}{% if kit.approval.value != 'draft' %}?force=true{% endif %}"
             hx-target="#kits"

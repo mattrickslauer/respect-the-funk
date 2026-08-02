@@ -123,6 +123,73 @@ def _render(request: Request, template: str, **ctx) -> HTMLResponse:
     )
 
 
+def _nav(principal, *, artist=None, song=None) -> dict:
+    """What the sidebar draws: the roster, with the record you are inside expanded.
+
+    Only the *active* artist expands. Listing every artist's songs would turn the nav
+    into a second catalogue — one repository scan per roster entry, on every page — and
+    a tree nobody can find anything in. So this is one read for the roster, plus two more
+    for the branch you are standing on, and collapsed entries are a link and nothing else.
+
+    `principal` is optional because `/verify` is deliberately public (see `verify_page`).
+    A caller with no session gets the sections and an empty tree rather than an error:
+    the alternative is either leaking a tenant's roster to anonymous visitors or dropping
+    the sidebar on one page, and a nav that disappears is worse than a nav that is short.
+    """
+    if principal is None:
+        return {"artists": [], "artist": None, "song": None, "songs": [], "kits": []}
+    container = get_container()
+    songs: list = []
+    kits: list = []
+    if artist is not None:
+        songs = container.songs.list_for_artist(principal, artist.id)
+        kits = container.kits.list(principal, artist_id=artist.id)
+    return {
+        "artists": container.artists.list(principal),
+        "artist": artist,
+        "song": song,
+        "songs": songs,
+        "kits": kits,
+    }
+
+
+def _page(request: Request, template: str, principal, *, nav_artist=None, nav_song=None, **ctx):
+    """A full page: everything `_render` gives, plus the sidebar's tree.
+
+    Separate from `_render` because the fragment routes vastly outnumber the page routes
+    and a fragment has no sidebar to fill — building the tree for every htmx swap would
+    put three repository reads behind every hook-window edit, for markup the response
+    does not contain.
+    """
+    return _render(request, template, nav=_nav(principal, artist=nav_artist, song=nav_song), **ctx)
+
+
+def _screen(request: Request, name: str, principal, *, nav_artist=None, nav_song=None, **ctx):
+    """One screen, rendered as a page or as a layer depending on how it was asked for.
+
+    The three secondary screens — pricing a kit, reading one, verifying an asset — are
+    all things you do *about* something else that is on screen at the time. Sending
+    someone to a different page and back for them is the round trip the layer removes.
+    But each also has to survive being a URL: a bookmark, a link in Slack, a judge
+    arriving at `/verify` with no account.
+
+    So there is one route and two frames. htmx sets `HX-Request` on the requests it makes
+    and nothing else does, which makes it the honest signal for "this was opened from
+    inside the console" — and the `href` on every one of those links is the same URL, so
+    with no JavaScript at all the link is still an ordinary navigation to the full page.
+
+    The body is the same template either way (`components/_<name>_body.html`), for the
+    reason every fragment in this console is shared: two definitions of what a kit costs
+    would eventually disagree about it.
+    """
+    if request.headers.get("HX-Request"):
+        return _render(request, f"overlays/{name}.html", overlay=True, **ctx)
+    return _page(
+        request, f"pages/{name}.html", principal,
+        nav_artist=nav_artist, nav_song=nav_song, **ctx,
+    )
+
+
 def _optional(read):
     """Return what `read()` gives, or None if the record is simply not there.
 
@@ -170,9 +237,10 @@ def landing(request: Request):
 
 @router.get(CONSOLE_PATH, response_class=HTMLResponse)
 def roster(request: Request, principal: CurrentPrincipal, artists: Artists, kits: Kits):
-    return _render(
+    return _page(
         request,
         "pages/roster.html",
+        principal,
         artists=artists.list(principal),
         kits=kits.list(principal)[:5],
     )
@@ -192,9 +260,11 @@ def artist_detail(
         artist = artists.get(principal, artist_id)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-    return _render(
+    return _page(
         request,
         "pages/artist.html",
+        principal,
+        nav_artist=artist,
         artist=artist,
         # The components this page includes address their own routes by `artist_id` —
         # that is their contract with the fragment handlers, which pass it explicitly.
@@ -208,7 +278,7 @@ def artist_detail(
 
 
 @router.get("/verify", response_class=HTMLResponse)
-def verify_page(request: Request):
+def verify_page(request: Request, principal: MaybePrincipal):
     """Provenance checking, deliberately public — and therefore deliberately not under
     `/console`.
 
@@ -218,10 +288,15 @@ def verify_page(request: Request):
     other path under that prefix requires a session, and a URL that implies a gate it
     does not have is worse than either choice made honestly.
 
+    `MaybePrincipal` rather than nothing at all: the page stays public — an anonymous
+    visitor resolves to `None` and gets a sidebar with no roster in it — while an
+    operator who *is* signed in keeps their tree instead of watching it empty out for
+    one screen. A judge and a label see two different navs and the same verifier.
+
     Safe to expose because it reads nothing: `verify_bytes` runs `manifest.verify()`
     over the uploaded bytes and touches no tenant document.
     """
-    return _render(request, "pages/verify.html", report=None)
+    return _screen(request, "verify", principal, report=None)
 
 
 @router.get("/console/catalogue", response_class=HTMLResponse)
@@ -237,9 +312,10 @@ def catalogue_page(
     The roster answers "who is on the label"; this answers "what is not yet usable",
     which is the question a release calendar actually generates.
     """
-    return _render(
+    return _page(
         request,
         "pages/catalogue.html",
+        principal,
         catalogue=catalogue.gaps(principal, artist_id=artist_id or None),
         artists=artists.list(principal),
         artist_id=artist_id,
@@ -263,9 +339,12 @@ def song_detail(
         artist = artists.get(principal, song.artist_id)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-    return _render(
+    return _page(
         request,
         "pages/song.html",
+        principal,
+        nav_artist=artist,
+        nav_song=song,
         song=song,
         artist=artist,
         kits=[k for k in kits.list(principal) if k.song_id == song.id],
@@ -295,7 +374,10 @@ def kit_detail(
     # provenance are still the thing being looked at.
     song = _optional(lambda: songs.get(principal, kit.song_id))
     artist = _optional(lambda: artists.get(principal, kit.artist_id))
-    return _render(request, "pages/kit.html", kit=kit, song=song, artist=artist)
+    return _screen(
+        request, "kit", principal,
+        nav_artist=artist, nav_song=song, kit=kit, song=song, artist=artist,
+    )
 
 
 @router.get("/console/artists/{artist_id}/identity", response_class=HTMLResponse)
@@ -327,9 +409,11 @@ def identity_page(
     identity = identities.current(principal, artist_id, line) or identities.current(
         principal, artist_id
     )
-    return _render(
+    return _page(
         request,
         "pages/identity.html",
+        principal,
+        nav_artist=artist,
         artist=artist,
         artist_id=artist.id,
         identity=identity,
@@ -460,9 +544,12 @@ def generate_page(
         line=line,
     )
 
-    return _render(
+    return _screen(
         request,
-        "pages/generate.html",
+        "generate",
+        principal,
+        nav_artist=artist,
+        nav_song=song,
         artist=artist,
         song=song,
         identity=identity,
@@ -494,9 +581,10 @@ def settings_page(request: Request, principal: CurrentPrincipal):
     """
     container = get_container()
     settings = container.settings
-    return _render(
+    return _page(
         request,
         "pages/settings.html",
+        principal,
         described=container.describe(),
         axes=[
             ("Storage", "RK_STORAGE_BACKEND", settings.storage_backend, "b2",

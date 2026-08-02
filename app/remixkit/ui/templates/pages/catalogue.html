@@ -1,3 +1,4 @@
+{% from "components/_macros.html" import layer %}
 {# The work queue. Wireframe gap #2: "which songs have no approved kit" is the label's
    actual daily question and it spans three collections, so no single-collection page
    can answer it.
@@ -108,7 +109,7 @@
                            the row, but a song that shipped one kit is the likeliest thing
                            on this page to want another, and the approved badge two columns
                            left already says it landed. #}
-                        <a href="/console/artists/{{ row.song.artist_id }}/songs/{{ row.song.id }}/generate">Generate →</a>
+                        <a {{ layer("/console/artists/" ~ row.song.artist_id ~ "/songs/" ~ row.song.id ~ "/generate") }}>Generate →</a>
                       {% endif %}
                     </td>
                   </tr>
@@ -150,7 +151,6 @@
       </p>
     </section>
 
-    {% include "components/_rail_env.html" %}
   </aside>
 </div>
 {% endblock %}

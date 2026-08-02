@@ -68,48 +68,105 @@ code{font-family:var(--mono);font-size:0.88em;color:var(--ink-3)}
 .lede{font-size:14px;line-height:1.5;max-width:70ch;color:var(--ink-2)}
 .links{display:flex;gap:14px;flex-wrap:wrap}
 
-/* ---- chrome ---- */
+/* ---- chrome ----
+   Navigation is a column now, not a bar. See templates/components/_sidebar.html for why:
+   the topbar and the warning banner together cost ~78px off the top of every page, on a
+   laptop whose usable viewport is about 780px. Width is the axis this console has spare. */
+
 /* Off-screen rather than `display:none`, which would take it out of the tab order and
    defeat the point. It comes back on focus only, so it costs a sighted mouse user
-   nothing and saves a keyboard user the topbar, the banner and the breadcrumb on every
-   navigation. Above the topbar in the stack, or the sticky header would cover it at the
-   moment it appears. */
+   nothing and saves a keyboard user a fourteen-item tree on every navigation. */
 .skip{position:absolute;left:-9999px;top:0;z-index:var(--z-skip);
   background:var(--gold);color:#0e0c14;font-family:var(--display);font-size:13px;
   padding:9px 16px;border-radius:0 0 4px 0;text-decoration:none}
 .skip:focus{left:0}
 
-.topbar{border-bottom:1px solid var(--rule);background:var(--bg-2);position:sticky;top:0;z-index:var(--z-topbar)}
-.topbar-inner{display:flex;align-items:center;justify-content:space-between;height:50px}
-.brand{display:flex;align-items:baseline;gap:9px;font-family:var(--display);font-size:17px;color:var(--ink);text-decoration:none}
-.brand-mark{color:var(--gold)}
-.brand-sub{font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--ink-3)}
-.topnav{display:flex;gap:20px;font-size:13.5px;align-items:center}
-.topnav a{color:var(--ink-3);text-decoration:none}
-.topnav a:hover{color:var(--gold)}
-/* Which section you are in. Selected on the ARIA attribute rather than a class, so the
-   styling cannot drift from what a screen reader is told — there is one source for
-   "current" and it is the one that carries meaning. The underline sits below the
-   50px bar so it reads as a tab marker rather than as a link underline. */
-.topnav a[aria-current="page"]{color:var(--ink);box-shadow:inset 0 -2px 0 var(--gold)}
-.whoami{color:var(--ink-3);border-left:1px solid var(--rule-2);padding-left:20px}
+/* The frame: rail beside work, filling the viewport exactly once. `dvh` rather than `vh`
+   so a mobile browser's collapsing chrome does not leave the bottom row permanently
+   under the address bar. */
+.frame{display:grid;grid-template-columns:var(--rail-w) minmax(0,1fr);min-height:100dvh}
+:root{--rail-w:228px}
+html[data-nav="collapsed"]{--rail-w:52px}
 
-/* The mocked-backend warning. It has to be on every page — a console running on mocks
-   must not be mistakable for one running against GMI Cloud — but it is context, not
-   content, so it gets one line and scrolls sideways rather than growing downwards. */
-.banner{background:rgba(201,133,0,0.09);border-bottom:1px solid rgba(245,185,64,0.22)}
-.banner-inner{display:flex;gap:12px;align-items:center;padding:5px 24px;font-size:12.5px;
-  max-width:var(--maxw)}
-.banner-tag{font-family:var(--display);font-size:10px;letter-spacing:0.16em;text-transform:uppercase;color:var(--gold);border:1px solid var(--gold-dim);padding:1px 6px;border-radius:3px;flex:none}
-/* The scroller is the list, not the row. Put `overflow` on the row and the warnings
-   simply paint over the link at the end of it — the list has to be the thing that
-   clips, so the tag and the link stay pinned at either end. */
-.banner ul{list-style:none;display:flex;gap:6px 18px;flex:1;min-width:0;
-  overflow-x:auto;scrollbar-width:none}
-.banner ul::-webkit-scrollbar{display:none}
-.banner li{color:var(--ink-2);white-space:nowrap}
-.banner-more{flex:none;color:var(--gold);text-decoration:none;font-size:12px}
-.banner-more:hover{text-decoration:underline}
+.sidebar{display:flex;flex-direction:column;min-height:0;
+  background:var(--bg-2);border-right:1px solid var(--rule)}
+.sidebar-top{display:flex;align-items:center;gap:8px;height:50px;flex:none;
+  padding:0 8px 0 14px;border-bottom:1px solid var(--rule-2)}
+.brand{display:flex;align-items:baseline;gap:8px;font-family:var(--display);font-size:16px;
+  color:var(--ink);text-decoration:none;min-width:0;flex:1}
+.brand-mark{color:var(--gold);flex:none}
+.brand-name{white-space:nowrap;overflow:hidden}
+.nav-toggle{flex:none;background:none;border:0;cursor:pointer;color:var(--ink-3);
+  font-size:15px;line-height:1;padding:6px;border-radius:4px}
+.nav-toggle:hover{color:var(--gold);background:var(--panel)}
+
+/* The rail is the one region that scrolls independently of everything else, because the
+   tree grows with the roster and the foot has to stay put underneath it. */
+.sidenav{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:9px 8px}
+.navitem{display:flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink-3);
+  font-size:13.5px;padding:6px 9px;border-radius:5px;white-space:nowrap;min-width:0}
+.navitem:hover{background:var(--panel);color:var(--ink)}
+.navitem .navlabel{overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.navitem-section{font-family:var(--display);letter-spacing:0.02em}
+.navicon{flex:none;width:16px;text-align:center;font-size:12px;opacity:0.8}
+/* Current is drawn off the ARIA attribute, so the highlight cannot drift from what a
+   screen reader is told. `is-on` is the weaker signal — the branch you are inside — and
+   deliberately reads as "open", not as "here". */
+.navitem[aria-current="page"]{background:var(--panel-2);color:var(--ink);
+  box-shadow:inset 2px 0 0 var(--gold)}
+.navitem.is-on{color:var(--ink)}
+
+.navtree,.navbranch{list-style:none}
+.navtree{margin:2px 0 8px}
+.navitem-artist{font-size:13px}
+/* Indented by a rule rather than by padding alone: at four levels the eye needs a line to
+   follow, and the line is also what says the branch belongs to the artist above it. */
+.navbranch{margin:1px 0 5px 18px;border-left:1px solid var(--rule-2);padding-left:5px}
+.navitem-sub{font-size:12.5px;padding:4px 8px}
+.navitem-kits .count{margin-left:auto}
+.dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
+.dot-ok{background:var(--ok)}
+.dot-blocked{background:var(--err)}
+/* A kit that is still going. Pulsing rather than static, because the one thing you want
+   from a kit in the rail is whether it has landed yet, and the row already polls. */
+.dot-run{background:var(--warn);animation:dot-pulse 1.6s ease-in-out infinite}
+@keyframes dot-pulse{50%{opacity:0.35}}
+.navitem-more{color:var(--ink-3);font-style:italic}
+@media (prefers-reduced-motion:reduce){.dot-run{animation:none}}
+
+/* What this process is, said once. It was a full-width banner above every page and a
+   line at the foot of every rail, which is three copies counting the deployment screen. */
+.sidebar-foot{flex:none;padding:9px 12px 11px;border-top:1px solid var(--rule-2);
+  display:flex;flex-direction:column;gap:6px}
+.envwarn{display:flex;align-items:center;gap:7px;text-decoration:none;color:var(--gold);
+  font-size:12px;white-space:nowrap}
+.envwarn-live{color:var(--ink-3)}
+.envtag{font-family:var(--display);font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;
+  color:var(--gold);border:1px solid var(--gold-dim);padding:1px 5px;border-radius:3px;flex:none}
+.envline{font-size:11px;color:var(--ink-3);line-height:1.5;word-break:break-word}
+.whoami{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--ink-3);
+  border-top:1px solid var(--rule-2);padding-top:6px}
+.whoami a{color:var(--gold);text-decoration:none}
+
+/* Collapsed: an icon strip. Everything that is a word is hidden, the tree with it — a
+   28px-wide tree of song titles is not a tree, and the roster icon still opens the page
+   that has one. The rail is a memory aid at this width, not a map. */
+/* Every one of these is scoped to `.sidebar`. Unscoped, `.count` and `.navlabel` are not
+   the rail's private class names — `.count` is the badge on a tab strip and on a nav item
+   alike — so collapsing the rail also stripped the counts off the song page's tabs, which
+   is a page telling you less because a rail got narrower. */
+html[data-nav="collapsed"] .sidebar .brand-name,
+html[data-nav="collapsed"] .sidebar .navlabel,
+html[data-nav="collapsed"] .sidebar .navtree,
+html[data-nav="collapsed"] .sidebar .count,
+html[data-nav="collapsed"] .sidebar .envline,
+html[data-nav="collapsed"] .sidebar .whoami{display:none}
+html[data-nav="collapsed"] .sidebar-top{padding:0 6px;justify-content:center}
+html[data-nav="collapsed"] .sidebar .brand{flex:none}
+html[data-nav="collapsed"] .sidebar .navitem{justify-content:center;padding:8px 0}
+html[data-nav="collapsed"] .sidenav{padding:9px 6px}
+html[data-nav="collapsed"] .sidebar-foot{padding:9px 6px;align-items:center}
+html[data-nav="collapsed"] .sidebar .envwarn{gap:0}
 
 .eyebrow{font-family:var(--display);font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--gold);margin:0}
 .eyebrow a{text-decoration:none}
@@ -133,17 +190,19 @@ code{font-family:var(--mono);font-size:0.88em;color:var(--ink-3)}
 
 /* ---- the viewport-locked workspace ----
    Every console page is this shape. The page stops being a document that scrolls and
-   becomes a workspace that fits: the topbar, the page's identity bar and the tab strip
-   are fixed furniture, and scrolling happens inside the regions that own it. What a
-   decision depends on therefore cannot scroll away from the control that acts on it.
+   becomes a workspace that fits: the page's identity bar and its tab strip are fixed
+   furniture, and scrolling happens inside the regions that own it. What a decision
+   depends on therefore cannot scroll away from the control that acts on it.
 
-   `dvh` rather than `vh` so a mobile browser's collapsing chrome does not leave the
-   bottom row of the deck permanently under the address bar. */
-body.shell{height:100dvh;overflow:hidden;display:flex;flex-direction:column}
-body.shell .topbar{position:static;flex:none}
-body.shell .banner{flex:none}
-.shell-main{flex:1;min-height:0;display:flex;flex-direction:column;
-  width:100%;max-width:var(--maxw);margin:0 auto;padding:0 24px 14px}
+   The frame is what is now locked, rather than the body — navigation is a column beside
+   the work, so the rail and the work area have to be able to scroll past each other. The
+   sign-in screen is the one page that opts out (it sets no `shell` class, being a card
+   with nothing to lay out against) and it keeps a footer, so the frame is only a hard
+   100dvh when a page has asked for it. */
+body.shell{overflow:hidden}
+body.shell .frame{height:100dvh;overflow:hidden}
+.shell-main{min-height:0;display:flex;flex-direction:column;overflow:hidden;
+  width:100%;max-width:var(--maxw);padding:0 22px 12px}
 
 /* The bar that never scrolls: identity on the left, every number a decision depends on
    in the middle, the one action this page exists to reach on the right. It replaces the
@@ -261,26 +320,39 @@ body.shell .banner{flex:none}
    the shell unlocks and the page goes back to scrolling as one thing. The tabs stay:
    they are a reduction in height at any width. */
 @media (max-width:1000px){
-  body.shell{height:auto;overflow:visible;display:block}
-  .shell-main{display:block;padding:0 20px 24px}
+  /* The rail forces itself to the icon strip and pins, rather than eating a third of a
+     tablet. The stored preference is left alone — this is the viewport overriding it for
+     as long as the viewport is this size, not a change to what the person chose. */
+  :root,html[data-nav="collapsed"]{--rail-w:52px}
+  .sidebar .brand-name,.sidebar .navlabel,.sidebar .navtree,
+  .sidebar .count,.sidebar-foot .envline,.sidebar-foot .whoami{display:none}
+  .sidebar-top{padding:0 6px;justify-content:center}
+  .sidebar .navitem{justify-content:center;padding:8px 0}
+  .nav-toggle{display:none}
+  .sidebar{position:sticky;top:0;height:100dvh}
+
+  body.shell,body.shell .frame{height:auto;overflow:visible}
+  .frame{align-items:start}
+  .shell-main{display:block;overflow:visible;padding:0 16px 24px}
   /* Stacked, not blocked: the work area goes first whichever side its rail was on.
      The song console keeps its rail in the left column at full width because the master
      and the measurement are what the sections are edited against — but read top to
      bottom that becomes four panels of standing facts before the list you came for. */
-  .deck,.deck-r{display:flex;flex-direction:column;padding-top:12px}
+  .deck,.deck-r,.deck-3{display:flex;flex-direction:column;padding-top:12px}
   .workarea{order:-1}
   .rail,.workarea{overflow:visible;padding-right:0}
   .rail{margin-top:14px}
   .pagebar-cta{margin-left:0}
   .stat:first-child{padding-left:0}
   .tabs{position:static}
+  .overlay,.overlay-wide{width:96vw;max-height:92dvh}
 }
-/* Under about 820px tall the rail and the work area are each a few rows of a scroll
+/* Under about 560px tall the rail and the work area are each a few rows of a scroll
    region, which is worse than one honest scroll. Height, not width, is the constraint a
    laptop actually imposes — a 13" screen in a browser with two toolbars is the case. */
 @media (max-height:560px){
-  body.shell{height:auto;overflow:visible;display:block}
-  .shell-main{display:block}
+  body.shell,body.shell .frame{height:auto;overflow:visible}
+  .shell-main{display:block;overflow:visible}
   .rail,.workarea{overflow:visible}
 }
 
@@ -747,6 +819,67 @@ dialog.sheet[open]{animation:sheet-in 140ms cubic-bezier(0.2,0.7,0.3,1)}
 .sheet-x{margin-left:auto;background:none;border:0;color:var(--ink-3);font-size:19px;
   line-height:1;cursor:pointer;padding:2px 4px;border-radius:4px}
 .sheet-x:hover{color:var(--ink)}
+
+/* ---- overlay ----
+   A whole secondary screen in the top layer: pricing a kit, reading one, verifying an
+   asset. Same `<dialog>` machinery as `.sheet`, sized completely differently, because
+   these are not "confirm this" dialogs — they carry the same body their standalone page
+   carries (templates/overlays/*.html), so they need page proportions.
+
+   `padding:0` on the dialog is load-bearing, not tidiness: with no padding the only
+   clicks that land on the element itself are backdrop clicks, which is what lets the
+   layout script close on click-away without hit-testing coordinates.
+
+   Sized in `dvh`/`vw` and capped, so the overlay obeys the same rule as everything under
+   it — it fits the viewport, and its body scrolls rather than the page. */
+dialog.overlay{border:1px solid var(--rule);border-radius:12px;background:var(--bg);
+  color:var(--ink-2);padding:0;box-shadow:var(--lift-3);z-index:var(--z-modal);
+  width:min(720px,calc(100vw - 48px));max-width:none;
+  /* `fit-content`, not `auto`. A modal <dialog> is laid out by the UA as position:fixed
+     with `inset:0`, and an abspos box with both insets set and `height:auto` resolves by
+     filling the space between them — so a short kit rendered in 800px of empty sheet.
+     `fit-content` is the UA's own default here; it only had to be restated because the
+     width beside it is not. */
+  max-height:min(860px,88dvh);height:fit-content;
+  /* `margin:auto` is what centres a modal `<dialog>` in the viewport, and this file's
+     own reset (`*{margin:0}`) takes it away — so every overlay opened flush to the top
+     left corner until it was put back. Restated rather than exempted from the reset,
+     because the reset is right and this is the one element that needs the UA default. */
+  margin:auto;
+  display:flex;flex-direction:column;overflow:hidden}
+/* The generate and kit screens carry a table, a shot list and a rail; at 720px they are
+   the cramped version of a page that already exists. */
+dialog.overlay-wide{width:min(1180px,calc(100vw - 48px))}
+dialog.overlay::backdrop{background:var(--scrim);backdrop-filter:blur(3px)}
+dialog.overlay[open]{animation:sheet-in 140ms cubic-bezier(0.2,0.7,0.3,1)}
+
+.overlay-head{flex:none;display:flex;align-items:center;gap:14px;padding:12px 16px;
+  border-bottom:1px solid var(--rule);background:var(--bg-2)}
+.overlay-id{min-width:0;flex:1}
+.overlay-id h2{font-family:var(--display);font-size:18px;color:var(--ink);margin:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.overlay-x{flex:none;background:none;border:0;color:var(--ink-3);font-size:20px;
+  line-height:1;cursor:pointer;padding:2px 6px;border-radius:4px}
+.overlay-x:hover{color:var(--ink);background:var(--panel)}
+
+/* The one scroll region inside the layer. The body it wraps is a whole page's content,
+   including that page's own `.pagebar` and `.deck` — both of which assume they are the
+   only thing in a viewport-locked column, so both are unwound here. A deck that kept its
+   own scroll regions inside a dialog that also scrolls is two nested scrollbars and no
+   way to reach the bottom of either. */
+.overlay-body{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 16px 16px}
+.overlay-body .pagebar{padding-top:11px;position:sticky;top:0;z-index:var(--z-sticky);
+  background:var(--bg)}
+.overlay-body .deck,.overlay-body .deck-r{display:grid;padding-top:12px}
+.overlay-body .deck-3{display:flex;flex-direction:column}
+.overlay-body .rail,.overlay-body .workarea{overflow:visible;min-height:0;padding-right:0}
+.overlay-body .tabs{position:sticky;top:0}
+.overlay-body .stack,.overlay-body .panes{padding-bottom:0}
+/* Its own page is where a breadcrumb belongs; in a layer the trail is the thing behind,
+   and the title is already in the layer's head. The badges beside it are not — status and
+   approval are the two things a kit is read for — so `.pagebar-id` stays. */
+.overlay-body .crumbs,.overlay-body .pagebar-id h1,.overlay-body .pagebar-id .eyebrow{display:none}
+.overlay-body .pagebar-id:empty{display:none}
 
 /* ---- lightbox ----
    Above the modal, because it is reachable *from* one and a layer that dims its own

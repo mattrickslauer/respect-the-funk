@@ -1,0 +1,14 @@
+{# Shared attribute sets, so a convention lives in one place rather than in eight.
+
+   `layer(url)` is how everything opens a secondary screen. It emits an ordinary `href`
+   *and* the htmx attributes that open the same URL into the layer stack, which is what
+   makes the behaviour progressive rather than conditional: with htmx the click opens a
+   modal over what you were looking at, without it the click is a navigation to the page
+   at that URL, and `ui.routes._screen` serves whichever was asked for.
+
+   Written as a macro because the failure mode of repeating it is silent — an `href` with
+   no `hx-get` beside it still works, it just quietly stops using the layer, and nobody
+   notices until they wonder why one of the four Generate links behaves differently. #}
+{% macro layer(url) -%}
+href="{{ url }}" hx-get="{{ url }}" hx-target="#layer" hx-swap="innerHTML"
+{%- endmacro %}

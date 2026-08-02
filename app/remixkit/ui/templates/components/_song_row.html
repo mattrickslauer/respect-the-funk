@@ -1,3 +1,4 @@
+{% from "components/_macros.html" import layer %}
 {# One song, with the hook window editable in place.
 
    The hook window is Pillar 13's one supported free lever, so it is a first-class
@@ -30,7 +31,7 @@
        button. `song.artist_id` rather than the page's `artist_id`, because this row is
        also rendered by the hook-window response, where that variable is not in scope. #}
     <p class="small links">
-      <a href="/console/artists/{{ song.artist_id }}/songs/{{ song.id }}/generate">Generate a kit →</a>
+      <a {{ layer("/console/artists/" ~ song.artist_id ~ "/songs/" ~ song.id ~ "/generate") }}>Generate a kit →</a>
     </p>
   </div>
 

@@ -209,23 +209,124 @@ def test_every_console_page_offers_a_skip_link(client, song, consented):
         assert 'id="main"' in text, f"{path} has no skip target"
 
 
-def test_the_topbar_says_which_section_you_are_in(client, song, consented):
+def _sidenav(text: str) -> str:
+    return text.split('class="sidenav"', 1)[1].split("</nav>", 1)[0]
+
+
+def test_the_sidebar_says_where_you_are(client, song, consented):
     """`aria-current` rather than a class, so the highlight is also announced.
 
-    Exactly one link carries it — a nav that marks two sections current is telling a
-    screen reader something false — and the deep pages report Roster, which is the
-    section an artist, a song, a kit and the generate screen all hang off.
+    Exactly one item in the rail carries it — a nav that marks two places current is
+    telling a screen reader something false. Scoped to the rail because breadcrumbs and
+    the identity line switcher legitimately carry the same attribute elsewhere.
     """
+    artist_id, song_id = consented["id"], song["id"]
     expected = {
+        "/console": "/console",
         "/console/catalogue": "/console/catalogue",
         "/console/settings": "/console/settings",
         "/verify": "/verify",
+        f"/console/artists/{artist_id}": f"/console/artists/{artist_id}",
+        f"/console/artists/{artist_id}/identity": f"/console/artists/{artist_id}/identity",
+        f"/console/songs/{song_id}": f"/console/songs/{song_id}",
     }
-    for path in _paths(consented["id"], song["id"]):
-        text = client.get(path).text
-        current = re.findall(r'<a href="([^"]+)" aria-current="page"', text)
-        assert len(current) == 1, f"{path} marks {current} as current"
-        assert current[0] == expected.get(path, "/console"), f"{path} marks {current[0]}"
+    for path, href in expected.items():
+        rail = _sidenav(client.get(path).text)
+        current = re.findall(r'href="([^"]+)"[^>]*aria-current="page"', rail)
+        assert len(current) == 1, f"{path} marks {current} as current in the rail"
+        assert current[0] == href, f"{path} marks {current[0]}, expected {href}"
+
+
+def test_the_rail_expands_the_artist_you_are_inside_and_no_other(client, song, consented):
+    """The tree is contextual, and only one branch opens.
+
+    Expanding every artist would put one repository scan per roster entry behind every
+    page render, and a tree nobody can find anything in — `ui.routes._nav` says so, and
+    this is what holds it to it.
+    """
+    other = client.post("/api/v1/artists", json={"name": "Somebody Else"}).json()
+    client.post(f"/api/v1/artists/{other['id']}/songs", json={"title": "Not Listed"})
+
+    rail = _sidenav(client.get(f"/console/artists/{consented['id']}").text)
+    assert song["title"] in rail, "the artist you are inside does not list its songs"
+    assert "Somebody Else" in rail, "every artist should still be a link"
+    assert "Not Listed" not in rail, "a collapsed artist listed its songs"
+
+
+def test_a_song_in_the_rail_stays_current_while_pricing_a_kit(client, song, consented):
+    """The generate screen hangs off a song and does not move you off it."""
+    rail = _sidenav(
+        client.get(
+            f"/console/artists/{consented['id']}/songs/{song['id']}/generate"
+        ).text
+    )
+    assert f'href="/console/songs/{song["id"]}"' in rail
+    assert "is-on" in rail
+
+
+# ------------------------------------------------------------------ layers
+_HTMX = {"HX-Request": "true"}
+
+_SECONDARY = ["/verify", "/console/kits/{kit_id}",
+              "/console/artists/{artist_id}/songs/{song_id}/generate"]
+
+
+def _secondary(artist_id: str, song_id: str, kit_id: str) -> list[str]:
+    return [p.format(artist_id=artist_id, song_id=song_id, kit_id=kit_id) for p in _SECONDARY]
+
+
+def test_a_secondary_screen_is_a_page_or_a_layer_depending_who_asked(client, kit, song, consented):
+    """One route, two frames — `ui.routes._screen`.
+
+    Asked for plainly it is a whole page with the rail beside it; asked for by htmx it is
+    a `<dialog>` with no shell around it, so it can be dropped into the layer over
+    whatever the person was already looking at.
+    """
+    for path in _secondary(consented["id"], song["id"], kit["id"]):
+        page = client.get(path)
+        assert page.status_code == 200
+        assert "<!doctype html>" in page.text.lower(), f"{path} is not a page"
+        assert 'class="sidenav"' in page.text, f"{path} lost the rail"
+
+        layer = client.get(path, headers=_HTMX)
+        assert layer.status_code == 200, f"{path} failed as a layer"
+        assert "<dialog" in layer.text, f"{path} did not come back as a dialog"
+        assert "<!doctype html>" not in layer.text.lower(), f"{path} sent a whole page into the layer"
+        assert 'class="sidenav"' not in layer.text, f"{path} put a second rail inside the layer"
+
+
+def test_both_frames_render_the_same_body(client, kit, song, consented):
+    """The point of sharing `components/_<name>_body.html`: two definitions of what a kit
+    costs would eventually disagree about it, and the estimate is this console's whole
+    argument for the generate screen existing."""
+    generate = f"/console/artists/{consented['id']}/songs/{song['id']}/generate"
+    page = client.get(generate).text
+    layer = client.get(generate, headers=_HTMX).text
+
+    estimate = re.search(r"<strong data-estimate>([^<]+)</strong>", page)
+    assert estimate, "the page lost its machine-readable estimate"
+    assert f"<strong data-estimate>{estimate.group(1)}</strong>" in layer, (
+        "the layer prices the same plan differently from the page"
+    )
+
+
+def test_every_layer_link_is_also_an_ordinary_link(client, kit, song, consented):
+    """`components/_macros.html` emits `href` beside `hx-get` so the console degrades to
+    plain navigation with no JavaScript at all. An `hx-get` that lost its `href` still
+    works in a browser and silently stops working everywhere else."""
+    for page in ("/console", f"/console/artists/{consented['id']}", f"/console/songs/{song['id']}",
+                 "/console/catalogue"):
+        text = client.get(page).text
+        for tag in re.findall(r"<a\b[^>]*hx-get=[^>]*>", text):
+            assert "href=" in tag, f"{page} has a layer link with no href: {tag[:120]}"
+
+
+def test_a_layer_can_be_closed_and_expanded(client, kit, song, consented):
+    """Escape and the backdrop are the browser's; these two are ours."""
+    for path in _secondary(consented["id"], song["id"], kit["id"]):
+        layer = client.get(path, headers=_HTMX).text
+        assert "data-close-layer" in layer, f"{path} opens with no way to close"
+        assert f'href="{path}"' in layer, f"{path} cannot be expanded to its own page"
 
 
 def test_a_breadcrumb_is_a_landmark_and_its_separators_are_not_read_aloud(client, song, consented):
@@ -258,3 +359,27 @@ def test_the_kit_breadcrumb_survives_a_deleted_song(client, container, principal
     trail = page.text.split('aria-label="Breadcrumb"', 1)[1].split("</nav>", 1)[0]
     assert kit["song_id"] not in trail, "the trail links to a song that is gone"
     assert kit["name"] in trail, "the trail should still end on the kit itself"
+
+
+# ------------------------------------------------------------------ the rail's reach
+def test_collapsing_the_rail_only_hides_things_in_the_rail():
+    """A static check, in the spirit of `test_nothing_reaches_for_a_bare_z_index`.
+
+    The collapsed rail hides everything in it that is a word — `.navlabel`, `.count`,
+    `.brand-name`. None of those are the rail's private names: `.count` is the badge on a
+    tab strip too, so unscoped, collapsing the rail also stripped the counts off the song
+    page's tabs. A page must not tell you less because a *different* region got narrower,
+    and the failure is invisible until somebody collapses the rail and looks elsewhere.
+    """
+    from pathlib import Path
+
+    css = Path("remixkit/ui/static/console.css").read_text()
+    leaked = []
+    for block in css.split("}"):
+        if 'data-nav="collapsed"' not in block or "display:none" not in block:
+            continue
+        for selector in block.split("{")[0].split(","):
+            selector = selector.strip()
+            if selector and "data-nav" in selector and ".sidebar" not in selector:
+                leaked.append(selector)
+    assert not leaked, f"collapsed-rail rules that reach outside the rail: {leaked}"

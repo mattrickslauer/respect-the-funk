@@ -1,20 +1,36 @@
 {# The shell. Design tokens are lifted verbatim from deck/remixkit-deck.html and
    web/index.html so the console, the deck, and the site read as one brand — that
    inheritance is web/README's stated rule, not a coincidence. Dark-committed for the
-   same reason it is there: it matches the other thing labels see. #}
+   same reason it is there: it matches the other thing labels see.
+
+   The frame is a column of navigation beside a column of work. It used to be a topbar
+   over a warning banner over the page, which cost ~78px of a ~780px laptop viewport on
+   every screen — 10% of the axis this entire layout was designed to conserve — to say
+   five words and name four backends. Both moved into the rail, where they cost width
+   instead, and where the rail collapses to a strip of icons when they are not wanted.
+
+   Everything below the frame is a layer. `#layer` is where the secondary screens open
+   (generate, a kit, the verifier) so that reaching one does not mean leaving what you
+   were looking at; see components/_overlay.html. #}
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}RemixKit — artist console{% endblock %}</title>
+{# Before the stylesheet and before first paint, deliberately. The rail's collapsed state
+   is a preference that has to survive navigation, and this console is server-rendered —
+   so without this the rail would render open and snap shut on every page load, which is
+   the flash this three-line script exists to prevent. It is the second script in the
+   console and it earns its place the same way the first one does. #}
+<script>try{document.documentElement.dataset.nav=localStorage.getItem("rk-nav")||"open"}catch(e){}</script>
 <script src="/static/htmx.min.js" defer></script>
 <link rel="stylesheet" href="/static/console.css">
 </head>
 {# `body_class` is the opt-in to the viewport-locked shell. A page that sets it to
    `shell` stops being a document that scrolls and becomes a workspace that fits: the
-   topbar and the page's own header are fixed furniture, and scrolling happens inside
-   the regions that own it.
+   page's own header and tab strip are fixed furniture, and scrolling happens inside the
+   regions that own it.
 
    Every console page takes it. The console is looked at on a laptop, where the vertical
    budget after browser chrome is about 750px; as documents these pages opened with a
@@ -23,69 +39,26 @@
    is the exception, being a card with nothing to lay out against. #}
 <body class="{% block body_class %}{% endblock %}">
 
-{# Keyboard users land on the topbar on every page, and on a console page the nav is
-   followed by a banner, a breadcrumb, an identity bar and a rail before the work area.
-   Tabbing through that on every navigation is the cost this one link removes. It is
-   visually hidden until focused, which is the only state in which it means anything. #}
+{# Off-screen until focused. The rail is ~14 links deep with a tree in it, and tabbing
+   through it on every navigation is the cost this one link removes. #}
 <a class="skip" href="#main">Skip to content</a>
 
-<header class="topbar">
-  <div class="wrap topbar-inner">
-    <a class="brand" href="/console">
-      <span class="brand-mark">◆</span>
-      <span>RemixKit</span>
-      <span class="brand-sub">artist console</span>
-    </a>
-    {# `aria-current="page"` rather than a class alone: "which section am I in" is
-       information, not decoration, and a screen reader has no other way to read the
-       highlight. The match is by prefix so a song, a kit and the generate screen all
-       still report Roster as the section they hang off — `/console` itself would
-       otherwise be current on exactly one URL out of the eight under it.
+<div class="frame">
+  {% include "components/_sidebar.html" %}
 
-       `request` is in the template context because `_render` builds the response with
-       `TemplateResponse(request, ...)`, so this needs nothing added to twenty handlers. #}
-    {% set path = request.url.path %}
-    {# Resolved to one href rather than tested per link, so exactly one item can ever be
-       current. Order matters and is the whole logic: the two specific `/console/...`
-       sections are claimed before the catch-all, which then absorbs every artist, song,
-       kit, identity and generate URL into Roster — the section they actually hang off. #}
-    {% set section = "/console/catalogue" if path.startswith("/console/catalogue")
-                else "/console/settings" if path.startswith("/console/settings")
-                else "/verify" if path.startswith("/verify")
-                else "/console" if path.startswith("/console")
-                else "" %}
-    <nav class="topnav" aria-label="Console sections">
-      {% for href, label in [
-           ("/console", "Roster"),
-           ("/console/catalogue", "Catalogue"),
-           ("/verify", "Verify"),
-           ("/console/settings", "Deployment"),
-         ] %}
-        <a href="{{ href }}"{% if section == href %} aria-current="page"{% endif %}>{{ label }}</a>
-      {% endfor %}
-      <a href="/docs">API</a>
-      {# `viewer` is the verified session cookie, injected by ui.routes._render, so this
-         cannot name someone whose token the next request would reject. Absent under
-         RK_AUTH_BACKEND=none, where there is nobody to name. #}
-      {% if viewer %}
-      <span class="whoami" title="{{ viewer.sub }}">{{ viewer.name }}</span>
-      <a href="/auth/logout">Sign out</a>
-      {% endif %}
-    </nav>
-  </div>
-</header>
+  <main id="main" class="{% block main_class %}wrap{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+</div>
 
-{% include "components/_env_banner.html" %}
-
-<main id="main" class="{% block main_class %}wrap{% endblock %}">
-  {% block content %}{% endblock %}
-</main>
+{# The layer stack. Empty until something is opened into it, and emptied when that thing
+   closes — so the page underneath is never rebuilt to show a kit or a price. #}
+<div id="layer"></div>
 
 {# Overridable so a shell page can drop it: a footer inside a viewport-locked layout is
    either always on screen stealing rows, or in a scroll region nobody reaches. Every
-   console page drops it and reprints the deployment line at the foot of its rail
-   (components/_rail_env.html), which leaves the sign-in screen as the only page that
-   still renders this. #}
+   console page drops it, and the deployment line it used to carry now lives at the foot
+   of the rail — which leaves the sign-in screen as the only page that still renders this. #}
 {% block footer %}
 <footer class="footer">
   <div class="wrap">
@@ -103,6 +76,50 @@
   </div>
 </footer>
 {% endblock %}
+
+{# The console's whole client-side budget, in one place.
+
+   Two behaviours, both of which the platform will not do for us: remembering whether the
+   rail is collapsed, and opening whatever htmx has just swapped into `#layer` as a real
+   modal. Everything structural about that modal — focus trapping, Escape, inertness,
+   the top layer — belongs to <dialog>, because it already does all four correctly and a
+   hand-rolled version of any of them is a bug waiting. #}
+<script>
+document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-nav-toggle]")) {
+    const root = document.documentElement;
+    const open = root.dataset.nav !== "collapsed";
+    root.dataset.nav = open ? "collapsed" : "open";
+    try { localStorage.setItem("rk-nav", root.dataset.nav); } catch (err) {}
+    const button = e.target.closest("[data-nav-toggle]");
+    button.setAttribute("aria-expanded", String(!open));
+    button.setAttribute("aria-label", open ? "Expand navigation" : "Collapse navigation");
+  }
+  // Anything inside a layer that asks to close it.
+  if (e.target.closest("[data-close-layer]")) closeLayer();
+  // Click-away. The overlay carries no padding of its own (see console.css), so the only
+  // clicks whose target is the dialog element itself are clicks on the backdrop around
+  // it — which is what makes this a hit test rather than a coordinate comparison.
+  if (e.target.matches("dialog.overlay")) closeLayer();
+});
+
+function closeLayer() {
+  const host = document.getElementById("layer");
+  host.querySelector("dialog")?.close();
+  host.innerHTML = "";
+}
+
+// htmx has just put an overlay in `#layer`; make it modal. `close` fires for Escape and
+// for the backdrop alike, which is why the emptying is hung off the event rather than
+// off each of the things that can cause it.
+document.body.addEventListener("htmx:afterSwap", (e) => {
+  if (e.target.id !== "layer") return;
+  const dialog = e.target.querySelector("dialog");
+  if (!dialog) return;
+  dialog.showModal();
+  dialog.addEventListener("close", () => { e.target.innerHTML = ""; }, { once: true });
+});
+</script>
 
 </body>
 </html>

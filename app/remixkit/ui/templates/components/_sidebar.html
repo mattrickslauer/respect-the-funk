@@ -1,0 +1,179 @@
+{% from "components/_macros.html" import layer %}
+{# The console's one piece of standing furniture.
+
+   It replaces a 50px topbar and a ~28px warning banner — 78px off the top of every page,
+   on a laptop whose usable viewport after browser chrome is about 780px. That is 10% of
+   the budget this whole layout was designed around (see console.css), spent on five links
+   and a line of deployment state. Moving both into a column trades width, of which there
+   is 1440px and to spare, for height, of which there is never enough.
+
+   The tree is contextual: the roster is always listed, and the artist you are inside
+   expands to their identity, their songs and their kits. `ui.routes._nav` explains why
+   only the active branch expands. What that buys is the hop it removes — song to sibling
+   song, or song to kit, used to be two navigations through the artist page and is now
+   one click on something already on screen.
+
+   Collapsing is CSS keyed off `html[data-nav]`, set before first paint by the inline
+   script in the layout head, so the rail does not flash open on every navigation. #}
+<aside class="sidebar" id="sidebar">
+
+  <div class="sidebar-top">
+    <a class="brand" href="/console">
+      <span class="brand-mark">◆</span>
+      <span class="brand-name">RemixKit</span>
+    </a>
+    {# `aria-expanded` is the state; the glyph is the decoration. A button that only
+       changed a character would tell a screen reader nothing about what it did. #}
+    <button class="nav-toggle" type="button" data-nav-toggle
+            aria-controls="sidebar" aria-expanded="true" aria-label="Collapse navigation">
+      <span aria-hidden="true">◧</span>
+    </button>
+  </div>
+
+  {% set path = request.url.path %}
+  {% set section = "/console/catalogue" if path.startswith("/console/catalogue")
+              else "/console/settings" if path.startswith("/console/settings")
+              else "/verify" if path.startswith("/verify")
+              else "/console" if path.startswith("/console")
+              else "" %}
+
+  <nav class="sidenav" aria-label="Console">
+    {# ---- roster, and the branch you are standing on ---- #}
+    <a class="navitem navitem-section {{ 'is-on' if path == '/console' }}"
+       href="/console" {% if path == "/console" %}aria-current="page"{% endif %}>
+      <span class="navicon" aria-hidden="true">☰</span>
+      <span class="navlabel">Roster</span>
+      {% if nav and nav.artists %}<span class="count">{{ nav.artists|length }}</span>{% endif %}
+    </a>
+
+    {% if nav and nav.artists %}
+      <ul class="navtree">
+        {% for a in nav.artists %}
+          {% set open = nav.artist and a.id == nav.artist.id %}
+          <li class="{{ 'is-open' if open }}">
+            <a class="navitem navitem-artist {{ 'is-on' if open and path.endswith(a.id) }}"
+               href="/console/artists/{{ a.id }}"
+               {% if open and path == "/console/artists/" ~ a.id %}aria-current="page"{% endif %}>
+              {# The one fact on the roster that decides whether anything else can be
+                 acted on, carried into the nav as a dot rather than a word — a tree is
+                 scanned, not read. #}
+              <span class="dot {{ 'dot-ok' if a.consent.granted else 'dot-blocked' }}"
+                    aria-hidden="true"></span>
+              <span class="navlabel">{{ a.name }}</span>
+            </a>
+
+            {% if open %}
+              <ul class="navbranch">
+                <li>
+                  <a class="navitem navitem-sub {{ 'is-on' if path.endswith('/identity') }}"
+                     href="/console/artists/{{ a.id }}/identity"
+                     {% if path.endswith("/identity") %}aria-current="page"{% endif %}>
+                    <span class="navlabel">Identity</span>
+                  </a>
+                </li>
+
+                {% for s in nav.songs %}
+                  <li>
+                    {# A song is current whether you are on it or on the generate screen
+                       that hangs off it — the overlay does not move you elsewhere, and a
+                       tree that said otherwise would be lying about where you are. #}
+                    {% set here = nav.song and s.id == nav.song.id %}
+                    <a class="navitem navitem-sub {{ 'is-on' if here }}"
+                       href="/console/songs/{{ s.id }}"
+                       {% if here and path == "/console/songs/" ~ s.id %}aria-current="page"{% endif %}>
+                      <span class="navlabel">{{ s.title }}</span>
+                      {% if not s.bpm %}
+                        <span class="dot dot-blocked" aria-hidden="true"
+                              title="not measured"></span>
+                      {% endif %}
+                    </a>
+                  </li>
+                {% endfor %}
+
+                {# Kits are leaves, not a link to a page that lists them, because a kit
+                   opens in the layer — so from anywhere inside an artist, any recent kit
+                   is one click and does not cost you the screen you are on. Capped at
+                   five: the nav is for the ones still in mind, and the artist's Kits tab
+                   is the list of all of them, which is what the overflow row goes to. #}
+                {% if nav.kits %}
+                  {% for k in nav.kits[:5] %}
+                    <li>
+                      <a class="navitem navitem-sub" {{ layer("/console/kits/" ~ k.id) }}>
+                        <span class="navlabel">{{ k.name }}</span>
+                        {% if k.status.value in ("queued", "running") %}
+                          <span class="dot dot-run" aria-hidden="true"
+                                title="{{ k.status.value }}"></span>
+                        {% elif k.status.value == "failed" %}
+                          <span class="dot dot-blocked" aria-hidden="true" title="failed"></span>
+                        {% endif %}
+                      </a>
+                    </li>
+                  {% endfor %}
+                  {% if nav.kits|length > 5 %}
+                    <li>
+                      <a class="navitem navitem-sub navitem-more"
+                         href="/console/artists/{{ a.id }}">
+                        <span class="navlabel">{{ nav.kits|length - 5 }} more kits</span>
+                      </a>
+                    </li>
+                  {% endif %}
+                {% endif %}
+              </ul>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {# ---- the sections that are not a record ---- #}
+    <a class="navitem navitem-section {{ 'is-on' if section == '/console/catalogue' }}"
+       href="/console/catalogue"
+       {% if section == "/console/catalogue" %}aria-current="page"{% endif %}>
+      <span class="navicon" aria-hidden="true">▤</span>
+      <span class="navlabel">Catalogue</span>
+    </a>
+    <a class="navitem navitem-section {{ 'is-on' if section == '/verify' }}"
+       href="/verify" {% if section == "/verify" %}aria-current="page"{% endif %}>
+      <span class="navicon" aria-hidden="true">✓</span>
+      <span class="navlabel">Verify</span>
+    </a>
+    <a class="navitem navitem-section {{ 'is-on' if section == '/console/settings' }}"
+       href="/console/settings"
+       {% if section == "/console/settings" %}aria-current="page"{% endif %}>
+      <span class="navicon" aria-hidden="true">⚙</span>
+      <span class="navlabel">Deployment</span>
+      {% if env.warnings %}<span class="count count-blocked">{{ env.warnings|length }}</span>{% endif %}
+    </a>
+    <a class="navitem navitem-section" href="/docs">
+      <span class="navicon" aria-hidden="true">{ }</span>
+      <span class="navlabel">API</span>
+    </a>
+  </nav>
+
+  {# ---- the foot: what this process is, and who is holding it ----
+     The warning banner used to be a full-width row above every page, and `_rail_env`
+     reprinted the same three backends at the foot of every rail. One place now. The
+     count is a link because the deployment page is the same information with the fix for
+     each spelled out. #}
+  <div class="sidebar-foot">
+    {% if env.warnings %}
+      <a class="envwarn" href="/console/settings"
+         title="{{ env.warnings|join(' · ') }}">
+        <span class="envtag">{{ env.env }}</span>
+        <span class="navlabel">{{ env.warnings|length }} mocked →</span>
+      </a>
+    {% else %}
+      <span class="envwarn envwarn-live"><span class="envtag">{{ env.env }}</span>
+        <span class="navlabel">all live</span></span>
+    {% endif %}
+    <p class="envline navlabel">
+      storage <code>{{ env.storage }}</code> · generator <code>{{ env.generator }}</code>
+    </p>
+    {% if viewer %}
+      <div class="whoami">
+        <span class="navlabel" title="{{ viewer.sub }}">{{ viewer.name }}</span>
+        <a class="navlabel" href="/auth/logout">Sign out</a>
+      </div>
+    {% endif %}
+  </div>
+</aside>

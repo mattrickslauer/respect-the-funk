@@ -90,42 +90,65 @@
         {# Re-pricing is a GET so the estimate is always the server's answer, not the
            browser's arithmetic. A client-side total would be a second opinion about
            cost, and the whole point of this screen is that there is only one. #}
-        {# Every input that changes the plan lives in this form, so nothing can alter what
-           is bought without also changing what is priced. Editing the hook lines without
-           re-pricing leaves the old value on the queue button — which is the safe way
-           round: the button always buys the plan shown in the table below. #}
         {# `id` so the per-shot prompt and model fields below can join this form with
            `form="repricer"` while living inside the step cards they belong to. Nesting
            them here instead would put the plan's controls somewhere other than the plan. #}
-        {# Live re-pricing.
+        {# Live re-pricing, and no button.
 
-           Every control on this form changes what a run costs, and a page that only tells
-           you after a reload is a page people stop reading. The request is still a GET to
-           this same handler, so the estimate remains the server's answer and there is no
-           second implementation of the arithmetic — htmx swaps two regions of the response
-           in rather than repainting the document.
+           Every control here changes what a run costs, and a screen that only tells you
+           after you ask is a screen people stop asking. The request is still a GET to this
+           same handler, so the estimate remains the server's answer and there is no second
+           implementation of the arithmetic — htmx swaps the changed regions of the
+           response in rather than repainting the document.
+
+           `from:#plan-body` rather than this form, because half the controls are not
+           inside it. The per-shot prompt, model, length and face fields live in the step
+           cards they describe and join the form by `form="repricer"` — which makes them
+           part of its data but not part of its subtree, so their events never reach it.
+           `#plan-body` contains every one of them, and `change`/`input` both bubble, so
+           delegating there is the only listener that cannot miss a field. The previous
+           `from:(#repricer textarea, #repricer input[type=text], …)` missed all of them,
+           and `input[type=text]` additionally matches nothing with no `type` attribute —
+           which is how the voice-over line is written, and every per-shot model box.
+
+           `submit` is listed because naming any trigger replaces the default one a form
+           has. Without it, pressing Enter in a field — or a Re-price button, when there
+           was one — fell through to the browser's own GET and navigated: the whole
+           document reloaded, and from the layer that meant being thrown out of it onto a
+           full page. htmx cancels the submit it handles.
+
+           Debounce on `input`, immediate on `change`. A tick, a radio or a picked option
+           is a finished decision; a prompt being typed is not. `hx-sync` aborts a re-price
+           still in flight when the next one starts, so a slow early response cannot land
+           after a fast later one and put stale text back in the box you are typing in.
+
+           Everything that survives a swap has an `id`: htmx restores focus and the caret
+           to the element with the same id after replacing a region, and without one, the
+           field being edited comes back scrolled to the top and deselected. That, more
+           than anything, is what made live re-pricing feel like a page reload.
 
            `#plan-stats` rides along out-of-band because the estimate lives in the pagebar,
            which is deliberately outside the scrolling area: the number that decides
-           whether to press the button must not be able to scroll away from it.
-
-           The debounce is on text inputs only. A tick or a radio is a finished decision;
-           a prompt being typed is not, and re-pricing per keystroke would be a request per
-           character for an answer nobody is reading yet.
+           whether to press the button must not be able to scroll away from it. The rail's
+           copy of the figure and the queue button's own state ride along for a harder
+           reason — they sit outside `#plan-body`, so before this they kept the price and
+           the refusal from whichever plan was last loaded, next to the button that spends
+           it.
 
            This works unchanged in the layer, which is why there is no second version of
-           it: `hx-select` picks `#plan-body` and `#plan-stats` out of whatever comes back,
-           and the overlay contains both — it is this same body inside a `<dialog>`. The
-           one exception is the URL. Pushing it is right on a page, where the address is
-           what you are looking at; in a layer the address belongs to the song underneath,
-           and rewriting it would leave the browser pointing at a screen you closed. #}
+           it: `hx-select` picks the regions out of whatever comes back, and the overlay is
+           this same body inside a `<dialog>`. The one exception is the URL. Pushing it is
+           right on a page, where the address is what you are looking at; in a layer the
+           address belongs to the song underneath, and rewriting it would leave the browser
+           pointing at a screen you closed. #}
         <form class="form" method="get" id="repricer"
               hx-get="{{ request.url.path }}"
-              hx-trigger="change, keyup changed delay:600ms from:(#repricer textarea, #repricer input[type=text], #repricer input[type=number])"
+              hx-trigger="submit, change from:#plan-body, input changed delay:500ms from:#plan-body"
               hx-target="#plan-body"
               hx-select="#plan-body"
               hx-swap="outerHTML"
-              hx-select-oob="#plan-stats"
+              hx-select-oob="#plan-stats,#queue-estimate,#queue-action"
+              hx-sync="this:replace"
               {% if not overlay %}hx-push-url="true"{% endif %}
               hx-indicator="#repricing">
           {# --- which format ---
@@ -139,6 +162,7 @@
               {% for option in recipes %}
                 <label class="chip chip-format">
                   <input type="radio" name="recipe_slug" value="{{ option.slug }}"
+                         id="recipe-{{ option.slug }}"
                          {{ "checked" if option.slug == recipe.slug }}>
                   <span>
                     <strong>{{ option.name }}</strong>
@@ -154,25 +178,32 @@
              than an absent one, because it looks like it changed something. #}
           {% if "{line}" in recipe.prompt_template %}
             <label>What she says <span class="hint">spoken in the clip, word for word</span>
-              <textarea name="line" rows="2"
+              <textarea name="line" id="line" rows="2"
                         placeholder="Hope to see you at my show…">{{ line }}</textarea>
             </label>
           {% endif %}
 
           <div class="plan-row">
             <label>{{ "Clips" if recipe.modality.value == "video" else "Images" }}
-              <input name="video_count" type="number" min="0" max="8" value="{{ video_count }}">
+              {# `count_field`, not `video_count`: the plan is priced for a number, and a
+                 box being retyped is briefly not one. See `_count_field`. #}
+              <input name="video_count" id="video_count" type="number" min="0" max="8"
+                     value="{{ count_field }}">
             </label>
             <label>Voice-over <span class="hint">optional — one spoken line</span>
-              <input name="tts_text" value="{{ tts_text }}" placeholder="leave empty for none">
+              <input name="tts_text" id="tts_text" value="{{ tts_text }}"
+                     placeholder="leave empty for none">
             </label>
             <label>Budget ceiling <span class="hint">cents — blank for none</span>
-              <input name="budget_cents" type="number" min="0" step="1"
+              <input name="budget_cents" id="budget_cents" type="number" min="0" step="1"
                      value="{{ budget_cents if budget_cents is not none else '' }}">
             </label>
-            {# Kept for keyboard submits and for a browser with htmx unavailable — the
-               form is a working GET either way. It is no longer how the page updates. #}
-            <button class="btn btn-quiet" type="submit">Re-price</button>
+            {# The only thing where the button was. It re-prices itself now, so a control
+               that asks it to is a control that is always either redundant or too late.
+               The form is still an ordinary GET to this URL, which is what the `noscript`
+               button submits: with no scripting the screen keeps working exactly as it
+               did, and with scripting the button never exists to be out of date. #}
+            <noscript><button class="btn btn-quiet" type="submit">Re-price</button></noscript>
             <span id="repricing" class="repricing" aria-live="polite">pricing…</span>
           </div>
 
@@ -199,6 +230,7 @@
               {% for line_name, versions in lines.items() %}
                 <label class="tick">
                   <input type="checkbox" name="identity_names" value="{{ line_name }}"
+                         id="face-{{ loop.index0 }}"
                          {{ "checked" if line_name in selected }}>
                   {{ versions[0].display_name }}
                   <span class="hint">
@@ -227,6 +259,7 @@
               {% for section in song.hook_sections %}
                 <label class="tick">
                   <input type="checkbox" name="section_ids" value="{{ section.id }}"
+                         id="hook-{{ loop.index0 }}"
                          {{ "checked" if section.id in section_ids }}>
                   {{ section.display_name }}
                   <span class="hint">{{ "%.1f"|format(section.duration_ms / 1000) }}s</span>
@@ -348,13 +381,13 @@
                    that only tells you afterwards. Empty means "use the default", which is
                    why clearing the box restores the generated prompt rather than sending
                    an empty one. #}
-                <label class="step-prompt">Prompt <span class="hint">as sent — edit and re-price</span>
-                  <textarea name="prompt_{{ step.index }}" rows="3"
+                <label class="step-prompt">Prompt <span class="hint">as sent — edits ride the button</span>
+                  <textarea name="prompt_{{ step.index }}" id="prompt_{{ step.index }}" rows="3"
                             form="repricer">{{ step.prompt }}</textarea>
                 </label>
                 <div class="step-knobs">
                   <label class="step-model">Model <span class="hint">blank = {{ step.model or "none resolved" }}</span>
-                    <input name="model_{{ step.index }}" form="repricer"
+                    <input name="model_{{ step.index }}" id="model_{{ step.index }}" form="repricer"
                            value="{{ overrides.get(step.index, {}).get('model', '') }}"
                            placeholder="{{ step.model or '—' }}">
                   </label>
@@ -364,8 +397,8 @@
                        no field, so the one thing a loop is measured in was the one thing
                        the plan could not change. Blank keeps the hook's own length. #}
                     <label class="step-secs">Length <span class="hint">seconds</span>
-                      <input name="seconds_{{ step.index }}" form="repricer"
-                             type="number" min="3" max="10" step="0.1"
+                      <input name="seconds_{{ step.index }}" id="seconds_{{ step.index }}"
+                             form="repricer" type="number" min="3" max="10" step="0.1"
                              value="{{ overrides.get(step.index, {}).get('seconds', '') }}"
                              placeholder="{{ '%.1f'|format(step.requested_seconds) if step.requested_seconds else '—' }}">
                     </label>
@@ -374,7 +407,8 @@
                        the default", and this field defaults to on, so an unticked box and
                        an untouched form would be indistinguishable. #}
                     <label class="step-lock">Face
-                      <select name="identity_lock_{{ step.index }}" form="repricer">
+                      <select name="identity_lock_{{ step.index }}"
+                              id="identity_lock_{{ step.index }}" form="repricer">
                         <option value="on" {{ "selected" if step.prelude }}>lock to a still</option>
                         <option value="off" {{ "selected" if not step.prelude }}>no face</option>
                       </select>
@@ -398,8 +432,12 @@
         {# `data-estimate` is the machine-readable copy of the figure, next to the button
            that spends it. test_screens asserts the number on the page equals the number
            the kit is charged, and it should not have to know which class this element is
-           styled with to do that. #}
-        <strong data-estimate>{{ "$%.2f"|format(estimate_cents / 100) }}</strong>
+           styled with to do that.
+
+           The `id` is what the re-price swaps out of band. This figure sits outside
+           `#plan-body`, so until it did, editing the plan moved the estimate in the
+           pagebar and left the one an inch from the button reading the old price. #}
+        <strong id="queue-estimate" data-estimate>{{ "$%.2f"|format(estimate_cents / 100) }}</strong>
       </div>
       {% if "mock" in env.generator %}
         <p class="hint">
@@ -408,55 +446,45 @@
         </p>
       {% endif %}
 
-      <form hx-post="/ui/kits" hx-target="#queued" hx-swap="innerHTML">
+      {# The purchase submits the priced form itself.
+
+         Every control that changes the plan used to be copied into this form as a hidden
+         input, rendered from the same context the estimate was — which was true at the
+         moment the page was built and only then. Now that the plan re-prices itself
+         without reloading, a copy is a copy of an older screen: it is the shot list above
+         that has just been replaced, and this rail that has not.
+
+         `hx-include` removes the copy rather than refreshing it. The button posts the
+         live contents of `#repricer` — the format, the line, the counts, the ceiling, the
+         ticked faces and hooks, and every per-shot prompt, model, length and face lock,
+         since those join that form by `form="repricer"` and travel in its `FormData`. So
+         what is bought is not a re-derivation of what was priced; it is the same form. #}
+      <form hx-post="/ui/kits" hx-target="#queued" hx-swap="innerHTML"
+            hx-include="#repricer">
+        {# The two things the priced form has no opinion about: which record this is, and
+           whose. Everything else rides in from `#repricer`. #}
         <input type="hidden" name="song_id" value="{{ song.id }}">
         <input type="hidden" name="artist_id" value="{{ artist.id }}">
-        <input type="hidden" name="video_count" value="{{ video_count }}">
-        {# The format and its line ride the purchase, like every other control. Buying a
-           different format than the one priced is the divergence this screen exists to
-           prevent, and the format decides more than any other field on the page. #}
-        <input type="hidden" name="recipe_slug" value="{{ recipe.slug }}">
-        {% if line %}<textarea name="line" hidden>{{ line }}</textarea>{% endif %}
-        {% for section_id in section_ids %}
-          <input type="hidden" name="section_ids" value="{{ section_id }}">
-        {% endfor %}
-        {# Everything the estimate above was computed from. A control that changes the
-           plan but does not ride the button buys a different kit than the one priced —
-           the divergence this whole screen exists to prevent. #}
-        {% if identity_names is not none %}
-          <input type="hidden" name="faces_chosen" value="1">
-          {% for line_name in identity_names %}
-            <input type="hidden" name="identity_names" value="{{ line_name }}">
-          {% endfor %}
-        {% endif %}
-        {% if tts_text %}<input type="hidden" name="tts_text" value="{{ tts_text }}">{% endif %}
-        {% if budget_cents is not none %}
-          <input type="hidden" name="budget_cents" value="{{ budget_cents }}">
-        {% endif %}
         <label class="queue-name">Kit name <span class="hint">optional</span>
-          <input name="name" placeholder="{{ song.title }} — kit">
+          <input name="name" id="kit_name" placeholder="{{ song.title }} — kit">
         </label>
-        {# Every edit that was priced, carried into the purchase. Without these the queue
-           button buys the generated defaults while the screen above shows the rewritten
-           prompts — the exact divergence this page exists to prevent, reintroduced one
-           level down. #}
-        {% for index, edits in overrides.items() %}
-          {% for field, value in edits.items() %}
-            <input type="hidden" name="{{ field }}_{{ index }}" value="{{ value }}">
-          {% endfor %}
-        {% endfor %}
-        <button class="btn btn-primary" type="submit" {{ "disabled" if blocked or over_budget }}>
-          Queue this kit
-        </button>
-        {% if over_budget %}
-          {# Refused here as well as in the service. `KitService.request` raises on this,
-             and a button that submits into a known refusal is a round trip to be told
-             something the screen already knew. #}
-          <p class="notice notice-error small">
-            {{ "$%.2f"|format(estimate_cents / 100) }} is over the
-            {{ "$%.2f"|format(budget_cents / 100) }} ceiling. Raise it, or drop a shot.
-          </p>
-        {% endif %}
+        {# Swapped out of band on every re-price, and nothing else in this panel is —
+           which is what lets the name above survive being typed while the plan changes
+           underneath it, and lets an already-queued kit stay on the screen below. #}
+        <div id="queue-action">
+          <button class="btn btn-primary" type="submit" {{ "disabled" if blocked or over_budget }}>
+            Queue this kit
+          </button>
+          {% if over_budget %}
+            {# Refused here as well as in the service. `KitService.request` raises on this,
+               and a button that submits into a known refusal is a round trip to be told
+               something the screen already knew. #}
+            <p class="notice notice-error small">
+              {{ "$%.2f"|format(estimate_cents / 100) }} is over the
+              {{ "$%.2f"|format(budget_cents / 100) }} ceiling. Raise it, or drop a shot.
+            </p>
+          {% endif %}
+        </div>
       </form>
       <div id="queued"></div>
     </section>

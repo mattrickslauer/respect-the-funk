@@ -305,9 +305,11 @@ def test_both_frames_render_the_same_body(client, kit, song, consented):
     page = client.get(generate).text
     layer = client.get(generate, headers=_HTMX).text
 
-    estimate = re.search(r"<strong data-estimate>([^<]+)</strong>", page)
+    priced = r"<strong[^>]*\bdata-estimate\b[^>]*>([^<]+)</strong>"
+    estimate = re.search(priced, page)
     assert estimate, "the page lost its machine-readable estimate"
-    assert f"<strong data-estimate>{estimate.group(1)}</strong>" in layer, (
+    in_layer = re.search(priced, layer)
+    assert in_layer and in_layer.group(1) == estimate.group(1), (
         "the layer prices the same plan differently from the page"
     )
 
@@ -403,3 +405,35 @@ def test_repricing_the_plan_does_not_come_back_as_a_dialog(client, song, consent
     assert "<dialog" not in repriced.text, "a re-price was answered with a layer"
     assert 'id="plan-body"' in repriced.text, "the re-price response has nothing to select"
     assert 'id="plan-stats"' in repriced.text, "the out-of-band estimate is missing"
+
+
+def test_a_re_price_carries_every_region_it_swaps(client, song, consented):
+    """Selecting a region the response does not contain is a swap that silently does
+    nothing, and the two regions outside `#plan-body` are the price beside the button and
+    the button's own refusal — the parts a stale answer is most expensive in."""
+    generate = f"/console/artists/{consented['id']}/songs/{song['id']}/generate"
+    page = client.get(generate).text
+    selected = re.search(r'hx-select-oob="([^"]+)"', page).group(1).split(",")
+    repriced = client.get(
+        generate, headers={"HX-Request": "true", "HX-Target": "plan-body"}
+    ).text
+
+    for region in selected:
+        assert f'id="{region.lstrip("#").strip()}"' in repriced, f"{region} is not in the answer"
+
+
+def test_the_plan_re_prices_itself_without_leaving_the_page(client, song, consented):
+    """Naming any trigger on a form replaces the `submit` one it has by default, so the
+    form that priced this screen fell through to the browser's own GET: a full document
+    load, and from the layer, being thrown out of it onto a page.
+
+    The controls it has to hear from are not all inside it either — the per-shot fields
+    join by `form="repricer"` and live in the step cards, so their events never reach the
+    form. `#plan-body` is the one node that contains all of them.
+    """
+    generate = f"/console/artists/{consented['id']}/songs/{song['id']}/generate"
+    trigger = re.search(r'id="repricer"[\s\S]*?hx-trigger="([^"]+)"', client.get(generate).text)
+
+    assert trigger, "the priced form has no trigger at all"
+    assert "submit" in trigger.group(1), "a keyboard submit still reloads the document"
+    assert "from:#plan-body" in trigger.group(1), "half the plan's controls are not listened to"

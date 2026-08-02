@@ -10,6 +10,8 @@ exists to prevent.
 
 from __future__ import annotations
 
+import base64
+
 import pytest
 
 from remixkit.adapters import providers
@@ -281,3 +283,104 @@ def test_every_default_video_model_can_render_a_default_loop():
                 assert snapped in allowed, f"{model} would reject {snapped}"
             else:
                 assert isinstance(snapped, int) and 1 <= snapped <= 60
+
+
+# ------------------------------------------------------- Sora's input_reference
+#
+# The API stopped accepting the file form the connector sends:
+#
+#     Step 1 (openai-sora/sora-2): Sora submit failed: Error code: 400 - {'error':
+#     {'message': "Invalid type for 'input_reference': expected an object, but got a
+#     file instead.", 'param': 'input_reference', 'code': 'invalid_type'}}
+#
+# `openai` 2.52.0 types the parameter as `Union[FileTypes, ImageInputReferenceParam]`,
+# and the server now honours only the object arm.
+
+
+@pytest.fixture
+def sora():
+    """The corrected provider, with no client and no credential."""
+    openai_sdk = pytest.importorskip("genblaze_openai")
+    from remixkit.adapters import pricing
+    from remixkit.adapters.provider_sora import sora_provider_class
+
+    cls = sora_provider_class()
+    return cls(models=pricing.priced_registry(openai_sdk.SoraProvider))
+
+
+class _Videos:
+    """Records what `videos.create` was called with."""
+
+    def __init__(self):
+        self.params: dict = {}
+
+    def create(self, **params):
+        self.params = params
+        return type("Response", (), {"id": "video_123"})()
+
+
+def _asset(url):
+    from genblaze_core.models.asset import Asset as GBAsset
+
+    return GBAsset(url=url, media_type="image/png", sha256="a" * 64)
+
+
+def _step(model="sora-2", prompt="a portrait", **params):
+    from genblaze_core.models.enums import Modality as GBModality
+    from genblaze_core.models.step import Step
+
+    return Step(
+        provider="openai-sora", model=model, prompt=prompt,
+        modality=GBModality.VIDEO, params=params,
+    )
+
+
+def test_a_url_reference_is_sent_as_an_object_not_a_file(sora, monkeypatch):
+    """The 400, in one assertion: an object, and never an open file."""
+    videos = _Videos()
+    monkeypatch.setattr(
+        sora, "_get_client", lambda: type("Client", (), {"videos": videos})()
+    )
+
+    step = _step()
+    step.inputs = [_asset("https://b2/still.png")]
+    assert sora.submit(step) == "video_123"
+
+    reference = videos.params["input_reference"]
+    assert reference == {"image_url": "https://b2/still.png"}
+    assert not hasattr(reference, "read"), "a file handle is what the API refused"
+
+
+def test_a_chained_still_is_inlined_because_it_has_no_address_yet(sora, monkeypatch, tmp_path):
+    """A chain input is the previous step's output before the sink has uploaded it — a
+    local path, so there is no URL to hand OpenAI and the bytes travel instead."""
+    still = tmp_path / "still.png"
+    still.write_bytes(b"\x89PNG\r\n\x1a\nnot-really-a-png")
+    monkeypatch.setattr(sora, "_output_dir", tmp_path)
+
+    reference = sora._input_reference(still.as_uri())
+
+    assert reference["image_url"].startswith("data:image/png;base64,")
+    encoded = reference["image_url"].split(",", 1)[1]
+    assert base64.b64decode(encoded) == still.read_bytes()
+
+
+def test_a_shot_with_no_reference_sends_no_reference(sora, monkeypatch):
+    """Sora renders unlocked shots too, and a missing face is the plan screen's refusal
+    to make rather than a 400 raised with the run half spent."""
+    videos = _Videos()
+    monkeypatch.setattr(
+        sora, "_get_client", lambda: type("Client", (), {"videos": videos})()
+    )
+
+    assert sora.submit(_step()) == "video_123"
+    assert "input_reference" not in videos.params
+
+
+def test_the_correction_keeps_the_name_the_rest_of_the_table_looks_up(sora):
+    """Two lookups key on the class name — `DEFAULT_MODELS` for the video model and
+    `vendor_of` for which vendor answered — so renaming the subclass would silently cost
+    Sora its default model and its vendor."""
+    assert type(sora).__name__ == "SoraProvider"
+    assert providers.vendor_of(sora) == "openai"
+    assert providers.DEFAULT_MODELS[type(sora).__name__][Modality.VIDEO] == "sora-2"

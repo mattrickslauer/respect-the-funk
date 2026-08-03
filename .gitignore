@@ -69,6 +69,38 @@ content/.cache/
 # built from (characters/*-ref*.jpg). They are small, and they are the only record of
 # what the image model was actually shown — losing them makes a rerun unreproducible.
 
+# KEPT DELIBERATELY: content/demo/screenshots/. The demo video's source footage. These
+# are not derivable the way a render is: each one is the console run against B2 with one
+# tenant's data, scrolled to a particular row, and the run ids, prices and hashes on
+# screen are that afternoon's state. The edit is cut to these frames, so re-capturing
+# them would not reproduce them — it would produce different pictures the cuts no longer
+# fit. 6.6MB for the ten.
+!content/demo/screenshots/*.png
+
+# The b-roll beside them is NOT kept: every file is byte-identical to an object that
+# already exists under runs/, which is exactly the case the rule at the top of this file
+# describes. content/demo/broll/SOURCES.md is the descriptor that points at them.
+
+# ---------------------------------------------------------------- the demo video build
+# Frames and the encode are pure output — build.py remakes both from what is committed.
+content/demo/video/out/frames/
+content/demo/video/out/*.mp4
+content/demo/video/out/*.log
+content/demo/video/node_modules/
+
+# The b-roll exploded to one JPEG per frame. Named explicitly because *.jpg is kept
+# deliberately elsewhere in this file, and without this line 26MB of frames that ffmpeg
+# regenerates in seconds would be committed on the strength of that exemption.
+content/demo/video/out/broll-frames/
+
+# KEPT DELIBERATELY: the narration and its alignment. This is the one artefact in the
+# repo that is not free to remake — the ElevenLabs account is a 10,000-character
+# lifetime free tier and one read of the script costs 1,799 of them. The alignment is
+# also the edit's clock: every cue in render.html is looked up in it by phrase, so
+# losing it does not cost a re-render, it costs the timing of every cut in the film.
+!content/demo/video/out/narration.mp3
+!content/demo/video/out/alignment.json
+
 # KEPT DELIBERATELY: the demo overlay set. The *.png rule above is aimed at 1.3MB stills
 # off an image model; these are 40KB of vector drawing each, 3MB for all twenty, and they
 # are the deliverable for the demo edit rather than an intermediate on the way to one.

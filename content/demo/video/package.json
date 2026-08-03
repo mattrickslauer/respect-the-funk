@@ -1,0 +1,8 @@
+{
+  "name": "remixkit-demo-visuals",
+  "private": true,
+  "description": "Frame capture for the demo video's picture track. playwright-core only — the browser itself is the one already in the Playwright cache.",
+  "dependencies": {
+    "playwright-core": "^1.56.0"
+  }
+}

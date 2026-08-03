@@ -1,6 +1,6 @@
 ---
 title: "RemixKit — the artist console"
-subtitle: "The application PRODUCT.md describes: register an artist, build their identity once, attach songs, generate content designed to be imitated, and verify what came out."
+subtitle: "The application PRODUCT.md describes: register an artist, build their identity once, attach songs, generate the media a release needs in whichever format it needs, and verify what came out."
 status: "LIVE — deployed on AWS with real generation, real B2, and real auth. Also runs end-to-end with zero credentials."
 date: "2026-07-27"
 ---
@@ -910,7 +910,7 @@ variant spread — so adding a format is adding a record rather than editing the
 
 This is also the answer to a question the repo used to get wrong: RemixKit generates the
 media a release needs, whatever kind that is. It is not a manufacturer of templatable UGC
-bait that happens to do other things — see [PRODUCT.md](../PRODUCT.md) § *What the product
+bait that happens to do other things — see [PRODUCT.md](../docs/PRODUCT.md) § *What the product
 generates, precisely*. The backdrop below is one row.
 
 Five ship, seeded per tenant on first read (there is no migration step to hang a fixture
@@ -1040,7 +1040,7 @@ and it is the **only** page whose route does not take `CurrentPrincipal`. That i
 entire gate: every console handler asks for a principal, so every console handler
 refuses without a session, and no route contains an `if authenticated` branch.
 
-It is one app rather than two because `web/README.md` costed the alternative: a separate
+It is one app rather than two because `docs/web.md` costed the alternative: a separate
 front end is a second deploy target, a second dependency tree, and a $20/mo Vercel
 commercial-ToS seat — the whole always-on floor of this stack, spent on a page that
 never re-renders. The page needed no rework to move; it was already valid Jinja.

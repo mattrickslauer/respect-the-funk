@@ -54,7 +54,7 @@ def validate_clip(desc: dict, path: Path) -> list[str]:
     step: it makes a proof of concept off found footage impossible to even render, which
     is a decision about distribution being taken by a renderer. The source is still
     printed on every run, so nothing is hidden; deciding what may be *published* is
-    `research/06`'s job and a human's.
+    `docs/research/06-rights-licensing`'s job and a human's.
     """
     errs = []
     src = desc.get("rights", {}).get("source")

@@ -91,4 +91,4 @@ app/**/__pycache__/
 terraform.tfvars
 
 # Built on demand for sharing; the served page is index.html + wireframe.json
-web/wireframe/standalone.html
+docs/wireframe/standalone.html

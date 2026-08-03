@@ -19,9 +19,9 @@ date: "2026-07-26"
 
 1. **There is no cost argument to have.** MEMORY-SPEC §8 was written braced for one — it concedes the branch "reintroduces the tier that decision removed" and declines to restate the idle number until it was checked. It is now checked. CockroachDB Basic starts at $0/month, **scales to zero**, includes **50M Request Units + 10 GiB storage free every month**, and carries the distributed vector index on that plan. This workload fits inside the free allowance at all three tiers. **infra/README.md's "under $1/month idle" survives the branch** at T0 and T1; at T2 it is exceeded — by **Backblaze B2 storage ($0.92), not by the database ($0.00)**.
 
-2. **The memory tier is a rounding error on its own bill, and a lever on the bill that dominates.** At T1 it costs **$0.0066 per finished video** against **$2.07** of generation and likeness judging — **0.32%**. It pays for itself if it removes **0.0075 attempts per approved still**, out of 2.2. This reinforces rather than contradicts [research/07-cost-model](../research/07-cost-model/README.md): generation is the bill, everything else is noise, and the memory tier is the cheapest possible way to attack the expensive line.
+2. **The memory tier is a rounding error on its own bill, and a lever on the bill that dominates.** At T1 it costs **$0.0066 per finished video** against **$2.07** of generation and likeness judging — **0.32%**. It pays for itself if it removes **0.0075 attempts per approved still**, out of 2.2. This reinforces rather than contradicts [docs/research/07-cost-model](../docs/research/07-cost-model.md): generation is the bill, everything else is noise, and the memory tier is the cheapest possible way to attack the expensive line.
 
-3. **The binding constraint is not price — it is an unpublished number.** CockroachDB does not publish an RU cost for a vector-index scan. So the free allowance is stated here as *headroom*, not as spend: an operation would have to cost **> 9,542 RU** at T1, or **> 1,147 RU** at T2, before the 50M free allowance breaks. T1 has room to spare. **T2 must be measured**, and days 1–2 of [MEMORY-SPEC §9](../MEMORY-SPEC.md) is where to record it.
+3. **The binding constraint is not price — it is an unpublished number.** CockroachDB does not publish an RU cost for a vector-index scan. So the free allowance is stated here as *headroom*, not as spend: an operation would have to cost **> 9,542 RU** at T1, or **> 1,147 RU** at T2, before the 50M free allowance breaks. T1 has room to spare. **T2 must be measured**, and days 1–2 of [MEMORY-SPEC §9](../docs/MEMORY-SPEC.md) is where to record it.
 
 ---
 
@@ -58,7 +58,7 @@ Counted out of this repository on 2026-07-26. These are the workload's real driv
 | Memory-tier operations / month | 1,750 | 5,240 | 43,600 |
 
 **T0 · Demo** — what exists on 2026-08-18, plus the synthetic corpus MEMORY-SPEC §9 commits to for exercising the index (5,000 rows, labelled synthetic wherever they appear).
-**T1 · Pilot** — Respect the Funk as tenant #1 at the scale [PRODUCT.md](../PRODUCT.md) names as the real bottleneck: fifty songs, where manual onboarding rather than compute is what throttles throughput.
+**T1 · Pilot** — Respect the Funk as tenant #1 at the scale [PRODUCT.md](../docs/PRODUCT.md) names as the real bottleneck: fifty songs, where manual onboarding rather than compute is what throttles throughput.
 **T2 · Platform** — ten labels on one engine. The multi-tenant case BUILD-SPEC §2b rule 6 partitions for, and the first tier where the free allowance is a genuine question.
 
 ⚠️ **Attempts-per-approved-still is an assumption at every tier, not evidence.** It is not measured anywhere in this repo, because nothing writes back — that is precisely MEMORY-SPEC §3's third failure, and the thing this whole branch exists to fix. The 3.0 / 2.2 / 1.8 figures size the workload; they are not a claim that the improvement has been observed. `memory-workload.pdf` draws the full sensitivity curve rather than a point estimate so this stays visible. MEMORY-SPEC §6 already commits to labelling the demo curve with its N; the same rule governs this document.
@@ -101,7 +101,7 @@ For scale, CockroachDB documents a simple point read at single-digit RUs. T1 has
 
 A move from 3.0 → 2.2 attempts saves **$0.70 per video**, or **$140.80/month at T2** — for a tier that bills nothing. That is the entire economic case, and it does not require the improvement to be large. It requires it to be *non-zero*, which is the falsifiable claim MEMORY-SPEC §6 already commits to testing.
 
-> **This does not overturn research/07-cost-model — it confirms it.** Generation is ~93% of the bill there and 99% here. The memory tier does not add a meaningful line. It is a lever on the line that already dominates, bought in the free column.
+> **This does not overturn docs/research/07-cost-model — it confirms it.** Generation is ~93% of the bill there and 99% here. The memory tier does not add a meaningful line. It is a lever on the line that already dominates, bought in the free column.
 
 ---
 
@@ -128,13 +128,13 @@ Full line items are in [`memory-workload.csv`](./memory-workload.csv), in AWS Pr
 | | **Total infrastructure** | | **$0.7227** | **$8.67** |
 | *memo* | *image generation — `gemini-2.5-flash-image`* | *$0.04/image · 968 attempts/mo* | *$38.72* | *$464.64* |
 
-**Five AWS services become six.** [MEMORY-SPEC §7](../MEMORY-SPEC.md) proposes adding Bedrock to the five already in [infra/README.md](./README.md), and Bedrock is the only genuinely new spend this branch introduces: **$0.13/month at T1**, of which batch embedding halves the ingest half. Everything else — Lambda, SQS, SSM — stays inside its free tier at every tier modelled.
+**Five AWS services become six.** [MEMORY-SPEC §7](../docs/MEMORY-SPEC.md) proposes adding Bedrock to the five already in [infra/README.md](./README.md), and Bedrock is the only genuinely new spend this branch introduces: **$0.13/month at T1**, of which batch embedding halves the ingest half. Everything else — Lambda, SQS, SSM — stays inside its free tier at every tier modelled.
 
 ---
 
 ## What is not verified
 
-Marked rather than guessed, per the house rule in [research/07-cost-model](../research/07-cost-model/README.md).
+Marked rather than guessed, per the house rule in [docs/research/07-cost-model](../docs/research/07-cost-model.md).
 
 | Item | Status |
 |---|---|
@@ -144,7 +144,7 @@ Marked rather than guessed, per the house rule in [research/07-cost-model](../re
 | **CloudWatch** ($0.15/mo) | **UNVERIFIED placeholder** — carried from infra/README.md's "~cents". |
 | **Attempts per approved still** | **ASSUMPTION at every tier.** The one number that would change the conclusion, and the one this repo cannot currently produce. |
 | **Face embedding model** | **OPEN DESIGN DECISION** (MEMORY-SPEC §10.3). Priced as Titan Image Embeddings at $0.00006/image, which would give Q3 a metric vector rather than the vision model's judgement — a real change to `check_likeness.py`, not a refactor. |
-| Gemini 2.5 Flash token rates (likeness judging) | Carried from research/07-cost-model, verified 2026-07-15. |
+| Gemini 2.5 Flash token rates (likeness judging) | Carried from docs/research/07-cost-model, verified 2026-07-15. |
 
 ---
 
@@ -161,8 +161,8 @@ Every number in this file, in the PDF and in the CSV comes from the constants bl
 
 *All read 2026-07-26 unless noted.*
 
-- **AWS Price List Bulk API** — `pricing.us-east-1.amazonaws.com/offers/v1.0/aws/{AmazonBedrock,AWSLambda,AWSQueueService,AmazonECS,AmazonECR}/current/us-east-1/index.json`. AWS's own primary source, used because the HTML pricing pages are JS-rendered — the same trap research/07-cost-model hit on EC2 and Azure.
+- **AWS Price List Bulk API** — `pricing.us-east-1.amazonaws.com/offers/v1.0/aws/{AmazonBedrock,AWSLambda,AWSQueueService,AmazonECS,AmazonECR}/current/us-east-1/index.json`. AWS's own primary source, used because the HTML pricing pages are JS-rendered — the same trap docs/research/07-cost-model hit on EC2 and Azure.
   - Titan Text Embeddings V2 `$0.00002/1K tokens` (batch `$0.00001`) · Titan Image Embeddings `$0.00006/image` · Nova Lite `$0.00006/$0.00024 per 1K` · Lambda `$0.0000166667/GB-s` + `$0.20/M req` · SQS `$0.40/M req`, 1M free · Fargate `$0.04048/vCPU-hr` + `$0.004445/GB-hr` · ECR `$0.10/GB-mo`
 - [CockroachDB pricing](https://www.cockroachlabs.com/pricing/new) — Basic "starts at $0 / month", "50 million RUs and 10 GiB storage free per month", "scales to zero"; distributed vector index listed on all plans. [Understand CockroachDB Cloud Costs](https://www.cockroachlabs.com/docs/cockroachcloud/costs) — confirms the $15/month free credit, defers per-unit rates to a quote.
-- [research/07-cost-model](../research/07-cost-model/README.md) (verified 2026-07-15) — Backblaze B2 `$0.00695/GB-mo`, Gemini 2.5 Flash token rates.
+- [docs/research/07-cost-model](../docs/research/07-cost-model.md) (verified 2026-07-15) — Backblaze B2 `$0.00695/GB-mo`, Gemini 2.5 Flash token rates.
 - `content/bin/generate_stills.py` `PRICES_USD` (dated 2026-07 by the repo) — `gemini-2.5-flash-image` at `$0.04/image`.

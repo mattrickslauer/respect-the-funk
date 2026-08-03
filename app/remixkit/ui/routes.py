@@ -1,7 +1,7 @@
 """The console.
 
 Server-rendered Jinja + htmx, in the same FastAPI app — BUILD-SPEC §2's frontend
-decision and web/README's stated precedent, which resolves open decision §13.5.
+decision and docs/web.md's stated precedent, which resolves open decision §13.5.
 
 "Componentized" here means every fragment under `templates/components/` renders
 standalone and is addressable by a route that returns *just that fragment*. htmx swaps
@@ -279,7 +279,7 @@ def landing(request: Request):
     other page takes `CurrentPrincipal` and therefore raises `AuthError` without a
     session, which is what puts the console behind the login.
 
-    It lives here rather than on a second host because `web/README.md` costed that out:
+    It lives here rather than on a second host because `docs/web.md` costed that out:
     a separate front end is a second deploy target, a second dependency tree, and a
     $20/mo Vercel commercial seat — the entire always-on floor of this stack, spent on
     a page that never re-renders. One app, one deploy, per BUILD-SPEC §2.

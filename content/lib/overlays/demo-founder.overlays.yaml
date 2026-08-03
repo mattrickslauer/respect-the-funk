@@ -1,0 +1,266 @@
+# Overlay set for the founder-to-camera demo.
+#
+# Twenty cards, one per beat of docs/demo-voiceover.txt. Each carries the `cue` it sits
+# under so an editor can place it by ear instead of by stopwatch, and `vo_line` so the
+# script and the graphics can never quietly drift apart.
+#
+# Render:  python3 content/bin/generate_overlays.py content/lib/overlays/demo-founder.overlays.yaml
+# Schema:  rtf.overlay/v1 — documented in the generator's docstring.
+
+schema: rtf.overlay/v1
+id: demo-founder
+title: RemixKit demo — founder to camera
+subtitle: Transparent-background cards to composite over the founder speaking.
+target: docs/demo-voiceover.txt
+
+canvas:
+  width: 1920
+  height: 1080
+  fps: 30
+
+defaults:
+  duration_ms: 4000
+  in_ms: 550
+  out_ms: 450
+  placement: lower_left
+  scrim: panel
+  accent: gold
+
+overlays:
+
+  # ---------------------------------------------------------------- the problem
+
+  - id: 01-invisible
+    vo_line: 1
+    cue: Nine in ten tracks released this year will be commercially invisible.
+    kind: stat
+    accent: s2
+    value: 9 in 10
+    label: TRACKS RELEASED THIS YEAR
+    note: Commercially invisible
+    source: docs/research/03-audience-models
+
+  - id: 02-who-we-are
+    vo_line: 3
+    cue: We're Respect the Funk, a record label.
+    kind: lower_third
+    name: Respect the Funk
+    role: Record label · research before build
+
+  - id: 03-five-of-six
+    vo_line: 3
+    cue: Five of six core questions came back brutal.
+    kind: stat
+    accent: s2
+    value: 5 of 6
+    label: CORE RESEARCH QUESTIONS
+    note: Came back brutal
+    source: docs/research/SYNTHESIS
+
+  - id: 04-fifty-to-one
+    vo_line: 5
+    cue: Twenty-five thousand dollars of ads returns a few hundred in royalties.
+    kind: ratio
+    accent: s2
+    left: '50'
+    sep: ':'
+    right: '1'
+    label: AD SPEND TO ROYALTIES RETURNED
+    note: $25,000 in ads buys a few hundred dollars back
+    source: docs/research/04-spotify-economics
+
+  - id: 05-663-trials
+    vo_line: 7
+    cue: Facebook ran six hundred sixty-three trials and still cannot say an ad caused a stream.
+    kind: stat
+    accent: s1
+    value: '663'
+    label: FACEBOOK LIFT TRIALS
+    note: Still no causal read on a single stream
+    source: docs/research/08-tiktok-ads
+
+  - id: 06-ninety-six
+    vo_line: 9
+    cue: The top ten percent of songs take ninety-six percent.
+    kind: bar
+    accent: s5
+    pct: 0.96
+    value: 96%
+    label: OF FAN-VIDEO OUTCOMES
+    note: Taken by the top 10% of songs
+    source: docs/research/13-ugc-adoption
+
+  - id: 07-more-tickets
+    vo_line: 11
+    cue: You don't need a better ticket — you need more tickets, cheaper.
+    kind: chips
+    accent: gold
+    label: OPTIMIZATION IS DEAD — THE PLAY
+    items:
+      - text: More tickets
+        note: Volume, not a better guess
+      - text: Lower cost each
+        note: The only lever that still moves
+      - text: Plumbing correct
+        note: So a win actually pays
+
+  # ---------------------------------------------------------------- the product
+
+  - id: 08-remixkit
+    vo_line: 13
+    cue: That's RemixKit.
+    kind: title
+    accent: gold
+    placement: lower_band
+    scrim: gradient
+    word: RemixKit
+    tag: Provenance-clean media generation for a record label
+
+  - id: 09-step-register
+    vo_line: 15
+    cue: Register an artist.
+    kind: steps
+    placement: right_panel
+    accent: gold
+    label: THE RUN
+    active: 0
+    items:
+      - Register an artist
+      - Build their identity
+      - Attach a song
+      - Generate
+
+  - id: 10-step-identity
+    vo_line: 15
+    cue: Build their identity once — how they look on screen, likeness consent on record.
+    kind: steps
+    placement: right_panel
+    accent: gold
+    label: THE RUN
+    active: 1
+    note: Likeness consent on record
+    items:
+      - Register an artist
+      - Build their identity
+      - Attach a song
+      - Generate
+
+  - id: 11-step-song
+    vo_line: 15
+    cue: Attach a song; it's measured once — tempo, drop, hook windows.
+    kind: steps
+    placement: right_panel
+    accent: gold
+    label: THE RUN
+    active: 2
+    note: Tempo · drop · hook windows — measured once
+    items:
+      - Register an artist
+      - Build their identity
+      - Attach a song
+      - Generate
+
+  - id: 12-four-outputs
+    vo_line: 17
+    cue: A performance clip. A press still. The artist announcing a show. Or a backdrop built to be copied.
+    kind: chips
+    placement: right_panel
+    accent: s1
+    label: WHAT A RELEASE NEEDS
+    items:
+      - text: Performance clip
+      - text: Press still
+      - text: Announcement to camera
+      - text: Copyable backdrop
+        note: A fan sees one and knows their version
+
+  - id: 13-format-is-a-row
+    vo_line: 19
+    cue: Every one of those is a format, and a format is a row a label can edit.
+    kind: kicker
+    accent: gold
+    text: A format is a row a label can edit
+    note: Not a shape we welded in
+
+  - id: 14-cost-per-attempt
+    vo_line: 21
+    cue: Build it once, and the second video is cheap.
+    kind: kicker
+    accent: gold
+    text: Cost per attempt is the only lever left
+    note: Build once — the second video is nearly free
+
+  # ---------------------------------------------------------------- what runs it
+
+  - id: 15-aws-b2
+    vo_line: 23
+    cue: AWS handles the logic. Backblaze B2 holds the bytes — and the proof.
+    kind: chips
+    accent: s1
+    label: WHAT RUNS IT
+    items:
+      - text: AWS
+        note: The logic
+      - text: Backblaze B2
+        note: The bytes — and the proof
+
+  - id: 16-no-database
+    vo_line: 25
+    cue: That split is why this system has no database.
+    kind: kicker
+    accent: s3
+    text: No database
+    note: A label stores documents, not rows
+
+  - id: 17-eleven-to-five
+    vo_line: 25
+    cue: Eleven services became five.
+    kind: ratio
+    accent: s3
+    left: '11'
+    sep: →
+    right: '5'
+    label: SERVICES IN THE RUNNING SYSTEM
+    note: The same job, five fewer moving parts
+    source: infra/README
+
+  - id: 18-idle-cost
+    vo_line: 25
+    cue: Idle cost — under a dollar a month.
+    kind: stat
+    accent: s3
+    value: <$1
+    unit: /mo
+    label: IDLE COST
+    note: What the system costs when nobody is using it
+    source: infra/README
+
+  - id: 19-b2-four-jobs
+    vo_line: 27
+    cue: B2 does four jobs.
+    kind: chips
+    placement: right_panel
+    accent: s3
+    label: B2 DOES FOUR JOBS
+    note: The proof is in the bytes
+    items:
+      - text: Upload path
+        note: Browser straight to bucket
+      - text: Catalog
+        note: Parquet index, queried by Athena
+      - text: Receipt
+        note: A manifest beside every asset
+      - text: Disclosure
+        note: Embedded on download, hash intact
+
+  - id: 20-one-artist-one-song
+    vo_line: 39
+    cue: Bring us one artist and one song.
+    kind: title
+    accent: gold
+    placement: lower_band
+    scrim: gradient
+    duration_ms: 5000
+    word: One artist. One song.
+    tag: You cannot buy a hit — you can only lower the cost of trying
+

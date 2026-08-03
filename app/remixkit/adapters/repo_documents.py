@@ -36,6 +36,12 @@ T = TypeVar("T", bound=BaseModel)
 # Module-level so every `DocumentRepo` in a process shares the request boundary, and so a
 # repo built per request still sees the scope the middleware opened.
 _SCOPE: ContextVar[dict[str, bytes | None] | None] = ContextVar("document_scope", default=None)
+# The listings that produced those documents, remembered on the same boundary and for the
+# same reason. `_SCOPE` made every *object* cost once per request and left the prefix scans
+# that find them uncounted, because the budget test only ever wrapped `storage.get`. A page
+# rendering a roster in the nav and again in the body issued the scan twice: measured on one
+# tenant, `/console/artists/{id}` ran seven listings across four distinct prefixes.
+_LIST_SCOPE: ContextVar[dict[str, list[str]] | None] = ContextVar("listing_scope", default=None)
 
 
 def _is_missing(exc: Exception) -> bool:
@@ -79,6 +85,16 @@ class DocumentRepo:
     with different contents would be a bug on its own — a nav that disagrees with the body
     about a song's title. Across requests nothing is cached, so a write is visible on the
     very next page load and there is no invalidation to get wrong.
+
+    The prefix scans that *find* those documents are remembered on the same boundary, and
+    were not at first: the budget test wrapped `storage.get` and never `storage.list`, so
+    the listings repeated in exactly the places the reads had and nothing counted them.
+    `/console/artists/{id}` ran seven scans across four distinct prefixes; it now runs four.
+
+    What none of this does is make a page cost less than the tenant. `list()` is a scan plus
+    one read per key and the console filters in Python afterwards, so rendering one song
+    still reads every song — 52 documents on a 52-document tenant. That is a shape question,
+    an index document rather than a cache, and it is the next thing worth doing.
     """
 
     name = "documents"
@@ -89,21 +105,27 @@ class DocumentRepo:
         # None means "not inside a request" — reads go straight through, which is what
         # the worker and the CLI want. `request_scope()` is what turns it on.
         self._scope: ContextVar[dict[str, bytes | None] | None] = _SCOPE
+        self._list_scope: ContextVar[dict[str, list[str]] | None] = _LIST_SCOPE
 
     @contextmanager
     def request_scope(self):
-        """Remember each key's bytes for the duration of this block.
+        """Remember each key's bytes, and each prefix's listing, for this block.
 
         A `ContextVar` rather than an attribute, because the container is shared and the
         server is concurrent: two requests in flight must not see each other's snapshot,
         and a plain dict on `self` would hand one request's documents to another. Reset by
         token so nesting cannot leak a scope into whatever ran before it.
+
+        Both are reset even if the body raises, and the listing scope is reset second so a
+        failure to reset the first cannot strand it.
         """
         token = self._scope.set({})
+        list_token = self._list_scope.set({})
         try:
             yield
         finally:
             self._scope.reset(token)
+            self._list_scope.reset(list_token)
 
     def _key(self, tenant_id: str, collection: str, doc_id: str) -> str:
         return f"{self._prefix}/tenants/{tenant_id}/{collection}/{doc_id}.yaml"
@@ -149,7 +171,7 @@ class DocumentRepo:
 
     def list(self, tenant_id: str, collection: str, model: type[T]) -> list[T]:
         out: list[T] = []
-        for key in self._storage.list(self._collection_prefix(tenant_id, collection)):
+        for key in self._listing(self._collection_prefix(tenant_id, collection)):
             if not key.endswith(".yaml"):
                 continue
             raw = self._read(key)
@@ -192,11 +214,39 @@ class DocumentRepo:
             scope[key] = raw
         return raw
 
+    def _listing(self, prefix: str) -> list[str]:
+        """`storage.list`, paid for once per request.
+
+        A refusal is raised rather than remembered, for the same reason `_read` does not
+        cache one: a cap is a fact about the storage now, not about the prefix. Unlike a
+        read there is no "missing" case to fold in — a prefix with nothing under it lists
+        empty, which is an answer and is cached as one.
+        """
+        scope = self._list_scope.get()
+        if scope is not None and prefix in scope:
+            return scope[prefix]
+        keys = self._storage.list(prefix)
+        if scope is not None:
+            scope[prefix] = keys
+        return keys
+
     def _forget(self, key: str) -> None:
-        """Drop a key from the request's snapshot, because this request just wrote it."""
+        """Drop a key from the request's snapshot, because this request just wrote it.
+
+        The listing that would have found it goes too. A handler that creates a song and
+        then renders the roster — which is most of them — must see the row it just added,
+        and a cached listing taken before the write does not contain the key. Dropping by
+        prefix rather than rebuilding keeps the next `list()` honest at the cost of one
+        scan, which is the same trade `_read` makes.
+        """
         scope = self._scope.get()
         if scope is not None:
             scope.pop(key, None)
+        listings = self._list_scope.get()
+        if listings is not None:
+            # `key` is `{prefix}/tenants/{t}/{collection}/{doc}.yaml`; the listing is keyed
+            # by everything above the document.
+            listings.pop(key.rsplit("/", 1)[0], None)
 
     def delete(self, tenant_id: str, collection: str, doc_id: str) -> None:
         key = self._key(tenant_id, collection, doc_id)

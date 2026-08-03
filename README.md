@@ -33,6 +33,7 @@ Four directories. Code, content, infrastructure, and everything written down.
 - **[`research/`](./docs/research/)** — 13 numbered reports, a synthesis, and a decision record. Rendered PDFs in [`research/pdf/`](./docs/research/pdf/).
 - **[`architecture/`](./docs/architecture/)** — the system poster, generated from the running code by `render.py`.
 - **[`wireframe/`](./docs/wireframe/)** — the nine-screen structural wireframe the console was built against.
+- **[`showcase/`](./docs/showcase/)** — fifteen screens of the running console, captured from the app against real records by `capture.py`.
 - **[`deck/`](./docs/deck/)** and **[`web.md`](./docs/web.md)** — the overview deck and the landing-page documentation.
 
 ## Specs live next to what they describe

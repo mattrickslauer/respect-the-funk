@@ -1,0 +1,1549 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>RemixKit — demo visuals</title>
+<!--
+  The picture track for the generated half of the demo voice-over.
+
+  Nothing here animates on its own. There is one entry point, `window.SEEK(t)`, which
+  puts the whole 1920×1080 stage into the state it should be in at second `t` and
+  resolves once every video on screen has finished seeking. capture.js walks t in 1/30s
+  steps and screenshots each one, so the render is a pure function of time: the same
+  build produces the same frames, and a re-run after an edit only differs where the edit
+  was. A CSS animation or a requestAnimationFrame loop would have tied the output to how
+  fast the capture machine happened to be running.
+
+  Cue times are not typed in. They are looked up by phrase against out/alignment.json —
+  the character-level alignment ElevenLabs returned with the audio — so a highlight fires
+  on the frame where its word is actually spoken. Re-cutting the voice-over re-times the
+  edit with it; nothing has to be re-measured by hand. If a phrase stops matching, CUE
+  says so in the console instead of silently rendering at zero.
+
+  Colours and type are the console's own tokens, read from ui/static/console.css. The
+  slides are the product's design system, not a deck's.
+-->
+<style>
+  :root {
+    --bg: #14121a;
+    --bg-2: #0e0c14;
+    --panel: #1c1926;
+    --panel-2: #232030;
+    --ink: #ffffff;
+    --ink-2: #c8c4d4;
+    --ink-3: #8b8698;
+    --rule: rgba(255, 255, 255, 0.10);
+    --rule-2: rgba(255, 255, 255, 0.055);
+    --gold: #f5b940;
+    --gold-dim: #b07d12;
+    --ok: #199e70;
+    --warn: #c98500;
+    --err: #d95926;
+    --bb-red: #E20626;
+    --display: "Futura", "Avenir Next", system-ui, sans-serif;
+    --body: "Avenir Next", "Helvetica Neue", Helvetica, system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    overflow: hidden;
+  }
+
+  #stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 80% at 50% -10%, #1b1826 0%, var(--bg-2) 62%),
+      var(--bg-2);
+    font-family: var(--body);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+    A large, very soft light source that drifts for the whole 120 seconds. It is doing
+    two jobs: it keeps the type-only scenes from being a completely frozen frame, which
+    reads as a stalled video rather than a held shot, and it gives x264 something to
+    spend bits on other than banding the flat panels.
+  */
+  #bgfx {
+    position: absolute;
+    left: -30%;
+    top: -40%;
+    width: 160%;
+    height: 180%;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(38% 34% at 30% 30%, rgba(245, 185, 64, 0.055) 0%, transparent 70%),
+      radial-gradient(32% 30% at 72% 62%, rgba(226, 6, 38, 0.045) 0%, transparent 72%);
+    will-change: transform;
+  }
+
+  .scene { z-index: 1; }
+
+  /* A very slow vignette + grain keeps flat fills from banding on encode. */
+  #stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 900;
+    background: radial-gradient(130% 90% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+  }
+
+  .scene {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    will-change: opacity, transform;
+  }
+
+  /* ---------------------------------------------------------------- screenshots */
+
+  .shot {
+    position: absolute;
+    overflow: hidden;
+    border-radius: 10px;
+    border: 1px solid var(--rule);
+    background: var(--bg-2);
+    box-shadow: 0 40px 90px -20px rgba(0, 0, 0, 0.8);
+  }
+
+  .cam {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+  }
+
+  .cam > img { display: block; }
+
+  .hl {
+    position: absolute;
+    border: 3px solid var(--gold);
+    border-radius: 6px;
+    background: rgba(245, 185, 64, 0.10);
+    box-shadow: 0 0 0 9999px rgba(8, 7, 12, 0.0);
+  }
+
+  .hl.ok { border-color: var(--ok); background: rgba(25, 158, 112, 0.12); }
+  .hl.err { border-color: var(--err); background: rgba(217, 89, 38, 0.12); }
+
+  /* A label sits in shot space, not camera space, so it never scales with the pan. */
+  .tag {
+    position: absolute;
+    font-family: var(--mono);
+    font-size: 19px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--bg-2);
+    background: var(--gold);
+    padding: 7px 13px;
+    border-radius: 4px;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+
+  .tag.ok { background: var(--ok); color: #fff; }
+  .tag.err { background: var(--err); color: #fff; }
+
+  /* ---------------------------------------------------------------- typography */
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: 20px;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+    color: var(--gold);
+  }
+
+  .head {
+    font-family: var(--display);
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    line-height: 1.02;
+  }
+
+  .sub {
+    font-family: var(--body);
+    color: var(--ink-2);
+    line-height: 1.42;
+  }
+
+  .mono { font-family: var(--mono); }
+
+  .num {
+    font-family: var(--display);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  /* ---------------------------------------------------------------- panels */
+
+  .card {
+    position: absolute;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+  }
+
+  .card .t {
+    font-family: var(--mono);
+    font-size: 16px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .rule { position: absolute; background: var(--rule); }
+
+  .dot {
+    position: absolute;
+    border-radius: 50%;
+    background: var(--gold);
+  }
+
+  svg.wire { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+  svg.wire path { fill: none; stroke: var(--rule); stroke-width: 2; }
+  svg.wire path.live { stroke: var(--gold); stroke-width: 3; }
+
+  .tile { position: absolute; overflow: hidden; border-radius: 8px; background: #000; border: 1px solid var(--rule); }
+  .tile video, .tile img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+  .stamp {
+    position: absolute;
+    font-family: var(--mono);
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    border: 3px solid var(--ok);
+    color: var(--ok);
+    padding: 10px 20px;
+    border-radius: 6px;
+  }
+
+  .stamp.err { border-color: var(--err); color: var(--err); }
+
+  .bb { position: absolute; }
+  .bb img { display: block; }
+</style>
+
+<div id="stage"></div>
+
+<script>
+// ---------------------------------------------------------------------------- maths
+
+const clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, p) => a + (b - a) * p;
+
+// Progress of a sub-animation that starts at `t0` and lasts `dur`, at time `t`.
+const at = (t, t0, dur) => clamp((t - t0) / dur);
+
+const easeOut = p => 1 - Math.pow(1 - p, 3);
+const easeInOut = p => p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const easeExpo = p => p >= 1 ? 1 : 1 - Math.pow(2, -10 * p);
+// Overshoot, used only where something should feel like it snapped into place.
+const easeBack = p => { const c = 1.70158 + 1; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+
+const px = v => v.toFixed(2) + "px";
+
+// ---------------------------------------------------------------------------- cues
+
+// Natural sizes of the captured console pages. The camera works in these coordinates.
+const IMG = {
+  "01-landing":   [2880, 2800],
+  "02-roster":    [2880, 2000],
+  "03-artist":    [2880, 2600],
+  "04-identity":  [2880, 3000],
+  "05-catalogue": [2880, 2000],
+  "06-song":      [2880, 3200],
+  "07-generate":  [2880, 3600],
+  "08-kit":       [2880, 3200],
+  "09-verify":    [2880, 2000],
+  "10-settings":  [2880, 3000],
+};
+
+/**
+ * The moving b-roll, as frame sequences rather than clips.
+ *
+ * build.py explodes each 8-second clip to one JPEG per frame. Playing them back is an
+ * `<img>` whose src changes, which costs a decode of a 540-wide JPEG; seeking four real
+ * `<video>` elements per frame cost a video decode each and dropped the capture below
+ * one frame per second. The pictures on screen are the same pictures.
+ */
+const CLIP_FPS = 30, CLIP_FRAMES = 240;     // 8s at 30fps
+const CLIPS = ["perf", "direct", "backdrop", "extra"];
+
+const BROLL = {
+  stillA: "../broll/9d17650d-3779-453b-93a6-33b2bbe5d5bb.png",
+  stillB: "../broll/dc07b58f-f663-4d8c-b09d-6581a7c67c87.png",
+};
+
+const clipFrame = (key, i) =>
+  `out/broll-frames/${key}/${String(i).padStart(5, "0")}.jpg`;
+
+let WORDS = [];
+let TOKENS = [];   // one entry per searchable token, pointing back at its spoken word
+
+const norm = s => s.toLowerCase().replace(/[^a-z0-9']+/g, " ").trim();
+
+/**
+ * Flatten the spoken words into tokens.
+ *
+ * The alignment's idea of a word is "the run of characters between two spaces", so
+ * `byte-identical,` is one word. A phrase written in a cue is normalised the same way
+ * either side of the hyphen, giving two tokens. Indexing tokens rather than words is
+ * what lets `CUE("byte-identical")` and `CUE("no tempo without")` both match without
+ * the caller having to know how the narrator's text was punctuated.
+ */
+function indexWords() {
+  TOKENS = [];
+  WORDS.forEach((w, wi) => {
+    const parts = norm(w.word).split(" ").filter(Boolean);
+    parts.forEach(p => TOKENS.push({ tok: p, wi, start: w.start, end: w.end }));
+  });
+}
+
+function findPhrase(phrase) {
+  const want = norm(phrase).split(" ").filter(Boolean);
+  for (let i = 0; i + want.length <= TOKENS.length; i++) {
+    let hit = true;
+    for (let j = 0; j < want.length; j++) {
+      if (TOKENS[i + j].tok !== want[j]) { hit = false; break; }
+    }
+    if (hit) return [TOKENS[i], TOKENS[i + want.length - 1]];
+  }
+  return null;
+}
+
+/** Start time of the first word of `phrase`, matched against the spoken alignment. */
+function CUE(phrase) {
+  const m = findPhrase(phrase);
+  if (!m) { console.warn("CUE MISS:", phrase); return 0; }
+  return m[0].start;
+}
+
+/** End time of the last word of `phrase`. */
+function CUE_END(phrase) {
+  const m = findPhrase(phrase);
+  if (!m) { console.warn("CUE MISS (end):", phrase); return 0; }
+  return m[1].end;
+}
+
+// ---------------------------------------------------------------------------- DOM
+
+const stage = document.getElementById("stage");
+const bgfx = document.createElement("div");
+bgfx.id = "bgfx";
+stage.appendChild(bgfx);
+const el = (tag, cls, css, html) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (css) Object.assign(n.style, css);
+  if (html != null) n.innerHTML = html;
+  return n;
+};
+
+/**
+ * A framed console screenshot with a camera over it.
+ *
+ * `box` is where the frame sits on the 1920×1080 stage. Everything after that is in the
+ * screenshot's own pixel coordinates, so a highlight can be written down once from the
+ * capture and stays correct however the camera moves.
+ */
+function makeShot(name, box) {
+  const [W, H] = IMG[name];
+  const shot = el("div", "shot", { left: px(box.x), top: px(box.y), width: px(box.w), height: px(box.h) });
+  const cam = el("div", "cam");
+  const img = el("img", null, { width: px(W), height: px(H) });
+  img.src = `../screenshots/${name}.png`;
+  cam.appendChild(img);
+  shot.appendChild(cam);
+  shot._cam = cam; shot._nat = [W, H]; shot._box = box; shot._hls = {}; shot._tags = {};
+  return shot;
+}
+
+/**
+ * Point the camera at a normalised rectangle of the screenshot.
+ * `c` = {x, y, w} as fractions of image width/height; height follows the frame's aspect.
+ */
+function cam(shot, c) {
+  const [W, H] = shot._nat, box = shot._box;
+  const scale = box.w / (c.w * W);
+  shot._cam.style.transform = `translate(${px(-c.x * W * scale)}, ${px(-c.y * H * scale)}) scale(${scale})`;
+  shot._scale = scale; shot._c = c;
+}
+
+const camLerp = (a, b, p) => ({ x: lerp(a.x, b.x, p), y: lerp(a.y, b.y, p), w: lerp(a.w, b.w, p) });
+
+/** A highlight box over the screenshot, in normalised image coordinates. */
+function hl(shot, key, r, p, kind) {
+  let n = shot._hls[key];
+  if (!n) { n = el("div", "hl"); shot._cam.appendChild(n); shot._hls[key] = n; }
+  const [W, H] = shot._nat;
+  n.className = "hl" + (kind ? " " + kind : "");
+  const grow = lerp(1.06, 1, easeBack(clamp(p * 1.4)));
+  const w = r.w * W, h = r.h * H;
+  Object.assign(n.style, {
+    left: px(r.x * W - (w * (grow - 1)) / 2),
+    top: px(r.y * H - (h * (grow - 1)) / 2),
+    width: px(w * grow),
+    height: px(h * grow),
+    opacity: clamp(p * 2),
+    borderWidth: px(3 / (shot._scale || 1)),
+    borderRadius: px(6 / (shot._scale || 1)),
+  });
+}
+
+/**
+ * A label pinned to a point in image space but drawn in stage space, so it keeps its
+ * size while the camera pushes in.
+ */
+function tag(shot, key, imgPt, text, p, kind, dx = 0, dy = 0) {
+  let n = shot._tags[key];
+  if (!n) { n = el("div", "tag"); shot.appendChild(n); shot._tags[key] = n; }
+  const [W, H] = shot._nat, c = shot._c, s = shot._scale;
+  n.className = "tag" + (kind ? " " + kind : "");
+  n.textContent = text;
+  const sx = (imgPt.x * W - c.x * W) * s + dx;
+  const sy = (imgPt.y * H - c.y * H) * s + dy;
+  Object.assign(n.style, {
+    left: px(sx), top: px(sy),
+    opacity: clamp(p * 2.2),
+    transform: `translateY(${px(lerp(10, 0, easeOut(p)))})`,
+  });
+}
+
+function hideExtras(shot) {
+  for (const k in shot._hls) shot._hls[k].style.opacity = 0;
+  for (const k in shot._tags) shot._tags[k].style.opacity = 0;
+}
+
+/** Reveal helper: fade + rise, driven by progress. */
+function rise(n, p, dist = 26) {
+  n.style.opacity = clamp(p * 1.6);
+  n.style.transform = `translateY(${px(lerp(dist, 0, easeOut(p)))})`;
+}
+
+/** Text typed on by progress, with a block caret while it runs. */
+function typeOn(n, text, p, caret = true) {
+  const cut = Math.round(text.length * clamp(p));
+  n.textContent = text.slice(0, cut);
+  if (caret && p > 0 && p < 1) n.textContent += "▍";
+}
+
+const money = v => "$" + v.toFixed(2);
+
+// ---------------------------------------------------------------------------- videos
+
+const PENDING = [];   // image decodes this frame is waiting on
+
+function makeVideo(key, box, cls) {
+  const t = el("div", "tile " + (cls || ""), { left: px(box.x), top: px(box.y), width: px(box.w), height: px(box.h) });
+  const i = el("img");
+  i.src = clipFrame(key, 0);
+  t.appendChild(i);
+  t._key = key; t._img = i; t._at = 0;
+  return t;
+}
+
+function makeStill(src, box, cls) {
+  const t = el("div", "tile " + (cls || ""), { left: px(box.x), top: px(box.y), width: px(box.w), height: px(box.h) });
+  const i = el("img"); i.src = src; t.appendChild(i);
+  return t;
+}
+
+/** Park a clip at a time, looping within its own 8s length. */
+function seekTile(tile, time) {
+  if (!tile._key) return;
+  let f = Math.round(time * CLIP_FPS) % CLIP_FRAMES;
+  if (f < 0) f += CLIP_FRAMES;
+  if (f === tile._at) return;
+  tile._at = f;
+  const img = tile._img;
+  img.src = clipFrame(tile._key, f);
+  // decode() resolves when the new frame is ready to paint; without it the screenshot
+  // can catch the previous one still on screen.
+  PENDING.push(img.decode().catch(() => {}));
+}
+
+// ============================================================================ scenes
+
+const SCENES = [];
+function scene(id, build) {
+  const root = el("div", "scene");
+  root.dataset.id = id;
+  stage.appendChild(root);
+  const s = { id, root, in: 0, out: 0 };
+  s.update = build(root, s) || (() => {});
+  SCENES.push(s);
+  return s;
+}
+
+// Fade between scenes. Short — the cuts should feel like an edit, not a slideshow.
+const XF = 0.28;
+</script>
+
+<script>
+// ---------------------------------------------------------------------------- 1 · register
+
+function buildScenes() {
+
+// ---- s1 · Register an artist / identity once / consent on record ----------------
+scene("register", (root, s) => {
+  s.in = CUE("Register an artist"); s.out = CUE("Attach a song");
+
+  const shot = makeShot("02-roster", { x: 300, y: 150, w: 1320, h: 780 });
+  root.appendChild(shot);
+
+  const kick = el("div", "kicker", { position: "absolute", left: "300px", top: "92px" }, "STEP 01 · ROSTER");
+  const head = el("div", "head", { position: "absolute", left: "300px", top: "962px", fontSize: "56px" });
+  root.appendChild(kick); root.appendChild(head);
+
+  const wide = { x: 0.10, y: 0.02, w: 0.62 };
+  const onAmanda = { x: 0.145, y: 0.055, w: 0.30 };
+  const onBoth = { x: 0.155, y: 0.075, w: 0.44 };
+
+  const tIdentity = CUE("Build their identity");
+  const tConsent = CUE("likeness consent");
+
+  return (t) => {
+    hideExtras(shot);
+    const p = at(t, s.in, 1.1);
+    shot.style.opacity = 1;
+    root.style.transform = `scale(${lerp(1.03, 1, easeOut(p))})`;
+
+    // One continuous move: wide, in on the artist, then out to hold both cards.
+    let c;
+    if (t < tIdentity) c = camLerp(wide, onAmanda, easeInOut(at(t, s.in, tIdentity - s.in)));
+    else if (t < tConsent) c = onAmanda;
+    else c = camLerp(onAmanda, onBoth, easeInOut(at(t, tConsent, 1.3)));
+    // never fully still
+    c = { x: c.x, y: c.y - 0.004 * easeInOut(at(t, s.in, s.out - s.in)), w: c.w };
+    cam(shot, c);
+
+    rise(kick, at(t, s.in, 0.6));
+    head.style.opacity = clamp(at(t, tIdentity, 0.5) * 1.6);
+    head.innerHTML = t < tConsent
+      ? 'Build the identity <span style="color:var(--gold)">once</span>.'
+      : 'Consent is a <span style="color:var(--gold)">gate</span>, not a policy page.';
+
+    // The consent chip, then the artist who does not have one.
+    const pc = at(t, tConsent, 0.5);
+    if (pc > 0) {
+      hl(shot, "consent", { x: 0.183, y: 0.183, w: 0.163, h: 0.062 }, pc, "ok");
+      tag(shot, "consent", { x: 0.183, y: 0.183 }, "likeness consent · on file", pc, "ok", 0, -46);
+    }
+    const pb = at(t, tConsent + 0.85, 0.5);
+    if (pb > 0) {
+      hl(shot, "blocked", { x: 0.371, y: 0.172, w: 0.163, h: 0.062 }, pb, "err");
+      tag(shot, "blocked", { x: 0.371, y: 0.172 }, "no consent · generation blocked", pb, "err", 0, -46);
+    }
+  };
+});
+
+// ---- s2 · Attach a song — measured once ----------------------------------------
+scene("song", (root, s) => {
+  s.in = CUE("Attach a song"); s.out = CUE("Then generate");
+
+  const shot = makeShot("06-song", { x: 90, y: 150, w: 1080, h: 800 });
+  root.appendChild(shot);
+
+  const kick = el("div", "kicker", { position: "absolute", left: "90px", top: "92px" }, "STEP 02 · MEASUREMENT");
+
+  const panel = el("div", "card", { left: "1230px", top: "150px", width: "600px", height: "800px", padding: "34px" });
+  const bpmLabel = el("div", "mono", { fontSize: "17px", letterSpacing: "0.22em", color: "var(--ink-3)" }, "TEMPO");
+  const bpm = el("div", "num", { fontSize: "128px", lineHeight: "1.05", color: "var(--gold)" }, "0.00");
+  const bpmUnit = el("div", "mono", { fontSize: "22px", color: "var(--ink-3)", marginTop: "-6px" }, "BPM");
+
+  const rowsWrap = el("div", null, { marginTop: "34px" });
+  const mkRow = (k, v) => {
+    const r = el("div", null, { display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "13px 0", borderTop: "1px solid var(--rule-2)" });
+    r.appendChild(el("div", "mono", { fontSize: "17px", letterSpacing: "0.14em", color: "var(--ink-3)" }, k));
+    const val = el("div", "mono", { fontSize: "19px", color: "var(--ink)" }, v);
+    r.appendChild(val); r._v = val;
+    return r;
+  };
+  const rDrop = mkRow("DROP", "no clear kick re-entry");
+  const rHook = mkRow("HOOK", "148.8s → 241.9s");
+  rowsWrap.appendChild(rDrop); rowsWrap.appendChild(rHook);
+
+  const methodLabel = el("div", "mono", { marginTop: "30px", fontSize: "17px", letterSpacing: "0.22em", color: "var(--gold)" }, "METHOD");
+  const method = el("div", "mono", { marginTop: "12px", fontSize: "16.5px", lineHeight: "1.55", color: "var(--ink-2)", height: "250px", overflow: "hidden" });
+
+  panel.appendChild(bpmLabel); panel.appendChild(bpm); panel.appendChild(bpmUnit);
+  panel.appendChild(rowsWrap); panel.appendChild(methodLabel); panel.appendChild(method);
+  root.appendChild(kick); root.appendChild(panel);
+
+  const METHOD_TEXT = "audio_numpy: spectral-flux onset envelope @ 22050Hz/hop 256, joint tempo+phase comb fit over 328 beats → 79.97 BPM; bar phase from arrangement-change residue; sections at bar resolution.";
+
+  const tTempo = CUE("tempo, drop");
+  const tDrop = CUE("drop, hook");
+  const tHook = CUE("hook windows");
+  const tMethod = CUE("a method behind it");
+
+  const wide = { x: 0.14, y: 0.03, w: 0.66 };
+  const onSections = { x: 0.16, y: 0.19, w: 0.42 };
+  const onHook = { x: 0.165, y: 0.60, w: 0.40 };
+
+  return (t) => {
+    hideExtras(shot);
+    const p = at(t, s.in, 0.9);
+    rise(kick, at(t, s.in, 0.6));
+    // The panel arrives with the number, not before it — an empty card holding the
+    // right third of the frame for two seconds reads as a loading state.
+    const ppanel = at(t, tTempo - 0.55, 0.6);
+    panel.style.opacity = clamp(ppanel * 1.5);
+    panel.style.transform = `translateX(${px(lerp(40, 0, easeOut(ppanel)))})`;
+
+    let c;
+    if (t < tHook) c = camLerp(wide, onSections, easeInOut(at(t, s.in, 2.0)));
+    else c = camLerp(onSections, onHook, easeInOut(at(t, tHook, 1.4)));
+    cam(shot, { x: c.x, y: c.y + 0.010 * easeInOut(at(t, s.in, s.out - s.in)), w: c.w });
+
+    // The number arrives by counting, because it is a measurement and not a label.
+    const pb = easeExpo(at(t, tTempo, 1.1));
+    bpm.textContent = (79.97 * pb).toFixed(2);
+    bpm.style.opacity = clamp(at(t, tTempo, 0.3) * 2);
+    bpmLabel.style.opacity = bpmUnit.style.opacity = clamp(at(t, tTempo, 0.4) * 2);
+
+    rise(rDrop, at(t, tDrop, 0.45));
+    rise(rHook, at(t, tHook, 0.45));
+
+    methodLabel.style.opacity = clamp(at(t, tMethod - 0.35, 0.4) * 2);
+    typeOn(method, METHOD_TEXT, at(t, tMethod - 0.3, 2.6));
+    method.style.opacity = clamp(at(t, tMethod - 0.35, 0.4) * 2);
+
+    const ph = at(t, tHook + 0.2, 0.5);
+    if (ph > 0) {
+      hl(shot, "hook", { x: 0.174, y: 0.668, w: 0.556, h: 0.078 }, ph);
+      tag(shot, "hook", { x: 0.174, y: 0.668 }, "hook of record · chorus 1", ph, null, 0, -46);
+    }
+  };
+});
+
+// ---- s3 · Then generate — the formats ------------------------------------------
+scene("formats", (root, s) => {
+  // Hands over to `copied` on the clause about the fan, rather than running to the end
+  // of the sentence — otherwise both scenes are on screen at once.
+  s.in = CUE("Then generate"); s.out = CUE("so a fan who sees one");
+
+  const shot = makeShot("07-generate", { x: 96, y: 176, w: 1000, h: 728 });
+  root.appendChild(shot);
+
+  const kick = el("div", "kicker", { position: "absolute", left: "96px", top: "108px" }, "STEP 03 · GENERATE");
+  root.appendChild(kick);
+
+  const head = el("div", "head", { position: "absolute", left: "1160px", top: "150px", width: "680px", fontSize: "44px" });
+  root.appendChild(head);
+
+  // The four named outputs, each with the real asset that format produced.
+  const tPerf = CUE("A performance clip");
+  const tStill = CUE("A press still");
+  const tDirect = CUE("The artist announcing");
+  const tBack = CUE("Or a backdrop");
+
+  const stack = el("div", null, { position: "absolute", left: "1160px", top: "250px", width: "700px", height: "700px" });
+  root.appendChild(stack);
+
+  const clipPerf = makeVideo("perf", { x: 0, y: 0, w: 300, h: 533 });
+  const stillPress = makeStill(BROLL.stillA, { x: 330, y: 0, w: 300, h: 533 });
+  const clipDirect = makeVideo("direct", { x: 0, y: 0, w: 300, h: 533 });
+  const clipBack = makeVideo("backdrop", { x: 330, y: 0, w: 300, h: 533 });
+  [clipPerf, stillPress, clipDirect, clipBack].forEach(n => stack.appendChild(n));
+
+  const cap = el("div", "mono", { position: "absolute", left: "1160px", top: "812px", fontSize: "18px", color: "var(--ink-3)" });
+  root.appendChild(cap);
+
+  // Format cards on the captured page, in image coordinates.
+  //
+  // The "Performance clip" card is the selected one, so it carries the console's gold
+  // outline in the screenshot itself. Its box was read straight off those pixels
+  // (x 0.1854, y 0.2075, w 0.1802, h 0.0389) and the rest of the grid is stepped off it
+  // at the measured 0.0415 row pitch — which is why these highlights sit on the cards
+  // instead of near them.
+  const COL1 = 0.1854, COL2 = 0.3770, CW = 0.1802, PITCH = 0.0415;
+  const CARDS = {
+    backdrop: { x: COL1, y: 0.1660, w: CW, h: 0.0360 },
+    direct:   { x: COL2, y: 0.1660, w: CW, h: 0.0360 },
+    perf:     { x: COL1, y: 0.2075, w: CW, h: 0.0389 },
+    portrait: { x: COL2, y: 0.2075, w: CW, h: 0.0389 },
+    voice:    { x: COL1, y: 0.1660 + 2 * PITCH, w: CW, h: 0.0350 },
+  };
+
+  const onGrid = { x: 0.155, y: 0.140, w: 0.44 };
+  const onGridTight = { x: 0.163, y: 0.150, w: 0.41 };
+
+  return (t) => {
+    hideExtras(shot);
+    cam(shot, camLerp(onGrid, onGridTight, easeInOut(at(t, s.in, s.out - s.in))));
+    rise(kick, at(t, s.in, 0.5));
+
+    // Each format lights when it is named, and stays lit.
+    const lit = [
+      [tPerf, "perf"], [tStill, "portrait"], [tDirect, "direct"], [tBack, "backdrop"],
+    ];
+    for (const [tc, key] of lit) {
+      const p = at(t, tc, 0.38);
+      if (p > 0) hl(shot, key, CARDS[key], p);
+    }
+    const pv = at(t, s.in + 0.4, 0.5);
+    if (pv > 0) hl(shot, "voice", CARDS.voice, pv * 0.45);
+
+    head.style.opacity = clamp(at(t, s.in, 0.6) * 1.6);
+    head.innerHTML = t < tBack
+      ? 'Whatever the release needs.'
+      : 'Or a backdrop built to be <span style="color:var(--gold)">copied</span>.';
+
+    // The asset for the format currently being named.
+    const show = (tile, tc, dur) => {
+      const p = at(t, tc, 0.45), q = 1 - at(t, tc + dur, 0.4);
+      const vis = clamp(p) * clamp(q);
+      tile.style.opacity = vis;
+      tile.style.transform = `translateY(${px(lerp(28, 0, easeOut(p)))}) scale(${lerp(0.96, 1, easeOut(p))})`;
+      tile.style.zIndex = vis > 0.02 ? 5 : 0;
+      if (vis > 0.02) seekTile(tile, t - tc + 1.2);
+      return vis;
+    };
+
+    show(clipPerf, tPerf, 1.35);
+    show(stillPress, tStill, 1.5);
+    show(clipDirect, tDirect, 2.4);
+    const vb = show(clipBack, tBack, 30);
+    if (vb > 0) clipBack.style.left = "0px";
+
+    cap.style.opacity = 0;
+    const captions = [[tPerf, "performance clip · sora-2"], [tStill, "press still · bria-fibo-edit"],
+                      [tDirect, "direct address · sora-2"], [tBack, "backdrop loop · sora-2"]];
+    for (const [tc, txt] of captions) {
+      if (t >= tc && t < tc + 2.2) { cap.textContent = txt; cap.style.opacity = clamp(at(t, tc, 0.4)); }
+    }
+  };
+});
+
+// ---- s3b · a backdrop, copied ---------------------------------------------------
+scene("copied", (root, s) => {
+  s.in = CUE("so a fan who sees one"); s.out = CUE("Every one of those");
+
+  const head = el("div", "head", { position: "absolute", left: "128px", top: "150px", width: "560px", fontSize: "52px" },
+    'One backdrop.<br><span style="color:var(--gold)">Every fan knows what theirs looks like.</span>');
+  const sub = el("div", "sub", { position: "absolute", left: "128px", top: "430px", width: "520px", fontSize: "23px" },
+    "A format is a template, not a finished ad — the point is that it is obvious how to make your own.");
+  root.appendChild(head); root.appendChild(sub);
+
+  // One source tile on the left, a grid of copies fanning out on the right.
+  const grid = el("div", null, { position: "absolute", left: "760px", top: "120px", width: "1060px", height: "840px" });
+  root.appendChild(grid);
+
+  const CW = 244, CH = 400, GX = 20, GY = 20;
+  const tiles = [];
+  // Four moving tiles and two stills — the copies a fan would make of one backdrop.
+  const srcs = ["backdrop", BROLL.stillB, "extra", BROLL.stillA, "perf", "direct"];
+  for (let i = 0; i < 6; i++) {
+    const col = i % 3, rowi = Math.floor(i / 3);
+    const box = { x: col * (CW + GX), y: rowi * (CH + GY), w: CW, h: CH };
+    const isClip = CLIPS.includes(srcs[i]);
+    const tile = isClip ? makeVideo(srcs[i], box) : makeStill(srcs[i], box);
+    grid.appendChild(tile);
+    tiles.push(tile);
+  }
+
+  return (t) => {
+    rise(head, at(t, s.in, 0.7));
+    rise(sub, at(t, s.in + 0.3, 0.7));
+    tiles.forEach((tile, i) => {
+      const p = at(t, s.in + 0.25 + i * 0.16, 0.6);
+      tile.style.opacity = clamp(p * 1.4);
+      tile.style.transform = `translateY(${px(lerp(46, 0, easeOut(p)))}) scale(${lerp(0.9, 1, easeOut(p))})`;
+      if (p > 0.02) seekTile(tile, t - s.in + i * 1.1);
+    });
+  };
+});
+
+// ---- s4 · a format is a row -----------------------------------------------------
+scene("row", (root, s) => {
+  s.in = CUE("Every one of those"); s.out = CUE("Build it once");
+
+  const kick = el("div", "kicker", { position: "absolute", left: "160px", top: "150px" }, "FORMATS ARE DATA");
+  const head = el("div", "head", { position: "absolute", left: "160px", top: "196px", width: "1600px", fontSize: "58px" },
+    'A format is a <span style="color:var(--gold)">row a label can edit</span> —<br>not a shape we welded in.');
+  root.appendChild(kick); root.appendChild(head);
+
+  // A table whose rows are the formats just named on the generate page.
+  const table = el("div", null, { position: "absolute", left: "160px", top: "410px", width: "1600px" });
+  root.appendChild(table);
+
+  const COLS = [["FORMAT", 340], ["ORIENTATION", 210], ["LENGTH", 170], ["LOOP", 130], ["MODEL", 300], ["FACE", 260]];
+  const headRow = el("div", null, { display: "flex", padding: "0 0 14px 0", borderBottom: "1px solid var(--rule)" });
+  COLS.forEach(([c, w]) => headRow.appendChild(el("div", "mono", { width: w + "px", fontSize: "16px", letterSpacing: "0.16em", color: "var(--ink-3)" }, c)));
+  table.appendChild(headRow);
+
+  const ROWS = [
+    ["performance clip", "9:16", "8s", "no", "sora-2", "locked to a still"],
+    ["portrait still", "9:16", "—", "no", "bria-fibo-edit", "reference frame"],
+    ["direct address", "9:16", "8s", "no", "sora-2", "locked to a still"],
+    ["backdrop loop", "9:16", "8s", "yes", "sora-2", "no face"],
+    ["voice-over", "—", "8s", "no", "eleven_multilingual_v2", "n/a"],
+  ];
+  const rowEls = ROWS.map(r => {
+    const n = el("div", null, { display: "flex", alignItems: "center", padding: "20px 0", borderBottom: "1px solid var(--rule-2)" });
+    r.forEach((v, i) => {
+      const c = el("div", i === 0 ? "" : "mono", { width: COLS[i][1] + "px", fontSize: i === 0 ? "27px" : "20px", color: i === 0 ? "var(--ink)" : "var(--ink-2)" }, v);
+      n.appendChild(c); if (i === 3) n._loop = c;
+    });
+    table.appendChild(n);
+    return n;
+  });
+
+  const tEdit = CUE("a row a label can edit");
+
+  return (t) => {
+    rise(kick, at(t, s.in, 0.5));
+    rise(head, at(t, s.in + 0.15, 0.7));
+    headRow.style.opacity = clamp(at(t, s.in + 0.4, 0.5));
+    rowEls.forEach((n, i) => {
+      const p = at(t, s.in + 0.5 + i * 0.13, 0.55);
+      n.style.opacity = clamp(p * 1.5);
+      n.style.transform = `translateX(${px(lerp(-24, 0, easeOut(p)))})`;
+    });
+
+    // One cell is edited in place, to make "editable" literal rather than asserted.
+    const pe = at(t, tEdit + 0.6, 1.5);
+    const target = rowEls[3]._loop;
+    if (pe > 0) {
+      target.style.color = "var(--gold)";
+      target.style.background = "rgba(245,185,64,0.12)";
+      target.style.padding = "4px 10px";
+      target.style.borderRadius = "4px";
+      typeOn(target, pe < 0.5 ? "yes" : "yes · 2 bars", clamp(pe * 2 - 0.5));
+      if (pe < 0.1) target.textContent = "yes";
+    }
+  };
+});
+
+// ---- s5 · the second video is cheap --------------------------------------------
+scene("cost", (root, s) => {
+  s.in = CUE("Build it once"); s.out = CUE("Here's what runs it");
+
+  const kick = el("div", "kicker", { position: "absolute", left: "160px", top: "160px" }, "UNIT ECONOMICS");
+  const head = el("div", "head", { position: "absolute", left: "160px", top: "206px", width: "900px", fontSize: "56px" },
+    'Build it once. The second<br>video is <span style="color:var(--gold)">cheap</span>.');
+  root.appendChild(kick); root.appendChild(head);
+
+  // Bars: the first attempt carries the identity build; every one after it does not.
+  const chart = el("div", null, { position: "absolute", left: "160px", top: "470px", width: "980px", height: "380px" });
+  root.appendChild(chart);
+
+  const BARS = [
+    { label: "1st", ident: 1.0, run: 0.84 },
+    { label: "2nd", ident: 0, run: 0.84 },
+    { label: "3rd", ident: 0, run: 0.84 },
+    { label: "4th", ident: 0, run: 0.84 },
+    { label: "5th", ident: 0, run: 0.84 },
+  ];
+  const BW = 132, BG = 44, MAXV = 1.9, H = 300;
+  const bars = BARS.map((b, i) => {
+    const wrap = el("div", null, { position: "absolute", left: px(i * (BW + BG)), bottom: "60px", width: px(BW) });
+    const run = el("div", null, { position: "absolute", bottom: "0", width: "100%", background: "linear-gradient(180deg,var(--gold),var(--gold-dim))", borderRadius: "5px 5px 0 0" });
+    const ident = el("div", null, { position: "absolute", width: "100%", background: "repeating-linear-gradient(135deg,rgba(245,185,64,.30) 0 8px,rgba(245,185,64,.12) 8px 16px)", border: "1px solid rgba(245,185,64,.45)", borderRadius: "5px 5px 0 0" });
+    const lab = el("div", "mono", { position: "absolute", bottom: "-42px", width: "100%", textAlign: "center", fontSize: "19px", color: "var(--ink-3)" }, b.label);
+    const val = el("div", "mono", { position: "absolute", width: "100%", textAlign: "center", fontSize: "19px", color: "var(--gold)" });
+    wrap.appendChild(ident); wrap.appendChild(run); wrap.appendChild(lab); wrap.appendChild(val);
+    chart.appendChild(wrap);
+    return { wrap, run, ident, val, b };
+  });
+
+  const legend = el("div", null, { position: "absolute", left: "1220px", top: "470px", width: "560px" });
+  root.appendChild(legend);
+  const legRows = [
+    ["identity · built once", "repeating-linear-gradient(135deg,rgba(245,185,64,.30) 0 8px,rgba(245,185,64,.12) 8px 16px)"],
+    ["the run itself · $0.84", "linear-gradient(180deg,var(--gold),var(--gold-dim))"],
+  ].map(([txt, bg]) => {
+    const r = el("div", null, { display: "flex", alignItems: "center", gap: "16px", marginBottom: "20px" });
+    r.appendChild(el("div", null, { width: "34px", height: "22px", background: bg, borderRadius: "4px", border: "1px solid rgba(245,185,64,.45)" }));
+    r.appendChild(el("div", "mono", { fontSize: "20px", color: "var(--ink-2)" }, txt));
+    legend.appendChild(r);
+    return r;
+  });
+
+  const lever = el("div", null, { position: "absolute", left: "1220px", top: "640px", width: "600px" });
+  const leverK = el("div", "mono", { fontSize: "17px", letterSpacing: "0.22em", color: "var(--ink-3)" }, "THE ONLY LEVER LEFT");
+  const leverV = el("div", "head", { fontSize: "62px", color: "var(--gold)", marginTop: "12px" }, "cost per attempt");
+  lever.appendChild(leverK); lever.appendChild(leverV);
+  root.appendChild(lever);
+
+  const tLever = CUE("Cost per attempt");
+
+  return (t) => {
+    rise(kick, at(t, s.in, 0.5));
+    rise(head, at(t, s.in + 0.1, 0.7));
+    bars.forEach((x, i) => {
+      const p = easeOut(at(t, s.in + 0.55 + i * 0.14, 0.6));
+      const runH = (x.b.run / MAXV) * H * p;
+      const identH = (x.b.ident / MAXV) * H * p;
+      x.run.style.height = px(runH);
+      x.ident.style.height = px(identH);
+      x.ident.style.bottom = px(runH);
+      x.wrap.style.opacity = clamp(p * 2);
+      x.val.style.bottom = px(runH + identH + 12);
+      x.val.textContent = money(x.b.run + x.b.ident);
+      x.val.style.opacity = clamp(at(t, s.in + 0.8 + i * 0.14, 0.5));
+    });
+    legRows.forEach((r, i) => rise(r, at(t, s.in + 0.9 + i * 0.2, 0.5), 14));
+    rise(lever, at(t, tLever - 0.15, 0.6));
+  };
+});
+
+// ---- s6 · what runs it: AWS + Backblaze B2 --------------------------------------
+scene("arch", (root, s) => {
+  s.in = CUE("Here's what runs it"); s.out = CUE("That split is why");
+
+  const kick = el("div", "kicker", { position: "absolute", left: "160px", top: "128px" }, "WHAT RUNS IT");
+  root.appendChild(kick);
+
+  const wire = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  wire.setAttribute("class", "wire");
+  wire.setAttribute("viewBox", "0 0 1920 1080");
+  wire.style.width = "1920px"; wire.style.height = "1080px";
+  root.appendChild(wire);
+
+  const mkPath = (d, live) => {
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", d); if (live) p.setAttribute("class", "live");
+    wire.appendChild(p); return p;
+  };
+
+  // left column — AWS; right column — B2.
+  const colA = el("div", "card", { left: "180px", top: "236px", width: "620px", height: "600px", padding: "30px" });
+  const colB = el("div", "card", { left: "1120px", top: "236px", width: "620px", height: "600px", padding: "30px" });
+  root.appendChild(colA); root.appendChild(colB);
+
+  colA.appendChild(el("div", "t", { marginBottom: "6px" }, "COMPUTE"));
+  const awsH = el("div", "head", { fontSize: "44px", marginBottom: "26px" }, "AWS");
+  colA.appendChild(awsH);
+  colA.appendChild(el("div", "sub", { fontSize: "21px", marginBottom: "26px", color: "var(--ink-3)" }, "handles the logic"));
+  const awsItems = ["API Gateway", "Lambda · api", "Lambda · worker", "SQS", "SSM Parameter Store"].map(x => {
+    const n = el("div", "mono", { fontSize: "22px", color: "var(--ink-2)", padding: "15px 0", borderTop: "1px solid var(--rule-2)" }, x);
+    colA.appendChild(n); return n;
+  });
+
+  colB.appendChild(el("div", "t", { marginBottom: "6px" }, "STORAGE"));
+  const bbWrap = el("div", "bb", { position: "relative", height: "56px", marginBottom: "18px" });
+  const bbImg = el("img", null, { width: "300px" }); bbImg.src = "assets/backblaze-wordmark-on-dark.svg";
+  bbWrap.appendChild(bbImg); colB.appendChild(bbWrap);
+  colB.appendChild(el("div", "sub", { fontSize: "21px", marginBottom: "26px", color: "var(--ink-3)" }, "holds the bytes — and the proof"));
+  const b2Items = ["masters", "artists · identities · kits", "run assets", "manifests", "the catalog index"].map(x => {
+    const n = el("div", "mono", { fontSize: "22px", color: "var(--ink-2)", padding: "15px 0", borderTop: "1px solid var(--rule-2)" }, x);
+    colB.appendChild(n); return n;
+  });
+
+  const link = mkPath("M 800 536 L 1120 536", true);
+  const linkLab = el("div", "mono", { position: "absolute", left: "820px", top: "492px", width: "280px", textAlign: "center", fontSize: "17px", letterSpacing: "0.12em", color: "var(--ink-3)" }, "PRESIGNED URLS");
+  root.appendChild(linkLab);
+
+  const proof = el("div", null, { position: "absolute", left: "1120px", top: "880px", width: "620px" });
+  const proofT = el("div", "head", { fontSize: "40px", color: "var(--gold)" }, "and the proof");
+  proof.appendChild(proofT); root.appendChild(proof);
+
+  const tAWS = CUE("AWS handles the logic");
+  const tBB = CUE("Backblaze B2 holds");
+  const tProof = CUE("and the proof");
+
+  return (t) => {
+    rise(kick, at(t, s.in, 0.5));
+    // "Here's what runs it" is the cue to put the frame up, so the columns are already
+    // arriving by the time the narrator names the first one.
+    const pa = at(t, s.in + 0.25, 0.6), pb = at(t, tBB - 0.75, 0.6);
+    colA.style.opacity = clamp(pa * 1.6);
+    colA.style.transform = `translateX(${px(lerp(-34, 0, easeOut(pa)))})`;
+    colB.style.opacity = clamp(pb * 1.6);
+    colB.style.transform = `translateX(${px(lerp(34, 0, easeOut(pb)))})`;
+
+    awsItems.forEach((n, i) => rise(n, at(t, tAWS + i * 0.09, 0.4), 10));
+    b2Items.forEach((n, i) => rise(n, at(t, tBB + i * 0.09, 0.4), 10));
+
+    // the connector draws itself once both sides are up
+    const pl = easeInOut(at(t, tBB + 0.35, 0.8));
+    link.style.strokeDasharray = "320";
+    link.style.strokeDashoffset = String(320 * (1 - pl));
+    linkLab.style.opacity = clamp(at(t, tBB + 0.7, 0.5));
+
+    // B2 is the one that gets the accent, because it is the argument being made
+    colB.style.borderColor = `rgba(226,6,38,${lerp(0.10, 0.42, easeOut(pb))})`;
+    rise(proof, at(t, tProof - 0.2, 0.6));
+  };
+});
+
+// ---- s7 · no database ------------------------------------------------------------
+scene("nodb", (root, s) => {
+  s.in = CUE("That split is why"); s.out = CUE("Eleven services");
+
+  const head = el("div", "head", { position: "absolute", left: "160px", top: "150px", width: "820px", fontSize: "56px" },
+    'A label stores <span style="color:var(--gold)">documents</span>,<br>not rows.');
+  root.appendChild(head);
+
+  const nodb = el("div", null, { position: "absolute", left: "160px", top: "352px" });
+  const nodbTxt = el("div", "mono", { fontSize: "23px", letterSpacing: "0.16em", color: "var(--err)", border: "2px solid var(--err)", borderRadius: "6px", padding: "12px 20px", display: "inline-block" }, "NO DATABASE");
+  nodb.appendChild(nodbTxt); root.appendChild(nodb);
+
+  const sub = el("div", "sub", { position: "absolute", left: "160px", top: "452px", width: "700px", fontSize: "23px" },
+    "An artist, its measurements, a finished kit. Each one is a whole document that is read and written whole — so it lives in a bucket, and there is nothing to keep in sync with it.");
+  root.appendChild(sub);
+
+  // documents falling into a bucket
+  const yard = el("div", null, { position: "absolute", left: "1000px", top: "150px", width: "820px", height: "800px" });
+  root.appendChild(yard);
+
+  const DOCS = [
+    ["artist", "art_5caad949d23c.yaml"],
+    ["identity", "idn_11e0c434cefe.yaml"],
+    ["song", "sng_f438a34afbb9.yaml"],
+    ["kit", "kit_593a3937319d.yaml"],
+  ];
+  const docs = DOCS.map(([k, f], i) => {
+    const n = el("div", "card", { left: px(40 + (i % 2) * 380), top: px(20 + Math.floor(i / 2) * 128), width: "350px", height: "104px", padding: "18px 22px" });
+    n.appendChild(el("div", "mono", { fontSize: "15px", letterSpacing: "0.18em", color: "var(--gold)" }, k.toUpperCase()));
+    n.appendChild(el("div", "mono", { fontSize: "18px", color: "var(--ink-2)", marginTop: "9px" }, f));
+    yard.appendChild(n);
+    return n;
+  });
+
+  // the bucket
+  const bucket = el("div", null, { position: "absolute", left: "180px", top: "430px", width: "480px", height: "300px" });
+  const bucketBody = el("div", null, { position: "absolute", inset: "0", border: "2px solid rgba(226,6,38,.55)", borderRadius: "14px", background: "linear-gradient(180deg, rgba(226,6,38,.10), rgba(226,6,38,.02))" });
+  const bucketImg = el("img", null, { position: "absolute", left: "38px", top: "38px", width: "230px" });
+  bucketImg.src = "assets/backblaze-wordmark-on-dark.svg";
+  const bucketName = el("div", "mono", { position: "absolute", left: "38px", top: "126px", fontSize: "22px", color: "var(--ink-2)" }, "remixkit/tenants/dev-local/");
+  const bucketNote = el("div", "mono", { position: "absolute", left: "38px", top: "170px", fontSize: "18px", color: "var(--ink-3)" }, "one bucket · no warehouse · no rows");
+  bucket.appendChild(bucketBody); bucket.appendChild(bucketImg); bucket.appendChild(bucketName); bucket.appendChild(bucketNote);
+  yard.appendChild(bucket);
+
+  const tBucket = CUE("they live in a B2 bucket");
+
+  return (t) => {
+    rise(head, at(t, s.in, 0.7));
+    const pn = at(t, s.in + 0.55, 0.5);
+    nodb.style.opacity = clamp(pn * 1.6);
+    nodb.style.transform = `scale(${lerp(1.12, 1, easeBack(pn))})`;
+    rise(sub, at(t, s.in + 0.9, 0.7));
+
+    bucket.style.opacity = clamp(at(t, tBucket - 0.5, 0.6) * 1.5);
+
+    // Each document slides down into the bucket as the sentence lands.
+    docs.forEach((n, i) => {
+      const p = at(t, s.in + 0.7 + i * 0.22, 0.6);
+      n.style.opacity = clamp(p * 1.5);
+      n.style.transform = `translateY(${px(lerp(-30, 0, easeOut(p)))})`;
+      const drop = easeInOut(at(t, tBucket - 0.35 + i * 0.13, 0.9));
+      if (drop > 0) {
+        const tx = 200 - (40 + (i % 2) * 380);
+        const ty = 470 - (20 + Math.floor(i / 2) * 128);
+        n.style.transform = `translate(${px(tx * drop)}, ${px(ty * drop)}) scale(${lerp(1, 0.62, drop)})`;
+        n.style.opacity = clamp(1 - drop * 0.75);
+      }
+    });
+  };
+});
+
+// ---- s8 · eleven became five -----------------------------------------------------
+scene("five", (root, s) => {
+  s.in = CUE("Eleven services"); s.out = CUE("B2 does four jobs");
+
+  const wrap = el("div", null, { position: "absolute", left: "0", top: "0", width: "1920px", height: "1080px" });
+  root.appendChild(wrap);
+
+  const kick = el("div", "kicker", { position: "absolute", left: "0", top: "300px", width: "1920px", textAlign: "center" }, "THE CONSEQUENCE");
+  wrap.appendChild(kick);
+
+  const line = el("div", null, { position: "absolute", left: "0", top: "372px", width: "1920px", textAlign: "center", display: "flex", justifyContent: "center", alignItems: "center", gap: "60px" });
+  const from = el("div", "num", { fontSize: "210px", color: "var(--ink-3)" }, "11");
+  const arrow = el("div", "mono", { fontSize: "72px", color: "var(--gold)" }, "→");
+  const to = el("div", "num", { fontSize: "210px", color: "var(--gold)" }, "5");
+  line.appendChild(from); line.appendChild(arrow); line.appendChild(to);
+  wrap.appendChild(line);
+
+  const cap = el("div", "sub", { position: "absolute", left: "0", top: "630px", width: "1920px", textAlign: "center", fontSize: "26px" }, "services in the deployed stack");
+  wrap.appendChild(cap);
+
+  const idle = el("div", null, { position: "absolute", left: "0", top: "740px", width: "1920px", textAlign: "center" });
+  const idleV = el("div", "head", { fontSize: "84px", color: "var(--ink)" }, "under $1 / month");
+  const idleK = el("div", "mono", { fontSize: "19px", letterSpacing: "0.24em", color: "var(--ink-3)", marginTop: "14px" }, "IDLE COST");
+  idle.appendChild(idleV); idle.appendChild(idleK);
+  wrap.appendChild(idle);
+
+  const tIdle = CUE("Idle cost");
+
+  return (t) => {
+    rise(kick, at(t, s.in, 0.5));
+    const p = at(t, s.in, 0.7);
+    line.style.opacity = clamp(p * 1.6);
+    from.style.transform = `scale(${lerp(1.2, 1, easeBack(p))})`;
+    const pt = at(t, s.in + 0.55, 0.6);
+    to.style.opacity = clamp(pt * 1.8);
+    to.style.transform = `scale(${lerp(1.5, 1, easeBack(pt))})`;
+    arrow.style.opacity = clamp(at(t, s.in + 0.4, 0.4));
+    from.style.opacity = lerp(1, 0.34, easeOut(pt));
+    rise(cap, at(t, s.in + 0.7, 0.5), 12);
+    rise(idle, at(t, tIdle - 0.2, 0.6));
+  };
+});
+
+// ---- s9 · four jobs --------------------------------------------------------------
+scene("fourjobs", (root, s) => {
+  s.in = CUE("B2 does four jobs"); s.out = CUE("It's the upload path");
+
+  const head = el("div", "head", { position: "absolute", left: "0", top: "230px", width: "1920px", textAlign: "center", fontSize: "62px" }, "B2 does four jobs.");
+  root.appendChild(head);
+
+  const JOBS = [["01", "the upload path"], ["02", "the catalog"], ["03", "the receipt"], ["04", "the disclosure"]];
+  const row = el("div", null, { position: "absolute", left: "160px", top: "420px", width: "1600px", display: "flex", gap: "28px" });
+  root.appendChild(row);
+  const tiles = JOBS.map(([n, t2]) => {
+    const c = el("div", "card", { position: "relative", flex: "1", height: "300px", padding: "30px" });
+    c.appendChild(el("div", "num", { fontSize: "56px", color: "var(--gold)" }, n));
+    c.appendChild(el("div", "head", { fontSize: "34px", marginTop: "80px" }, t2));
+    row.appendChild(c);
+    return c;
+  });
+
+  return (t) => {
+    rise(head, at(t, s.in, 0.5));
+    tiles.forEach((c, i) => {
+      const p = at(t, s.in + 0.28 + i * 0.11, 0.5);
+      c.style.opacity = clamp(p * 1.6);
+      c.style.transform = `translateY(${px(lerp(34, 0, easeOut(p)))})`;
+    });
+  };
+});
+
+// ---- s10 · job 1 · the upload path ------------------------------------------------
+scene("upload", (root, s) => {
+  s.in = CUE("It's the upload path"); s.out = CUE("It's the catalog");
+
+  const kick = el("div", "kicker", { position: "absolute", left: "160px", top: "150px" }, "JOB 01 · THE UPLOAD PATH");
+  const head = el("div", "head", { position: "absolute", left: "160px", top: "196px", width: "1400px", fontSize: "52px" },
+    'Masters go browser straight to bucket —<br><span style="color:var(--gold)">never touching our server</span>.');
+  root.appendChild(kick); root.appendChild(head);
+
+  const wire = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  wire.setAttribute("class", "wire"); wire.setAttribute("viewBox", "0 0 1920 1080");
+  wire.style.width = "1920px"; wire.style.height = "1080px";
+  root.appendChild(wire);
+  const mk = (d, cls) => { const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", d); if (cls) p.setAttribute("class", cls); wire.appendChild(p); return p; };
+
+  const node = (x, y, w, h, label, sub2, accent) => {
+    const n = el("div", "card", { left: px(x), top: px(y), width: px(w), height: px(h), padding: "24px", display: "flex", flexDirection: "column", justifyContent: "center" });
+    n.appendChild(el("div", "mono", { fontSize: "15px", letterSpacing: "0.18em", color: accent || "var(--ink-3)" }, label));
+    n.appendChild(el("div", "head", { fontSize: "28px", marginTop: "10px" }, sub2));
+    root.appendChild(n); return n;
+  };
+
+  const browser = node(180, 560, 380, 150, "BROWSER", "the master file");
+  const server = node(770, 560, 380, 150, "OUR SERVER", "not in the path", "var(--err)");
+  const bucket = node(1360, 560, 380, 150, "B2 BUCKET", "remixkit/masters/", "var(--bb-red)");
+
+  // the direct route arcs over the server
+  const direct = mk("M 560 610 C 800 420, 1120 420, 1360 610", "live");
+  const viaA = mk("M 560 660 L 770 660");
+  const viaB = mk("M 1150 660 L 1360 660");
+
+  const cross = el("div", "mono", { position: "absolute", left: "770px", top: "730px", width: "380px", textAlign: "center", fontSize: "19px", color: "var(--err)" }, "bypassed · presigned PUT");
+  root.appendChild(cross);
+
+  const dots = [0, 1, 2].map(() => { const d = el("div", "dot", { width: "16px", height: "16px" }); root.appendChild(d); return d; });
+
+  return (t) => {
+    rise(kick, at(t, s.in, 0.5));
+    rise(head, at(t, s.in + 0.1, 0.6));
+    [browser, server, bucket].forEach((n, i) => {
+      const p = at(t, s.in + 0.35 + i * 0.14, 0.5);
+      n.style.opacity = clamp(p * 1.6);
+      n.style.transform = `translateY(${px(lerp(22, 0, easeOut(p)))})`;
+    });
+    server.style.opacity = lerp(clamp(at(t, s.in + 0.49, 0.5) * 1.6), 0.28, easeOut(at(t, s.in + 1.6, 0.7)));
+
+    const pd = easeInOut(at(t, s.in + 1.0, 0.9));
+    direct.style.strokeDasharray = "1000";
+    direct.style.strokeDashoffset = String(1000 * (1 - pd));
+    [viaA, viaB].forEach(p2 => { p2.style.opacity = lerp(0.9, 0.12, easeOut(at(t, s.in + 1.7, 0.6))); p2.style.strokeDasharray = "6 8"; });
+    cross.style.opacity = clamp(at(t, s.in + 1.9, 0.6));
+
+    // packets travelling the direct arc
+    const len = direct.getTotalLength ? direct.getTotalLength() : 0;
+    dots.forEach((d, i) => {
+      const start = s.in + 1.7 + i * 0.42;
+      const p = at(t, start, 1.5);
+      const vis = p > 0 && p < 1 && len > 0;
+      d.style.opacity = vis ? clamp(Math.sin(p * Math.PI) * 2) : 0;
+      if (vis) {
+        const pt = direct.getPointAtLength(len * p);
+        d.style.left = px(pt.x - 8); d.style.top = px(pt.y - 8);
+      }
+    });
+  };
+});
+
+// ---- s11 · job 2 · the catalog ----------------------------------------------------
+scene("catalog", (root, s) => {
+  s.in = CUE("It's the catalog"); s.out = CUE("It's the receipt");
+
+  const kick = el("div", "kicker", { position: "absolute", left: "160px", top: "150px" }, "JOB 02 · THE CATALOG");
+  const head = el("div", "head", { position: "absolute", left: "160px", top: "196px", width: "1200px", fontSize: "52px" },
+    'Every run writes under<br>tenant, date, run ID.');
+  root.appendChild(kick); root.appendChild(head);
+
+  const tree = el("div", "card", { left: "160px", top: "400px", width: "980px", height: "480px", padding: "38px" });
+  root.appendChild(tree);
+  const PATH = [
+    ["remixkit/", 0, "var(--ink-3)"],
+    ["runs/", 1, "var(--ink-3)"],
+    ["dev-local/", 2, "var(--gold)"],
+    ["2026-08-01/", 3, "var(--gold)"],
+    ["25432a1c-8ea9-4e1f-93b5-5ca4332e8690/", 4, "var(--gold)"],
+    ["manifest.json", 5, "var(--ink)"],
+    ["assets/c0b5c9af….mp4", 5, "var(--ink-2)"],
+  ];
+  const lines = PATH.map(([txt, depth, col]) => {
+    const n = el("div", "mono", { fontSize: "24px", color: col, paddingLeft: px(depth * 34), marginBottom: "16px" });
+    n._txt = txt; tree.appendChild(n); return n;
+  });
+  const legend = el("div", "mono", { position: "absolute", left: "160px", top: "912px", fontSize: "19px", color: "var(--ink-3)" }, "tenant · date · run id — the prefix is the index");
+  root.appendChild(legend);
+
+  const right = el("div", null, { position: "absolute", left: "1220px", top: "400px", width: "540px" });
+  root.appendChild(right);
+  const pq = el("div", "card", { position: "relative", width: "540px", height: "190px", padding: "30px", marginBottom: "28px" });
+  pq.appendChild(el("div", "mono", { fontSize: "15px", letterSpacing: "0.18em", color: "var(--gold)" }, "INDEX"));
+  pq.appendChild(el("div", "head", { fontSize: "34px", marginTop: "14px" }, "Parquet, in the same bucket"));
+  pq.appendChild(el("div", "mono", { fontSize: "18px", color: "var(--ink-3)", marginTop: "12px" }, "queryable by Athena"));
+  right.appendChild(pq);
+  const nw = el("div", null, { position: "relative", width: "540px", padding: "26px 0 0 0" });
+  nw.appendChild(el("div", "head", { fontSize: "56px", color: "var(--gold)" }, "No warehouse."));
+  right.appendChild(nw);
+
+  const tParquet = CUE("landing as Parquet");
+  const tNW = CUE("No warehouse");
+
+  return (t) => {
+    rise(kick, at(t, s.in, 0.5));
+    rise(head, at(t, s.in + 0.1, 0.6));
+    tree.style.opacity = clamp(at(t, s.in + 0.3, 0.5) * 1.6);
+    lines.forEach((n, i) => {
+      const p = at(t, s.in + 0.5 + i * 0.28, 0.45);
+      n.style.opacity = clamp(p * 1.8);
+      typeOn(n, n._txt, at(t, s.in + 0.5 + i * 0.28, 0.42), false);
+    });
+    rise(legend, at(t, s.in + 2.6, 0.6), 12);
+    rise(pq, at(t, tParquet - 0.35, 0.6));
+    rise(nw, at(t, tNW - 0.2, 0.5));
+  };
+});
+
+// ---- s12 · job 3 · the receipt ----------------------------------------------------
+scene("receipt", (root, s) => {
+  s.in = CUE("It's the receipt"); s.out = CUE("And it's the disclosure");
+
+  const kick = el("div", "kicker", { position: "absolute", left: "160px", top: "132px" }, "JOB 03 · THE RECEIPT");
+  const head = el("div", "head", { position: "absolute", left: "160px", top: "178px", width: "1000px", fontSize: "48px" },
+    'A manifest naming the provider,<br>model and prompt behind <span style="color:var(--gold)">every step</span>.');
+  root.appendChild(kick); root.appendChild(head);
+
+  const code = el("div", "card", { left: "160px", top: "364px", width: "980px", height: "580px", padding: "34px 38px" });
+  root.appendChild(code);
+  const MANIFEST = [
+    ['{', "var(--ink-3)"],
+    ['  "run_id": "25432a1c-8ea9-4e1f-93b5-5ca4332e8690",', "var(--ink-2)"],
+    ['  "steps": [', "var(--ink-3)"],
+    ['    { "stage": "image",', "var(--ink-2)"],
+    ['      "provider": "gmicloud",', "var(--gold)"],
+    ['      "model": "bria-fibo-edit",', "var(--gold)"],
+    ['      "prompt": "feminine slight average build…",', "var(--gold)"],
+    ['      "cost_cents": 4 },', "var(--ink-2)"],
+    ['    { "stage": "video",', "var(--ink-2)"],
+    ['      "provider": "openai",', "var(--gold)"],
+    ['      "model": "sora-2",', "var(--gold)"],
+    ['      "cost_cents": 80 }', "var(--ink-2)"],
+    ['  ],', "var(--ink-3)"],
+    ['  "sha256": "8d0ca6fc2f6…"', "var(--ink-2)"],
+    ['}', "var(--ink-3)"],
+  ];
+  const rows = MANIFEST.map(([txt, col]) => {
+    const n = el("div", "mono", { fontSize: "20.5px", lineHeight: "1.62", color: col, whiteSpace: "pre" });
+    n._txt = txt; code.appendChild(n); return n;
+  });
+
+  const shot = makeShot("08-kit", { x: 1200, y: 364, w: 560, h: 300 });
+  root.appendChild(shot);
+  cam(shot, { x: 0.74, y: 0.20, w: 0.25 });
+
+  const pass = el("div", "stamp", { left: "1200px", top: "710px", fontSize: "26px" }, "provenance verified");
+  const fail = el("div", "stamp err", { left: "1200px", top: "800px", fontSize: "26px" }, "unverified · refused");
+  root.appendChild(pass); root.appendChild(fail);
+
+  const note = el("div", "sub", { position: "absolute", left: "1200px", top: "890px", width: "560px", fontSize: "21px" },
+    "manifest.verify() runs before a kit is allowed to reach ready. A kit that cannot prove how it was made does not ship.");
+  root.appendChild(note);
+
+  const tVerified = CUE("verified before a kit ships");
+  const tFails = CUE("Unverified fails");
+
+  return (t) => {
+    hideExtras(shot);
+    rise(kick, at(t, s.in, 0.5));
+    rise(head, at(t, s.in + 0.1, 0.6));
+    code.style.opacity = clamp(at(t, s.in + 0.25, 0.5) * 1.6);
+    rows.forEach((n, i) => {
+      const p = at(t, s.in + 0.4 + i * 0.115, 0.35);
+      n.style.opacity = clamp(p * 2);
+      typeOn(n, n._txt, at(t, s.in + 0.4 + i * 0.115, 0.3), false);
+    });
+
+    const ps = at(t, s.in + 0.8, 0.7);
+    shot.style.opacity = clamp(ps * 1.6);
+    cam(shot, { x: lerp(0.75, 0.742, easeInOut(at(t, s.in, s.out - s.in))), y: 0.202, w: 0.25 });
+    const pv = at(t, tVerified - 0.2, 0.5);
+    if (pv > 0) hl(shot, "prov", { x: 0.755, y: 0.212, w: 0.228, h: 0.132 }, pv, "ok");
+
+    const pp = at(t, tVerified, 0.45);
+    pass.style.opacity = clamp(pp * 1.6);
+    pass.style.transform = `scale(${lerp(1.14, 1, easeBack(pp))})`;
+    const pf = at(t, tFails, 0.4);
+    fail.style.opacity = clamp(pf * 1.6);
+    fail.style.transform = `scale(${lerp(1.14, 1, easeBack(pf))})`;
+    rise(note, at(t, tVerified + 0.5, 0.6), 12);
+  };
+});
+
+// ---- s13 · job 4 · the disclosure --------------------------------------------------
+scene("disclosure", (root, s) => {
+  s.in = CUE("And it's the disclosure"); s.out = CUE("Nothing is looked up");
+
+  const kick = el("div", "kicker", { position: "absolute", left: "160px", top: "132px" }, "JOB 04 · THE DISCLOSURE");
+  const head = el("div", "head", { position: "absolute", left: "160px", top: "178px", width: "1300px", fontSize: "48px" },
+    'The manifest travels <span style="color:var(--gold)">inside the file</span>.');
+  root.appendChild(kick); root.appendChild(head);
+
+  // stored object | downloaded object — same hash
+  const left = el("div", "card", { left: "160px", top: "330px", width: "620px", height: "440px", padding: "30px" });
+  const right = el("div", "card", { left: "880px", top: "330px", width: "620px", height: "440px", padding: "30px" });
+  root.appendChild(left); root.appendChild(right);
+
+  left.appendChild(el("div", "t", null, "STORED IN B2"));
+  left.appendChild(el("div", "head", { fontSize: "30px", marginTop: "12px" }, "c0b5c9af….mp4"));
+  const leftBody = el("div", "mono", { fontSize: "19px", color: "var(--ink-3)", marginTop: "24px", lineHeight: "1.7" }, "video bytes<br>video bytes<br>video bytes");
+  left.appendChild(leftBody);
+  const leftHash = el("div", "mono", { position: "absolute", left: "30px", bottom: "30px", fontSize: "19px", color: "var(--ok)" }, "sha256 8d0ca6fc2f6…");
+  left.appendChild(leftHash);
+
+  right.appendChild(el("div", "t", null, "DOWNLOADED"));
+  right.appendChild(el("div", "head", { fontSize: "30px", marginTop: "12px" }, "c0b5c9af….mp4"));
+  const rightBody = el("div", "mono", { fontSize: "19px", color: "var(--ink-3)", marginTop: "24px", lineHeight: "1.7" }, "video bytes<br>video bytes<br>video bytes");
+  right.appendChild(rightBody);
+  const embed = el("div", null, { position: "absolute", left: "30px", top: "250px", width: "560px", border: "2px solid var(--gold)", borderRadius: "8px", padding: "14px 18px", background: "rgba(245,185,64,.10)" });
+  embed.appendChild(el("div", "mono", { fontSize: "17px", color: "var(--gold)" }, "＋ manifest embedded in metadata"));
+  right.appendChild(embed);
+  const rightHash = el("div", "mono", { position: "absolute", left: "30px", bottom: "30px", fontSize: "19px", color: "var(--ok)" }, "sha256 8d0ca6fc2f6…");
+  right.appendChild(rightHash);
+
+  const same = el("div", "mono", { position: "absolute", left: "780px", top: "700px", width: "100px", textAlign: "center", fontSize: "40px", color: "var(--ok)" }, "=");
+  root.appendChild(same);
+
+  const byteNote = el("div", "sub", { position: "absolute", left: "160px", top: "812px", width: "1340px", fontSize: "23px" },
+    "The stored object stays byte-identical, so the hash still means something.");
+  root.appendChild(byteNote);
+
+  // then: the verify page
+  const shot = makeShot("09-verify", { x: 1560, y: 330, w: 200, h: 440 });
+  root.appendChild(shot);
+  cam(shot, { x: 0.15, y: 0.05, w: 0.7 });
+
+  const drop = el("div", null, { position: "absolute", left: "1560px", top: "812px", width: "260px" });
+  root.appendChild(drop);
+
+  const tByte = CUE("byte-identical");
+  const tDrop = CUE("Drop that file");
+  const tSays = CUE("exactly how it was made");
+
+  return (t) => {
+    hideExtras(shot);
+    rise(kick, at(t, s.in, 0.5));
+    rise(head, at(t, s.in + 0.1, 0.6));
+    const pl = at(t, s.in + 0.35, 0.6), pr = at(t, s.in + 0.75, 0.6);
+    left.style.opacity = clamp(pl * 1.6);
+    left.style.transform = `translateY(${px(lerp(24, 0, easeOut(pl)))})`;
+    right.style.opacity = clamp(pr * 1.6);
+    right.style.transform = `translateY(${px(lerp(24, 0, easeOut(pr)))})`;
+
+    const pe = at(t, s.in + 1.4, 0.7);
+    embed.style.opacity = clamp(pe * 1.6);
+    embed.style.transform = `translateY(${px(lerp(-40, 0, easeOut(pe)))}) scale(${lerp(0.94, 1, easeOut(pe))})`;
+
+    const pb = at(t, tByte - 0.4, 0.6);
+    same.style.opacity = clamp(pb * 1.8);
+    same.style.transform = `scale(${lerp(1.6, 1, easeBack(pb))})`;
+    leftHash.style.opacity = rightHash.style.opacity = clamp(pb * 1.8);
+    rise(byteNote, at(t, tByte - 0.2, 0.6), 12);
+
+    // the verify page slides in and takes the frame
+    const pv = at(t, tDrop - 0.5, 0.8);
+    shot.style.opacity = clamp(pv * 1.6);
+    const grow = easeInOut(at(t, tDrop - 0.3, 1.0));
+    Object.assign(shot.style, {
+      left: px(lerp(1560, 300, grow)),
+      top: px(lerp(330, 300, grow)),
+      width: px(lerp(200, 1320, grow)),
+      height: px(lerp(440, 600, grow)),
+    });
+    shot._box = { x: parseFloat(shot.style.left), y: parseFloat(shot.style.top), w: parseFloat(shot.style.width), h: parseFloat(shot.style.height) };
+    cam(shot, { x: lerp(0.15, 0.155, grow), y: lerp(0.05, 0.02, grow), w: lerp(0.7, 0.68, grow) });
+
+    // once it is up, everything else steps back
+    const dim = easeOut(at(t, tDrop - 0.2, 0.7));
+    [left, right, same, byteNote].forEach(n => { n.style.opacity = String(parseFloat(n.style.opacity || 1) * (1 - dim)); });
+    kick.style.opacity = String(1 - dim * 0.6);
+
+    const ps = at(t, tSays - 0.1, 0.5);
+    if (ps > 0 && grow > 0.9) {
+      hl(shot, "report", { x: 0.175, y: 0.088, w: 0.556, h: 0.062 }, ps, "ok");
+      tag(shot, "report", { x: 0.175, y: 0.088 }, "reads the provenance out of the bytes", ps, "ok", 0, -48);
+    }
+  };
+});
+
+// ---- s14 · the proof is in the bytes ------------------------------------------------
+scene("bytes", (root, s) => {
+  s.in = CUE("Nothing is looked up"); s.out = CUE("You cannot buy a hit");
+
+  const head = el("div", "head", { position: "absolute", left: "0", top: "356px", width: "1920px", textAlign: "center", fontSize: "40px", color: "var(--ink-3)" }, "Nothing is looked up.");
+  const big = el("div", "head", { position: "absolute", left: "0", top: "430px", width: "1920px", textAlign: "center", fontSize: "96px" },
+    'The proof is in the <span style="color:var(--gold)">bytes</span>.');
+  root.appendChild(head); root.appendChild(big);
+
+  // a hex window with the manifest bytes picked out
+  const hex = el("div", "mono", { position: "absolute", left: "360px", top: "620px", width: "1200px", fontSize: "18px", lineHeight: "1.85", color: "var(--ink-3)", textAlign: "center", letterSpacing: "0.06em" });
+  root.appendChild(hex);
+
+  const HEXROWS = [
+    "00 00 00 20 66 74 79 70 69 73 6f 6d 00 00 02 00",
+    "6d 6f 6f 76 75 64 74 61 <b>7b 22 72 75 6e 5f 69 64</b>",
+    "<b>22 3a 22 32 35 34 33 32 61 31 63 22 2c 22 73 74</b>",
+    "<b>65 70 73 22 3a 5b 7b 22 70 72 6f 76 69 64 65 72</b>",
+  ];
+
+  return (t) => {
+    rise(head, at(t, s.in, 0.5));
+    const p = at(t, s.in + 0.35, 0.7);
+    big.style.opacity = clamp(p * 1.6);
+    big.style.transform = `scale(${lerp(0.96, 1, easeOut(p))})`;
+    hex.style.opacity = clamp(at(t, s.in + 0.7, 0.6));
+    const shown = Math.min(HEXROWS.length, Math.floor(at(t, s.in + 0.7, 1.3) * HEXROWS.length) + 1);
+    hex.innerHTML = HEXROWS.slice(0, shown).join("<br>").replace(/<b>/g, '<b style="color:var(--gold);font-weight:400">');
+  };
+});
+
+// ---- s15 · close ---------------------------------------------------------------------
+scene("close", (root, s) => {
+  s.in = CUE("You cannot buy a hit"); s.out = CUE("Bring us one artist");
+
+  const l1 = el("div", "head", { position: "absolute", left: "200px", top: "330px", width: "1520px", fontSize: "72px" }, "You cannot buy a hit.");
+  const l2 = el("div", "head", { position: "absolute", left: "200px", top: "440px", width: "1520px", fontSize: "72px", color: "var(--gold)" }, "You can only lower the cost of trying —");
+  const l3 = el("div", "head", { position: "absolute", left: "200px", top: "550px", width: "1520px", fontSize: "72px" }, "and be honest about what came out.");
+  [l1, l2, l3].forEach(n => root.appendChild(n));
+
+  const tLower = CUE("You can only lower");
+  const tHonest = CUE("and be honest");
+
+  return (t) => {
+    rise(l1, at(t, s.in, 0.6));
+    rise(l2, at(t, tLower - 0.15, 0.6));
+    rise(l3, at(t, tHonest - 0.15, 0.6));
+  };
+});
+
+// ---- s16 · end card --------------------------------------------------------------------
+scene("end", (root, s) => {
+  s.in = CUE("Bring us one artist"); s.out = 999;
+
+  const wrap = el("div", null, { position: "absolute", left: "0", top: "0", width: "1920px", height: "1080px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" });
+  root.appendChild(wrap);
+
+  const mark = el("div", null, { display: "flex", alignItems: "center", gap: "18px", marginBottom: "42px" });
+  mark.appendChild(el("div", null, { width: "22px", height: "22px", background: "var(--gold)", transform: "rotate(45deg)", borderRadius: "3px" }));
+  mark.appendChild(el("div", "head", { fontSize: "52px" }, "RemixKit"));
+  wrap.appendChild(mark);
+
+  const line = el("div", "head", { fontSize: "78px", textAlign: "center" }, "Bring us one artist<br>and one song.");
+  wrap.appendChild(line);
+
+  const foot = el("div", null, { display: "flex", alignItems: "center", gap: "20px", marginTop: "70px" });
+  foot.appendChild(el("div", "mono", { fontSize: "18px", letterSpacing: "0.16em", color: "var(--ink-3)" }, "STORAGE & PROVENANCE ON"));
+  const bb = el("img", null, { width: "210px" }); bb.src = "assets/backblaze-wordmark-on-dark.svg";
+  foot.appendChild(bb);
+  wrap.appendChild(foot);
+
+  return (t) => {
+    rise(mark, at(t, s.in, 0.6));
+    rise(line, at(t, s.in + 0.15, 0.7));
+    rise(foot, at(t, s.in + 0.5, 0.7));
+    // a slow settle so the last frame is not frozen
+    wrap.style.transform = `scale(${lerp(1.0, 1.02, easeInOut(at(t, s.in, 3.0)))})`;
+  };
+});
+
+}
+</script>
+
+<script>
+// ---------------------------------------------------------------------------- driver
+
+async function boot() {
+  const res = await fetch("out/alignment.json");
+  const data = await res.json();
+  WORDS = data.words;
+  indexWords();
+  window.DURATION = data.duration;
+
+  buildScenes();
+
+  // Wait for every image to have real pixels before the first frame is taken.
+  const imgs = Array.from(document.images).map(i => i.complete && i.naturalWidth
+    ? null
+    : new Promise(r => { i.onload = r; i.onerror = r; setTimeout(r, 20000); }));
+  await Promise.all(imgs.filter(Boolean));
+
+  window.READY = true;
+}
+
+/** Put the stage into its state at time `t`; resolve once its b-roll frames are decoded. */
+window.SEEK = async function (t) {
+  PENDING.length = 0;
+
+  // Two slow, mutually prime periods, so the light never repeats a position within the
+  // length of the film.
+  bgfx.style.transform =
+    `translate(${(Math.sin(t / 17) * 70).toFixed(2)}px, ${(Math.cos(t / 23) * 54).toFixed(2)}px)`;
+
+  for (const s of SCENES) {
+    const vis = t >= s.in - XF && t < s.out + XF;
+    if (!vis) { s.root.style.opacity = 0; s.root.style.display = "none"; continue; }
+    s.root.style.display = "block";
+    // cross-dissolve at both ends
+    const fin = clamp((t - (s.in - XF)) / XF);
+    const fout = 1 - clamp((t - s.out) / XF);
+    s.root.style.opacity = String(clamp(Math.min(fin, fout)));
+    s.update(t);
+  }
+  // Only the b-roll frames this pass actually swapped are waited on; a tile already
+  // showing the right frame costs nothing.
+  await Promise.all(PENDING);
+  return true;
+};
+
+boot();
+</script>

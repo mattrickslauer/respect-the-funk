@@ -66,6 +66,26 @@ content/.cache/
 # already exists under runs/, which is exactly the case the rule at the top of this file
 # describes. content/demo/broll/SOURCES.md is the descriptor that points at them.
 
+# ---------------------------------------------------------------- the demo video build
+# Frames and the encode are pure output — build.py remakes both from what is committed.
+content/demo/video/out/frames/
+content/demo/video/out/*.mp4
+content/demo/video/out/*.log
+content/demo/video/node_modules/
+
+# The b-roll exploded to one JPEG per frame. Named explicitly because *.jpg is kept
+# deliberately elsewhere in this file, and without this line 26MB of frames that ffmpeg
+# regenerates in seconds would be committed on the strength of that exemption.
+content/demo/video/out/broll-frames/
+
+# KEPT DELIBERATELY: the narration and its alignment. This is the one artefact in the
+# repo that is not free to remake — the ElevenLabs account is a 10,000-character
+# lifetime free tier and one read of the script costs 1,799 of them. The alignment is
+# also the edit's clock: every cue in render.html is looked up in it by phrase, so
+# losing it does not cost a re-render, it costs the timing of every cut in the film.
+!content/demo/video/out/narration.mp3
+!content/demo/video/out/alignment.json
+
 # ---------------------------------------------------------------- vendored binaries
 # 38MB standalone; fetch it rather than carry it.
 content/bin/yt-dlp

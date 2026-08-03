@@ -1725,6 +1725,61 @@ def ui_kit_row(request: Request, kit_id: str, principal: CurrentPrincipal, kits:
     return response
 
 
+@router.post("/ui/kits/{kit_id}/retry", response_class=HTMLResponse)
+def ui_retry_kit(
+    request: Request,
+    kit_id: str,
+    principal: CurrentPrincipal,
+    kits: Kits,
+    songs: Songs,
+    artists: Artists,
+):
+    """Queue a failed kit again — from the row it failed in, or from its own screen.
+
+    A failed run was a terminal screen: the error was rendered, and the only thing the
+    console could do about it was delete the kit. Every retry meant rebuilding the brief
+    by hand through the generate form, which for a kit carrying eight rewritten prompts
+    is not a thing anybody reproduces exactly. The brief is stored on the kit, so the
+    button just says "again".
+
+    Three frames ask for this and each needs a different answer, keyed on `HX-Target`
+    the way `_screen` keys on it:
+
+    *   A **row** in a list gets the row back. It comes back `queued`, which means the
+        replacement markup carries the 3-second poll again and the row converges on its
+        own — the same mechanism that draws the first run.
+    *   The **layer** gets the whole overlay re-rendered, because a kit opened over a
+        list has no row of its own to swap.
+    *   The **page** gets `HX-Refresh`, which is a plain reload of the screen you are
+        already on. The kit page does not poll (it never has, for a first run either),
+        so re-rendering it in place would show a queued kit that never moved.
+    """
+    try:
+        kit = kits.retry(principal, kit_id)
+    except ServiceError as exc:
+        return _error_fragment(request, exc)
+
+    target = request.headers.get("HX-Target")
+    if target == "layer":
+        song = _optional(lambda: songs.get(principal, kit.song_id))
+        artist = _optional(lambda: artists.get(principal, kit.artist_id))
+        return announce(
+            _render(
+                request, "overlays/kit.html",
+                overlay=True, kit=kit, song=song, artist=artist,
+            ),
+            events.KITS,
+        )
+    if target == f"kit-{kit.id}":
+        return announce(_render(request, "components/_kit_row.html", kit=kit), events.KITS)
+
+    # 204 rather than an empty body, for the reason `ui_set_identity_approval` gives:
+    # a response with no target would otherwise be swapped into the button that sent it.
+    response = Response(status_code=204)
+    response.headers["HX-Refresh"] = "true"
+    return announce(response, events.KITS)
+
+
 @router.post("/ui/kits/{kit_id}/approval", response_class=HTMLResponse)
 def ui_approve_kit(
     request: Request,

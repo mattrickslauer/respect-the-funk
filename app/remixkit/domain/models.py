@@ -1101,6 +1101,30 @@ class Asset(BaseModel):
         return self.scored_key or self.key
 
 
+class KitAttempt(BaseModel):
+    """One run of a kit that was thrown away, kept because it was paid for.
+
+    A retry re-plans the brief from scratch and overwrites `assets`, `run_id` and the
+    ledger with the new attempt's. Doing that silently would make a kit that burned
+    $3.40 on two failed video steps and then succeeded read as though it had only ever
+    cost the successful run — which is the same class of defect as pricing a modality
+    instead of a model: a total that is precise and wrong.
+
+    So the attempt is recorded here first, and `Kit.spent_cents` adds it back. What
+    cannot be kept is the bytes: the previous attempt's objects are deleted from the
+    bucket at retry time, because `run()` would otherwise orphan them and the label
+    would pay storage for objects no screen can reach.
+    """
+
+    number: int                      # 1 for the original run
+    status: KitStatus                # what it ended as — always `failed` today
+    error: str | None = None
+    cost_cents: int = 0
+    asset_count: int = 0
+    run_id: str | None = None        # the Genblaze run, for reading provider-side logs
+    at: datetime = Field(default_factory=utcnow)
+
+
 class Kit(Base):
     """A pack of templatable assets for one release = one Genblaze Run.
 
@@ -1123,9 +1147,31 @@ class Kit(Base):
     total_cost_cents: int = 0
     error: str | None = None
     brief: dict[str, Any] = Field(default_factory=dict)
+    # Every run of this kit that was discarded, oldest first. Empty on a kit that has
+    # only ever run once, which is nearly all of them.
+    attempts: list[KitAttempt] = Field(default_factory=list)
 
     def recost(self) -> None:
         self.total_cost_cents = sum(a.cost_cents or 0 for a in self.assets)
+
+    @property
+    def attempt(self) -> int:
+        """Which run this is. 1 until somebody retries."""
+        return len(self.attempts) + 1
+
+    @property
+    def abandoned_cost_cents(self) -> int:
+        """What the discarded attempts cost. Money spent that delivered nothing."""
+        return sum(a.cost_cents for a in self.attempts)
+
+    @property
+    def spent_cents(self) -> int:
+        """Everything this kit has cost the label, not just what survived.
+
+        `total_cost_cents` is the ledger for the assets that exist right now, which is
+        the right number under an asset grid and the wrong one on an invoice.
+        """
+        return self.total_cost_cents + self.abandoned_cost_cents
 
     @property
     def cost_is_complete(self) -> bool:

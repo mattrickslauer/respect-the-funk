@@ -496,6 +496,11 @@ input::placeholder,textarea::placeholder{color:#5d5872}
 .shell-notice{flex:none;margin:11px 0 0}
 .notice-error{background:rgba(217,89,38,0.10);border:1px solid rgba(217,89,38,0.34);color:#f0a58a}
 .notice p{margin-top:3px}
+/* A notice that carries its own way out — the failed run and the button that runs it
+   again. The message wraps and the control does not, so a long provider error pushes
+   the button down the notice rather than off the end of it. */
+.notice-act{display:flex;align-items:flex-start;gap:13px;flex-wrap:wrap}
+.notice-act .btn{margin-left:auto;flex:none}
 
 /* ---- data ---- */
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px;margin:9px 0}

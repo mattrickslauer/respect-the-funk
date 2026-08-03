@@ -53,11 +53,14 @@ def _asset_factory(modality: Modality):
         prompt = step.prompt or "untitled"
         params = dict(getattr(step, "params", None) or {})
         seconds = float(params.get("duration") or 6.0)
+        # The same param the real providers are sent, so a mock run and a live one
+        # disagree about the pixels and nothing else.
+        aspect_ratio = str(params.get("aspect_ratio") or "9:16")
 
         if modality is Modality.VIDEO:
-            path = mock_media.video(prompt, seconds)
+            path = mock_media.video(prompt, seconds, aspect_ratio)
         elif modality is Modality.IMAGE:
-            path = mock_media.image(prompt)
+            path = mock_media.image(prompt, aspect_ratio)
         else:
             path = mock_media.audio(prompt, min(seconds, 5.0))
 
@@ -356,10 +359,11 @@ def reference_model(provider: Any, modality: Modality, configured: str = "") -> 
 def snap_duration(model: str | None, seconds: float | None) -> int | None:
     """The nearest length this model will accept, never longer than what was asked.
 
-    Rounding *down* to an allowed value is deliberate rather than nearest-wins. The
-    requested length is the hook window, so a longer clip runs past the end of the
-    section it was cut to — which is precisely the thing a fan trying to copy the
-    template would notice. A loop shorter than its hook still sits inside it.
+    Rounding *down* to an allowed value is deliberate rather than nearest-wins. For a
+    format whose length follows the hook, the requested length *is* the hook window, so a
+    longer clip runs past the end of the section it was cut to and into whatever the record
+    does next. A clip shorter than its hook still sits inside it, and a cut that lands
+    early is a cut; one that lands late is a mistake anybody can hear.
 
     Below the smallest allowed value there is no honest choice, so the smallest is used
     and the caller records that the brief could not be met exactly.

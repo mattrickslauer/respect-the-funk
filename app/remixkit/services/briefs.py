@@ -1,19 +1,29 @@
 """Turning a song + an identity into a list of shots.
 
-This is where the product opinion lives, and it is worth being explicit about what it
-is *not*: it is not a recommender for which archetype goes viral. Research calls that
-folklore, and BUILD-SPEC §7 lists it under "what we deliberately do NOT build". The
-moods below are a spread for variety, not a prediction.
+This module used to be where the product opinion lived. It no longer is, and that is the
+point: the shape of an asset — its prompt, its length policy, its negatives, how much of
+the artist it carries, its aspect ratio — belongs to a `Recipe` row. What is left here is
+the arithmetic that is true of *every* format, whatever it is for.
 
-What the plan does encode is the one supported lever — **templatability**. Every shot
-is 9:16, cut to a hook window, and shaped so a fan can obviously make their own version.
-The song is the substrate; the template is the product.
+It is worth being explicit about what this is not, because the old version of this file
+said the opposite. It is not a generator of templatable backdrops. "The song is the
+substrate, the template is the product" was a finding about how sounds spread on TikTok
+(`research/13-ugc-adoption` §3, and it still holds there); promoting it into the
+definition of the product is what welded `clean centre frame left empty for a subject`
+into every prompt this app could write. A label makes fan-facing UGC bait, and also cover
+art, press stills, lyric cards, ads, EPK cuts and announcements. Those are formats, not
+exceptions.
+
+Nor is it a recommender for which format goes viral. Research calls that folklore, and
+BUILD-SPEC §7 lists it under "what we deliberately do NOT build". A recipe's variants are
+a spread for variety, not a prediction.
 
 A song has as many hooks as it has, so a kit may be cut to several. When a brief names
-sections, the loops are dealt round-robin across them: every named hook gets a loop before
-any hook gets a second one, and each loop's length is *its own* window's length. Dealing
-rather than multiplying is deliberate — `video_count` stays the number of videos bought,
-so adding a second hook to a brief does not double the invoice without anybody asking.
+sections, the shots are dealt round-robin across them: every named hook gets a shot before
+any hook gets a second one, and each shot's length is *its own* window's length — for the
+formats whose length follows the hook at all. Dealing rather than multiplying is deliberate
+— `video_count` stays the number of videos bought, so adding a second hook to a brief does
+not double the invoice without anybody asking.
 """
 
 from __future__ import annotations
@@ -21,20 +31,10 @@ from __future__ import annotations
 from remixkit.domain.models import (
     FacePolicy,
     HookWindow,
-    Identity,
-    Modality,
     Recipe,
     Song,
 )
-from remixkit.ports.generator import ShotSpec, position_key
-
-# A spread, not a ranking. Named so the UI can show what it is about to buy.
-MOODS: list[tuple[str, str]] = [
-    ("night-drive", "moody night drive, city lights streaking past, shallow depth of field"),
-    ("warm-interior", "warm interior, golden practical lighting, intimate handheld framing"),
-    ("hard-flash", "high-contrast direct flash, editorial, stark shadows"),
-    ("open-air", "open air at golden hour, wind, natural motion"),
-]
+from remixkit.ports.generator import ShotSpec, aspect_phrase, position_key
 
 # The renderer's clamp on a loop, in seconds. `services.recommendations` pins its own
 # constants against these so the length a recommendation proposes and the length a kit
@@ -42,32 +42,6 @@ MOODS: list[tuple[str, str]] = [
 MIN_LOOP_S = 3.0
 MAX_LOOP_S = 10.0
 DEFAULT_LOOP_S = 6.0
-
-# What a backdrop loop must not contain.
-#
-# The first four exist because every live video model generates a *soundtrack* by default
-# — Veo, Sora 2, and Seedance all return video with a native audio track. On 2026-07-31 a
-# kit for "Un Poquito Más" came back scored with a lofi instrumental the model wrote
-# itself, over a song it had never heard. A kit loop is a backdrop the master plays over;
-# audio in it is not a bonus, it is a defect.
-#
-# These are best-effort and it is worth saying so plainly: `negative_prompt` is a
-# *conditioning* signal, not a mute switch, and no provider here documents it as binding
-# on the audio track. The deterministic fix is to drop the track on delivery — see
-# `README` under "Silent loops". This raises the odds; it does not settle them.
-#
-# The last four are the templatability rule as a constraint rather than a hope: a backdrop
-# with a caption burned into it is a backdrop a fan cannot put their own words on.
-VIDEO_NEGATIVES: list[str] = [
-    "music",
-    "soundtrack",
-    "singing",
-    "speech",
-    "on-screen text",
-    "captions",
-    "subtitles",
-    "watermark",
-]
 
 
 def _tempo_phrase(song: Song) -> str:
@@ -85,18 +59,6 @@ def _tempo_phrase(song: Song) -> str:
     if song.bpm < 125:
         return f"steady mid-tempo movement at {song.bpm:.0f} BPM"
     return f"quick, driving movement at {song.bpm:.0f} BPM"
-
-
-def _song_phrase(song: Song, artist_name: str | None) -> str:
-    """Which record this is for, in the words a model can use.
-
-    Naming the title does little on its own — no video model has heard this song. It is
-    here because the prompt is *editable*, and a starting point that names the release is
-    one an operator can steer; a starting point that names nothing reads as a stock clip
-    and gets bought as one.
-    """
-    who = f" by {artist_name}" if artist_name else ""
-    return f'Backdrop for the music release "{song.title}"{who}'
 
 
 def hook_windows(song: Song, section_ids: list[str] | None = None) -> list[tuple[str, HookWindow]]:
@@ -184,6 +146,9 @@ def plan_from_recipe(
                     section=section_name,
                     variant=variant,
                     line=line,
+                    # From the recipe's own field, so a format whose ratio a tenant edits
+                    # cannot end up with a prompt still asking for the old one.
+                    aspect=aspect_phrase(recipe.aspect_ratio),
                 ),
                 seconds=seconds,
                 aspect_ratio=recipe.aspect_ratio,
@@ -215,84 +180,16 @@ def plan_from_recipe(
     return shots[:max_shots]
 
 
-def default_shot_plan(
-    song: Song,
-    identity: Identity | None,
-    *,
-    video_count: int = 3,
-    tts_text: str | None = None,
-    max_shots: int = 8,
-    section_ids: list[str] | None = None,
-    artist_name: str | None = None,
-) -> list[ShotSpec]:
-    """The default kit: a few vertical loops cut to the hooks, and optional TTS.
-
-    "Default" is the operative word. Every prompt this builds is a *starting point* the
-    generate screen shows in full and lets a person rewrite before anything is bought.
-    That is the correction to how these prompts used to work: the plan was four fixed mood
-    strings, identical for every artist and every song in the catalogue, and the screen
-    showed only the mood fragment — so the thing on the page was never the thing on the
-    wire, and nobody could see that the song was not mentioned in it.
-    """
-    shots: list[ShotSpec] = []
-    windows = hook_windows(song, section_ids) or [("hook", song.hook)]
-    subject = _song_phrase(song, artist_name)
-    tempo = _tempo_phrase(song)
-
-    # With one window there is nothing to tell a fifth loop from the first, so the mood
-    # spread is still the ceiling. With several, the same mood over a different hook is a
-    # genuinely different shot, and the ceiling rises with them.
-    slots = max(0, min(video_count, len(MOODS) * len(windows)))
-    for index in range(slots):
-        name, description = MOODS[index % len(MOODS)]
-        section_name, window = windows[index % len(windows)]
-        clauses = [
-            subject,
-            f"vertical 9:16 loop, {description}",
-            tempo,
-            "templatable backdrop for a fan video, clean centre frame left empty for a subject",
-            # Stated in the prompt as well as the negatives because the two reach different
-            # models differently, and the failure this prevents is expensive.
-            "silent footage — no music, no audio track, no on-screen text",
-        ]
-        shots.append(
-            ShotSpec(
-                modality=Modality.VIDEO,
-                prompt=". ".join(c for c in clauses if c) + f". [{name} · {section_name}]",
-                seconds=_loop_seconds(window),
-                aspect_ratio="9:16",
-                label=f"{name} · {section_name}",
-                negatives=list(VIDEO_NEGATIVES),
-                # The loops are what a fan puts themselves into, so the artist is the one
-                # thing in them that must not drift.
-                use_identity_plate=True,
-                # Settle the face in a still, then render the clip from it. A video model
-                # conditioned on text drifts across the clip; one conditioned on a first
-                # frame is anchored to it — so the likeness is decided once, cheaply, and
-                # inherited rather than re-derived four times at video prices.
-                #
-                # Costs an image per loop and degrades to a plain plate-conditioned clip
-                # when there is no image provider or no reference frame to lock from.
-                identity_lock=True,
-                # The seconds of the record this loop is a backdrop for. See
-                # `plan_from_recipe` — same reason, same per-shot deal.
-                hook_start_ms=window.start_ms,
-                hook_end_ms=window.end_ms,
-            )
-        )
-
-    if tts_text and tts_text.strip():
-        shots.append(ShotSpec(modality=Modality.AUDIO, prompt=tts_text.strip(), label="voice"))
-
-    # Capped rather than truncated silently — the caller is told in the kit brief.
-    return shots[:max_shots]
-
-
 # What a person is allowed to change about a shot before buying it. Deliberately short:
 # these are the fields that alter the output or the price, and every one of them is
-# already understood end-to-end by `ports.generator`. Aspect ratio is absent because the
-# whole product is 9:16 (BUILD-SPEC §7); modality is absent because changing it would
-# change which provider runs and make the label meaningless.
+# already understood end-to-end by `ports.generator`.
+#
+# Aspect ratio is absent, and that is now a scoping decision rather than a fact about the
+# product: the ratio belongs to the *format*, so it is edited on the recipe and applies to
+# every asset that format makes. Per-shot ratio would mean one kit delivering a mix of
+# ratios under one label, which is a different feature from the one anybody has asked for.
+# Modality is absent because changing it would change which provider runs and make the
+# label meaningless.
 OVERRIDABLE = ("prompt", "model", "seconds", "identity_lock")
 
 # Not an override — the shape of the shot an override was written against, carried

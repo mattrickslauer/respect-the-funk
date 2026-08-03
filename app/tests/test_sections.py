@@ -11,7 +11,8 @@ from __future__ import annotations
 import pytest
 
 from remixkit.domain.models import Provenance, SectionRole
-from remixkit.services.briefs import default_shot_plan, hook_windows
+from remixkit.services.briefs import hook_windows, plan_from_recipe
+from remixkit.services.recipes import DEFAULT_SLUG
 
 
 @pytest.fixture
@@ -157,26 +158,41 @@ def test_renaming_a_measured_section_leaves_it_measured(container, principal, me
 
 # ------------------------------------------------------------------ rendering
 def test_a_kit_deals_its_videos_across_the_chosen_hooks(container, principal, song):
-    """Three hooks, three videos — one loop each, at each hook's own length."""
+    """Three hooks, three videos — one loop each, at each hook's own length.
+
+    Planned through `plan_from_recipe`, which is what a kit actually runs. This used to go
+    through a standalone planner that production stopped calling when formats became rows,
+    so the dealing rule was asserted against code no kit could reach.
+    """
     stored = container.songs.add_section(principal, song["id"], start_ms=0, end_ms=4_000)
     stored = container.songs.add_section(principal, stored.id, start_ms=30_000, end_ms=38_000)
     stored = container.songs.add_section(principal, stored.id, start_ms=60_000, end_ms=70_000)
     ids = [s.id for s in stored.hook_sections]
 
-    shots = default_shot_plan(stored, None, video_count=3, section_ids=ids)
+    recipe = container.recipes.get(principal, DEFAULT_SLUG)
+    shots = plan_from_recipe(recipe, stored, count=3, section_ids=ids)
     assert [s.seconds for s in shots] == [4.0, 8.0, 10.0]
     # Every loop says which hook it belongs to, which is the only way to read the plan.
     assert all(shot.label for shot in shots)
 
 
-def test_more_videos_than_hooks_cycles_the_moods(container, principal, song):
+def test_more_videos_than_hooks_cycles_the_variants(container, principal, song):
+    """Four videos over two hooks: the variant spread and the hooks are dealt together.
+
+    The assertion is on the (prompt, window) pair rather than on the prompt alone. A
+    format's prompt need not name the section it was cut to — `performance` does not — so
+    two shots can read identically and still be different clips, cut to different seconds
+    of the record. What must not repeat is the pair.
+    """
     stored = container.songs.add_section(principal, song["id"], start_ms=0, end_ms=4_000)
     stored = container.songs.add_section(principal, stored.id, start_ms=30_000, end_ms=38_000)
     ids = [s.id for s in stored.hook_sections]
 
-    shots = default_shot_plan(stored, None, video_count=4, section_ids=ids)
+    recipe = container.recipes.get(principal, DEFAULT_SLUG)
+    shots = plan_from_recipe(recipe, stored, count=4, section_ids=ids)
     assert [s.seconds for s in shots] == [4.0, 8.0, 4.0, 8.0]
-    assert len({s.prompt for s in shots}) == 4, "four distinct moods, not two repeated"
+    pairs = {(s.prompt, s.hook_start_ms) for s in shots}
+    assert len(pairs) == 4, "four distinct clips, not two repeated"
 
 
 def test_a_deleted_section_is_dropped_not_substituted(container, principal, song):

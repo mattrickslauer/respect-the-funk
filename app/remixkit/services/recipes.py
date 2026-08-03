@@ -7,17 +7,24 @@ description of one product and a poor description of a video tool, and the gap s
 first time somebody asked for their artist talking to camera — the pipeline would have
 spent real money instructing a model not to produce speech.
 
-So the formats are rows. `BUILTIN` is what ships; a tenant copies and edits them, and
-adding a format is adding a record rather than editing the planner.
+So the formats are rows. The built-ins are what ships; a tenant copies and edits them, and
+adding a format is adding a record rather than editing the planner. The five below are a
+starting set and not a taxonomy — a label makes fan-facing UGC bait, and also cover art,
+press stills, lyric cards, ads and announcements, and none of those is more native to this
+app than the others.
 
-Two rules hold across all of them, because they are the parts that are not opinion:
+Three rules hold across all of them, because they are the parts that are not opinion:
 
 - **A backdrop must not score itself.** Every live video model returns a native audio
   track, so any format whose asset is meant to sit under a master carries the audio
   negatives. A format whose asset *is* the performance does not — that is the whole
-  point of it.
+  point of it. The negatives are the conditioning half; `score_with_master` is the
+  deterministic half, and a format that gets one wrong should not get the other right.
 - **The face policy has to match the framing.** A format that asks for a locked face and
   a wide empty frame is asking for two different pictures.
+- **The shape of the frame is stated once.** `aspect_ratio` reaches the model as a param
+  and as the `{aspect}` clause; typing "vertical 9:16" into the prose as well is how the
+  field became decorative and a re-shaped format kept rendering vertical.
 """
 
 from __future__ import annotations
@@ -85,7 +92,7 @@ def builtin_recipes() -> list[Recipe]:
             builtin=True,
             prompt_template=(
                 'Backdrop for the music release "{title}" by {artist}. '
-                "Vertical 9:16 loop, {variant}. "
+                "Shot as a {aspect} loop, {variant}. "
                 "{tempo}. "
                 "Templatable backdrop for a fan video, clean centre frame left empty for a subject. "
                 "Silent footage — no music, no audio track, no on-screen text"
@@ -109,7 +116,7 @@ def builtin_recipes() -> list[Recipe]:
             modality=Modality.VIDEO,
             builtin=True,
             prompt_template=(
-                "Hyper-realistic vertical selfie video, shot on a phone held at arm's length. "
+                "Hyper-realistic {aspect} selfie video, shot on a phone held at arm's length. "
                 "{artist} looking straight into the lens and speaking casually, {variant}. "
                 # No pronoun. A format is seeded once per tenant and then used by every
                 # artist on the roster, so a pronoun written into it is a guess applied to
@@ -127,6 +134,9 @@ def builtin_recipes() -> list[Recipe]:
             # a word in half, which is worse than ignoring the grid entirely.
             seconds_from="fixed",
             fixed_seconds=8.0,
+            # The one format here whose audio is the asset. Laying the master over it
+            # deletes the line the model was paid to speak — see `Recipe.score_with_master`.
+            score_with_master=False,
             face=FacePolicy.LOCKED,
             # Front, not three-quarter. A phone at arm's length is a front-on framing, and
             # ranking the reference set globally is what made a selfie ask for the wrong
@@ -142,7 +152,7 @@ def builtin_recipes() -> list[Recipe]:
             modality=Modality.VIDEO,
             builtin=True,
             prompt_template=(
-                'Cinematic vertical performance clip for "{title}" by {artist}. '
+                'Cinematic {aspect} performance clip for "{title}" by {artist}. '
                 "{artist} performing to camera, {variant}. "
                 "{tempo}. "
                 "Shallow depth of field, filmic grade, subject fills the frame"
@@ -167,7 +177,7 @@ def builtin_recipes() -> list[Recipe]:
             modality=Modality.IMAGE,
             builtin=True,
             prompt_template=(
-                "Editorial portrait photograph of {artist}, vertical 9:16. "
+                "Editorial portrait photograph of {artist}, {aspect}. "
                 "{variant}. "
                 "Sharp focus on the face, natural skin texture, no motion blur"
             ),

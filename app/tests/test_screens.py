@@ -138,13 +138,14 @@ def test_generate_prices_the_plan_before_queueing(client, song):
 
 
 def test_the_estimate_matches_what_the_service_would_charge(client, container, principal, song):
-    """The screen's whole promise: shown cost and bought cost come from one path."""
-    from remixkit.services.briefs import default_shot_plan
+    """The screen's whole promise: shown cost and bought cost come from one path.
 
-    domain_song = container.songs.get(principal, song["id"])
-    shots = default_shot_plan(
-        domain_song, None, video_count=3
-    )
+    Priced through `kits.plan`, which is the path the screen itself uses. It used to be
+    priced through a standalone planner production no longer calls, so the two agreed only
+    by coincidence of shot count and modality — this would have kept passing while the page
+    showed a plan built from a different set of prompts, lengths and negatives entirely.
+    """
+    _, shots = container.kits.plan(principal, song_id=song["id"], video_count=3)
     expected = container.kits.estimate_cents(shots)
 
     page = client.get(

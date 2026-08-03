@@ -41,10 +41,25 @@ content/.cache/
 *.mp3
 *.wav
 *.m4a
+*.webm
 
 # Generated stills (768x1344 PNGs, ~1.3MB each). The prompt that made each one is in
 # the edit, and its sidecar records model + hash, so the picture itself is derivable.
 *.png
+
+# KEPT DELIBERATELY: the brand thumbnail. It is a build output like the stills above, but
+# the rule there is "derivable, so drop it" and this one is not — GitHub's social preview,
+# Devpost and anyone embedding the README need the raster itself, and re-rendering it
+# needs librsvg plus Futura installed. Source of truth is still the SVG beside it.
+!docs/brand/*.png
+
+# KEPT DELIBERATELY: the console showcase. The rule above is "derivable, so drop it", and
+# these are not: docs/showcase/capture.py rebuilds them only against a running instance
+# that still holds the records it shoots — a measured song, a consented artist, five
+# delivered kits — and that data is gitignored dev state, not something the repo carries.
+# 8.6MB for fifteen screens, and they are the only picture of the console anyone gets
+# without checking it out and running it.
+!docs/showcase/*.png
 
 # Camera-original photography — large, and not what this repo is for.
 *.heic
@@ -85,6 +100,14 @@ content/demo/video/out/broll-frames/
 # losing it does not cost a re-render, it costs the timing of every cut in the film.
 !content/demo/video/out/narration.mp3
 !content/demo/video/out/alignment.json
+
+# KEPT DELIBERATELY: the demo overlay set. The *.png rule above is aimed at 1.3MB stills
+# off an image model; these are 40KB of vector drawing each, 3MB for all twenty, and they
+# are the deliverable for the demo edit rather than an intermediate on the way to one.
+# Same call already made for the rendered PDFs in docs/. The ProRes masters are *not*
+# kept — 33MB a card, and `generate_overlays.py --formats mov` rebuilds them.
+!content/videos/demo-founder/*.png
+!content/videos/demo-founder/*.webm
 
 # ---------------------------------------------------------------- vendored binaries
 # 38MB standalone; fetch it rather than carry it.

@@ -1,0 +1,272 @@
+schema: rtf.overlayset/v1
+id: demo-founder
+title: RemixKit demo — founder to camera
+target: docs/demo-voiceover.txt
+canvas:
+  width: 1920
+  height: 1080
+  fps: 30
+formats:
+- png
+- webm
+overlays:
+- id: 01-invisible
+  kind: stat
+  vo_line: 1
+  cue: Nine in ten tracks released this year will be commercially invisible.
+  placement: lower_left
+  accent: s2
+  duration_ms: 4000
+  files:
+    png: 01-invisible.png
+    webm: 01-invisible.webm
+  sha256:
+    png: c86de99547885e0a1167044fd85f0a2c1b0d9113154bc6426bd8afcadc194fad
+    webm: b55133ca902343cb3534f9c98e206bf799d053fca31644801a51ee39e577cc97
+- id: 02-who-we-are
+  kind: lower_third
+  vo_line: 3
+  cue: We're Respect the Funk, a record label.
+  placement: lower_left
+  accent: gold
+  duration_ms: 4000
+  files:
+    png: 02-who-we-are.png
+    webm: 02-who-we-are.webm
+  sha256:
+    png: aae49b8ce352fa14acd2fd03d54e6b898b328fc953894794b0cb72e663c34655
+    webm: b34ff047d0dd8336ce93e995472b6957a476a2aaa66b60ae133559bf12c8bfdc
+- id: 03-five-of-six
+  kind: stat
+  vo_line: 3
+  cue: Five of six core questions came back brutal.
+  placement: lower_left
+  accent: s2
+  duration_ms: 4000
+  files:
+    png: 03-five-of-six.png
+    webm: 03-five-of-six.webm
+  sha256:
+    png: 634e97167aebe14cba34c668c9b4e0dd810762c350e7d93c203fb05c091c7b04
+    webm: 76826d8b67112ff12dd3062b21d88e2795785b05a0938bb9a04af9289dccc4c2
+- id: 04-fifty-to-one
+  kind: ratio
+  vo_line: 5
+  cue: Twenty-five thousand dollars of ads returns a few hundred in royalties.
+  placement: lower_left
+  accent: s2
+  duration_ms: 4000
+  files:
+    png: 04-fifty-to-one.png
+    webm: 04-fifty-to-one.webm
+  sha256:
+    png: ecfc1464523d15a4c1b58e14993b8fcb00cc81e196600de5455dc64b47dccf41
+    webm: cb4fddd6c645937211a1832a3dbae658c24e0a85937c671bcf9d838c61dd67b0
+- id: 05-663-trials
+  kind: stat
+  vo_line: 7
+  cue: Facebook ran six hundred sixty-three trials and still cannot say an ad caused a stream.
+  placement: lower_left
+  accent: s1
+  duration_ms: 4000
+  files:
+    png: 05-663-trials.png
+    webm: 05-663-trials.webm
+  sha256:
+    png: 33b39223b5b01aa653b36564cf7e7879f0dc5e0fe643bf8784bb8e1c8ac5ae70
+    webm: 6c171c762447f31fd2d14c64e85686a2c31b1efa7f73c97b9e847d90e7ccc3a9
+- id: 06-ninety-six
+  kind: bar
+  vo_line: 9
+  cue: The top ten percent of songs take ninety-six percent.
+  placement: lower_left
+  accent: s5
+  duration_ms: 4000
+  files:
+    png: 06-ninety-six.png
+    webm: 06-ninety-six.webm
+  sha256:
+    png: 357b2ff468b649aba8990ecb0ddf927aa0a4bc385162c9b3438e9e41f2e80d4b
+    webm: 762e3d0342a47f0574422de3abf0d19d60a9d6094af7fd53f6560878984d652c
+- id: 07-more-tickets
+  kind: chips
+  vo_line: 11
+  cue: You don't need a better ticket — you need more tickets, cheaper.
+  placement: lower_left
+  accent: gold
+  duration_ms: 4000
+  files:
+    png: 07-more-tickets.png
+    webm: 07-more-tickets.webm
+  sha256:
+    png: 4f6eb459f48521a949a7e9a681394804fbcf96ba368b187798cf18c3a7b971ab
+    webm: 96a3be4e38c630f81f98a64820ea2ea1ddfe470a231880f3b98e3b90eea0dffd
+- id: 08-remixkit
+  kind: title
+  vo_line: 13
+  cue: That's RemixKit.
+  placement: lower_band
+  accent: gold
+  duration_ms: 4000
+  files:
+    png: 08-remixkit.png
+    webm: 08-remixkit.webm
+  sha256:
+    png: d51a23c0afac5d2007e764583bd2468cda29f5a0da70aaadb36ee18a32becea0
+    webm: 9aeff9d8a48164c5212d130a9082f1d9d105f15902ed3a93fb100bbb33832822
+- id: 09-step-register
+  kind: steps
+  vo_line: 15
+  cue: Register an artist.
+  placement: right_panel
+  accent: gold
+  duration_ms: 4000
+  files:
+    png: 09-step-register.png
+    webm: 09-step-register.webm
+  sha256:
+    png: cdb4b78c673f5d58e924a92e85679d5249884bf63cc848e9442cfe7d54248b24
+    webm: 629e65ec6b39797c592d0be553a5b689d4766c536435cb95ae14af9248e7199c
+- id: 10-step-identity
+  kind: steps
+  vo_line: 15
+  cue: Build their identity once — how they look on screen, likeness consent on record.
+  placement: right_panel
+  accent: gold
+  duration_ms: 4000
+  files:
+    png: 10-step-identity.png
+    webm: 10-step-identity.webm
+  sha256:
+    png: ce3d69942581ca12b0873537a3b44086f8f909412e29fa7dbc73018f2e375733
+    webm: 3179c10e53fa4ad8578ab24cdefe20853c55de55c40b5c1417464a798a51b4c9
+- id: 11-step-song
+  kind: steps
+  vo_line: 15
+  cue: Attach a song; it's measured once — tempo, drop, hook windows.
+  placement: right_panel
+  accent: gold
+  duration_ms: 4000
+  files:
+    png: 11-step-song.png
+    webm: 11-step-song.webm
+  sha256:
+    png: bd2ca254e46b226e92940d3ca4b8fb823d0fdb5cea1db4cced39c3e05da84a90
+    webm: e972a4c0e4eaac97716e29e943e9404a7bcef14bb34eecc8508357bf61014e66
+- id: 12-four-outputs
+  kind: chips
+  vo_line: 17
+  cue: A performance clip. A press still. The artist announcing a show. Or a backdrop built to be copied.
+  placement: right_panel
+  accent: s1
+  duration_ms: 4000
+  files:
+    png: 12-four-outputs.png
+    webm: 12-four-outputs.webm
+  sha256:
+    png: 8415c1a56aaf3c707999ed76a8b7799fe2cc50ea0e4311b69e953d0ac6812c43
+    webm: cd801b8d893fc03153eb21843a080459285e605626b562a633a297c07ed4a742
+- id: 13-format-is-a-row
+  kind: kicker
+  vo_line: 19
+  cue: Every one of those is a format, and a format is a row a label can edit.
+  placement: lower_left
+  accent: gold
+  duration_ms: 4000
+  files:
+    png: 13-format-is-a-row.png
+    webm: 13-format-is-a-row.webm
+  sha256:
+    png: 77c79f72a43947caa0ca7383f76fb39aaf188415ed099d0238be45ab3f5fb125
+    webm: 5a55eacb910c1c891d4e0459a049425fc53a99963e446d3f76144a7868f58ad8
+- id: 14-cost-per-attempt
+  kind: kicker
+  vo_line: 21
+  cue: Build it once, and the second video is cheap.
+  placement: lower_left
+  accent: gold
+  duration_ms: 4000
+  files:
+    png: 14-cost-per-attempt.png
+    webm: 14-cost-per-attempt.webm
+  sha256:
+    png: 439eb3337c9eb232834c2c642898b5cf7a92c68472fbfa9ae7a13ac7dc45849a
+    webm: 06aa48d7ac83de964e3c337015827b58beca6e1f41fc9032544127943fcdfc31
+- id: 15-aws-b2
+  kind: chips
+  vo_line: 23
+  cue: AWS handles the logic. Backblaze B2 holds the bytes — and the proof.
+  placement: lower_left
+  accent: s1
+  duration_ms: 4000
+  files:
+    png: 15-aws-b2.png
+    webm: 15-aws-b2.webm
+  sha256:
+    png: 2fb6c1c04b2199b3675bba6c0d96c38977c9034c54b7b9639394776aa81969c2
+    webm: 8496a7971d98eadc2bee976323efe96991db4befd307fb502dcc90e2a2709d19
+- id: 16-no-database
+  kind: kicker
+  vo_line: 25
+  cue: That split is why this system has no database.
+  placement: lower_left
+  accent: s3
+  duration_ms: 4000
+  files:
+    png: 16-no-database.png
+    webm: 16-no-database.webm
+  sha256:
+    png: 4efed5750a3e9eef206afc77dfe866da07ce326bb97d3d6e61bf7720306db562
+    webm: 6e0006ecef0e43a56a7eebb1041c1eac979181dd1f00c277f968b0dab0bc4e2f
+- id: 17-eleven-to-five
+  kind: ratio
+  vo_line: 25
+  cue: Eleven services became five.
+  placement: lower_left
+  accent: s3
+  duration_ms: 4000
+  files:
+    png: 17-eleven-to-five.png
+    webm: 17-eleven-to-five.webm
+  sha256:
+    png: 6c18abf2df6e42e09fd6ac9565d3619c56874e0868a14eed27b53d59a93c4dd6
+    webm: e1c45eaab23c2bd9e2f27adc40bfed09c6ca4644b890073ae51985ff2c958204
+- id: 18-idle-cost
+  kind: stat
+  vo_line: 25
+  cue: Idle cost — under a dollar a month.
+  placement: lower_left
+  accent: s3
+  duration_ms: 4000
+  files:
+    png: 18-idle-cost.png
+    webm: 18-idle-cost.webm
+  sha256:
+    png: e3ddc3ad8ec592863171a649a4e28d16a62b23daf86a142be898657202e8d2a1
+    webm: 8db62aa2f9c4298d7402e64ae1eadedddba6e232c2842278f9ad1d9c0af58abd
+- id: 19-b2-four-jobs
+  kind: chips
+  vo_line: 27
+  cue: B2 does four jobs.
+  placement: right_panel
+  accent: s3
+  duration_ms: 4000
+  files:
+    png: 19-b2-four-jobs.png
+    webm: 19-b2-four-jobs.webm
+  sha256:
+    png: 009993261882d925a76d175bf93206457f34afce065d432bfc8a5bb87242809d
+    webm: f6606d955626cd6d13c9b093a4d1f352bf89601229bb94f2925ca4c01471c4d3
+- id: 20-one-artist-one-song
+  kind: title
+  vo_line: 39
+  cue: Bring us one artist and one song.
+  placement: lower_band
+  accent: gold
+  duration_ms: 5000
+  files:
+    png: 20-one-artist-one-song.png
+    webm: 20-one-artist-one-song.webm
+  sha256:
+    png: 568d8dfa418f06d4f0938f29943440c733e1e7e0b90be80eb766be763f65be28
+    webm: 40e405d5d89d484831dce1122d93b91c2d3cae94c6de269d53e06524f7346db4

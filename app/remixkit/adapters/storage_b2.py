@@ -17,6 +17,51 @@ import time
 # URL valid for the rest of the hour, so nothing expires while somebody is looking at it.
 _PRESIGN_REUSE = 0.5
 
+# Backblaze's own default is the reason these constants exist. Per B2's *Configure
+# Cache-Control Policies with the Native API*: buckets created on or after 2021-09-08 send
+# **no** `Cache-Control` header at all, where buckets older than that defaulted to
+# `max-age=0, no-cache, no-store`. Either way nothing downstream is told it may keep a
+# copy, and a presigned URL carries a query string — which browsers will not heuristically
+# cache. So the stable-URL work in `presign_get` below bought a cache key and then never
+# handed the browser permission to use it.
+#
+# Genblaze already sets this on the assets *it* writes — `storage/transfer.py` picks
+# `private, max-age=3600` for `HIERARCHICAL` keys, which is the layout this app uses. What
+# it does not cover is everything that reaches B2 through this adapter instead of through
+# the sink: song masters, identity reference frames, scored cuts. Those arrived with no
+# policy at all. This closes that gap and deliberately matches the library's own value
+# rather than inventing a longer one.
+#
+# `private` because every object here is tenant media behind a presigned URL: the browser
+# that asked for it may keep it, shared caches may not. `max-age=3600` because that is the
+# presign lifetime — caching past the point where the URL stops working buys nothing, and
+# `_PRESIGN_REUSE` hands the same URL back for the first half of it, so a re-render inside
+# the window is a cache hit rather than a download.
+#
+# `immutable` is the part that pays the sponsor bill. Without it a browser holding a fresh
+# copy still issues a conditional revalidation, and on B2 that request is a Class B
+# transaction against the daily cap — the same cap `presign_get` was written to protect.
+# With it, the revalidation is not sent.
+_ASSET_CACHE = "private, max-age=3600, immutable"
+
+# Documents are the one thing here that is overwritten in place — `repo_documents` is
+# last-write-wins at `{prefix}/tenants/{tenant}/{collection}/{id}.yaml`. They are read
+# server-side by `get()` and never presigned to a browser, so this is belt-and-braces
+# rather than a live bug: if one is ever served directly, it must not be an hour stale.
+_DOCUMENT_CACHE = "no-cache"
+
+
+def _cache_control_for(key: str) -> str:
+    """The `Cache-Control` an object at `key` should be stored with.
+
+    `immutable` is safe for the mutable media keys too, which is the non-obvious part. A
+    master re-uploaded over its own key would be a stale-cache bug if the URL stayed the
+    same — but `put` calls `_forget`, so the next `presign_get` signs a *fresh* wall clock
+    and mints a URL the browser has never seen. Immutable content under a rotating name:
+    the old cache entry is abandoned rather than wrongly reused.
+    """
+    return _DOCUMENT_CACHE if key.endswith(".yaml") else _ASSET_CACHE
+
 
 class B2Storage:
     name = "b2"
@@ -49,7 +94,15 @@ class B2Storage:
         self._presigned: dict[str, tuple[str, float]] = {}
 
     def put(self, key: str, data: bytes, *, content_type: str | None = None) -> str:
-        self._backend.put(key, data, content_type=content_type)
+        self._backend.put(
+            key,
+            data,
+            content_type=content_type,
+            # `CacheControl` is a plain boto3 ExtraArgs key, so the S3-compatible endpoint
+            # carries it to the same place `X-Bz-Info-b2-cache-control` would on the
+            # native API. Nothing here needs the native client.
+            extra_args={"CacheControl": _cache_control_for(key)},
+        )
         self._forget(key)
         return key
 

@@ -54,6 +54,18 @@ content/.cache/
 # built from (characters/*-ref*.jpg). They are small, and they are the only record of
 # what the image model was actually shown — losing them makes a rerun unreproducible.
 
+# KEPT DELIBERATELY: content/demo/screenshots/. The demo video's source footage. These
+# are not derivable the way a render is: each one is the console run against B2 with one
+# tenant's data, scrolled to a particular row, and the run ids, prices and hashes on
+# screen are that afternoon's state. The edit is cut to these frames, so re-capturing
+# them would not reproduce them — it would produce different pictures the cuts no longer
+# fit. 6.6MB for the ten.
+!content/demo/screenshots/*.png
+
+# The b-roll beside them is NOT kept: every file is byte-identical to an object that
+# already exists under runs/, which is exactly the case the rule at the top of this file
+# describes. content/demo/broll/SOURCES.md is the descriptor that points at them.
+
 # ---------------------------------------------------------------- vendored binaries
 # 38MB standalone; fetch it rather than carry it.
 content/bin/yt-dlp

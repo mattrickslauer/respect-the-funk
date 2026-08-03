@@ -100,9 +100,9 @@ def test_the_composed_prompt_names_the_release(container, principal, song):
 def test_a_video_shot_is_told_not_to_score_itself(container, principal, song):
     """Veo, Sora 2 and Seedance all return a native audio track unless told otherwise.
 
-    A kit loop is a backdrop the master plays over, so audio in it is a defect. This is a
-    conditioning signal rather than a mute switch — see `briefs.VIDEO_NEGATIVES` — and the
-    assertion is only that the signal is actually sent, which it previously was not.
+    This format's picture sits under the master, so audio in it is a defect. This is a
+    conditioning signal rather than a mute switch — see `recipes.SILENT_NEGATIVES` — and
+    the assertion is only that the signal is actually sent, which it previously was not.
     """
     plan, _ = container.kits.plan(principal, song_id=song.id, video_count=1)
     video = next(s for s in plan.shots if s.modality is Modality.VIDEO)

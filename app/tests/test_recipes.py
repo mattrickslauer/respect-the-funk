@@ -102,9 +102,9 @@ def test_a_placeholder_the_caller_does_not_supply_drops_its_clause():
 
 # ------------------------------------------------------------------ the formats
 def test_a_spoken_format_does_not_negative_speech(container, identity, song):
-    """The defect this whole change exists for. `VIDEO_NEGATIVES` carried `speech` and
-    `singing` because they stopped backdrops scoring themselves — and a talking clip run
-    through that is a provider being paid to defeat the brief."""
+    """The defect this whole change exists for. One negatives list served every shot, and it
+    carried `speech` and `singing` because they stopped backdrops scoring themselves — a
+    talking clip run through that is a provider being paid to defeat the brief."""
     shots = plan_from_recipe(recipe("direct-address"), song, count=1,
                              artist_name="Amanda Kurt", line=LINE)
     step = resolve(container, identity, song, shots)[-1]
@@ -165,8 +165,8 @@ def test_a_spoken_format_ignores_the_bar_grid(container, song):
 
 
 def test_the_variant_spread_belongs_to_the_format(container, song):
-    """`MOODS` applied one table of four to everything. A selfie in a kitchen and a
-    performance on an empty stage do not share a spread."""
+    """The planner used to apply one table of four moods to everything. A selfie in a
+    kitchen and a performance on an empty stage do not share a spread."""
     address = {s.prompt for s in plan_from_recipe(recipe("direct-address"), song, count=2, line=LINE)}
     stage = {s.prompt for s in plan_from_recipe(recipe("performance"), song, count=2)}
 

@@ -1,11 +1,17 @@
 """Laying the master under the picture.
 
-A kit loop is a backdrop the *record* plays over. Everything upstream of here treats that
-as a negative — `briefs.VIDEO_NEGATIVES` asks the model not to compose a soundtrack, and
+Some clips are a picture the *record* plays over. Everything upstream of here treats that
+as a negative — `recipes.SILENT_NEGATIVES` asks the model not to compose a soundtrack, and
 PIPELINE-SPEC §4 proposes `-an` as the deterministic version of the same wish. Both are
 half the job. A silent loop is not what a label asked for either: the asset that leaves
 this system has to carry the song it was cut for, or the kit is a stock clip with the
 right prompt attached.
+
+*Some* clips, not all of them — and the difference is a format's to declare. This module
+does exactly what it is told and does it exhaustively, so the decision about whether it
+should run at all belongs to the caller: see `Recipe.score_with_master` and the guard in
+`services.scoring`. Handed a talking-head clip, the code below will happily replace the
+speech with the song.
 
 So this is the other half, and it is the one ffmpeg is actually good at: **discard whatever
 the model composed and map the master's own bytes in its place.** The picture is

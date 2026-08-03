@@ -16,13 +16,15 @@ deadline: "2026-08-03 17:00 EDT"
 
 The hackathon rewards a generative-media app that (a) orchestrates multiple AI providers via **Genblaze**, (b) stores assets/metadata/**provenance** in **B2**, and (c) solves a real problem with production readiness. Four **equally-weighted** criteria: Real-World Utility · Production Readiness · B2 Storage + Data Orchestration · Use of Genblaze.
 
-Your own research ([`/docs/research/SYNTHESIS.md`](./research/SYNTHESIS.md)) concludes the only defensible label product is: *"make each release cheap, correctly-plumbed, fast, and legally clean — more releases beat more spend,"* and the only supported UGC mechanism is **templatability** (*"the song is the substrate, the template is the product"*).
+Your own research ([`/docs/research/SYNTHESIS.md`](./research/SYNTHESIS.md)) concludes the only defensible label product is: *"make each release cheap, correctly-plumbed, fast, and legally clean — more releases beat more spend."* It also concludes that the supported mechanism for **UGC spread specifically** is **templatability** (*"the song is the substrate, the template is the product"*).
 
-**RemixKit is both.** It manufactures templatable, provenance-clean UGC assets for any release at near-zero marginal cost, tracks every dollar, and runs a creator marketplace that rewards fans for posting. Every feature does double duty:
+> **Scope note (2026-08-03).** Those are two findings, and only the first is about the product. The second is about how sounds spread on TikTok, and it was for a while read as the definition of what RemixKit makes — which is how the app came to have one hardcoded asset shape. See [PRODUCT.md § What the product generates, precisely](./PRODUCT.md). Templatable backdrops are one format the suite ships; performance clips, press and cover stills, announcements to camera, lyric cards and voice-over are others.
+
+**RemixKit is both.** It manufactures provenance-clean media for any release at near-zero marginal cost — in whichever format the release needs — tracks every dollar, and runs a creator marketplace that rewards fans for posting. Every feature does double duty:
 
 | Feature | Hackathon criterion it maxes | RTF research constraint it satisfies |
 |---|---|---|
-| Genblaze fan-out across video+image+audio providers | Use of Genblaze | Manufactures templatability (Pillar 13's one supported lever) |
+| Genblaze fan-out across video+image+audio providers | Use of Genblaze | One release's whole media set at near-zero marginal cost — including the templatable backdrop, Pillar 13's one supported UGC lever |
 | Genblaze manifest → B2, embedded in the media file | B2 + provenance; "provenance-tracking" is a named example category | **Disclosure-by-default** differentiator vs. an industry under live FTC investigation (Synthesis §6) |
 | `genblaze index` → Parquet in B2 | B2 + Data Orchestration | *"Everything analytics-ready for ingestion"* |
 | Per-`run` cost ledger from Genblaze steps | Production Readiness | *"The bill is a product feature"* — per-tenant cost attribution |
@@ -138,7 +140,7 @@ Views for the warehouse story: `v_kit_cost` (kit → total + per-provider), `v_c
 
 ## 4. The Genblaze kit generator (the core)
 
-A **kit** = one Genblaze `Run` whose steps fan out into a pack of remix-ready, templatable assets for one release. Real API from `backblaze-labs/genblaze`:
+A **kit** = one Genblaze `Run` whose steps fan out into a pack of provenance-clean assets for one release, in one **format**. The format is a stored record (`Recipe`) carrying the prompt, negatives, length policy, face policy and aspect ratio — so the sample below is one format's shape, not the only one the generator makes. Real API from `backblaze-labs/genblaze`:
 
 ```python
 from genblaze_core import Pipeline, Modality, ObjectStorageSink, KeyStrategy
@@ -153,7 +155,7 @@ def build_kit(release, brief, tenant_id) -> "Result":
     )
     p = Pipeline(f"kit:{release.id}", tenant_id=tenant_id)
 
-    # 1) Vertical AI video loops (multiple archetypes/moods) — the templatable backdrop
+    # 1) AI video, one step per variant — here, the templatable-backdrop format
     for spec in brief.video_specs:               # e.g. 3–5 moods, 9:16
         p = p.step(GMICloudVideoProvider(), model="seedance-2-0-260128",
                    prompt=spec.prompt, modality=Modality.VIDEO,

@@ -50,10 +50,37 @@ def _clock(ms: int) -> str:
 
 
 class ScoringService:
-    def __init__(self, storage: Storage, songs: SongService, *, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        storage: Storage,
+        songs: SongService,
+        *,
+        recipes: object | None = None,
+        enabled: bool = True,
+    ) -> None:
         self._storage = storage
         self._songs = songs
+        self._recipes = recipes
         self._enabled = enabled
+
+    def _scores_with_master(self, principal: Principal, asset: Asset) -> bool:
+        """Whether the record goes under this clip, according to the format that made it.
+
+        Every uncertain path resolves to True — no recipe service wired, no slug on the
+        asset, a slug whose format has since been deleted or been edited by a tenant. The
+        two failure modes are not symmetric: wrongly scoring a clip delivers a talking head
+        with the song over it, which is visible on the review screen and fixable by
+        re-running; wrongly *skipping* one delivers a backdrop with whatever soundtrack the
+        model invented for itself, which reads as the provider's fault and is the exact
+        defect the 2026-07-31 finding is about.
+        """
+        if self._recipes is None or not asset.recipe_slug:
+            return True
+        try:
+            return bool(self._recipes.get(principal, asset.recipe_slug).score_with_master)
+        except Exception as exc:  # a deleted format, an unreadable repo
+            log.debug("asset %s: no format for %r (%s)", asset.id, asset.recipe_slug, exc)
+            return True
 
     @property
     def enabled(self) -> bool:
@@ -81,6 +108,24 @@ class ScoringService:
                     "Not scored — RK_SCORE_WITH_MASTER is off in this deployment, so this "
                     "clip carries whatever audio the model returned."
                 )
+            return
+
+        # A format whose audio *is* the asset keeps what the provider returned. Asked per
+        # asset rather than once per kit: a brief can carry a spoken line alongside its
+        # video, and the two formats do not answer this question the same way.
+        keep: list[Asset] = []
+        for asset in videos:
+            if self._scores_with_master(principal, asset):
+                keep.append(asset)
+            else:
+                asset.audio_note = (
+                    "Not scored — this format's own audio is the asset, so the clip "
+                    "carries what the model returned rather than the master."
+                )
+                log.info("kit %s: asset %s keeps its own audio (%s)",
+                         kit.id, asset.id, asset.recipe_slug)
+        videos = keep
+        if not videos:
             return
 
         song = song or self._songs.get(principal, kit.song_id)
@@ -124,8 +169,15 @@ class ScoringService:
         The fallback for a kit that ran before this existed, or one whose worker had no
         ffmpeg. Returns `(None, why)` when it cannot be done, and the caller delivers the
         provider's own bytes with that reason attached rather than refusing the download.
+
+        The format's audio policy is checked here too, not only in `score_kit`. This path
+        exists precisely for kits the worker did not score, so a talking-head clip that
+        `score_kit` correctly left alone would otherwise have the master laid over it on
+        the way out of the door — the same defect, one stage later and harder to see.
         """
         if not self._enabled or asset.modality is not Modality.VIDEO or not asset.key:
+            return None, None
+        if not self._scores_with_master(principal, asset):
             return None, None
 
         song = self._songs.get(principal, kit.song_id)

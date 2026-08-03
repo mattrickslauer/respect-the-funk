@@ -73,9 +73,20 @@ built directly on `/research`. The load-bearing constraint, from
 > UGC breakout is a lottery, not a mechanism you can operate.
 
 So the page deliberately does **not** claim to cause virality. It claims what the research
-supports: templatability is the mechanism, network position predicts spread, and when
-outcomes are lottery-shaped the edge is *more attempts at a lower cost per attempt* — plus
-honest measurement of what is genuinely countable.
+supports: for UGC spread specifically, templatability is the mechanism; network position
+predicts spread; and when outcomes are lottery-shaped the edge is *more attempts at a lower
+cost per attempt* — plus honest measurement of what is genuinely countable.
+
+> **⚠️ The page's framing is narrower than the product (2026-08-03).** RemixKit generates
+> whatever media a release needs — performance clips, press and cover stills, announcements
+> to camera, lyric cards, voice-over, and templatable backdrops. This page is written almost
+> entirely around the last of those, because "the song is the substrate, the template is the
+> product" was for a while read as the definition of the product rather than as a finding
+> about how sounds spread ([PRODUCT.md](./PRODUCT.md) § *What the product generates,
+> precisely*). The factual claims about what the product *makes* have been corrected; the
+> hero, the narrative arc and the evidence section are still UGC-first. **Whether to
+> reposition the page is a go-to-market decision, not a docs fix — it has not been made
+> here.**
 
 Every statistic on the page traces to a sourced claim in `/research` or the deck's source
 table. **If you edit a number, re-check its pillar first.** The "we quote the range, not

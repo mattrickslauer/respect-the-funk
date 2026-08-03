@@ -1,6 +1,6 @@
 ---
 title: "RemixKit — the artist console"
-subtitle: "The application PRODUCT.md describes: register an artist, build their identity once, attach songs, generate content designed to be imitated, and verify what came out."
+subtitle: "The application PRODUCT.md describes: register an artist, build their identity once, attach songs, generate the media a release needs in whichever format it needs, and verify what came out."
 status: "LIVE — deployed on AWS with real generation, real B2, and real auth. Also runs end-to-end with zero credentials."
 date: "2026-07-27"
 ---
@@ -904,21 +904,26 @@ knob when the model is what capped the count.
 ### Formats
 
 A kit is an instance of a **format**, and formats are rows. `Recipe` carries the prompt
-template, the negatives, the aspect, the length policy, the face policy, which reference
-class the framing wants, and the variant spread — so adding a format is adding a record
-rather than editing the planner.
+template, the negatives, the aspect ratio, the length policy, the face policy, which
+reference class the framing wants, whether the master goes under the result, and the
+variant spread — so adding a format is adding a record rather than editing the planner.
 
-Four ship, seeded per tenant on first read (there is no migration step to hang a fixture
+This is also the answer to a question the repo used to get wrong: RemixKit generates the
+media a release needs, whatever kind that is. It is not a manufacturer of templatable UGC
+bait that happens to do other things — see [PRODUCT.md](../docs/PRODUCT.md) § *What the product
+generates, precisely*. The backdrop below is one row.
+
+Five ship, seeded per tenant on first read (there is no migration step to hang a fixture
 on, and a tenant is created by the first request that mentions it). Built-ins refuse to be
 deleted, because they are the floor a tenant falls back to; copy and edit the copy.
 
-| Format | Face | Reference class | Length | Suppresses |
-|---|---|---|---|---|
-| Backdrop loop | none | — | hook window | music, speech, singing |
-| Direct address | locked | front | fixed 8s | *nothing audio* |
-| Performance clip | locked | three-quarter | hook window | music, speech |
-| Portrait still | plate | front | — | — |
-| Voice-over | none | — | — | — |
+| Format | Face | Reference class | Length | Master under it | Suppresses |
+|---|---|---|---|---|---|
+| Backdrop loop | none | — | hook window | yes | music, speech, singing |
+| Direct address | locked | front | fixed 8s | **no** | *nothing audio* |
+| Performance clip | locked | three-quarter | hook window | yes | music, speech |
+| Portrait still | plate | front | — | — | — |
+| Voice-over | none | — | — | — | — |
 
 **The default is `performance`, not the backdrop.** The backdrop was the only format this
 app had and it is the wrong default now there is a choice: it deliberately has nobody in
@@ -958,7 +963,7 @@ pre-ticked on first load, because the boxes have to describe the plan underneath
 
 ### The master under the picture
 
-A kit loop is a backdrop the master plays over. A clip that comes back carrying a
+For most formats the picture sits under the master. A clip that comes back carrying a
 soundtrack the model composed for itself is the 2026-07-31 defect — a night drive scored
 with a lofi instrumental, over a song the model had never heard.
 
@@ -991,9 +996,19 @@ back to bar 1.
 (`X-RemixKit-Audio: master`). A kit that ran before this landed is scored on the way out
 instead, without storing anything.
 
-Every video says which happened on `Asset.audio_note`, including the two ways it can fail:
-no master uploaded for the song, or no `ffmpeg` in this process. A clip silently unscored
-and a clip scored by the model look identical on screen, which is how the original defect
+**Not every format wants this.** `-map` being exhaustive is the point for a picture that
+sits under a record and the whole problem for one whose audio *is* the asset. A direct-address
+clip is bought by instructing a model to speak a line; scoring it deleted the line and
+returned a mute performance with the song over it. `Recipe.score_with_master` decides, and
+it is checked on both paths — in the worker, and again in `scored_now`, which exists to
+score kits the worker left alone and would otherwise have done it on the way out of the
+door. Every uncertain case (no slug on the asset, a format since deleted) resolves to
+scoring, because a clip wrongly scored is visible on the review screen and a clip wrongly
+left alone looks like the provider's fault.
+
+Every video says which happened on `Asset.audio_note`, including the ways it can fail: no
+master uploaded for the song, or no `ffmpeg` in this process. A clip silently unscored and
+a clip scored by the model look identical on screen, which is how the original defect
 survived being looked at. `RK_SCORE_WITH_MASTER=0` turns the whole thing off, and says so
 on the asset too.
 

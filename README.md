@@ -1,8 +1,9 @@
 # Respect the Funk / RemixKit
 
-A provenance-clean UGC kit engine for a record label: register an artist, build their
-identity once, attach songs, generate content designed to be imitated, and verify what
-came out.
+A provenance-clean media generation suite for a record label: register an artist, build
+their identity once, attach songs, generate whatever the release needs — performance
+clips, press and cover stills, announcements to camera, voice-over, and backdrops a fan
+can copy — and verify what came out.
 
 ## Layout
 

@@ -144,6 +144,32 @@ def still_digest(identities: list[Identity], prompt: str) -> str:
     return hashlib.sha256(material.encode()).hexdigest()[:32]
 
 
+def aspect_phrase(aspect_ratio: str) -> str:
+    """The ratio in words a model reads, derived from the same field the params carry.
+
+    Every prompt this app sent used to say "vertical 9:16", because for a while every asset
+    it could make was one. `Recipe.aspect_ratio` turned that into a setting, and a setting
+    that reaches the provider's params while the prompt text keeps insisting on vertical is
+    a setting that half works: the two conditioning paths disagree and the model breaks the
+    tie. A label asking for a 16:9 cut or square cover art got a vertical picture with the
+    right metadata on it.
+
+    So the phrase is derived rather than written. An unrecognised ratio is passed through
+    as-is instead of being guessed at — "2.39:1" reads fine on its own, and inventing a
+    word for it would be the same class of mistake this exists to fix.
+    """
+    ratio = (aspect_ratio or "").strip()
+    shape = {
+        "9:16": "vertical",
+        "4:5": "portrait",
+        "3:4": "portrait",
+        "1:1": "square",
+        "4:3": "landscape",
+        "16:9": "landscape",
+    }.get(ratio)
+    return f"{shape} {ratio}" if shape else ratio
+
+
 def position_key(modality: Modality, recipe_slug: str | None) -> str:
     """What a per-shot edit was written *against*, beyond its position in the plan.
 
@@ -246,7 +272,8 @@ class PlannedShot:
         """The brief asked for a length the model does not render.
 
         Worth surfacing on its own rather than leaving the reader to compare two numbers:
-        a loop shorter than its hook is the one thing a fan copying the template notices.
+        a clip whose length no longer matches the window it was cut to is the difference
+        between an asset that sits on the record and one that drifts off it.
         """
         if self.requested_seconds is None or self.rendered_seconds is None:
             return False

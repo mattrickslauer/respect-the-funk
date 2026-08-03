@@ -115,9 +115,14 @@ class Container:
         self.recommendations = RecommendationService()
         self.recipes = RecipeService(self.repo)
         # The record that goes under the picture. Built before the kits it serves because
-        # a kit's run is where a clip is scored — see `KitService.run`.
+        # a kit's run is where a clip is scored — see `KitService.run`. It takes the
+        # formats because whether the master goes under a clip at all is the format's
+        # answer, not a property of every video — see `Recipe.score_with_master`.
         self.scoring = ScoringService(
-            self.storage, self.songs, enabled=settings.score_with_master
+            self.storage,
+            self.songs,
+            recipes=self.recipes,
+            enabled=settings.score_with_master,
         )
         self.kits = KitService(
             self.repo,

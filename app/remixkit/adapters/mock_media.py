@@ -41,8 +41,8 @@ def ffmpeg_available() -> bool:
 def _hue(seed: str) -> tuple[int, int, int]:
     """A stable colour per prompt, so distinct shots look distinct."""
     digest = hashlib.sha256(seed.encode()).digest()
-    # Kept dark and saturated so white overlay type stays legible, matching the
-    # "templatable backdrop with a clean centre" the brief actually asks for.
+    # Kept dark and saturated so white overlay type stays legible against it, which is the
+    # common case for a stand-in frame whatever format asked for it.
     return (40 + digest[0] % 90, 20 + digest[1] % 70, 60 + digest[2] % 120)
 
 
@@ -79,10 +79,34 @@ def _run(cmd: list[str], target: Path) -> bool:
         Path(tmp).unlink(missing_ok=True)
 
 
-def video(prompt: str, seconds: float = 6.0) -> Path | None:
-    """A 9:16 loop: a colour wash with drifting grain. Vertical, because that is the
-    only aspect ratio the product ships."""
-    path = _ROOT / f"v_{hashlib.sha256(f'{prompt}{seconds}'.encode()).hexdigest()[:16]}.mp4"
+def _frame_size(aspect_ratio: str, base: int = 540) -> str:
+    """`WxH` for a ratio, at `base` on the short side and even on both.
+
+    Even because h264 refuses odd dimensions, and a mock that fails to encode surfaces far
+    from here as "the provider returned nothing". An unparseable ratio falls back to 9:16
+    rather than raising: this is the stand-in renderer, and taking a kit down over the
+    shape of a frame would be a worse answer than rendering the common one.
+    """
+    try:
+        w, h = (int(part) for part in (aspect_ratio or "").strip().split(":"))
+        if w <= 0 or h <= 0:
+            raise ValueError(aspect_ratio)
+    except (ValueError, TypeError):
+        w, h = 9, 16
+    width, height = (base, round(base * h / w)) if w <= h else (round(base * w / h), base)
+    return f"{width - width % 2}x{height - height % 2}"
+
+
+def video(prompt: str, seconds: float = 6.0, aspect_ratio: str = "9:16") -> Path | None:
+    """A loop at the requested ratio: a colour wash with drifting grain.
+
+    The ratio is part of the cache key as well as the geometry. It was neither for a while
+    — the renderer was hardcoded to 540x960 on the argument that vertical was the only
+    shape the product shipped — and once a second ratio existed, keying on prompt alone
+    would have handed back the vertical file already on disk for a landscape request.
+    """
+    seed = f"{prompt}{seconds}{aspect_ratio}"
+    path = _ROOT / f"v_{hashlib.sha256(seed.encode()).hexdigest()[:16]}.mp4"
     if path.exists():
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,7 +115,7 @@ def video(prompt: str, seconds: float = 6.0) -> Path | None:
         [
             "ffmpeg", "-y", "-v", "error",
             "-f", "lavfi",
-            "-i", f"color=c=0x{r:02x}{g:02x}{b:02x}:s=540x960:d={seconds}:r=24",
+            "-i", f"color=c=0x{r:02x}{g:02x}{b:02x}:s={_frame_size(aspect_ratio)}:d={seconds}:r=24",
             "-vf", "noise=alls=14:allf=t+u,gblur=sigma=1.4,vignette",
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
         ],
@@ -100,10 +124,15 @@ def video(prompt: str, seconds: float = 6.0) -> Path | None:
     return path if ok and path.exists() else None
 
 
-def image(prompt: str) -> Path | None:
-    """A vertical card. The lyric text is not drawn — drawtext needs a font that may
-    not be present, and a failed font lookup would take the whole kit down."""
-    path = _ROOT / f"i_{hashlib.sha256(prompt.encode()).hexdigest()[:16]}.png"
+def image(prompt: str, aspect_ratio: str = "9:16") -> Path | None:
+    """A card at the requested ratio. The text is not drawn — drawtext needs a font that
+    may not be present, and a failed font lookup would take the whole kit down.
+
+    Cover art is square and a press shot is rarely vertical, so the ratio is a parameter
+    here for the same reason it is on `video`, and is keyed into the cache alongside it.
+    """
+    seed = f"{prompt}{aspect_ratio}"
+    path = _ROOT / f"i_{hashlib.sha256(seed.encode()).hexdigest()[:16]}.png"
     if path.exists():
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +141,7 @@ def image(prompt: str) -> Path | None:
         [
             "ffmpeg", "-y", "-v", "error",
             "-f", "lavfi",
-            "-i", f"color=c=0x{r:02x}{g:02x}{b:02x}:s=540x960",
+            "-i", f"color=c=0x{r:02x}{g:02x}{b:02x}:s={_frame_size(aspect_ratio)}",
             "-vf", "noise=alls=10:allf=t,vignette",
             "-frames:v", "1",
         ],

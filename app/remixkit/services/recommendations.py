@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 
 from remixkit.domain.models import Song, SongSection
 
-# The generator's clamp, from `services.briefs.default_shot_plan`. Duplicated as named
+# The generator's clamp, from `services.briefs._loop_seconds`. Duplicated as named
 # constants rather than re-derived, and asserted against in the tests, so a change there
 # cannot leave this screen recommending a length the renderer would silently override.
 MIN_LOOP_MS = 3_000

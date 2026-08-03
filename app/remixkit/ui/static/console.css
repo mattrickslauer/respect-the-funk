@@ -529,7 +529,12 @@ input::placeholder,textarea::placeholder{color:#5d5872}
 /* ---- assets ---- */
 .assets,.frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;margin-top:10px}
 .asset,.frames figure{background:var(--bg-2);border:1px solid var(--rule-2);border-radius:6px;overflow:hidden}
-.asset video,.asset img,.frames img{width:100%;aspect-ratio:9/16;object-fit:cover;display:block;background:#000}
+/* `contain` at a fixed tile height, not `cover` at a fixed 9/16 ratio. Cropping every
+   asset to vertical was invisible while vertical was all the app could make; a square
+   cover or a 16:9 cut arrives with its edges cut off on the one screen whose whole job is
+   a person deciding whether it is publishable. Letterboxing keeps the grid even and shows
+   the whole frame. */
+.asset video,.asset img,.frames img{width:100%;height:236px;object-fit:contain;display:block;background:#000}
 .asset audio{width:100%;padding:9px}
 .asset figcaption,.frames figcaption{padding:7px 8px;font-size:11px;color:var(--ink-3);display:flex;flex-direction:column;gap:2px}
 .asset .mod{font-family:var(--display);letter-spacing:0.08em;text-transform:uppercase;color:var(--gold);font-size:10px}

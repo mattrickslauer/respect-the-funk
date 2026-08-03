@@ -3,6 +3,7 @@ title: "RemixKit — Product Scope"
 subtitle: "Who this is for and what they do, in one page. Written because the repo's most detailed documents describe a larger product than the one being built, and every design decision was quietly being pulled toward it."
 status: "DECISION — narrows BUILD-SPEC §1. Supersedes its role scope; everything else in BUILD-SPEC stands."
 date: "2026-07-26"
+amended: "2026-08-03 — 'What the product generates, precisely' rewritten. The product is a media generation suite for a label's catalogue, not a manufacturer of templatable UGC bait. Templatability is a research finding about how sounds spread, and it had been promoted into the definition of the product; it is one format among several. Supersedes the section it replaces and nothing else."
 ---
 
 ## Why this document exists
@@ -31,7 +32,7 @@ There is no second user in this scope. No fan, no creator, no remixer, no payee.
 1. **Register an artist.** The artist is a first-class entity, not a string on a song.
 2. **Build that artist's identity once.** A stored, reusable description of how the artist looks and reads on screen — structural facial features, reference frames across several lighting setups, wardrobe variants, anti-drift negatives, and signed likeness consent. This is the thing that gets reused across every song and every video for that artist, and it is why the second video for an artist is cheap.
 3. **Attach songs.** Each song is measured once — BPM, drop, hook window — and that measurement is reused forever.
-4. **Generate UGC-inspiring content** from a song plus the artist's identity.
+4. **Generate the release's media** from a song plus the artist's identity — in whichever format the release needs.
 5. **Review and approve.** A human decides what is publishable before anything leaves the system.
 6. **Publish or hand off** — download the assets, with provenance embedded in the file.
 
@@ -39,15 +40,17 @@ There is no second user in this scope. No fan, no creator, no remixer, no payee.
 
 ---
 
-## What "UGC-inspiring" means, precisely
+## What the product generates, precisely
 
-This is the load-bearing distinction, and getting it wrong turns the product into a marketing-asset generator.
+This is the load-bearing distinction, and an earlier version of this section got it wrong in a way that reached the code.
 
-The label's output is **not** the finished marketing post. It is content **designed to be imitated** — a template a fan can copy with their own camera. Research's conclusion is that templatability is the only supported UGC lever: *the song is the substrate, the template is the product.*
+RemixKit is a **media generation suite for a label's catalogue**. Given a song and an artist's stored identity, it makes the assets a release actually needs: performance clips, press and cover stills, announcements delivered to camera, lyric cards, voice-over — and backdrops designed to be imitated, which a fan can copy with their own camera.
 
-The promise-payoff format in `content/` is exactly such a template. `nate-test` is one instance of it. The product manufactures instances of a repeatable *shape*, per song, at low marginal cost — so a fan encountering one immediately understands what their own version would look like.
+That last one used to be the *only* one. This section used to say the label's output is "**not** the finished marketing post" but content designed to be imitated, on the grounds that *"the song is the substrate, the template is the product."* That sentence is a finding from [`docs/research/13-ugc-adoption`](./research/13-ugc-adoption.md) §3 about **how sounds spread on TikTok**, and it holds there — templatability is the mechanism of sound spread, qualitative academic consensus, sourced. Promoting a finding about one distribution channel into the definition of the whole product is the error.
 
-This also means **the craft specs are not separate from the product.** FORMAT-SPEC defines the template; PRODUCT.md defines who orders one and why.
+It was not a harmless one. It welded `clean centre frame left empty for a subject` into every prompt the app could write and `speech` into every negative list, so the first label that wanted their artist *talking to camera* would have paid a video model to suppress the thing they asked for. Formats are rows now — see `app/remixkit/services/recipes.py` — and the templatable backdrop is one of five that ship.
+
+**What this does not change.** The craft specs are still part of the product, and the research still constrains what may be claimed (see Non-goals). FORMAT-SPEC describes the promise-payoff shape — *a* format, not *the* product. The promise-payoff format in `content/` is one such shape and `nate-test` is one instance of it; the product manufactures instances of a repeatable shape per song at low marginal cost, for that shape and for the others.
 
 ---
 
@@ -79,9 +82,9 @@ So that code, specs, and conversation use one set of words.
 | **artist** | A roster member. Owns an identity, songs, and rights. | ❌ a string on a song |
 | **identity** | The reusable "remap" — how this artist looks on screen. | ⚠️ `character.yaml` exists and is excellent, but models *cast members in a video*, not artists in a catalog |
 | **song** | One measured master: BPM, drop, hook window. | ✅ `rtf.song/v1`, one instance |
-| **format** | The repeatable template shape. | ✅ `rtf.format/v1` — promise-payoff |
+| **format** | A kind of asset the label makes, as data: prompt, negatives, length policy, face policy, aspect ratio, whether the master goes under it. `Recipe` in the app. | ✅ five built-ins; `rtf.format/v1` promise-payoff is one shape |
 | **edit** | One video: this song, this format, this artist. | ✅ `rtf.edit/v2` |
-| **kit** | The pack of assets generated for one release. | ❌ BUILD-SPEC only |
+| **kit** | The pack of assets generated for one release, in one format. | ❌ BUILD-SPEC only |
 
 ---
 
@@ -122,6 +125,6 @@ Carried from research so they do not creep back: no virality claim (breakout is 
 | BUILD-SPEC.md | *What gets built, in what order, at what cost?* — §1 role scope narrowed by this file |
 | MEMORY-SPEC.md | *How does "build the identity once" actually make the second video cheap?* — turns step 2 above into a mechanism, and gives gap #2 (approval state) and gap #1 (the artist entity) a home |
 | MINDS-SPEC.md | *Where does the human in step 5 actually approve?* — moves the judge out of the terminal and into email, which is what closes MEMORY-SPEC's write-back loop |
-| FORMAT-SPEC.md | *What shape does a video of this kind take?* |
+| FORMAT-SPEC.md | *What shape does a video of this kind take?* — one format among several, not the product's definition |
 | CLIP-SPEC.md | *What does one clip mean, and where may it be cut?* |
 | infra/README.md | *What runs it?* |

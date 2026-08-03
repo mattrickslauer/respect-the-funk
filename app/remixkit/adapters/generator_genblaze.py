@@ -1,4 +1,4 @@
-"""The core: a kit is one Genblaze `Run` whose steps fan out into templatable assets.
+"""The core: a kit is one Genblaze `Run` whose steps fan out into a release's assets.
 
 This is BUILD-SPEC §4 against the API as it actually ships in genblaze-core 0.3.7 —
 `Pipeline(name, tenant_id=…)`, `.step(provider, model=, prompt=, modality=)`,
@@ -33,6 +33,7 @@ from remixkit.ports.generator import (
     GenerationRequest,
     GenerationResult,
     PlannedShot,
+    aspect_phrase,
     still_digest,
 )
 
@@ -363,7 +364,7 @@ class GenblazeGenerator:
         if not plates:
             return None, None
 
-        prompt = self._still_prompt(shot.prompt)
+        prompt = self._still_prompt(shot.prompt, shot.aspect_ratio)
 
         # The index. A still is a pure function of who is in it, which version of them,
         # and the scene — so if one has already been rendered for exactly that, rendering
@@ -421,13 +422,19 @@ class GenblazeGenerator:
         )
 
     @staticmethod
-    def _still_prompt(clip_prompt: str) -> str:
+    def _still_prompt(clip_prompt: str, aspect_ratio: str = "9:16") -> str:
         """The clip's prompt, asked for as a photograph rather than as footage.
 
         Only the clauses that describe *motion or duration* are dropped. Everything about
         the subject, the light and the framing is what the still exists to settle, so it
         stays — the two stages must agree about the scene or the clip's first frame will
         be a different place than the rest of it.
+
+        Including the shape of the frame, which this used to state as "vertical 9:16" no
+        matter what the clip was. The still is generated to become that clip's *first
+        frame*, so a vertical plate in front of a 16:9 clip is the one disagreement between
+        the stages that is guaranteed to show: the params said one thing and the prompt the
+        other, on the two halves of the same shot.
         """
         motion_words = ("loop", "movement", "bpm", "silent footage", "handheld", "motion")
         kept = [
@@ -437,7 +444,7 @@ class GenblazeGenerator:
         ]
         body = ". ".join(kept) or clip_prompt
         return (
-            f"Single still photograph, vertical 9:16. {body}. "
+            f"Single still photograph, {aspect_phrase(aspect_ratio)}. {body}. "
             "Sharp focus on the subject's face, no motion blur."
         )
 

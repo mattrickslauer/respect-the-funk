@@ -46,6 +46,12 @@ content/.cache/
 # the edit, and its sidecar records model + hash, so the picture itself is derivable.
 *.png
 
+# KEPT DELIBERATELY: the brand thumbnail. It is a build output like the stills above, but
+# the rule there is "derivable, so drop it" and this one is not — GitHub's social preview,
+# Devpost and anyone embedding the README need the raster itself, and re-rendering it
+# needs librsvg plus Futura installed. Source of truth is still the SVG beside it.
+!docs/brand/*.png
+
 # Camera-original photography — large, and not what this repo is for.
 *.heic
 *.HEIC

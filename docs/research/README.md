@@ -3,11 +3,11 @@
 **Status:** Research phase complete. No code yet, by design.
 **Last updated:** 2026-07-15
 
-> ## 👉 Start here: [`_synthesis/SYNTHESIS.md`](./_synthesis/SYNTHESIS.md) — or the [PDF](./_pdf/00-SYNTHESIS.pdf)
+> ## 👉 Start here: [`SYNTHESIS.md`](./SYNTHESIS.md) — or the [PDF](./pdf/00-SYNTHESIS.pdf)
 >
 > Thirteen parallel agents across two phases produced **~6,900 lines across ~2,440 sourced claims**. The synthesis is the only document that sees all thirteen at once — the pillars were researched independently and cannot cross-reference each other. Read it first; the pillars are reference material behind it.
 >
-> **Rendered PDFs: [`_pdf/`](./_pdf/)** (16 documents, 273 pages).
+> **Rendered PDFs: [`pdf/`](./pdf/)** (16 documents, 273 pages).
 
 ## The short version
 
@@ -19,7 +19,7 @@
 > When outcomes are lottery-shaped, the winning move isn't a better ticket — it's more tickets at lower cost, with the plumbing correct so a win actually pays.
 > **More releases beat more spend. Not many accounts — many songs.**
 
-That cuts against *both* strategies proposed so far (scale-the-accounts, and concentrate-on-one-artist). See [the pivot decision record](./_synthesis/STRATEGY-PIVOT.md).
+That cuts against *both* strategies proposed so far (scale-the-accounts, and concentrate-on-one-artist). See [the pivot decision record](./STRATEGY-PIVOT.md).
 
 **Do this week — all free:**
 1. **Fix the TikTok clip start-time.** The default is wrong. Highest value-per-effort item in the project.
@@ -62,21 +62,21 @@ Idea 2 is the more differentiated of the two and also the one carrying the most 
 
 | # | Pillar | The answer it came back with |
 |---|---|---|
-| 01 | [Platform APIs](./01-platform-apis/) · [pdf](./_pdf/01-platform-apis.pdf) | **No App Review needed for accounts you own.** TikTok audit is the long pole. |
-| 02 | [Meta Ads](./02-meta-ads/) · [pdf](./_pdf/02-meta-ads.pdf) | **~$20–25K per 100k streams.** Best trackable event is a click, never a stream. |
-| 03 | [Audience Models & Math](./03-audience-models/) · [pdf](./_pdf/03-audience-models.pdf) | **Measurement is unwinnable.** Creative testing is affordable — big gaps only. |
-| 04 | [Spotify Economics](./04-spotify-economics/) · [pdf](./_pdf/04-spotify-economics.pdf) | **100k streams pays ~$300–500.** It's a distribution problem, not a purchase. |
-| 05 | [Account Acquisition](./05-account-acquisition/) · [pdf](./_pdf/05-account-acquisition.pdf) | **Don't** — EV is negative. Ad-account cascade is written Meta policy. |
-| 06 | [Rights & Licensing](./06-rights-licensing/) · [pdf](./_pdf/06-rights-licensing.pdf) | **Film clips cannot be advertised.** Pivot to PD/stock/AI footage. |
-| 07 | [Cost Model](./07-cost-model/) · [pdf](./_pdf/07-cost-model.pdf) | **Infra is a rounding error** ($55–3,388/mo). AI video is 92% of variable cost. |
-| 08 | [TikTok Ads](./08-tiktok-ads/) · [pdf](./_pdf/08-tiktok-ads.pdf) | **CML clearance may gate everything.** ~$17–79K per 100k streams. |
-| 09 | [Architecture & Analytics](./09-architecture-analytics/) · [pdf](./_pdf/09-architecture-analytics.pdf) | **$0/mo idle is achievable.** No ML year one. Spotify has no artist API. |
-| 10 | [Creator Indexing](./10-creator-indexing/) · [pdf](./_pdf/10-creator-indexing.pdf) | **No endpoint returns a creator's audience demographics at any price.** Buy sound-usage data instead. |
-| 11 | [Probe Accounts](./11-probe-accounts/) · [pdf](./_pdf/11-probe-accounts.pdf) | **Legal, but 3–6 months to signal.** 2 accounts, not 8. ⚠️ *Fabricated then verified — see synthesis §9.* |
-| 12 | [Audience Geometry](./12-audience-geometry/) · [pdf](./_pdf/12-audience-geometry.pdf) | **The circumplex is real; 12 positions costs ~$118,500.** Start with one axis, $143. |
-| 13 | [UGC Adoption](./13-ugc-adoption/) · [pdf](./_pdf/13-ugc-adoption.pdf) | **A sub-1% lottery.** Seeding doesn't cascade. Two free levers are real. |
-| — | [Decision record: Strategy Pivot](./_synthesis/STRATEGY-PIVOT.md) · [pdf](./_pdf/14-strategy-pivot.pdf) | Why the framing changed after Phase 1 — and why the pivot was also incomplete. |
-| — | [Annex: Incremental Attribution](./_synthesis/incremental-attribution-finding.md) · [pdf](./_pdf/15-incremental-attribution.pdf) | Meta's tool is a **predictive model, not a holdout test** — and never refuses to answer. |
+| 01 | [Platform APIs](./01-platform-apis.md) · [pdf](./pdf/01-platform-apis.pdf) | **No App Review needed for accounts you own.** TikTok audit is the long pole. |
+| 02 | [Meta Ads](./02-meta-ads.md) · [pdf](./pdf/02-meta-ads.pdf) | **~$20–25K per 100k streams.** Best trackable event is a click, never a stream. |
+| 03 | [Audience Models & Math](./03-audience-models.md) · [pdf](./pdf/03-audience-models.pdf) | **Measurement is unwinnable.** Creative testing is affordable — big gaps only. |
+| 04 | [Spotify Economics](./04-spotify-economics.md) · [pdf](./pdf/04-spotify-economics.pdf) | **100k streams pays ~$300–500.** It's a distribution problem, not a purchase. |
+| 05 | [Account Acquisition](./05-account-acquisition.md) · [pdf](./pdf/05-account-acquisition.pdf) | **Don't** — EV is negative. Ad-account cascade is written Meta policy. |
+| 06 | [Rights & Licensing](./06-rights-licensing.md) · [pdf](./pdf/06-rights-licensing.pdf) | **Film clips cannot be advertised.** Pivot to PD/stock/AI footage. |
+| 07 | [Cost Model](./07-cost-model.md) · [pdf](./pdf/07-cost-model.pdf) | **Infra is a rounding error** ($55–3,388/mo). AI video is 92% of variable cost. |
+| 08 | [TikTok Ads](./08-tiktok-ads.md) · [pdf](./pdf/08-tiktok-ads.pdf) | **CML clearance may gate everything.** ~$17–79K per 100k streams. |
+| 09 | [Architecture & Analytics](./09-architecture-analytics.md) · [pdf](./pdf/09-architecture-analytics.pdf) | **$0/mo idle is achievable.** No ML year one. Spotify has no artist API. |
+| 10 | [Creator Indexing](./10-creator-indexing.md) · [pdf](./pdf/10-creator-indexing.pdf) | **No endpoint returns a creator's audience demographics at any price.** Buy sound-usage data instead. |
+| 11 | [Probe Accounts](./11-probe-accounts.md) · [pdf](./pdf/11-probe-accounts.pdf) | **Legal, but 3–6 months to signal.** 2 accounts, not 8. ⚠️ *Fabricated then verified — see synthesis §9.* |
+| 12 | [Audience Geometry](./12-audience-geometry.md) · [pdf](./pdf/12-audience-geometry.pdf) | **The circumplex is real; 12 positions costs ~$118,500.** Start with one axis, $143. |
+| 13 | [UGC Adoption](./13-ugc-adoption.md) · [pdf](./pdf/13-ugc-adoption.pdf) | **A sub-1% lottery.** Seeding doesn't cascade. Two free levers are real. |
+| — | [Decision record: Strategy Pivot](./STRATEGY-PIVOT.md) · [pdf](./pdf/14-strategy-pivot.pdf) | Why the framing changed after Phase 1 — and why the pivot was also incomplete. |
+| — | [Annex: Incremental Attribution](./incremental-attribution-finding.md) · [pdf](./pdf/15-incremental-attribution.pdf) | Meta's tool is a **predictive model, not a holdout test** — and never refuses to answer. |
 
 ## Standards every pillar must meet
 
@@ -99,7 +99,7 @@ These were posed as the load-bearing unknowns before the research ran. All six c
 
 ## What we still don't know
 
-Flagged rather than papered over. Full table in [the synthesis](./_synthesis/SYNTHESIS.md#8-what-we-still-dont-know).
+Flagged rather than papered over. Full table in [the synthesis](./SYNTHESIS.md#8-what-we-still-dont-know).
 
 - **Stock-footage library acquisition cost** — unpriced, and the pivot just made it load-bearing.
 - **TTS for AI clips** — unpriced. Generated footage has no dialogue — *and the dialogue was the idea.*

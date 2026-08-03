@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Resolve the wireframe specs into one self-contained page.
 
-    python3 web/wireframe/build.py
+    python3 docs/wireframe/build.py
 
 Standard library only, on purpose: the wireframe must build on any machine that can
 run Python, without the application's dependencies installed. That is why the domain

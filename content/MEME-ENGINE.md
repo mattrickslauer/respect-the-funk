@@ -10,13 +10,13 @@ date: "2026-07-24"
 [FORMAT-SPEC](FORMAT-SPEC.md) describes a format whose hook is a person saying a line and
 whose payoff is 22 generated pictures. It works, and it costs a day of authoring and a
 generation bill per video. That is the right shape for the flagship and the wrong shape
-for volume — and [SYNTHESIS](../research/_synthesis/SYNTHESIS.md) is unambiguous that
+for volume — and [SYNTHESIS](../docs/research/SYNTHESIS.md) is unambiguous that
 volume is the only move: *outcomes are lottery-shaped, so the winning play is more
 tickets at a lower cost per ticket, with the plumbing correct so a win pays.*
 
 This is the low-cost ticket printer. A **library** is fetched once. After that a video is
 ffmpeg and a solver: **no model call, no per-video cost, seconds of CPU.** That is
-[BUILD-SPEC §7b](../BUILD-SPEC.md)'s unit-economics claim made literal one layer down —
+[BUILD-SPEC §7b](../docs/BUILD-SPEC.md)'s unit-economics claim made literal one layer down —
 the expensive step is per-library, the cheap step is per-post.
 
 It is deliberately *not* a second creative format. It is the same geometry — hold the
@@ -68,7 +68,7 @@ instead of a taste argument at 2am.
 
 The source is **recorded, not gated** — `provenance` carries the query, video id, channel
 and the exact window taken. Downloading is not publishing. Before any of this becomes
-*paid* creative, note that `research/06` found TikTok's ad policy contains a written rule
+*paid* creative, note that `docs/research/06-rights-licensing` found TikTok's ad policy contains a written rule
 barring "clips from any unauthorized media sources to promote your product." That is a
 publishing decision, and this file does not make it for you.
 

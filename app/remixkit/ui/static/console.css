@@ -1,7 +1,7 @@
 /* RemixKit console.
 
-   Tokens are inherited verbatim from deck/remixkit-deck.html and web/index.html so the
-   deck, the site, and the console read as one brand — web/README states that
+   Tokens are inherited verbatim from docs/deck/remixkit-deck.html and the landing page so
+   the deck, the site, and the console read as one brand — docs/web.md states that
    inheritance as a rule, and breaking it here would cost more than the styling is worth.
 
    The layout, though, is the console's own. A console is not a document: it is looked at

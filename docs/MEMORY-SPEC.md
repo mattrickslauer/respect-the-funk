@@ -31,7 +31,7 @@ The fifteen days between the deadlines are the whole opportunity. Ship Backblaze
 
 > **Generate once, remix infinitely.** Expensive generative AI runs once per *release*. Cheap deterministic compositing runs once per *fan*.
 
-[MEME-ENGINE](./content/MEME-ENGINE.md) makes the same move one layer down — *"a library is fetched once; after that a video is ffmpeg and a solver."* And [PRODUCT.md](./PRODUCT.md) step 2 makes it a third time, at the layer that actually matters commercially:
+[MEME-ENGINE](../content/MEME-ENGINE.md) makes the same move one layer down — *"a library is fetched once; after that a video is ffmpeg and a solver."* And [PRODUCT.md](./PRODUCT.md) step 2 makes it a third time, at the layer that actually matters commercially:
 
 > Build that artist's identity once — structural facial features, reference frames across several lighting setups, wardrobe variants, anti-drift negatives, and signed likeness consent. **This is why the second video for an artist is cheap.**
 
@@ -73,7 +73,7 @@ Three things actually break, and none of them are fixed by a faster scan:
 
 **1. Retrieval is by human eyeball.** `nate-test` chose its hook because a person read twelve loglines and picked one. That is a correct procedure for twelve. The query the format actually wants is *"a hook that promises a reveal, kinetic, mid-light, legally clean, with ≥2s of usable lead"* — half semantic, half numeric, half predicate. `grep` cannot do the first third, and no amount of directory structure makes it possible.
 
-**2. The rights gate and the similarity search must be the same query.** [CLIP-SPEC](./content/CLIP-SPEC.md) rule 3 is unambiguous: `rights.source` is a hard gate, and *"a clip with no descriptor has no `rights.source` and is therefore unusable by construction."* A nearest-neighbour search that returns an unusable clip is not merely unhelpful — it is a rights trap that puts an unlicensed face in front of an editor who is now tempted. Filtered vector search (predicate and ANN resolved in one index, at interactive latency) is the requirement. A Parquet file in B2 fronted by Athena — [infra/README.md](./infra/README.md)'s current catalog answer — is an analytics path, not this.
+**2. The rights gate and the similarity search must be the same query.** [CLIP-SPEC](../content/CLIP-SPEC.md) rule 3 is unambiguous: `rights.source` is a hard gate, and *"a clip with no descriptor has no `rights.source` and is therefore unusable by construction."* A nearest-neighbour search that returns an unusable clip is not merely unhelpful — it is a rights trap that puts an unlicensed face in front of an editor who is now tempted. Filtered vector search (predicate and ANN resolved in one index, at interactive latency) is the requirement. A Parquet file in B2 fronted by Athena — [infra/README.md](../infra/README.md)'s current catalog answer — is an analytics path, not this.
 
 **3. Nothing is ever written back.** This is the real one. `check_likeness.py`'s docstring records that its first version *"returned 5/5 'match' for every image a human had already rejected — including one that is plainly a different man,"* and explains precisely why: the face was too small, and the question invited a yes. That is a hard-won, artist-general lesson about generating this artist's face. **It currently lives in a Python docstring.** Every likeness score, every human rejection, every prompt that drifted is computed once, printed to a terminal, and lost. The next generation starts exactly as ignorant as the last.
 
@@ -129,7 +129,7 @@ Two notes on the vector columns, because the distinction is load-bearing:
 - **`features` and `axes` stay as SQL columns, not as a vector.** They are seven hand-designed scalars with hand-calibrated meanings, not a learned embedding, and pretending otherwise would produce a 7-dimensional "embedding" whose nearest neighbours mean nothing. They are excellent *filter and rank* predicates. That is how they get used.
 - **The embeddings are text and face.** `meaning_embedding` comes from the descriptor's prose — `title`, `logline`, `audio.quote`, `beats[].means` — which is the part a human actually reads when choosing a hook. `face_embedding` comes from the crops `check_likeness.py` already produces, so the drift check and the index share one representation rather than two that can disagree.
 
-**`approval` closes a gap that predates this track.** [PRODUCT.md](./PRODUCT.md) "what we do not have yet" #2 is *no approval state*, and [infra/README.md](./infra/README.md) caveat 4 concedes it *"is the first thing that will want a real row somewhere."* It gets that row here.
+**`approval` closes a gap that predates this track.** [PRODUCT.md](./PRODUCT.md) "what we do not have yet" #2 is *no approval state*, and [infra/README.md](../infra/README.md) caveat 4 concedes it *"is the first thing that will want a real row somewhere."* It gets that row here.
 
 ---
 
@@ -139,7 +139,7 @@ Retrieval is the product surface. These are the queries; if they are not obvious
 
 **Q1 — Hook selection.** *Find a hook that promises a reveal, kinetic, mid-light, legally publishable, with ≥2s of usable lead.* Semantic ANN over `meaning_embedding`, filtered in the same query by `rights_source IN (...) AND people_release AND can_lead AND min_useful_ms >= ?`, ranked with the `axes` scalars. This is the query that replaces reading twelve loglines, and it is the one that makes a 500-clip library usable at all.
 
-**Q2 — Payoff congruence.** *Given this hook, find library clips that invert the ground while holding the figure.* [FORMAT-SPEC](./content/FORMAT-SPEC.md)'s geometry expressed as a vector operation: near on subject, far on `axis_light`/`axis_temp`. Today [MEME-ENGINE](./content/MEME-ENGINE.md)'s solver works over a 15-clip library it can hold entirely in memory. It cannot hold a catalog.
+**Q2 — Payoff congruence.** *Given this hook, find library clips that invert the ground while holding the figure.* [FORMAT-SPEC](../content/FORMAT-SPEC.md)'s geometry expressed as a vector operation: near on subject, far on `axis_light`/`axis_temp`. Today [MEME-ENGINE](../content/MEME-ENGINE.md)'s solver works over a 15-clip library it can hold entirely in memory. It cannot hold a catalog.
 
 **Q3 — Likeness drift.** *Is this generated still within ε of this artist's identity centroid?* Vector distance from `face_embedding` to `identity.face_centroid`, plus the nearest accepted stills as few-shot evidence. This is `check_likeness.py`'s job, done against accumulated history instead of against five fixed reference photographs — and it directly attacks the failure that script documents, where a small face and an agreeable question produced 5/5 false matches.
 
@@ -183,7 +183,7 @@ Every arrow already exists as a script except the last one. `generate_stills.py`
 | ccloud CLI (agent-ready) | Cluster + branch provisioning in the deploy path | Comes free; claim it |
 | Agent Skills repo | Wrap `rtf.py` resolve / measure / render as skills | Optional, only if time |
 
-**AWS — need ≥1, we have five:** Lambda (`web`), SQS (job queue + DLQ), Batch on Fargate Spot (the generator), SSM Parameter Store (secrets) are all already in [infra/README.md](./infra/README.md). **Add Bedrock** for embeddings and as the agent runtime — it is the piece that makes "agentic" a runtime fact rather than a description.
+**AWS — need ≥1, we have five:** Lambda (`web`), SQS (job queue + DLQ), Batch on Fargate Spot (the generator), SSM Parameter Store (secrets) are all already in [infra/README.md](../infra/README.md). **Add Bedrock** for embeddings and as the agent runtime — it is the piece that makes "agentic" a runtime fact rather than a description.
 
 **Judging criteria:**
 
@@ -197,7 +197,7 @@ Every arrow already exists as a script except the last one. `generate_stills.py`
 
 **Submission requirements:** public repo under MIT/Apache-2.0, a functional demo URL, a <3 min video, and documentation naming the tools used. The licence is an open decision (§10) — this repo has none today.
 
-⚠️ **Rights caveat on the public demo URL.** All 12 `dialogue` hooks carry `rights.source: youtube` with `people_release: false`, and their own descriptors warn to *"check before publishing or before holding a likeness invariant in a payoff."* They are legitimate as a **retrieval corpus** in the demo — showing Q1 rank them is fine — but nothing built from them may be published from a public URL. The published half of the demo runs on owned masters and AI/consented assets only. This is [CLIP-SPEC](./content/CLIP-SPEC.md) rule 3 applied to ourselves.
+⚠️ **Rights caveat on the public demo URL.** All 12 `dialogue` hooks carry `rights.source: youtube` with `people_release: false`, and their own descriptors warn to *"check before publishing or before holding a likeness invariant in a payoff."* They are legitimate as a **retrieval corpus** in the demo — showing Q1 rank them is fine — but nothing built from them may be published from a public URL. The published half of the demo runs on owned masters and AI/consented assets only. This is [CLIP-SPEC](../content/CLIP-SPEC.md) rule 3 applied to ourselves.
 
 ---
 
@@ -205,7 +205,7 @@ Every arrow already exists as a script except the last one. `generate_stills.py`
 
 Stated plainly because it contradicts a decision made three days ago and should not be discovered later.
 
-[infra/README.md](./infra/README.md) says, as its proudest line: *"The move that made it simple: there is no database"* — and derives *"realistic idle cost: under $1/month"* from having no compute or database floor anywhere. **This track reintroduces the tier that decision removed.**
+[infra/README.md](../infra/README.md) says, as its proudest line: *"The move that made it simple: there is no database"* — and derives *"realistic idle cost: under $1/month"* from having no compute or database floor anywhere. **This track reintroduces the tier that decision removed.**
 
 The argument that it is still the right call:
 
@@ -213,14 +213,14 @@ The argument that it is still the right call:
 2. **The reasoning that removed the database does not cover this.** It removed Postgres because attribution joins, leaderboards, and reward ledgers — all fan-side, all deferred — were the only relational pressure. Vector retrieval over a clip corpus is a different requirement that the analysis simply did not consider, because at 13 clips it did not exist.
 3. **It is a branch, not a rewrite.** Both architectures stay documented and generated by `diagram.py`, exactly as `deferred-marketplace.pdf` already sits beside `architecture.pdf`. The Aug 3 submission ships the no-database architecture unchanged — and verifiably so: re-running the generator leaves `architecture.pdf` byte-identical.
 
-**The drawing is [`infra/memory-branch.pdf`](./infra/memory-branch.pdf)**, two pages from the same generator:
+**The drawing is [`infra/memory-branch.pdf`](../infra/memory-branch.pdf)**, two pages from the same generator:
 
 | Page | Shows |
 |---|---|
 | 1 — the system | The five AWS services plus Bedrock and the CockroachDB tier. Drawn to make two claims unmissable: the tier holds **vectors and rows, never bytes** (B2's role is untouched), and the teal edges form a **cycle** — solid retrieves memory before the model is called, dashed writes the result back. A tier with only read edges is a catalog. |
 | 2 — the loop | §1's economics and §6's loop as one picture: the mold is paid once per *artist*, amortised across every video, and `attempts per approved still` is the metric that falls as episodes accumulate. |
 
-✅ **Checked, and the answer is $0.00.** This was left deliberately unasserted until the number could be verified against the free/serverless tier. It now has been — see [infra/MEMORY-WORKLOAD.md](./infra/MEMORY-WORKLOAD.md). CockroachDB Basic starts at $0/month, **scales to zero**, and includes **50M Request Units + 10 GiB storage free every month**, with the distributed vector index available on that plan. This workload sits inside that allowance at every modelled tier — 0.5% of free storage at pilot scale, 6.3% at ten tenants. **The $1/month idle claim survives the branch**, and the database tier contributes none of it.
+✅ **Checked, and the answer is $0.00.** This was left deliberately unasserted until the number could be verified against the free/serverless tier. It now has been — see [infra/MEMORY-WORKLOAD.md](../infra/MEMORY-WORKLOAD.md). CockroachDB Basic starts at $0/month, **scales to zero**, and includes **50M Request Units + 10 GiB storage free every month**, with the distributed vector index available on that plan. This workload sits inside that allowance at every modelled tier — 0.5% of free storage at pilot scale, 6.3% at ten tenants. **The $1/month idle claim survives the branch**, and the database tier contributes none of it.
 
 ⚠️ **What replaced it as the open risk.** Not cost — the RU cost of a *filtered vector scan*, which CockroachDB does not publish. The free allowance therefore has to be measured rather than assumed. An operation would have to exceed ~9,500 RU at pilot scale, or ~1,150 RU at ten tenants, before 50M RU/month breaks. Day 1–2 of §9 provisions the cluster anyway; recording the RU cost of one Q1 there is the cheapest way to close this.
 
@@ -253,7 +253,7 @@ Fifteen days, and the first is spent not writing code.
 ## 10. Open decisions
 
 1. **Licence.** MIT or Apache-2.0 is required and the repo has neither. Apache-2.0 recommended (patent grant, and it is the safer default for anything with a commercial future). Needs a call before anything is made public.
-2. ~~**CockroachDB Cloud idle cost**~~ — **closed 2026-07-26.** Basic scales to zero; 50M RU + 10 GiB free per month covers this workload at every modelled tier, vector index included. Idle contribution: **$0.00**. Full model, unit economics and AWS line items in [infra/MEMORY-WORKLOAD.md](./infra/MEMORY-WORKLOAD.md). *Superseded by a sharper question: the unpublished RU cost of a filtered vector scan, which must be measured on days 1–2.*
+2. ~~**CockroachDB Cloud idle cost**~~ — **closed 2026-07-26.** Basic scales to zero; 50M RU + 10 GiB free per month covers this workload at every modelled tier, vector index included. Idle contribution: **$0.00**. Full model, unit economics and AWS line items in [infra/MEMORY-WORKLOAD.md](../infra/MEMORY-WORKLOAD.md). *Superseded by a sharper question: the unpublished RU cost of a filtered vector scan, which must be measured on days 1–2.*
 3. **Embedding models.** Bedrock Titan for text is the low-friction default; the face embedding is the real question, since `check_likeness.py` currently uses a vision model's judgement rather than a metric embedding, and a 512-d face vector is a new dependency rather than a refactor.
 4. **Public repo timing.** The CockroachDB submission requires a public repo. Does that happen before or after Aug 3, given the Backblaze submission is in the same repo?
 5. **Does the artist entity land on the Backblaze track too, or only here?** PRODUCT.md's proposed `lib/artists/<artist>/…` layout is good independent of this hackathon. Doing it once, before the branch, avoids doing it twice.

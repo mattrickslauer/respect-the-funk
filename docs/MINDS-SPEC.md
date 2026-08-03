@@ -129,7 +129,7 @@ Tenets are readable and writable in plain language — *"Show me your current Te
 
 ## 3. What gets built — the RemixKit A&R Mind
 
-One Mind, equipped with one Skill, wrapping endpoints that already exist in [`app/remixkit/api/v1.py`](./app/remixkit/api/v1.py).
+One Mind, equipped with one Skill, wrapping endpoints that already exist in [`app/remixkit/api/v1.py`](../app/remixkit/api/v1.py).
 
 **Tools** — a thin map over the existing API, no new business logic:
 
@@ -183,7 +183,7 @@ Stated because it is a genuine tension, not a detail.
 
 RemixKit authenticates by email OTP only. A Minds Connection stores an API key and the platform injects it on the Mind's behalf, so the API needs to accept a static key for a service principal.
 
-This is small, and the codebase already anticipated its shape. [`app/remixkit/auth/provider.py`](./app/remixkit/auth/provider.py) defines `AuthProvider` as a Protocol with `AnonymousAuth` and `OtpAuth` behind it, and [`app/remixkit/deps.py`](./app/remixkit/deps.py) says so in its own docstring:
+This is small, and the codebase already anticipated its shape. [`app/remixkit/auth/provider.py`](../app/remixkit/auth/provider.py) defines `AuthProvider` as a Protocol with `AnonymousAuth` and `OtpAuth` behind it, and [`app/remixkit/deps.py`](../app/remixkit/deps.py) says so in its own docstring:
 
 > Auth followed exactly that shape: `auth/otp.py` plus a branch in `_build_auth`. **No route changed**, because routes already depend on `current_principal` rather than assuming who is calling.
 
@@ -200,7 +200,7 @@ All 12 `dialogue` hooks carry `rights.source: youtube` and `people_release: fals
 Three controls, all cheap:
 
 1. **The scope check is the existing one.** `Principal.can(scope)` in `auth/provider.py` is where the service key's permissions are bounded. The Mind's key gets read + propose + record-verdict. It does not get publish.
-2. **Nothing built from a `people_release: false` clip may leave the system.** [CLIP-SPEC](./content/CLIP-SPEC.md) rule 3, applied to the agent exactly as MEMORY-SPEC §7 applied it to the demo URL. Retrieval over those clips is fine; outbound is not.
+2. **Nothing built from a `people_release: false` clip may leave the system.** [CLIP-SPEC](../content/CLIP-SPEC.md) rule 3, applied to the agent exactly as MEMORY-SPEC §7 applied it to the demo URL. Retrieval over those clips is fine; outbound is not.
 3. **Audit the Skill on camera.** The docs supply the prompt — *"Show me what this Skill can do, what it reads, and what it can change. Flag anything it should not touch."* Running that in the demo video turns a compliance step into a scoring one, and it is the house style: `screen_clips.py` abstains rather than guesses, so the agent declares its scope rather than assuming it.
 
 ---

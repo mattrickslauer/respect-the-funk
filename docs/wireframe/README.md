@@ -8,8 +8,8 @@ date: "2026-07-27"
 ## Run it
 
 ```bash
-python3 web/wireframe/build.py
-python3 -m http.server 8000 --directory web/wireframe
+python3 docs/wireframe/build.py
+python3 -m http.server 8000 --directory docs/wireframe
 open http://localhost:8000
 ```
 

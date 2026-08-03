@@ -1,6 +1,6 @@
 """The six screens the wireframe specified and the console never had.
 
-`web/wireframe/` describes nine screens; three were built (roster, artist, verifier).
+`docs/wireframe/` describes nine screens; three were built (roster, artist, verifier).
 These cover the rest, and in particular the three gaps the wireframe README names as
 deliberate — reference frames having no surface, no catalogue view, and cost being
 visible only after generating.

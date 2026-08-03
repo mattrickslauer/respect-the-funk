@@ -1,10 +1,10 @@
-# web/ — B2B landing page
+# B2B landing page
 
-> **The page now lives in the app**, at
+> **The page lives in the app**, at
 > [`app/remixkit/ui/templates/pages/landing.html`](../app/remixkit/ui/templates/pages/landing.html),
-> served at `/` by `ui/routes.py:landing`. This file is still its documentation — the
-> positioning, the design tokens, and the rule about the numbers all still bind. What is
-> left in `web/` is `wireframe/`.
+> served at `/` by `ui/routes.py:landing`. This file is its documentation — the
+> positioning, the design tokens, and the rule about the numbers all still bind. The
+> wireframe that preceded it is [`docs/wireframe/`](./wireframe/).
 
 One self-contained HTML file. No build step, no framework, no dependencies.
 
@@ -12,11 +12,11 @@ One self-contained HTML file. No build step, no framework, no dependencies.
 
 It was considered and dropped. The landing page is static marketing content with no
 client-side state, so a React framework buys nothing here and costs a second deploy
-target, a second dependency tree, and — per `research/07-cost-model` — a **$20/mo Vercel
+target, a second dependency tree, and — per `docs/research/07-cost-model` — a **$20/mo Vercel
 seat that is a commercial-ToS requirement, not a usage cost**. That is the entire
 always-on floor of the stack, spent on a page that never re-renders.
 
-This follows the precedent already in the repo: `deck/remixkit-deck.html` is a
+This follows the precedent already in the repo: `docs/deck/remixkit-deck.html` is a
 hand-rolled self-contained HTML file too.
 
 ## How it deploys — done
@@ -31,7 +31,7 @@ def landing(request: Request):
     return _render(request, "pages/landing.html")
 ```
 
-It had to move *into* `app/remixkit/` rather than be served from `web/`, because the
+It had to move *into* `app/remixkit/` rather than be served as a separate static site, because the
 Dockerfile copies `remixkit/` and `worker.py` and nothing else — a template outside the
 package is not in the image.
 
@@ -52,7 +52,7 @@ refuses without one. There is no sign-up — `RK_ALLOWED_EMAILS` is the user tab
 
 ## Design system
 
-Inherited from `deck/remixkit-deck.html` so the deck and the site read as one brand:
+Inherited from `docs/deck/remixkit-deck.html` so the deck and the site read as one brand:
 
 | Token | Value |
 |---|---|
@@ -68,7 +68,7 @@ Dark-committed by design — it matches the deck, which is the other thing label
 
 The page is aimed at **independent labels who want organic (non-paid) fan UGC**, and it is
 built directly on `/research`. The load-bearing constraint, from
-`research/13-ugc-adoption`:
+`docs/research/13-ugc-adoption`:
 
 > UGC breakout is a lottery, not a mechanism you can operate.
 

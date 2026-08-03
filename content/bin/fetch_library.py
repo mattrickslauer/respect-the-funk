@@ -309,7 +309,7 @@ def sidecar(sid: str, out: Path, src_meta: dict, s: float, dur: float,
             "width": 1080, "height": 1920, "fps": 30, "aspect": "9:16",
         },
         "rights": {
-            # Recorded, not enforced. Downloading is not publishing; see research/06
+            # Recorded, not enforced. Downloading is not publishing; see docs/research/06-rights-licensing
             # before this library becomes paid creative.
             "source": "youtube",
             "owner": src_meta.get("channel"),

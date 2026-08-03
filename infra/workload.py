@@ -17,7 +17,7 @@ they are all computed here.
                           export schema (Service / Description / Specs / Monthly / 12mo)
   stdout                  the same tables, for diffing when a rate changes
 
-House rule inherited from research/07-cost-model: price it, date it, link it. Every rate
+House rule inherited from docs/research/07-cost-model: price it, date it, link it. Every rate
 below carries its source and its verification date. Anything that could not be read from
 a primary source is marked UNVERIFIED in-line and again in the PDF — not quietly rounded.
 
@@ -36,7 +36,7 @@ VERIFIED = "2026-07-26"
 # ---------------------------------------------------------------------------
 # RATES — us-east-1. Everything marked [API] was read from the AWS Price List
 # Bulk API on 2026-07-26, which is AWS's own primary source and does not have the
-# JS-rendering problem research/07-cost-model hit on the HTML pricing pages.
+# JS-rendering problem docs/research/07-cost-model hit on the HTML pricing pages.
 # ---------------------------------------------------------------------------
 
 # [API] AmazonBedrock/us-east-1 — USE1-TitanEmbeddingV2-Text-input-tokens
@@ -69,7 +69,7 @@ ECR_GB_MO = 0.10
 # infra/README.md carries CloudWatch as "~cents" at 14-day retention. Not re-derived.
 CLOUDWATCH_MO = 0.15                      # UNVERIFIED — order-of-magnitude placeholder
 
-# research/07-cost-model, verified 2026-07-15. B2 is unchanged by this branch.
+# docs/research/07-cost-model, verified 2026-07-15. B2 is unchanged by this branch.
 B2_GB_MO = 0.00695
 
 # cockroachlabs.com/pricing/new, read 2026-07-26: Basic "starts at $0 / month",
@@ -88,7 +88,7 @@ CRDB_STORAGE_GIB_MO = 0.50                # UNVERIFIED — third-party
 STILL_GEN_PER_IMAGE = 0.04                # gemini-2.5-flash-image
 # check_likeness.py calls gemini-2.5-flash once per (still x cast member) with a rubric
 # and reference crops. ~2k in + 300 out at Gemini 2.5 Flash $0.30/$2.50 per MTok
-# (research/07-cost-model, verified 2026-07-15).
+# (docs/research/07-cost-model, verified 2026-07-15).
 LIKENESS_JUDGE_PER_CALL = 2000 / 1e6 * 0.30 + 300 / 1e6 * 2.50
 
 # ---------------------------------------------------------------------------
@@ -633,7 +633,7 @@ def build_html() -> str:
 
     o.append("<h3>What this does and does not change about the bill</h3>")
     o.append("<ul>")
-    o.append("<li><b>research/07-cost-model&rsquo;s conclusion is unchanged and is reinforced.</b> "
+    o.append("<li><b>docs/research/07-cost-model&rsquo;s conclusion is unchanged and is reinforced.</b> "
              "Generation is the bill; everything else rounds to noise. The memory tier does not "
              "add a meaningful line &mdash; it is a lever on the line that already dominates.</li>")
     o.append("<li><b>The tier has no idle floor</b>, which is the property infra/README.md's "
@@ -737,7 +737,7 @@ def build_html() -> str:
     o.append('<p class="cap">Sources — AWS Price List Bulk API (pricing.us-east-1.amazonaws.com, '
              'AmazonBedrock / AWSLambda / AWSQueueService / AmazonECS / AmazonECR, us-east-1, '
              f'read {VERIFIED}) · cockroachlabs.com/pricing/new and /docs/cockroachcloud/costs '
-             f'(read {VERIFIED}) · research/07-cost-model (verified 2026-07-15) for Backblaze B2 '
+             f'(read {VERIFIED}) · docs/research/07-cost-model (verified 2026-07-15) for Backblaze B2 '
              'and Gemini token rates · content/bin/generate_stills.py PRICES_USD (dated 2026-07 '
              'by the repo) for the image-generation rate.</p>')
     return "".join(o)

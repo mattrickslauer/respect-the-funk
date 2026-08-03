@@ -405,7 +405,7 @@
     // than leaving a blank page and a console error.
     fail("Serve this over HTTP",
       "This page loads wireframe.json at runtime, which a browser will not do from the "
-      + "filesystem. Run  python3 -m http.server 8000 --directory web/wireframe  and open "
+      + "filesystem. Run  python3 -m http.server 8000 --directory docs/wireframe  and open "
       + "http://localhost:8000. For a version that opens straight from disk, build with "
       + "python3 build.py --standalone.");
   } else {
@@ -418,7 +418,7 @@
       .catch(function (e) {
         fail("No model to draw",
           "Could not load wireframe.json (" + e.message + "). Run  python3 build.py  "
-          + "in web/wireframe to generate it.");
+          + "in docs/wireframe to generate it.");
       });
   }
 })();

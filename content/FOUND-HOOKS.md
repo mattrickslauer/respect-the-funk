@@ -282,7 +282,7 @@ At your instruction the hard rights gates are gone.
 - `fetch_hooks.py` / `fetch_library.py` record provenance — query, video id, channel,
   exact window — rather than gating on it.
 
-What that does **not** change: `research/06` found that TikTok's ad policy contains a
+What that does **not** change: `docs/research/06-rights-licensing` found that TikTok's ad policy contains a
 written rule barring *"clips from any unauthorized media sources to promote your
 product,"* and that Meta pre-screens for infringing IP. Downloading is not publishing, and
 this pipeline is now happy to build things it should not run as paid creative. The gate

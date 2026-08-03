@@ -1025,7 +1025,7 @@ and it is the **only** page whose route does not take `CurrentPrincipal`. That i
 entire gate: every console handler asks for a principal, so every console handler
 refuses without a session, and no route contains an `if authenticated` branch.
 
-It is one app rather than two because `web/README.md` costed the alternative: a separate
+It is one app rather than two because `docs/web.md` costed the alternative: a separate
 front end is a second deploy target, a second dependency tree, and a $20/mo Vercel
 commercial-ToS seat — the whole always-on floor of this stack, spent on a page that
 never re-renders. The page needed no rework to move; it was already valid Jinja.

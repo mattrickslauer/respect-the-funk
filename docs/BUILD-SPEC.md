@@ -16,7 +16,7 @@ deadline: "2026-08-03 17:00 EDT"
 
 The hackathon rewards a generative-media app that (a) orchestrates multiple AI providers via **Genblaze**, (b) stores assets/metadata/**provenance** in **B2**, and (c) solves a real problem with production readiness. Four **equally-weighted** criteria: Real-World Utility · Production Readiness · B2 Storage + Data Orchestration · Use of Genblaze.
 
-Your own research ([`/research/_synthesis/SYNTHESIS.md`](./research/_synthesis/SYNTHESIS.md)) concludes the only defensible label product is: *"make each release cheap, correctly-plumbed, fast, and legally clean — more releases beat more spend,"* and the only supported UGC mechanism is **templatability** (*"the song is the substrate, the template is the product"*).
+Your own research ([`/docs/research/SYNTHESIS.md`](./research/SYNTHESIS.md)) concludes the only defensible label product is: *"make each release cheap, correctly-plumbed, fast, and legally clean — more releases beat more spend,"* and the only supported UGC mechanism is **templatability** (*"the song is the substrate, the template is the product"*).
 
 **RemixKit is both.** It manufactures templatable, provenance-clean UGC assets for any release at near-zero marginal cost, tracks every dollar, and runs a creator marketplace that rewards fans for posting. Every feature does double duty:
 

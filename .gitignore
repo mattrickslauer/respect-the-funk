@@ -53,6 +53,14 @@ content/.cache/
 # needs librsvg plus Futura installed. Source of truth is still the SVG beside it.
 !docs/brand/*.png
 
+# KEPT DELIBERATELY: the console showcase. The rule above is "derivable, so drop it", and
+# these are not: docs/showcase/capture.py rebuilds them only against a running instance
+# that still holds the records it shoots — a measured song, a consented artist, five
+# delivered kits — and that data is gitignored dev state, not something the repo carries.
+# 8.6MB for fifteen screens, and they are the only picture of the console anyone gets
+# without checking it out and running it.
+!docs/showcase/*.png
+
 # Camera-original photography — large, and not what this repo is for.
 *.heic
 *.HEIC

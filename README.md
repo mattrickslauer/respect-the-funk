@@ -1,6 +1,9 @@
 # Respect the Funk / RemixKit
 
-![RemixKit — build an artist once, generate every release's media from it, and verify what came out](./docs/brand/thumbnail.png)
+<p align="center">
+  <img src="./docs/brand/thumbnail.png" width="720"
+       alt="RemixKit — a vinyl record drawn as a radial audio spectrum, over the wordmark RemixKit and the line Respect the Funk">
+</p>
 
 A provenance-clean media generation suite for a record label: register an artist, build
 their identity once, attach songs, generate whatever the release needs — performance

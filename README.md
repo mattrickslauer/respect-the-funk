@@ -1,5 +1,7 @@
 # Respect the Funk / RemixKit
 
+![RemixKit — build an artist once, generate every release's media from it, and verify what came out](./docs/brand/thumbnail.png)
+
 A provenance-clean media generation suite for a record label: register an artist, build
 their identity once, attach songs, generate whatever the release needs — performance
 clips, press and cover stills, announcements to camera, voice-over, and backdrops a fan

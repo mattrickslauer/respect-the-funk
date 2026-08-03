@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img"
+     aria-label="RemixKit — Respect the Funk. Build an artist once. Generate every release's media from it, and verify what came out.">
+  <title>RemixKit — Respect the Funk</title>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c1926"/>
+      <stop offset="0.55" stop-color="#14121a"/>
+      <stop offset="1" stop-color="#0e0c14"/>
+    </linearGradient>
+
+    <!-- Gold wash behind the wordmark, so the type sits in light rather than on top of it. -->
+    <radialGradient id="glow" cx="0.26" cy="0.42" r="0.62">
+      <stop offset="0" stop-color="#f5b940" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#f5b940" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- The bars fade out to the right so the waveform reads as a decaying tail, not a chart. -->
+    <linearGradient id="barFade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f5b940" stop-opacity="0.95"/>
+      <stop offset="0.55" stop-color="#f5b940" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#f5b940" stop-opacity="0.12"/>
+    </linearGradient>
+    <mask id="barMask">
+      <rect x="0" y="0" width="1280" height="640" fill="url(#barFade)"/>
+    </mask>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+
+  <!-- Hairline frame, inset. Gives the image an edge on light and dark READMEs alike. -->
+  <rect x="24.5" y="24.5" width="1231" height="591" rx="14"
+        fill="none" stroke="#f5b940" stroke-opacity="0.22"/>
+
+  <g font-family="Futura, 'Avenir Next', 'Helvetica Neue', sans-serif">
+
+    <!-- Kicker -->
+    <g transform="translate(80, 118)">
+      <rect x="0" y="-13" width="34" height="3" rx="1.5" fill="#f5b940"/>
+      <text x="50" y="0" font-size="19" letter-spacing="4.6" fill="#f5b940" fill-opacity="0.92">
+        RESPECT THE FUNK
+      </text>
+    </g>
+
+    <!-- Wordmark -->
+    <text x="80" y="266" font-size="128" font-weight="500" letter-spacing="-2.2" fill="#f7f5f2">
+      RemixKit
+    </text>
+
+    <!-- Tagline -->
+    <g font-family="'Avenir Next', 'Helvetica Neue', Helvetica, sans-serif" fill="#cfc9d8">
+      <text x="83" y="330" font-size="30" letter-spacing="0.1">
+        Build an artist once. Generate every release&#8217;s media from it
+      </text>
+      <text x="83" y="374" font-size="30" letter-spacing="0.1">
+        &#8212; and <tspan fill="#f5b940">verify what came out</tspan>.
+      </text>
+    </g>
+
+    <!-- What it makes. Five formats, because the suite is five formats — see docs/PRODUCT.md. -->
+    <g font-family="'Avenir Next', 'Helvetica Neue', Helvetica, sans-serif" font-size="17"
+       fill="#a79fb8" letter-spacing="0.4">
+      <g transform="translate(83, 448)">
+        <rect x="-1" y="-24" width="196" height="38" rx="19" fill="#232030" stroke="#f5b940" stroke-opacity="0.2"/>
+        <text x="20" y="1">Performance clips</text>
+      </g>
+      <g transform="translate(295, 448)">
+        <rect x="-1" y="-24" width="184" height="38" rx="19" fill="#232030" stroke="#f5b940" stroke-opacity="0.2"/>
+        <text x="20" y="1">Press &amp; cover stills</text>
+      </g>
+      <g transform="translate(495, 448)">
+        <rect x="-1" y="-24" width="150" height="38" rx="19" fill="#232030" stroke="#f5b940" stroke-opacity="0.2"/>
+        <text x="20" y="1">To-camera VO</text>
+      </g>
+      <g transform="translate(661, 448)">
+        <rect x="-1" y="-24" width="128" height="38" rx="19" fill="#232030" stroke="#f5b940" stroke-opacity="0.2"/>
+        <text x="20" y="1">Lyric cards</text>
+      </g>
+      <g transform="translate(805, 448)">
+        <rect x="-1" y="-24" width="218" height="38" rx="19" fill="#232030" stroke="#f5b940" stroke-opacity="0.2"/>
+        <text x="20" y="1">Templatable backdrops</text>
+      </g>
+    </g>
+
+    <!-- Footer: the provenance claim, stated at the strength the code actually supports. -->
+    <g font-family="'Avenir Next', 'Helvetica Neue', Helvetica, sans-serif" font-size="16"
+       fill="#7d7590" letter-spacing="1.5">
+      <text x="83" y="556">MEDIA GENERATION SUITE FOR A RECORD LABEL&#8217;S CATALOGUE</text>
+      <text x="1197" y="556" text-anchor="end" fill="#6d6680">
+        EVERY ASSET SHIPS ITS MANIFEST
+      </text>
+    </g>
+  </g>
+
+  <!-- Waveform. Heights are a hook window: build, drop, decay. -->
+  <g mask="url(#barMask)" transform="translate(30, -74)">
+    <g fill="url(#barFade)">
+      <rect x="1000" y="300" width="9" height="40"  rx="4.5"/>
+      <rect x="1020" y="284" width="9" height="72"  rx="4.5"/>
+      <rect x="1040" y="256" width="9" height="128" rx="4.5"/>
+      <rect x="1060" y="292" width="9" height="56"  rx="4.5"/>
+      <rect x="1080" y="212" width="9" height="216" rx="4.5"/>
+      <rect x="1100" y="268" width="9" height="104" rx="4.5"/>
+      <rect x="1120" y="176" width="9" height="288" rx="4.5"/>
+      <rect x="1140" y="248" width="9" height="144" rx="4.5"/>
+      <rect x="1160" y="300" width="9" height="40"  rx="4.5"/>
+      <rect x="1180" y="272" width="9" height="96"  rx="4.5"/>
+      <rect x="1200" y="308" width="9" height="24"  rx="4.5"/>
+    </g>
+  </g>
+</svg>

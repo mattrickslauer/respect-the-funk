@@ -158,7 +158,7 @@ def test_a_presigned_url_is_stable_so_the_browser_can_cache_it():
             signed.append(key)
             return f"https://b2/{key}?sig={len(signed)}"
 
-        def put(self, key, data, content_type=None):
+        def put(self, key, data, content_type=None, extra_args=None):
             return key
 
         def delete(self, key):
@@ -186,7 +186,7 @@ def test_replacing_an_object_re_signs_it():
             n[0] += 1
             return f"https://b2/{key}?sig={n[0]}"
 
-        def put(self, key, data, content_type=None):
+        def put(self, key, data, content_type=None, extra_args=None):
             return key
 
         def delete(self, key):
@@ -202,6 +202,77 @@ def test_replacing_an_object_re_signs_it():
 
     storage.delete("masters/m.wav")
     assert n[0] == 2
+
+
+# -------------------------------------------------------------- Cache-Control on upload
+def _recording_backend():
+    """A backend that remembers the ExtraArgs each `put` was given."""
+    calls: list[dict] = []
+
+    class Backend:
+        def put(self, key, data, content_type=None, extra_args=None):
+            calls.append({"key": key, "extra_args": extra_args or {}})
+            return key
+
+        def presigned_get_url(self, key, expires_in):
+            return f"https://b2/{key}?sig=1"
+
+        def delete(self, key):
+            return None
+
+    return Backend(), calls
+
+
+def test_uploads_carry_a_cache_control_because_b2_sets_none_itself():
+    """The other half of the stable-URL fix, and the half that was missing.
+
+    A stable URL is only a cache *key*; it is not permission to cache. Per B2's own
+    Cache-Control documentation, buckets created on or after 2021-09-08 send no
+    `Cache-Control` header at all — so the browser was handed a repeatable name for a
+    response it had never been told it could keep.
+    """
+    b2 = pytest.importorskip("remixkit.adapters.storage_b2")
+
+    backend, calls = _recording_backend()
+    storage = object.__new__(b2.B2Storage)
+    storage._backend = backend
+    storage._presigned = {}
+
+    storage.put("tenants/t/frames/a.jpeg", b"bytes", content_type="image/jpeg")
+
+    assert calls[0]["extra_args"]["CacheControl"] == "private, max-age=3600, immutable"
+
+
+def test_the_cache_directive_suppresses_revalidation_not_just_the_download():
+    """`immutable` is the clause that protects the Class B cap.
+
+    A fresh-but-revalidating browser still sends a conditional request, and on B2 that
+    request is itself a billable Class B transaction against the same daily cap this file
+    exists to document. `immutable` is what stops it being sent.
+    """
+    b2 = pytest.importorskip("remixkit.adapters.storage_b2")
+
+    directive = b2._cache_control_for("tenants/t/kits/k/clip.mp4")
+
+    assert "immutable" in directive
+    assert "private" in directive, "tenant media must not be held by shared caches"
+    assert "no-store" not in directive
+
+
+def test_documents_are_never_cached_because_they_are_overwritten_in_place():
+    """`repo_documents` is last-write-wins, so an artist edited twice in an hour must not
+    be served from the first version. Media keys rotate their URL on write; a document
+    key does not, so this one is settled by the directive instead."""
+    b2 = pytest.importorskip("remixkit.adapters.storage_b2")
+
+    backend, calls = _recording_backend()
+    storage = object.__new__(b2.B2Storage)
+    storage._backend = backend
+    storage._presigned = {}
+
+    storage.put("tenants/t/artists/a1.yaml", b"id: a1", content_type="application/yaml")
+
+    assert calls[0]["extra_args"]["CacheControl"] == "no-cache"
 
 
 # ------------------------------------------------------ the connector's own vocabulary

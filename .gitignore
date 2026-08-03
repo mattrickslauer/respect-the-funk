@@ -41,6 +41,7 @@ content/.cache/
 *.mp3
 *.wav
 *.m4a
+*.webm
 
 # Generated stills (768x1344 PNGs, ~1.3MB each). The prompt that made each one is in
 # the edit, and its sidecar records model + hash, so the picture itself is derivable.
@@ -53,6 +54,14 @@ content/.cache/
 # KEPT DELIBERATELY: *.jpg. These are the hook reference frames the style anchor is
 # built from (characters/*-ref*.jpg). They are small, and they are the only record of
 # what the image model was actually shown — losing them makes a rerun unreproducible.
+
+# KEPT DELIBERATELY: the demo overlay set. The *.png rule above is aimed at 1.3MB stills
+# off an image model; these are 40KB of vector drawing each, 3MB for all twenty, and they
+# are the deliverable for the demo edit rather than an intermediate on the way to one.
+# Same call already made for the rendered PDFs in docs/. The ProRes masters are *not*
+# kept — 33MB a card, and `generate_overlays.py --formats mov` rebuilds them.
+!content/videos/demo-founder/*.png
+!content/videos/demo-founder/*.webm
 
 # ---------------------------------------------------------------- vendored binaries
 # 38MB standalone; fetch it rather than carry it.

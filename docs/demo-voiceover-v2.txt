@@ -1,0 +1,43 @@
+A track that never crosses a thousand streams in a year earns nothing. That's Spotify's own threshold, and most releases never cross it.
+
+We're Respect the Funk, a record label. Before we built anything, we ran the research. Every path to making one song win came back closed.
+
+You cannot buy streams. Twenty-five thousand dollars of ads returns a few hundred in royalties. Fifty to one.
+
+And fan videos — what everyone chases — are a lottery: the top ten percent of songs take ninety-six percent of them.
+
+So optimization is dead. When outcomes are lottery-shaped you don't need a better ticket — you need more tickets, cheaper, with the plumbing correct so a win pays.
+
+That's RemixKit.
+
+Register an artist. Consent is recorded before anything can be generated — no consent, no generation, and the roster says so.
+
+Build the identity once: reference frames across angles, the words the model is told, and the ones it must never render.
+
+Attach a song. It's measured once — tempo, sections, hook window. And the app refuses a tempo that arrives without the method that produced it.
+
+Then generate. A performance clip. A press still. The artist announcing a show, straight to camera. Or a backdrop built to be copied, so a fan who sees one knows what their own version looks like.
+
+The shape of an asset used to be a commit. Now it's a row — prompt, negatives, length, how much of the artist it needs. Adding a format is a document, not a deploy.
+
+Each clip is two models from two vendors in one run: the face settled first as a still, four cents, and that frame becomes the first frame of the video, eighty. Priced before you buy it — and past your ceiling the run is refused before a single call is submitted. A submitted step is a charged step.
+
+Build it once, and the second video is cheap. Cost per attempt is the only lever left.
+
+Here's what runs it. AWS handles the logic. Backblaze B2 holds the bytes — and the proof.
+
+That split is why this system has no database. A label stores documents, not rows — an artist, its measurements, a finished kit — so they live in a B2 bucket. Eleven services became five; idle cost, under a dollar a month.
+
+B2 does four jobs.
+
+It's the upload path — masters go browser straight to bucket, never touching our server.
+
+It's the catalog. Every run writes under tenant, date, run ID.
+
+It's the receipt. Every asset lands beside a manifest naming the provider, model and prompt behind every step. A kit that can't prove how it was made never reaches ready.
+
+And it's the disclosure. Download a clip and that manifest travels inside the file, while the stored object stays byte-identical — so the hash still means something. Drop it into verify and it says exactly how it was made. Nothing is looked up. The proof is in the bytes.
+
+You cannot buy a hit. You can only lower the cost of trying — and be honest about what came out.
+
+Bring us one artist and one song.

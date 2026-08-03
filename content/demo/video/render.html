@@ -495,23 +495,25 @@ const XF = 0.28;
 
 function buildScenes() {
 
-// ---- s1 · Register an artist / identity once / consent on record ----------------
+// ---- s1 · Register an artist · the consent gate ---------------------------------
+// v2 leads with consent rather than mentioning it in passing, so this scene ends where
+// the identity build begins instead of carrying both.
 scene("register", (root, s) => {
-  s.in = CUE("Register an artist"); s.out = CUE("Attach a song");
+  s.in = CUE("Register an artist"); s.out = CUE("Build the identity");
 
   const shot = makeShot("02-roster", { x: 300, y: 150, w: 1320, h: 780 });
   root.appendChild(shot);
 
   const kick = el("div", "kicker", { position: "absolute", left: "300px", top: "92px" }, "STEP 01 · ROSTER");
-  const head = el("div", "head", { position: "absolute", left: "300px", top: "962px", fontSize: "56px" });
+  const head = el("div", "head", { position: "absolute", left: "300px", top: "962px", fontSize: "52px" });
   root.appendChild(kick); root.appendChild(head);
 
   const wide = { x: 0.10, y: 0.02, w: 0.62 };
   const onAmanda = { x: 0.145, y: 0.055, w: 0.30 };
   const onBoth = { x: 0.155, y: 0.075, w: 0.44 };
 
-  const tIdentity = CUE("Build their identity");
-  const tConsent = CUE("likeness consent");
+  const tConsent = CUE("Consent is recorded");
+  const tNo = CUE("no consent, no generation");
 
   return (t) => {
     hideExtras(shot);
@@ -519,32 +521,90 @@ scene("register", (root, s) => {
     shot.style.opacity = 1;
     root.style.transform = `scale(${lerp(1.03, 1, easeOut(p))})`;
 
-    // One continuous move: wide, in on the artist, then out to hold both cards.
+    // Wide, in on the artist who has consent, then out to hold the one who does not.
     let c;
-    if (t < tIdentity) c = camLerp(wide, onAmanda, easeInOut(at(t, s.in, tIdentity - s.in)));
-    else if (t < tConsent) c = onAmanda;
-    else c = camLerp(onAmanda, onBoth, easeInOut(at(t, tConsent, 1.3)));
-    // never fully still
+    if (t < tNo) c = camLerp(wide, onAmanda, easeInOut(at(t, s.in, Math.max(0.8, tNo - s.in))));
+    else c = camLerp(onAmanda, onBoth, easeInOut(at(t, tNo, 1.3)));
     c = { x: c.x, y: c.y - 0.004 * easeInOut(at(t, s.in, s.out - s.in)), w: c.w };
     cam(shot, c);
 
     rise(kick, at(t, s.in, 0.6));
-    head.style.opacity = clamp(at(t, tIdentity, 0.5) * 1.6);
-    head.innerHTML = t < tConsent
-      ? 'Build the identity <span style="color:var(--gold)">once</span>.'
-      : 'Consent is a <span style="color:var(--gold)">gate</span>, not a policy page.';
+    head.style.opacity = clamp(at(t, tConsent + 0.4, 0.5) * 1.6);
+    head.innerHTML = t < tNo
+      ? 'Recorded <span style="color:var(--gold)">before</span> anything can be generated.'
+      : 'A <span style="color:var(--gold)">gate</span>, not a policy page.';
 
-    // The consent chip, then the artist who does not have one.
-    const pc = at(t, tConsent, 0.5);
+    const pc = at(t, tConsent + 0.5, 0.5);
     if (pc > 0) {
       hl(shot, "consent", { x: 0.183, y: 0.183, w: 0.163, h: 0.062 }, pc, "ok");
       tag(shot, "consent", { x: 0.183, y: 0.183 }, "likeness consent · on file", pc, "ok", 0, -46);
     }
-    const pb = at(t, tConsent + 0.85, 0.5);
+    const pb = at(t, tNo, 0.5);
     if (pb > 0) {
       hl(shot, "blocked", { x: 0.371, y: 0.172, w: 0.163, h: 0.062 }, pb, "err");
       tag(shot, "blocked", { x: 0.371, y: 0.172 }, "no consent · generation blocked", pb, "err", 0, -46);
     }
+  };
+});
+
+// ---- s1b · Build the identity once ----------------------------------------------
+// New in v2. The script now says what an identity actually is — frames, the words the
+// model is told, the words it must never render — so the identity screen carries it.
+scene("identity", (root, s) => {
+  s.in = CUE("Build the identity"); s.out = CUE("Attach a song");
+
+  // Portrait frame, because the thing being shown is a portrait: at 700×940 the shot's
+  // aspect matches the reference-frame image on the page (0.745), so a crop tight enough
+  // to read it does not slice the face in half the way a landscape window did.
+  const shot = makeShot("04-identity", { x: 140, y: 96, w: 700, h: 940 });
+  root.appendChild(shot);
+
+  const kick = el("div", "kicker", { position: "absolute", left: "140px", top: "48px" }, "STEP 02 · IDENTITY");
+  const head = el("div", "head", { position: "absolute", left: "920px", top: "112px", width: "820px", fontSize: "50px" },
+    'Built <span style="color:var(--gold)">once</span>, and reused by every kit after it.');
+  root.appendChild(kick); root.appendChild(head);
+
+  // Three facts, arriving as the narrator names them.
+  const facts = [
+    ["REFERENCE FRAMES", "five, across angles and lighting"],
+    ["WHAT THE MODEL IS TOLD", "a 220-character budget, prepended to every shot"],
+    ["WHAT IT MUST NEVER RENDER", "anti-drift negatives, sent as negative_prompt"],
+  ].map(([k, v], i) => {
+    const n = el("div", "card", { left: "920px", top: px(320 + i * 200), width: "820px", height: "176px", padding: "28px" });
+    n.appendChild(el("div", "mono", { fontSize: "14px", letterSpacing: "0.16em", color: "var(--gold)" }, k));
+    n.appendChild(el("div", "sub", { fontSize: "23px", marginTop: "14px" }, v));
+    root.appendChild(n);
+    return n;
+  });
+
+  // The whole reference image (x 0.432–0.735, y 0.145–0.535), then the form describing it.
+  const onFrames = { x: 0.420, y: 0.135, w: 0.33 };
+  const onControls = { x: 0.160, y: 0.200, w: 0.25 };
+
+  const tFrames = CUE("reference frames across angles");
+  const tTold = CUE("the words the model is told");
+  const tNever = CUE("must never render");
+
+  return (t) => {
+    hideExtras(shot);
+    // Start on the reference frames, drift to the controls that describe them.
+    const c = camLerp(onFrames, onControls, easeInOut(at(t, tTold, 3.2)));
+    cam(shot, c);
+    shot.style.opacity = clamp(at(t, s.in, 0.6) * 1.6);
+    rise(kick, at(t, s.in, 0.5));
+    rise(head, at(t, s.in + 0.2, 0.6));
+
+    const cues = [tFrames, tTold, tNever];
+    facts.forEach((n, i) => {
+      const p = at(t, cues[i] - 0.25, 0.55);
+      n.style.opacity = clamp(p * 1.6);
+      n.style.transform = `translateX(${px(lerp(30, 0, easeOut(p)))})`;
+    });
+
+    const pf = at(t, tFrames, 0.5);
+    if (pf > 0) hl(shot, "frames", { x: 0.432, y: 0.143, w: 0.303, h: 0.395 }, pf);
+    const pn = at(t, tNever, 0.5);
+    if (pn > 0) hl(shot, "neg", { x: 0.168, y: 0.545, w: 0.232, h: 0.045 }, pn, "err");
   };
 });
 
@@ -570,11 +630,11 @@ scene("song", (root, s) => {
     r.appendChild(val); r._v = val;
     return r;
   };
-  const rDrop = mkRow("DROP", "no clear kick re-entry");
+  const rSections = mkRow("SECTIONS", "7 · measured at bar resolution");
   const rHook = mkRow("HOOK", "148.8s → 241.9s");
-  rowsWrap.appendChild(rDrop); rowsWrap.appendChild(rHook);
+  rowsWrap.appendChild(rSections); rowsWrap.appendChild(rHook);
 
-  const methodLabel = el("div", "mono", { marginTop: "30px", fontSize: "17px", letterSpacing: "0.22em", color: "var(--gold)" }, "METHOD");
+  const methodLabel = el("div", "mono", { marginTop: "30px", fontSize: "17px", letterSpacing: "0.22em", color: "var(--gold)" }, "METHOD · REQUIRED");
   const method = el("div", "mono", { marginTop: "12px", fontSize: "16.5px", lineHeight: "1.55", color: "var(--ink-2)", height: "250px", overflow: "hidden" });
 
   panel.appendChild(bpmLabel); panel.appendChild(bpm); panel.appendChild(bpmUnit);
@@ -583,10 +643,10 @@ scene("song", (root, s) => {
 
   const METHOD_TEXT = "audio_numpy: spectral-flux onset envelope @ 22050Hz/hop 256, joint tempo+phase comb fit over 328 beats → 79.97 BPM; bar phase from arrangement-change residue; sections at bar resolution.";
 
-  const tTempo = CUE("tempo, drop");
-  const tDrop = CUE("drop, hook");
-  const tHook = CUE("hook windows");
-  const tMethod = CUE("a method behind it");
+  const tTempo = CUE("tempo, sections");
+  const tSections = CUE("sections, hook");
+  const tHook = CUE("hook window");
+  const tMethod = CUE("the method that produced it");
 
   const wide = { x: 0.14, y: 0.03, w: 0.66 };
   const onSections = { x: 0.16, y: 0.19, w: 0.42 };
@@ -613,7 +673,7 @@ scene("song", (root, s) => {
     bpm.style.opacity = clamp(at(t, tTempo, 0.3) * 2);
     bpmLabel.style.opacity = bpmUnit.style.opacity = clamp(at(t, tTempo, 0.4) * 2);
 
-    rise(rDrop, at(t, tDrop, 0.45));
+    rise(rSections, at(t, tSections, 0.45));
     rise(rHook, at(t, tHook, 0.45));
 
     methodLabel.style.opacity = clamp(at(t, tMethod - 0.35, 0.4) * 2);
@@ -729,7 +789,7 @@ scene("formats", (root, s) => {
 
 // ---- s3b · a backdrop, copied ---------------------------------------------------
 scene("copied", (root, s) => {
-  s.in = CUE("so a fan who sees one"); s.out = CUE("Every one of those");
+  s.in = CUE("so a fan who sees one"); s.out = CUE("The shape of an asset");
 
   const head = el("div", "head", { position: "absolute", left: "128px", top: "150px", width: "560px", fontSize: "52px" },
     'One backdrop.<br><span style="color:var(--gold)">Every fan knows what theirs looks like.</span>');
@@ -768,11 +828,11 @@ scene("copied", (root, s) => {
 
 // ---- s4 · a format is a row -----------------------------------------------------
 scene("row", (root, s) => {
-  s.in = CUE("Every one of those"); s.out = CUE("Build it once");
+  s.in = CUE("The shape of an asset"); s.out = CUE("Each clip is two models");
 
   const kick = el("div", "kicker", { position: "absolute", left: "160px", top: "150px" }, "FORMATS ARE DATA");
-  const head = el("div", "head", { position: "absolute", left: "160px", top: "196px", width: "1600px", fontSize: "58px" },
-    'A format is a <span style="color:var(--gold)">row a label can edit</span> —<br>not a shape we welded in.');
+  const head = el("div", "head", { position: "absolute", left: "160px", top: "196px", width: "1600px", fontSize: "54px" },
+    'The shape of an asset used to be a <span style="color:var(--err)">commit</span>.<br>Now it is a <span style="color:var(--gold)">row</span>.');
   root.appendChild(kick); root.appendChild(head);
 
   // A table whose rows are the formats just named on the generate page.
@@ -801,7 +861,29 @@ scene("row", (root, s) => {
     return n;
   });
 
-  const tEdit = CUE("a row a label can edit");
+  // A sixth row writes itself in. The claim v2 makes is that *adding* a format is a
+  // document rather than a deploy — which is what the Recipe model's own docstring says
+  // ("the shape of the asset was not a setting; it was a commit"). Editing a cell would
+  // have illustrated a different claim, and one the console does not support:
+  // RecipeService has save(), but no route reaches it.
+  const NEWROW = ["lyric card", "1:1", "6s", "no", "seedream-5.0-lite", "no face"];
+  const newRow = el("div", null, {
+    display: "flex", alignItems: "center", padding: "20px 0",
+    borderBottom: "1px solid var(--rule-2)", opacity: 0,
+  });
+  const newCells = NEWROW.map((v, i) => {
+    const c = el("div", i === 0 ? "" : "mono", {
+      width: COLS[i][1] + "px", fontSize: i === 0 ? "27px" : "20px", color: "var(--gold)",
+    });
+    c._txt = v; newRow.appendChild(c); return c;
+  });
+  table.appendChild(newRow);
+
+  const caption = el("div", "mono", { position: "absolute", left: "160px", top: "934px", fontSize: "21px", color: "var(--ink-3)", opacity: 0 },
+    "a document in the bucket \u2014 no deploy, no release");
+  root.appendChild(caption);
+
+  const tAdd = CUE("Adding a format is a document");
 
   return (t) => {
     rise(kick, at(t, s.in, 0.5));
@@ -813,17 +895,117 @@ scene("row", (root, s) => {
       n.style.transform = `translateX(${px(lerp(-24, 0, easeOut(p)))})`;
     });
 
-    // One cell is edited in place, to make "editable" literal rather than asserted.
-    const pe = at(t, tEdit + 0.6, 1.5);
-    const target = rowEls[3]._loop;
-    if (pe > 0) {
-      target.style.color = "var(--gold)";
-      target.style.background = "rgba(245,185,64,0.12)";
-      target.style.padding = "4px 10px";
-      target.style.borderRadius = "4px";
-      typeOn(target, pe < 0.5 ? "yes" : "yes · 2 bars", clamp(pe * 2 - 0.5));
-      if (pe < 0.1) target.textContent = "yes";
-    }
+    // The new row arrives cell by cell, left to right, as the line lands.
+    const pa = at(t, tAdd - 0.3, 0.35);
+    newRow.style.opacity = clamp(pa * 2);
+    newRow.style.background = `rgba(245,185,64,${(0.10 * clamp(pa)).toFixed(3)})`;
+    newCells.forEach((c, i) => {
+      typeOn(c, c._txt, at(t, tAdd - 0.2 + i * 0.2, 0.3), i === newCells.length - 1);
+    });
+    caption.style.opacity = clamp(at(t, tAdd + 1.1, 0.6));
+  };
+});
+
+// ---- s4b · two models, two vendors, one run — and the ceiling -------------------
+// Entirely new in v2. This is the Genblaze chain and the spend controls around it, both
+// of which were real in the product and absent from the first script.
+scene("chain", (root, s) => {
+  s.in = CUE("Each clip is two models"); s.out = CUE("Build it once");
+
+  const kick = el("div", "kicker", { position: "absolute", left: "160px", top: "128px" }, "ONE RUN, TWO VENDORS");
+  root.appendChild(kick);
+
+  const wire = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  wire.setAttribute("class", "wire"); wire.setAttribute("viewBox", "0 0 1920 1080");
+  wire.style.width = "1920px"; wire.style.height = "1080px";
+  root.appendChild(wire);
+  const mkp = (d, cls) => {
+    const n = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    n.setAttribute("d", d); if (cls) n.setAttribute("class", cls);
+    wire.appendChild(n); return n;
+  };
+
+  // stage one — the still that settles the face
+  const one = el("div", "card", { left: "160px", top: "232px", width: "620px", height: "300px", padding: "30px" });
+  one.appendChild(el("div", "mono", { fontSize: "15px", letterSpacing: "0.18em", color: "var(--ink-3)" }, "STAGE 1 · IMAGE"));
+  one.appendChild(el("div", "head", { fontSize: "38px", marginTop: "12px" }, "bria-fibo-edit"));
+  one.appendChild(el("div", "mono", { fontSize: "19px", color: "var(--ink-3)", marginTop: "10px" }, "gmicloud · conditioned on a reference frame"));
+  const oneCost = el("div", "num", { position: "absolute", right: "30px", bottom: "24px", fontSize: "58px", color: "var(--gold)" }, "$0.04");
+  one.appendChild(oneCost);
+  one.appendChild(el("div", "sub", { fontSize: "20px", marginTop: "22px" }, "The face is settled here."));
+  root.appendChild(one);
+
+  // stage two — the clip that starts from it
+  const two = el("div", "card", { left: "1140px", top: "232px", width: "620px", height: "300px", padding: "30px" });
+  two.appendChild(el("div", "mono", { fontSize: "15px", letterSpacing: "0.18em", color: "var(--ink-3)" }, "STAGE 2 · VIDEO"));
+  two.appendChild(el("div", "head", { fontSize: "38px", marginTop: "12px" }, "sora-2"));
+  two.appendChild(el("div", "mono", { fontSize: "19px", color: "var(--ink-3)", marginTop: "10px" }, "openai · 8s, 9:16"));
+  const twoCost = el("div", "num", { position: "absolute", right: "30px", bottom: "24px", fontSize: "58px", color: "var(--gold)" }, "$0.80");
+  two.appendChild(twoCost);
+  two.appendChild(el("div", "sub", { fontSize: "20px", marginTop: "22px" }, "That still is its first frame."));
+  root.appendChild(two);
+
+  const link = mkp("M 780 382 L 1140 382", "live");
+  const linkLab = el("div", "mono", { position: "absolute", left: "780px", top: "338px", width: "360px", textAlign: "center", fontSize: "17px", letterSpacing: "0.12em", color: "var(--gold)" }, "FIRST FRAME");
+  root.appendChild(linkLab);
+
+  // the estimate, before the button
+  const est = el("div", "card", { left: "160px", top: "596px", width: "760px", height: "230px", padding: "30px" });
+  est.appendChild(el("div", "mono", { fontSize: "15px", letterSpacing: "0.18em", color: "var(--ink-3)" }, "PRICED BEFORE YOU BUY IT"));
+  const estRow = el("div", null, { display: "flex", alignItems: "baseline", gap: "28px", marginTop: "18px" });
+  const estNum = el("div", "num", { fontSize: "76px", color: "var(--ink)" }, "$0.00");
+  estRow.appendChild(estNum);
+  estRow.appendChild(el("div", "mono", { fontSize: "21px", color: "var(--ink-3)" }, "3 shots · 6 calls"));
+  est.appendChild(estRow);
+  est.appendChild(el("div", "sub", { fontSize: "19px", marginTop: "12px" }, "the exact plan the button submits"));
+  root.appendChild(est);
+
+  // the ceiling, and what it does
+  const ceil = el("div", "card", { left: "1000px", top: "596px", width: "760px", height: "230px", padding: "30px" });
+  ceil.appendChild(el("div", "mono", { fontSize: "15px", letterSpacing: "0.18em", color: "var(--err)" }, "BUDGET CEILING"));
+  ceil.appendChild(el("div", "head", { fontSize: "34px", marginTop: "14px" }, "refused before one call is submitted"));
+  ceil.appendChild(el("div", "mono", { fontSize: "19px", color: "var(--ink-3)", marginTop: "14px" }, "RK_MAX_RUN_CENTS"));
+  root.appendChild(ceil);
+
+  const stamp = el("div", "stamp err", { left: "1000px", top: "868px", fontSize: "25px" }, "a submitted step is a charged step");
+  root.appendChild(stamp);
+
+  const tPriced = CUE("Priced before you buy it");
+  const tCeil = CUE("past your ceiling");
+  const tCharged = CUE("A submitted step is a charged step");
+  const tFrame = CUE("becomes the first frame");
+
+  return (t) => {
+    rise(kick, at(t, s.in, 0.5));
+
+    const p1 = at(t, s.in + 0.2, 0.6), p2 = at(t, s.in + 0.55, 0.6);
+    one.style.opacity = clamp(p1 * 1.6);
+    one.style.transform = `translateY(${px(lerp(26, 0, easeOut(p1)))})`;
+    two.style.opacity = clamp(p2 * 1.6);
+    two.style.transform = `translateY(${px(lerp(26, 0, easeOut(p2)))})`;
+
+    const pl = easeInOut(at(t, tFrame - 0.5, 0.7));
+    link.style.strokeDasharray = "360";
+    link.style.strokeDashoffset = String(360 * (1 - pl));
+    linkLab.style.opacity = clamp(at(t, tFrame - 0.2, 0.5));
+
+    // the two prices count in, so the numbers read as measured rather than decorative
+    oneCost.style.opacity = clamp(at(t, s.in + 0.8, 0.4) * 2);
+    twoCost.style.opacity = clamp(at(t, tFrame + 0.4, 0.4) * 2);
+
+    const pe = at(t, tPriced - 0.3, 0.6);
+    est.style.opacity = clamp(pe * 1.6);
+    est.style.transform = `translateY(${px(lerp(24, 0, easeOut(pe)))})`;
+    estNum.textContent = "$" + (2.52 * easeExpo(at(t, tPriced - 0.1, 0.9))).toFixed(2);
+
+    const pc = at(t, tCeil - 0.3, 0.6);
+    ceil.style.opacity = clamp(pc * 1.6);
+    ceil.style.transform = `translateY(${px(lerp(24, 0, easeOut(pc)))})`;
+    ceil.style.borderColor = `rgba(217,89,38,${lerp(0.10, 0.55, easeOut(pc))})`;
+
+    const ps = at(t, tCharged - 0.15, 0.45);
+    stamp.style.opacity = clamp(ps * 1.6);
+    stamp.style.transform = `scale(${lerp(1.12, 1, easeBack(ps))})`;
   };
 });
 
@@ -1216,19 +1398,16 @@ scene("catalog", (root, s) => {
   const legend = el("div", "mono", { position: "absolute", left: "160px", top: "912px", fontSize: "19px", color: "var(--ink-3)" }, "tenant · date · run id — the prefix is the index");
   root.appendChild(legend);
 
+  // v1 put a Parquet card and a "No warehouse." line here. Both were cut: there is no
+  // Parquet and no Athena anywhere in the app — see docs/demo-voiceover-v2-audit.md. What
+  // is true is that the prefix itself is the index, so that is what the panel says now.
   const right = el("div", null, { position: "absolute", left: "1220px", top: "400px", width: "540px" });
   root.appendChild(right);
-  const pq = el("div", "card", { position: "relative", width: "540px", height: "190px", padding: "30px", marginBottom: "28px" });
-  pq.appendChild(el("div", "mono", { fontSize: "15px", letterSpacing: "0.18em", color: "var(--gold)" }, "INDEX"));
-  pq.appendChild(el("div", "head", { fontSize: "34px", marginTop: "14px" }, "Parquet, in the same bucket"));
-  pq.appendChild(el("div", "mono", { fontSize: "18px", color: "var(--ink-3)", marginTop: "12px" }, "queryable by Athena"));
-  right.appendChild(pq);
-  const nw = el("div", null, { position: "relative", width: "540px", padding: "26px 0 0 0" });
-  nw.appendChild(el("div", "head", { fontSize: "56px", color: "var(--gold)" }, "No warehouse."));
-  right.appendChild(nw);
-
-  const tParquet = CUE("landing as Parquet");
-  const tNW = CUE("No warehouse");
+  const idx = el("div", "card", { position: "relative", width: "540px", height: "260px", padding: "30px" });
+  idx.appendChild(el("div", "mono", { fontSize: "15px", letterSpacing: "0.18em", color: "var(--gold)" }, "THE INDEX"));
+  idx.appendChild(el("div", "head", { fontSize: "36px", marginTop: "14px", lineHeight: "1.15" }, "is the prefix itself"));
+  idx.appendChild(el("div", "sub", { fontSize: "19px", marginTop: "16px" }, "tenant · date · run id. Listing a run is listing a path — there is no second copy to keep in step with it."));
+  right.appendChild(idx);
 
   return (t) => {
     rise(kick, at(t, s.in, 0.5));
@@ -1239,9 +1418,8 @@ scene("catalog", (root, s) => {
       n.style.opacity = clamp(p * 1.8);
       typeOn(n, n._txt, at(t, s.in + 0.5 + i * 0.28, 0.42), false);
     });
-    rise(legend, at(t, s.in + 2.6, 0.6), 12);
-    rise(pq, at(t, tParquet - 0.35, 0.6));
-    rise(nw, at(t, tNW - 0.2, 0.5));
+    rise(legend, at(t, s.in + 2.2, 0.6), 12);
+    rise(idx, at(t, s.in + 1.1, 0.7));
   };
 });
 
@@ -1283,15 +1461,17 @@ scene("receipt", (root, s) => {
   cam(shot, { x: 0.74, y: 0.20, w: 0.25 });
 
   const pass = el("div", "stamp", { left: "1200px", top: "710px", fontSize: "26px" }, "provenance verified");
-  const fail = el("div", "stamp err", { left: "1200px", top: "800px", fontSize: "26px" }, "unverified · refused");
+  const fail = el("div", "stamp err", { left: "1200px", top: "800px", fontSize: "26px" }, "unproven · never reaches ready");
   root.appendChild(pass); root.appendChild(fail);
 
   const note = el("div", "sub", { position: "absolute", left: "1200px", top: "890px", width: "560px", fontSize: "21px" },
     "manifest.verify() runs before a kit is allowed to reach ready. A kit that cannot prove how it was made does not ship.");
   root.appendChild(note);
 
-  const tVerified = CUE("verified before a kit ships");
-  const tFails = CUE("Unverified fails");
+  // v2 states the gate once — "a kit that can't prove how it was made never reaches
+  // ready" — so both outcomes hang off that line rather than off two separate sentences.
+  const tVerified = CUE("never reaches ready");
+  const tFails = CUE("never reaches ready");
 
   return (t) => {
     hideExtras(shot);
@@ -1313,7 +1493,7 @@ scene("receipt", (root, s) => {
     const pp = at(t, tVerified, 0.45);
     pass.style.opacity = clamp(pp * 1.6);
     pass.style.transform = `scale(${lerp(1.14, 1, easeBack(pp))})`;
-    const pf = at(t, tFails, 0.4);
+    const pf = at(t, tFails + 0.7, 0.4);
     fail.style.opacity = clamp(pf * 1.6);
     fail.style.transform = `scale(${lerp(1.14, 1, easeBack(pf))})`;
     rise(note, at(t, tVerified + 0.5, 0.6), 12);
@@ -1367,7 +1547,7 @@ scene("disclosure", (root, s) => {
   root.appendChild(drop);
 
   const tByte = CUE("byte-identical");
-  const tDrop = CUE("Drop that file");
+  const tDrop = CUE("Drop it into verify");
   const tSays = CUE("exactly how it was made");
 
   return (t) => {

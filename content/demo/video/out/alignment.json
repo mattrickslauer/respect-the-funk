@@ -1,1653 +1,2048 @@
 {
   "voice_id": "cjVigY5qzO86Huf0OWal",
   "model_id": "eleven_multilingual_v2",
-  "duration": 120.047,
-  "text": "Register an artist. Build their identity once \u2014 how they look on screen, likeness consent on record. Attach a song; it's measured once: tempo, drop, hook windows \u2014 and no tempo without a method behind it.\n\nThen generate \u2014 whatever the release needs. A performance clip. A press still. The artist announcing a show, straight to camera. Or a backdrop built to be copied, so a fan who sees one knows instantly what their own version looks like.\n\nEvery one of those is a format, and a format is a row a label can edit \u2014 not a shape we welded in.\n\nBuild it once, and the second video is cheap. Cost per attempt is the only lever left.\n\nHere's what runs it. AWS handles the logic. Backblaze B2 holds the bytes \u2014 and the proof.\n\nThat split is why this system has no database. A label stores documents, not rows \u2014 an artist, its measurements, a finished kit \u2014 so they live in a B2 bucket. Eleven services became five. Idle cost: under a dollar a month.\n\nB2 does four jobs.\n\nIt's the upload path \u2014 masters go browser straight to bucket, never touching our server.\n\nIt's the catalog. Every run writes under tenant, date, run ID, with the index landing as Parquet in the same bucket, queryable by Athena. No warehouse.\n\nIt's the receipt. Every asset lands beside a manifest naming the provider, model, and prompt behind every step \u2014 verified before a kit ships. Unverified fails.\n\nAnd it's the disclosure. Download an asset and that manifest is embedded inside the file, while the stored object stays byte-identical, so the hash still means something. Drop that file into our verify endpoint and it says exactly how it was made. Nothing is looked up. The proof is in the bytes.\n\nYou cannot buy a hit. You can only lower the cost of trying \u2014 and be honest about what came out.\n\nBring us one artist and one song.",
+  "duration": 146.89,
+  "text": "Register an artist. Consent is recorded before anything can be generated \u2014 no consent, no generation, and the roster says so.\n\nBuild the identity once: reference frames across angles, the words the model is told, and the ones it must never render.\n\nAttach a song. It's measured once \u2014 tempo, sections, hook window. And the app refuses a tempo that arrives without the method that produced it.\n\nThen generate. A performance clip. A press still. The artist announcing a show, straight to camera. Or a backdrop built to be copied, so a fan who sees one knows what their own version looks like.\n\nThe shape of an asset used to be a commit. Now it's a row \u2014 prompt, negatives, length, how much of the artist it needs. Adding a format is a document, not a deploy.\n\nEach clip is two models from two vendors in one run: the face settled first as a still, four cents, and that frame becomes the first frame of the video, eighty. Priced before you buy it \u2014 and past your ceiling the run is refused before a single call is submitted. A submitted step is a charged step.\n\nBuild it once, and the second video is cheap. Cost per attempt is the only lever left.\n\nHere's what runs it. AWS handles the logic. Backblaze B2 holds the bytes \u2014 and the proof.\n\nThat split is why this system has no database. A label stores documents, not rows \u2014 an artist, its measurements, a finished kit \u2014 so they live in a B2 bucket. Eleven services became five; idle cost, under a dollar a month.\n\nB2 does four jobs.\n\nIt's the upload path \u2014 masters go browser straight to bucket, never touching our server.\n\nIt's the catalog. Every run writes under tenant, date, run ID.\n\nIt's the receipt. Every asset lands beside a manifest naming the provider, model and prompt behind every step. A kit that can't prove how it was made never reaches ready.\n\nAnd it's the disclosure. Download a clip and that manifest travels inside the file, while the stored object stays byte-identical \u2014 so the hash still means something. Drop it into verify and it says exactly how it was made. Nothing is looked up. The proof is in the bytes.\n\nYou cannot buy a hit. You can only lower the cost of trying \u2014 and be honest about what came out.\n\nBring us one artist and one song.",
   "words": [
     {
       "word": "Register",
       "start": 0.0,
-      "end": 0.511
+      "end": 0.604
     },
     {
       "word": "an",
-      "start": 0.569,
-      "end": 0.627
+      "start": 0.72,
+      "end": 0.836
     },
     {
       "word": "artist.",
-      "start": 0.673,
-      "end": 1.173
+      "start": 0.929,
+      "end": 1.509
     },
     {
-      "word": "Build",
-      "start": 1.324,
-      "end": 1.567
-    },
-    {
-      "word": "their",
-      "start": 1.602,
-      "end": 1.741
-    },
-    {
-      "word": "identity",
-      "start": 1.8,
-      "end": 2.276
-    },
-    {
-      "word": "once",
-      "start": 2.345,
-      "end": 2.798
-    },
-    {
-      "word": "\u2014",
-      "start": 2.833,
-      "end": 2.902
-    },
-    {
-      "word": "how",
-      "start": 2.995,
-      "end": 3.146
-    },
-    {
-      "word": "they",
-      "start": 3.193,
-      "end": 3.309
-    },
-    {
-      "word": "look",
-      "start": 3.379,
-      "end": 3.541
-    },
-    {
-      "word": "on",
-      "start": 3.599,
-      "end": 3.68
-    },
-    {
-      "word": "screen,",
-      "start": 3.75,
-      "end": 4.307
-    },
-    {
-      "word": "likeness",
-      "start": 4.632,
-      "end": 5.178
-    },
-    {
-      "word": "consent",
-      "start": 5.294,
-      "end": 5.793
-    },
-    {
-      "word": "on",
-      "start": 5.863,
-      "end": 5.968
-    },
-    {
-      "word": "record.",
-      "start": 6.049,
-      "end": 6.49
-    },
-    {
-      "word": "Attach",
-      "start": 7.001,
-      "end": 7.384
-    },
-    {
-      "word": "a",
-      "start": 7.442,
-      "end": 7.465
-    },
-    {
-      "word": "song;",
-      "start": 7.535,
-      "end": 7.872
-    },
-    {
-      "word": "it's",
-      "start": 7.895,
-      "end": 8.034
-    },
-    {
-      "word": "measured",
-      "start": 8.092,
-      "end": 8.417
-    },
-    {
-      "word": "once:",
-      "start": 8.475,
-      "end": 8.905
-    },
-    {
-      "word": "tempo,",
-      "start": 9.288,
-      "end": 9.822
-    },
-    {
-      "word": "drop,",
-      "start": 9.868,
-      "end": 10.379
-    },
-    {
-      "word": "hook",
-      "start": 10.437,
-      "end": 10.646
-    },
-    {
-      "word": "windows",
-      "start": 10.704,
-      "end": 11.122
-    },
-    {
-      "word": "\u2014",
-      "start": 11.146,
-      "end": 11.238
-    },
-    {
-      "word": "and",
-      "start": 11.389,
-      "end": 11.471
-    },
-    {
-      "word": "no",
-      "start": 11.552,
-      "end": 11.691
-    },
-    {
-      "word": "tempo",
-      "start": 11.773,
-      "end": 12.144
-    },
-    {
-      "word": "without",
-      "start": 12.225,
-      "end": 12.574
-    },
-    {
-      "word": "a",
-      "start": 12.632,
-      "end": 12.678
-    },
-    {
-      "word": "method",
-      "start": 12.759,
-      "end": 13.026
-    },
-    {
-      "word": "behind",
-      "start": 13.073,
-      "end": 13.375
-    },
-    {
-      "word": "it.",
-      "start": 13.421,
-      "end": 13.63
-    },
-    {
-      "word": "Then",
-      "start": 14.141,
-      "end": 14.35
-    },
-    {
-      "word": "generate",
-      "start": 14.42,
-      "end": 14.965
-    },
-    {
-      "word": "\u2014",
-      "start": 15.0,
-      "end": 15.058
-    },
-    {
-      "word": "whatever",
-      "start": 15.174,
-      "end": 15.523
-    },
-    {
-      "word": "the",
-      "start": 15.569,
-      "end": 15.639
-    },
-    {
-      "word": "release",
-      "start": 15.685,
-      "end": 15.999
-    },
-    {
-      "word": "needs.",
-      "start": 16.045,
-      "end": 16.533
-    },
-    {
-      "word": "A",
-      "start": 16.974,
-      "end": 17.055
-    },
-    {
-      "word": "performance",
-      "start": 17.136,
-      "end": 17.601
-    },
-    {
-      "word": "clip.",
-      "start": 17.624,
-      "end": 18.054
-    },
-    {
-      "word": "A",
-      "start": 18.495,
-      "end": 18.564
-    },
-    {
-      "word": "press",
-      "start": 18.657,
-      "end": 18.936
-    },
-    {
-      "word": "still.",
-      "start": 18.982,
-      "end": 19.575
-    },
-    {
-      "word": "The",
-      "start": 20.178,
-      "end": 20.318
-    },
-    {
-      "word": "artist",
-      "start": 20.376,
-      "end": 20.666
-    },
-    {
-      "word": "announcing",
-      "start": 20.712,
-      "end": 21.095
-    },
-    {
-      "word": "a",
-      "start": 21.142,
-      "end": 21.165
-    },
-    {
-      "word": "show,",
-      "start": 21.235,
-      "end": 21.618
-    },
-    {
-      "word": "straight",
-      "start": 21.664,
-      "end": 21.92
-    },
-    {
-      "word": "to",
-      "start": 21.955,
-      "end": 22.001
-    },
-    {
-      "word": "camera.",
-      "start": 22.059,
-      "end": 22.593
-    },
-    {
-      "word": "Or",
-      "start": 22.837,
-      "end": 22.999
-    },
-    {
-      "word": "a",
-      "start": 23.046,
-      "end": 23.069
-    },
-    {
-      "word": "backdrop",
-      "start": 23.127,
-      "end": 23.545
-    },
-    {
-      "word": "built",
-      "start": 23.615,
-      "end": 23.812
-    },
-    {
-      "word": "to",
-      "start": 23.835,
-      "end": 23.882
-    },
-    {
-      "word": "be",
-      "start": 23.928,
-      "end": 24.01
-    },
-    {
-      "word": "copied,",
-      "start": 24.056,
-      "end": 24.625
-    },
-    {
-      "word": "so",
-      "start": 24.95,
-      "end": 25.101
-    },
-    {
-      "word": "a",
-      "start": 25.182,
-      "end": 25.205
-    },
-    {
-      "word": "fan",
-      "start": 25.275,
-      "end": 25.507
-    },
-    {
-      "word": "who",
-      "start": 25.542,
-      "end": 25.647
-    },
-    {
-      "word": "sees",
-      "start": 25.705,
-      "end": 25.914
-    },
-    {
-      "word": "one",
-      "start": 25.983,
-      "end": 26.146
-    },
-    {
-      "word": "knows",
-      "start": 26.181,
-      "end": 26.424
-    },
-    {
-      "word": "instantly",
-      "start": 26.54,
-      "end": 27.167
-    },
-    {
-      "word": "what",
-      "start": 27.551,
-      "end": 27.76
-    },
-    {
-      "word": "their",
-      "start": 27.794,
-      "end": 27.957
-    },
-    {
-      "word": "own",
-      "start": 28.003,
-      "end": 28.119
-    },
-    {
-      "word": "version",
-      "start": 28.177,
-      "end": 28.503
-    },
-    {
-      "word": "looks",
-      "start": 28.561,
-      "end": 28.781
-    },
-    {
-      "word": "like.",
-      "start": 28.828,
-      "end": 29.188
-    },
-    {
-      "word": "Every",
-      "start": 30.302,
-      "end": 30.534
-    },
-    {
-      "word": "one",
-      "start": 30.58,
-      "end": 30.696
-    },
-    {
-      "word": "of",
-      "start": 30.731,
-      "end": 30.778
-    },
-    {
-      "word": "those",
-      "start": 30.824,
-      "end": 31.079
+      "word": "Consent",
+      "start": 1.834,
+      "end": 2.31
     },
     {
       "word": "is",
-      "start": 31.114,
-      "end": 31.184
+      "start": 2.368,
+      "end": 2.45
     },
     {
-      "word": "a",
-      "start": 31.23,
-      "end": 31.254
-    },
-    {
-      "word": "format,",
-      "start": 31.312,
-      "end": 31.927
-    },
-    {
-      "word": "and",
-      "start": 32.101,
-      "end": 32.31
-    },
-    {
-      "word": "a",
-      "start": 32.368,
-      "end": 32.391
-    },
-    {
-      "word": "format",
-      "start": 32.449,
-      "end": 32.833
-    },
-    {
-      "word": "is",
-      "start": 32.902,
-      "end": 33.007
-    },
-    {
-      "word": "a",
-      "start": 33.065,
-      "end": 33.088
-    },
-    {
-      "word": "row",
-      "start": 33.146,
-      "end": 33.367
-    },
-    {
-      "word": "a",
-      "start": 33.483,
-      "end": 33.541
-    },
-    {
-      "word": "label",
-      "start": 33.634,
-      "end": 33.97
-    },
-    {
-      "word": "can",
-      "start": 34.052,
-      "end": 34.237
-    },
-    {
-      "word": "edit",
-      "start": 34.33,
-      "end": 34.644
-    },
-    {
-      "word": "\u2014",
-      "start": 34.818,
-      "end": 34.876
-    },
-    {
-      "word": "not",
-      "start": 35.12,
-      "end": 35.306
-    },
-    {
-      "word": "a",
-      "start": 35.34,
-      "end": 35.364
-    },
-    {
-      "word": "shape",
-      "start": 35.445,
-      "end": 35.77
-    },
-    {
-      "word": "we",
-      "start": 35.805,
-      "end": 35.932
-    },
-    {
-      "word": "welded",
-      "start": 36.002,
-      "end": 36.362
-    },
-    {
-      "word": "in.",
-      "start": 36.432,
-      "end": 36.734
-    },
-    {
-      "word": "Build",
-      "start": 36.943,
-      "end": 37.163
-    },
-    {
-      "word": "it",
-      "start": 37.21,
-      "end": 37.279
-    },
-    {
-      "word": "once,",
-      "start": 37.337,
-      "end": 37.837
-    },
-    {
-      "word": "and",
-      "start": 38.162,
-      "end": 38.382
-    },
-    {
-      "word": "the",
-      "start": 38.429,
-      "end": 38.498
-    },
-    {
-      "word": "second",
-      "start": 38.545,
-      "end": 38.8
-    },
-    {
-      "word": "video",
-      "start": 38.835,
-      "end": 39.114
-    },
-    {
-      "word": "is",
-      "start": 39.172,
-      "end": 39.241
-    },
-    {
-      "word": "cheap.",
-      "start": 39.299,
-      "end": 39.764
-    },
-    {
-      "word": "Cost",
-      "start": 40.089,
-      "end": 40.367
-    },
-    {
-      "word": "per",
-      "start": 40.402,
-      "end": 40.507
-    },
-    {
-      "word": "attempt",
-      "start": 40.553,
-      "end": 40.843
-    },
-    {
-      "word": "is",
-      "start": 40.89,
-      "end": 40.96
-    },
-    {
-      "word": "the",
-      "start": 41.006,
-      "end": 41.076
-    },
-    {
-      "word": "only",
-      "start": 41.145,
-      "end": 41.343
-    },
-    {
-      "word": "lever",
-      "start": 41.401,
-      "end": 41.633
-    },
-    {
-      "word": "left.",
-      "start": 41.703,
-      "end": 42.202
-    },
-    {
-      "word": "Here's",
-      "start": 42.713,
-      "end": 43.015
-    },
-    {
-      "word": "what",
-      "start": 43.061,
-      "end": 43.2
-    },
-    {
-      "word": "runs",
-      "start": 43.258,
-      "end": 43.514
-    },
-    {
-      "word": "it.",
-      "start": 43.572,
-      "end": 43.792
-    },
-    {
-      "word": "AWS",
-      "start": 44.071,
-      "end": 44.698
-    },
-    {
-      "word": "handles",
-      "start": 44.768,
-      "end": 45.116
-    },
-    {
-      "word": "the",
-      "start": 45.162,
-      "end": 45.232
-    },
-    {
-      "word": "logic.",
-      "start": 45.302,
-      "end": 45.871
-    },
-    {
-      "word": "Backblaze",
-      "start": 46.312,
-      "end": 46.939
-    },
-    {
-      "word": "B2",
-      "start": 46.997,
-      "end": 47.403
-    },
-    {
-      "word": "holds",
-      "start": 47.473,
-      "end": 47.705
-    },
-    {
-      "word": "the",
-      "start": 47.752,
-      "end": 47.821
-    },
-    {
-      "word": "bytes",
-      "start": 47.868,
-      "end": 48.205
-    },
-    {
-      "word": "\u2014",
-      "start": 48.355,
-      "end": 48.425
-    },
-    {
-      "word": "and",
-      "start": 48.541,
-      "end": 48.727
-    },
-    {
-      "word": "the",
-      "start": 48.773,
-      "end": 48.843
-    },
-    {
-      "word": "proof.",
-      "start": 48.89,
-      "end": 49.377
-    },
-    {
-      "word": "That",
-      "start": 50.074,
-      "end": 50.318
-    },
-    {
-      "word": "split",
-      "start": 50.399,
-      "end": 50.759
-    },
-    {
-      "word": "is",
-      "start": 50.828,
-      "end": 50.944
-    },
-    {
-      "word": "why",
-      "start": 51.003,
-      "end": 51.153
-    },
-    {
-      "word": "this",
-      "start": 51.223,
-      "end": 51.351
-    },
-    {
-      "word": "system",
-      "start": 51.397,
-      "end": 51.734
-    },
-    {
-      "word": "has",
-      "start": 51.804,
-      "end": 51.989
-    },
-    {
-      "word": "no",
-      "start": 52.059,
-      "end": 52.152
-    },
-    {
-      "word": "database.",
-      "start": 52.222,
-      "end": 52.883
-    },
-    {
-      "word": "A",
-      "start": 53.092,
-      "end": 53.15
-    },
-    {
-      "word": "label",
-      "start": 53.232,
-      "end": 53.464
-    },
-    {
-      "word": "stores",
-      "start": 53.522,
-      "end": 53.824
-    },
-    {
-      "word": "documents,",
-      "start": 53.917,
-      "end": 54.474
-    },
-    {
-      "word": "not",
-      "start": 54.52,
-      "end": 54.718
-    },
-    {
-      "word": "rows",
-      "start": 54.799,
-      "end": 55.171
-    },
-    {
-      "word": "\u2014",
-      "start": 55.345,
-      "end": 55.403
-    },
-    {
-      "word": "an",
-      "start": 55.519,
-      "end": 55.623
-    },
-    {
-      "word": "artist,",
-      "start": 55.67,
-      "end": 56.099
-    },
-    {
-      "word": "its",
-      "start": 56.134,
-      "end": 56.308
-    },
-    {
-      "word": "measurements,",
-      "start": 56.366,
-      "end": 56.842
-    },
-    {
-      "word": "a",
-      "start": 56.866,
-      "end": 56.9
-    },
-    {
-      "word": "finished",
-      "start": 56.958,
-      "end": 57.26
-    },
-    {
-      "word": "kit",
-      "start": 57.307,
-      "end": 57.562
-    },
-    {
-      "word": "\u2014",
-      "start": 57.736,
-      "end": 57.829
-    },
-    {
-      "word": "so",
-      "start": 57.945,
-      "end": 58.085
-    },
-    {
-      "word": "they",
-      "start": 58.143,
-      "end": 58.259
-    },
-    {
-      "word": "live",
-      "start": 58.328,
-      "end": 58.479
-    },
-    {
-      "word": "in",
-      "start": 58.503,
-      "end": 58.549
-    },
-    {
-      "word": "a",
-      "start": 58.584,
-      "end": 58.607
-    },
-    {
-      "word": "B2",
-      "start": 58.654,
-      "end": 58.909
-    },
-    {
-      "word": "bucket.",
-      "start": 59.002,
-      "end": 59.501
-    },
-    {
-      "word": "Eleven",
-      "start": 60.198,
-      "end": 60.581
-    },
-    {
-      "word": "services",
-      "start": 60.65,
-      "end": 61.138
-    },
-    {
-      "word": "became",
-      "start": 61.208,
-      "end": 61.556
-    },
-    {
-      "word": "five.",
-      "start": 61.626,
-      "end": 62.265
-    },
-    {
-      "word": "Idle",
-      "start": 62.59,
-      "end": 62.868
-    },
-    {
-      "word": "cost:",
-      "start": 62.903,
-      "end": 63.46
-    },
-    {
-      "word": "under",
-      "start": 63.588,
-      "end": 63.786
-    },
-    {
-      "word": "a",
-      "start": 63.82,
-      "end": 63.844
-    },
-    {
-      "word": "dollar",
-      "start": 63.902,
-      "end": 64.18
-    },
-    {
-      "word": "a",
-      "start": 64.227,
-      "end": 64.25
-    },
-    {
-      "word": "month.",
-      "start": 64.308,
-      "end": 64.772
-    },
-    {
-      "word": "B2",
-      "start": 65.283,
-      "end": 65.643
-    },
-    {
-      "word": "does",
-      "start": 65.701,
-      "end": 65.852
-    },
-    {
-      "word": "four",
-      "start": 65.922,
-      "end": 66.142
-    },
-    {
-      "word": "jobs.",
-      "start": 66.212,
-      "end": 66.804
-    },
-    {
-      "word": "It's",
-      "start": 67.013,
-      "end": 67.21
-    },
-    {
-      "word": "the",
-      "start": 67.245,
-      "end": 67.327
-    },
-    {
-      "word": "upload",
-      "start": 67.408,
-      "end": 67.768
-    },
-    {
-      "word": "path",
-      "start": 67.826,
-      "end": 68.151
-    },
-    {
-      "word": "\u2014",
-      "start": 68.302,
-      "end": 68.383
-    },
-    {
-      "word": "masters",
-      "start": 68.499,
-      "end": 68.871
-    },
-    {
-      "word": "go",
-      "start": 68.906,
-      "end": 68.998
-    },
-    {
-      "word": "browser",
-      "start": 69.056,
-      "end": 69.393
-    },
-    {
-      "word": "straight",
-      "start": 69.463,
-      "end": 69.753
-    },
-    {
-      "word": "to",
-      "start": 69.776,
-      "end": 69.834
-    },
-    {
-      "word": "bucket,",
-      "start": 69.892,
-      "end": 70.357
-    },
-    {
-      "word": "never",
-      "start": 70.566,
-      "end": 70.763
-    },
-    {
-      "word": "touching",
-      "start": 70.81,
-      "end": 71.1
-    },
-    {
-      "word": "our",
-      "start": 71.146,
-      "end": 71.228
-    },
-    {
-      "word": "server.",
-      "start": 71.286,
-      "end": 71.75
-    },
-    {
-      "word": "It's",
-      "start": 72.354,
-      "end": 72.551
-    },
-    {
-      "word": "the",
-      "start": 72.586,
-      "end": 72.656
-    },
-    {
-      "word": "catalog.",
-      "start": 72.702,
-      "end": 73.399
-    },
-    {
-      "word": "Every",
-      "start": 74.002,
-      "end": 74.258
-    },
-    {
-      "word": "run",
-      "start": 74.339,
-      "end": 74.56
-    },
-    {
-      "word": "writes",
-      "start": 74.618,
-      "end": 74.978
-    },
-    {
-      "word": "under",
-      "start": 75.047,
-      "end": 75.233
-    },
-    {
-      "word": "tenant,",
-      "start": 75.303,
-      "end": 75.697
-    },
-    {
-      "word": "date,",
-      "start": 75.813,
-      "end": 76.15
-    },
-    {
-      "word": "run",
-      "start": 76.208,
-      "end": 76.394
-    },
-    {
-      "word": "ID,",
-      "start": 76.452,
-      "end": 76.94
-    },
-    {
-      "word": "with",
-      "start": 77.114,
-      "end": 77.276
-    },
-    {
-      "word": "the",
-      "start": 77.311,
-      "end": 77.381
-    },
-    {
-      "word": "index",
-      "start": 77.451,
-      "end": 77.811
-    },
-    {
-      "word": "landing",
-      "start": 77.892,
-      "end": 78.206
-    },
-    {
-      "word": "as",
-      "start": 78.252,
-      "end": 78.31
-    },
-    {
-      "word": "Parquet",
-      "start": 78.391,
-      "end": 78.832
-    },
-    {
-      "word": "in",
-      "start": 78.867,
-      "end": 78.925
-    },
-    {
-      "word": "the",
-      "start": 78.96,
-      "end": 79.03
-    },
-    {
-      "word": "same",
-      "start": 79.065,
-      "end": 79.262
-    },
-    {
-      "word": "bucket,",
-      "start": 79.308,
-      "end": 79.738
-    },
-    {
-      "word": "queryable",
-      "start": 80.017,
-      "end": 80.632
-    },
-    {
-      "word": "by",
-      "start": 80.69,
-      "end": 80.887
-    },
-    {
-      "word": "Athena.",
-      "start": 80.969,
-      "end": 81.526
-    },
-    {
-      "word": "No",
-      "start": 82.13,
-      "end": 82.269
-    },
-    {
-      "word": "warehouse.",
-      "start": 82.315,
-      "end": 83.012
-    },
-    {
-      "word": "It's",
-      "start": 83.337,
-      "end": 83.546
-    },
-    {
-      "word": "the",
-      "start": 83.593,
-      "end": 83.662
-    },
-    {
-      "word": "receipt.",
-      "start": 83.72,
-      "end": 84.278
-    },
-    {
-      "word": "Every",
-      "start": 84.788,
-      "end": 85.032
-    },
-    {
-      "word": "asset",
-      "start": 85.09,
-      "end": 85.404
-    },
-    {
-      "word": "lands",
-      "start": 85.462,
-      "end": 85.706
-    },
-    {
-      "word": "beside",
-      "start": 85.752,
-      "end": 86.054
-    },
-    {
-      "word": "a",
-      "start": 86.077,
-      "end": 86.1
-    },
-    {
-      "word": "manifest",
-      "start": 86.158,
-      "end": 86.611
-    },
-    {
-      "word": "naming",
-      "start": 86.658,
-      "end": 86.901
-    },
-    {
-      "word": "the",
-      "start": 86.948,
-      "end": 87.017
-    },
-    {
-      "word": "provider,",
-      "start": 87.064,
-      "end": 87.563
-    },
-    {
-      "word": "model,",
-      "start": 87.598,
-      "end": 87.935
-    },
-    {
-      "word": "and",
-      "start": 87.958,
-      "end": 88.039
-    },
-    {
-      "word": "prompt",
-      "start": 88.109,
-      "end": 88.399
-    },
-    {
-      "word": "behind",
-      "start": 88.457,
-      "end": 88.736
-    },
-    {
-      "word": "every",
-      "start": 88.794,
-      "end": 88.98
-    },
-    {
-      "word": "step",
-      "start": 89.026,
-      "end": 89.293
-    },
-    {
-      "word": "\u2014",
-      "start": 89.444,
-      "end": 89.49
-    },
-    {
-      "word": "verified",
-      "start": 89.874,
-      "end": 90.384
+      "word": "recorded",
+      "start": 2.519,
+      "end": 2.961
     },
     {
       "word": "before",
-      "start": 90.419,
-      "end": 90.698
+      "start": 3.007,
+      "end": 3.286
     },
     {
-      "word": "a",
-      "start": 90.721,
-      "end": 90.744
-    },
-    {
-      "word": "kit",
-      "start": 90.779,
-      "end": 90.965
-    },
-    {
-      "word": "ships.",
-      "start": 91.011,
-      "end": 91.522
-    },
-    {
-      "word": "Unverified",
-      "start": 91.905,
-      "end": 92.59
-    },
-    {
-      "word": "fails.",
-      "start": 92.648,
-      "end": 93.124
-    },
-    {
-      "word": "And",
-      "start": 93.403,
-      "end": 93.554
-    },
-    {
-      "word": "it's",
-      "start": 93.6,
-      "end": 93.728
-    },
-    {
-      "word": "the",
-      "start": 93.774,
-      "end": 93.844
-    },
-    {
-      "word": "disclosure.",
-      "start": 93.89,
-      "end": 94.494
-    },
-    {
-      "word": "Download",
-      "start": 94.529,
-      "end": 94.97
-    },
-    {
-      "word": "an",
-      "start": 95.005,
-      "end": 95.063
-    },
-    {
-      "word": "asset",
-      "start": 95.156,
-      "end": 95.655
-    },
-    {
-      "word": "and",
-      "start": 95.725,
-      "end": 95.852
-    },
-    {
-      "word": "that",
-      "start": 95.911,
-      "end": 96.05
-    },
-    {
-      "word": "manifest",
-      "start": 96.131,
-      "end": 96.688
-    },
-    {
-      "word": "is",
-      "start": 96.77,
-      "end": 96.886
-    },
-    {
-      "word": "embedded",
-      "start": 96.944,
-      "end": 97.339
-    },
-    {
-      "word": "inside",
-      "start": 97.42,
-      "end": 97.815
-    },
-    {
-      "word": "the",
-      "start": 97.838,
-      "end": 97.907
-    },
-    {
-      "word": "file,",
-      "start": 97.954,
-      "end": 98.465
-    },
-    {
-      "word": "while",
-      "start": 98.639,
-      "end": 98.848
-    },
-    {
-      "word": "the",
-      "start": 98.871,
-      "end": 98.941
-    },
-    {
-      "word": "stored",
-      "start": 98.976,
-      "end": 99.266
-    },
-    {
-      "word": "object",
-      "start": 99.335,
-      "end": 99.719
-    },
-    {
-      "word": "stays",
-      "start": 99.765,
-      "end": 100.044
-    },
-    {
-      "word": "byte-identical,",
-      "start": 100.125,
-      "end": 101.112
-    },
-    {
-      "word": "so",
-      "start": 101.286,
-      "end": 101.402
-    },
-    {
-      "word": "the",
-      "start": 101.472,
-      "end": 101.541
-    },
-    {
-      "word": "hash",
-      "start": 101.588,
-      "end": 101.797
-    },
-    {
-      "word": "still",
-      "start": 101.843,
-      "end": 102.052
-    },
-    {
-      "word": "means",
-      "start": 102.11,
-      "end": 102.331
-    },
-    {
-      "word": "something.",
-      "start": 102.366,
-      "end": 102.83
-    },
-    {
-      "word": "Drop",
-      "start": 103.155,
-      "end": 103.399
-    },
-    {
-      "word": "that",
-      "start": 103.457,
-      "end": 103.585
-    },
-    {
-      "word": "file",
-      "start": 103.643,
-      "end": 103.921
-    },
-    {
-      "word": "into",
-      "start": 103.945,
-      "end": 104.084
-    },
-    {
-      "word": "our",
-      "start": 104.142,
-      "end": 104.235
-    },
-    {
-      "word": "verify",
-      "start": 104.293,
-      "end": 104.699
-    },
-    {
-      "word": "endpoint",
-      "start": 104.792,
-      "end": 105.314
-    },
-    {
-      "word": "and",
-      "start": 105.523,
-      "end": 105.79
-    },
-    {
-      "word": "it",
-      "start": 105.848,
-      "end": 105.906
-    },
-    {
-      "word": "says",
-      "start": 105.976,
-      "end": 106.185
-    },
-    {
-      "word": "exactly",
-      "start": 106.255,
-      "end": 106.696
-    },
-    {
-      "word": "how",
-      "start": 106.742,
-      "end": 106.847
-    },
-    {
-      "word": "it",
-      "start": 106.916,
-      "end": 106.974
-    },
-    {
-      "word": "was",
-      "start": 107.009,
-      "end": 107.114
-    },
-    {
-      "word": "made.",
-      "start": 107.172,
-      "end": 107.59
-    },
-    {
-      "word": "Nothing",
-      "start": 108.031,
-      "end": 108.368
-    },
-    {
-      "word": "is",
-      "start": 108.414,
-      "end": 108.484
-    },
-    {
-      "word": "looked",
-      "start": 108.542,
-      "end": 108.774
-    },
-    {
-      "word": "up.",
-      "start": 108.844,
-      "end": 109.238
-    },
-    {
-      "word": "The",
-      "start": 109.564,
-      "end": 109.691
-    },
-    {
-      "word": "proof",
-      "start": 109.749,
-      "end": 110.028
-    },
-    {
-      "word": "is",
-      "start": 110.086,
-      "end": 110.179
-    },
-    {
-      "word": "in",
-      "start": 110.237,
-      "end": 110.307
-    },
-    {
-      "word": "the",
-      "start": 110.353,
-      "end": 110.423
-    },
-    {
-      "word": "bytes.",
-      "start": 110.481,
-      "end": 111.073
-    },
-    {
-      "word": "You",
-      "start": 111.282,
-      "end": 111.41
-    },
-    {
-      "word": "cannot",
-      "start": 111.479,
-      "end": 111.769
-    },
-    {
-      "word": "buy",
-      "start": 111.816,
-      "end": 111.978
-    },
-    {
-      "word": "a",
-      "start": 112.025,
-      "end": 112.06
-    },
-    {
-      "word": "hit.",
-      "start": 112.118,
-      "end": 112.524
-    },
-    {
-      "word": "You",
-      "start": 112.965,
-      "end": 113.093
+      "word": "anything",
+      "start": 3.355,
+      "end": 3.75
     },
     {
       "word": "can",
-      "start": 113.139,
-      "end": 113.255
-    },
-    {
-      "word": "only",
-      "start": 113.314,
-      "end": 113.488
-    },
-    {
-      "word": "lower",
-      "start": 113.569,
-      "end": 113.824
-    },
-    {
-      "word": "the",
-      "start": 113.882,
-      "end": 113.952
-    },
-    {
-      "word": "cost",
-      "start": 113.987,
-      "end": 114.242
-    },
-    {
-      "word": "of",
-      "start": 114.289,
-      "end": 114.358
-    },
-    {
-      "word": "trying",
-      "start": 114.416,
-      "end": 114.834
-    },
-    {
-      "word": "\u2014",
-      "start": 115.009,
-      "end": 115.067
-    },
-    {
-      "word": "and",
-      "start": 115.45,
-      "end": 115.74
+      "start": 3.785,
+      "end": 3.889
     },
     {
       "word": "be",
-      "start": 115.821,
-      "end": 115.914
+      "start": 3.936,
+      "end": 4.005
     },
     {
-      "word": "honest",
-      "start": 115.961,
-      "end": 116.239
+      "word": "generated",
+      "start": 4.063,
+      "end": 4.563
     },
     {
-      "word": "about",
-      "start": 116.274,
-      "end": 116.448
+      "word": "\u2014",
+      "start": 4.679,
+      "end": 4.725
     },
     {
-      "word": "what",
-      "start": 116.471,
-      "end": 116.588
+      "word": "no",
+      "start": 5.05,
+      "end": 5.178
     },
     {
-      "word": "came",
-      "start": 116.634,
-      "end": 116.831
+      "word": "consent,",
+      "start": 5.248,
+      "end": 5.828
     },
     {
-      "word": "out.",
-      "start": 116.866,
-      "end": 117.249
+      "word": "no",
+      "start": 6.002,
+      "end": 6.13
     },
     {
-      "word": "Bring",
-      "start": 117.946,
-      "end": 118.167
-    },
-    {
-      "word": "us",
-      "start": 118.213,
-      "end": 118.317
-    },
-    {
-      "word": "one",
-      "start": 118.387,
-      "end": 118.561
-    },
-    {
-      "word": "artist",
-      "start": 118.596,
-      "end": 118.91
+      "word": "generation,",
+      "start": 6.211,
+      "end": 6.943
     },
     {
       "word": "and",
-      "start": 118.956,
-      "end": 119.037
+      "start": 7.326,
+      "end": 7.465
     },
     {
-      "word": "one",
-      "start": 119.119,
-      "end": 119.304
+      "word": "the",
+      "start": 7.512,
+      "end": 7.581
+    },
+    {
+      "word": "roster",
+      "start": 7.616,
+      "end": 7.941
+    },
+    {
+      "word": "says",
+      "start": 8.011,
+      "end": 8.231
+    },
+    {
+      "word": "so.",
+      "start": 8.29,
+      "end": 8.626
+    },
+    {
+      "word": "Build",
+      "start": 9.009,
+      "end": 9.253
+    },
+    {
+      "word": "the",
+      "start": 9.3,
+      "end": 9.369
+    },
+    {
+      "word": "identity",
+      "start": 9.427,
+      "end": 9.857
+    },
+    {
+      "word": "once:",
+      "start": 9.938,
+      "end": 10.368
+    },
+    {
+      "word": "reference",
+      "start": 10.693,
+      "end": 11.122
+    },
+    {
+      "word": "frames",
+      "start": 11.169,
+      "end": 11.517
+    },
+    {
+      "word": "across",
+      "start": 11.564,
+      "end": 11.912
+    },
+    {
+      "word": "angles,",
+      "start": 11.981,
+      "end": 12.562
+    },
+    {
+      "word": "the",
+      "start": 12.806,
+      "end": 12.91
+    },
+    {
+      "word": "words",
+      "start": 12.957,
+      "end": 13.224
+    },
+    {
+      "word": "the",
+      "start": 13.27,
+      "end": 13.34
+    },
+    {
+      "word": "model",
+      "start": 13.386,
+      "end": 13.63
+    },
+    {
+      "word": "is",
+      "start": 13.688,
+      "end": 13.758
+    },
+    {
+      "word": "told,",
+      "start": 13.827,
+      "end": 14.303
+    },
+    {
+      "word": "and",
+      "start": 14.512,
+      "end": 14.64
+    },
+    {
+      "word": "the",
+      "start": 14.687,
+      "end": 14.756
+    },
+    {
+      "word": "ones",
+      "start": 14.814,
+      "end": 15.023
+    },
+    {
+      "word": "it",
+      "start": 15.081,
+      "end": 15.151
+    },
+    {
+      "word": "must",
+      "start": 15.197,
+      "end": 15.476
+    },
+    {
+      "word": "never",
+      "start": 15.72,
+      "end": 15.987
+    },
+    {
+      "word": "render.",
+      "start": 16.068,
+      "end": 16.521
+    },
+    {
+      "word": "Attach",
+      "start": 17.217,
+      "end": 17.647
+    },
+    {
+      "word": "a",
+      "start": 17.693,
+      "end": 17.717
     },
     {
       "word": "song.",
-      "start": 119.351,
-      "end": 120.047
+      "start": 17.786,
+      "end": 18.239
+    },
+    {
+      "word": "It's",
+      "start": 18.483,
+      "end": 18.68
+    },
+    {
+      "word": "measured",
+      "start": 18.727,
+      "end": 19.029
+    },
+    {
+      "word": "once",
+      "start": 19.098,
+      "end": 19.505
+    },
+    {
+      "word": "\u2014",
+      "start": 19.551,
+      "end": 19.609
+    },
+    {
+      "word": "tempo,",
+      "start": 19.667,
+      "end": 20.178
+    },
+    {
+      "word": "sections,",
+      "start": 20.224,
+      "end": 20.735
+    },
+    {
+      "word": "hook",
+      "start": 20.77,
+      "end": 20.944
+    },
+    {
+      "word": "window.",
+      "start": 21.002,
+      "end": 21.49
+    },
+    {
+      "word": "And",
+      "start": 21.873,
+      "end": 22.024
+    },
+    {
+      "word": "the",
+      "start": 22.07,
+      "end": 22.14
+    },
+    {
+      "word": "app",
+      "start": 22.186,
+      "end": 22.326
+    },
+    {
+      "word": "refuses",
+      "start": 22.384,
+      "end": 22.906
+    },
+    {
+      "word": "a",
+      "start": 22.964,
+      "end": 22.999
+    },
+    {
+      "word": "tempo",
+      "start": 23.057,
+      "end": 23.359
+    },
+    {
+      "word": "that",
+      "start": 23.417,
+      "end": 23.545
+    },
+    {
+      "word": "arrives",
+      "start": 23.58,
+      "end": 24.056
+    },
+    {
+      "word": "without",
+      "start": 24.114,
+      "end": 24.427
+    },
+    {
+      "word": "the",
+      "start": 24.462,
+      "end": 24.532
+    },
+    {
+      "word": "method",
+      "start": 24.601,
+      "end": 24.892
+    },
+    {
+      "word": "that",
+      "start": 24.926,
+      "end": 25.043
+    },
+    {
+      "word": "produced",
+      "start": 25.089,
+      "end": 25.449
+    },
+    {
+      "word": "it.",
+      "start": 25.495,
+      "end": 25.728
+    },
+    {
+      "word": "Then",
+      "start": 26.053,
+      "end": 26.238
+    },
+    {
+      "word": "generate.",
+      "start": 26.308,
+      "end": 26.912
+    },
+    {
+      "word": "A",
+      "start": 27.237,
+      "end": 27.318
+    },
+    {
+      "word": "performance",
+      "start": 27.399,
+      "end": 27.899
+    },
+    {
+      "word": "clip.",
+      "start": 27.922,
+      "end": 28.34
+    },
+    {
+      "word": "A",
+      "start": 28.851,
+      "end": 28.92
+    },
+    {
+      "word": "press",
+      "start": 29.013,
+      "end": 29.257
+    },
+    {
+      "word": "still.",
+      "start": 29.292,
+      "end": 29.779
+    },
+    {
+      "word": "The",
+      "start": 30.221,
+      "end": 30.36
+    },
+    {
+      "word": "artist",
+      "start": 30.43,
+      "end": 30.755
+    },
+    {
+      "word": "announcing",
+      "start": 30.801,
+      "end": 31.254
+    },
+    {
+      "word": "a",
+      "start": 31.312,
+      "end": 31.336
+    },
+    {
+      "word": "show,",
+      "start": 31.394,
+      "end": 31.916
+    },
+    {
+      "word": "straight",
+      "start": 32.125,
+      "end": 32.438
+    },
+    {
+      "word": "to",
+      "start": 32.473,
+      "end": 32.52
+    },
+    {
+      "word": "camera.",
+      "start": 32.578,
+      "end": 33.1
+    },
+    {
+      "word": "Or",
+      "start": 33.541,
+      "end": 33.681
+    },
+    {
+      "word": "a",
+      "start": 33.716,
+      "end": 33.739
+    },
+    {
+      "word": "backdrop",
+      "start": 33.785,
+      "end": 34.238
+    },
+    {
+      "word": "built",
+      "start": 34.296,
+      "end": 34.482
+    },
+    {
+      "word": "to",
+      "start": 34.517,
+      "end": 34.563
+    },
+    {
+      "word": "be",
+      "start": 34.61,
+      "end": 34.679
+    },
+    {
+      "word": "copied,",
+      "start": 34.726,
+      "end": 35.271
+    },
+    {
+      "word": "so",
+      "start": 35.48,
+      "end": 35.596
+    },
+    {
+      "word": "a",
+      "start": 35.666,
+      "end": 35.689
+    },
+    {
+      "word": "fan",
+      "start": 35.747,
+      "end": 35.945
+    },
+    {
+      "word": "who",
+      "start": 35.991,
+      "end": 36.096
+    },
+    {
+      "word": "sees",
+      "start": 36.165,
+      "end": 36.444
+    },
+    {
+      "word": "one",
+      "start": 36.525,
+      "end": 36.897
+    },
+    {
+      "word": "knows",
+      "start": 37.071,
+      "end": 37.454
+    },
+    {
+      "word": "what",
+      "start": 37.512,
+      "end": 37.651
+    },
+    {
+      "word": "their",
+      "start": 37.686,
+      "end": 37.837
+    },
+    {
+      "word": "own",
+      "start": 37.884,
+      "end": 38.0
+    },
+    {
+      "word": "version",
+      "start": 38.058,
+      "end": 38.383
+    },
+    {
+      "word": "looks",
+      "start": 38.441,
+      "end": 38.638
+    },
+    {
+      "word": "like.",
+      "start": 38.696,
+      "end": 39.126
+    },
+    {
+      "word": "The",
+      "start": 39.73,
+      "end": 39.857
+    },
+    {
+      "word": "shape",
+      "start": 39.904,
+      "end": 40.159
+    },
+    {
+      "word": "of",
+      "start": 40.182,
+      "end": 40.24
+    },
+    {
+      "word": "an",
+      "start": 40.298,
+      "end": 40.356
+    },
+    {
+      "word": "asset",
+      "start": 40.415,
+      "end": 40.751
+    },
+    {
+      "word": "used",
+      "start": 40.833,
+      "end": 41.065
+    },
+    {
+      "word": "to",
+      "start": 41.088,
+      "end": 41.134
+    },
+    {
+      "word": "be",
+      "start": 41.192,
+      "end": 41.274
+    },
+    {
+      "word": "a",
+      "start": 41.309,
+      "end": 41.343
+    },
+    {
+      "word": "commit.",
+      "start": 41.401,
+      "end": 42.04
+    },
+    {
+      "word": "Now",
+      "start": 42.551,
+      "end": 42.748
+    },
+    {
+      "word": "it's",
+      "start": 42.795,
+      "end": 42.922
+    },
+    {
+      "word": "a",
+      "start": 42.957,
+      "end": 42.98
+    },
+    {
+      "word": "row",
+      "start": 43.038,
+      "end": 43.282
+    },
+    {
+      "word": "\u2014",
+      "start": 43.491,
+      "end": 43.584
+    },
+    {
+      "word": "prompt,",
+      "start": 43.758,
+      "end": 44.246
+    },
+    {
+      "word": "negatives,",
+      "start": 44.315,
+      "end": 44.803
+    },
+    {
+      "word": "length,",
+      "start": 44.884,
+      "end": 45.418
+    },
+    {
+      "word": "how",
+      "start": 45.802,
+      "end": 45.929
+    },
+    {
+      "word": "much",
+      "start": 45.975,
+      "end": 46.138
+    },
+    {
+      "word": "of",
+      "start": 46.184,
+      "end": 46.231
+    },
+    {
+      "word": "the",
+      "start": 46.277,
+      "end": 46.347
+    },
+    {
+      "word": "artist",
+      "start": 46.405,
+      "end": 46.73
+    },
+    {
+      "word": "it",
+      "start": 46.788,
+      "end": 46.881
+    },
+    {
+      "word": "needs.",
+      "start": 46.962,
+      "end": 47.543
+    },
+    {
+      "word": "Adding",
+      "start": 48.054,
+      "end": 48.367
+    },
+    {
+      "word": "a",
+      "start": 48.414,
+      "end": 48.437
+    },
+    {
+      "word": "format",
+      "start": 48.506,
+      "end": 48.901
+    },
+    {
+      "word": "is",
+      "start": 48.971,
+      "end": 49.064
+    },
+    {
+      "word": "a",
+      "start": 49.122,
+      "end": 49.157
+    },
+    {
+      "word": "document,",
+      "start": 49.215,
+      "end": 49.842
+    },
+    {
+      "word": "not",
+      "start": 50.016,
+      "end": 50.19
+    },
+    {
+      "word": "a",
+      "start": 50.225,
+      "end": 50.26
+    },
+    {
+      "word": "deploy.",
+      "start": 50.306,
+      "end": 50.91
+    },
+    {
+      "word": "Each",
+      "start": 51.293,
+      "end": 51.502
+    },
+    {
+      "word": "clip",
+      "start": 51.548,
+      "end": 51.815
+    },
+    {
+      "word": "is",
+      "start": 51.885,
+      "end": 52.001
+    },
+    {
+      "word": "two",
+      "start": 52.071,
+      "end": 52.245
+    },
+    {
+      "word": "models",
+      "start": 52.326,
+      "end": 52.698
+    },
+    {
+      "word": "from",
+      "start": 52.756,
+      "end": 52.907
+    },
+    {
+      "word": "two",
+      "start": 52.976,
+      "end": 53.127
+    },
+    {
+      "word": "vendors",
+      "start": 53.208,
+      "end": 53.615
+    },
+    {
+      "word": "in",
+      "start": 53.661,
+      "end": 53.743
+    },
+    {
+      "word": "one",
+      "start": 53.824,
+      "end": 54.01
+    },
+    {
+      "word": "run:",
+      "start": 54.068,
+      "end": 54.474
+    },
+    {
+      "word": "the",
+      "start": 54.799,
+      "end": 54.904
+    },
+    {
+      "word": "face",
+      "start": 54.962,
+      "end": 55.217
+    },
+    {
+      "word": "settled",
+      "start": 55.24,
+      "end": 55.588
+    },
+    {
+      "word": "first",
+      "start": 55.658,
+      "end": 55.948
+    },
+    {
+      "word": "as",
+      "start": 55.995,
+      "end": 56.099
+    },
+    {
+      "word": "a",
+      "start": 56.169,
+      "end": 56.192
+    },
+    {
+      "word": "still,",
+      "start": 56.239,
+      "end": 56.703
+    },
+    {
+      "word": "four",
+      "start": 56.784,
+      "end": 57.017
+    },
+    {
+      "word": "cents,",
+      "start": 57.086,
+      "end": 57.643
+    },
+    {
+      "word": "and",
+      "start": 57.969,
+      "end": 58.119
+    },
+    {
+      "word": "that",
+      "start": 58.178,
+      "end": 58.34
+    },
+    {
+      "word": "frame",
+      "start": 58.41,
+      "end": 58.735
+    },
+    {
+      "word": "becomes",
+      "start": 58.77,
+      "end": 59.083
+    },
+    {
+      "word": "the",
+      "start": 59.118,
+      "end": 59.188
+    },
+    {
+      "word": "first",
+      "start": 59.234,
+      "end": 59.443
+    },
+    {
+      "word": "frame",
+      "start": 59.489,
+      "end": 59.698
+    },
+    {
+      "word": "of",
+      "start": 59.722,
+      "end": 59.768
+    },
+    {
+      "word": "the",
+      "start": 59.803,
+      "end": 59.873
+    },
+    {
+      "word": "video,",
+      "start": 59.896,
+      "end": 60.465
+    },
+    {
+      "word": "eighty.",
+      "start": 60.79,
+      "end": 61.289
+    },
+    {
+      "word": "Priced",
+      "start": 61.8,
+      "end": 62.114
+    },
+    {
+      "word": "before",
+      "start": 62.137,
+      "end": 62.415
+    },
+    {
+      "word": "you",
+      "start": 62.45,
+      "end": 62.532
+    },
+    {
+      "word": "buy",
+      "start": 62.601,
+      "end": 62.787
+    },
+    {
+      "word": "it",
+      "start": 62.833,
+      "end": 62.961
+    },
+    {
+      "word": "\u2014",
+      "start": 63.089,
+      "end": 63.135
+    },
+    {
+      "word": "and",
+      "start": 63.228,
+      "end": 63.367
+    },
+    {
+      "word": "past",
+      "start": 63.414,
+      "end": 63.623
+    },
+    {
+      "word": "your",
+      "start": 63.658,
+      "end": 63.774
+    },
+    {
+      "word": "ceiling",
+      "start": 63.82,
+      "end": 64.122
+    },
+    {
+      "word": "the",
+      "start": 64.169,
+      "end": 64.238
+    },
+    {
+      "word": "run",
+      "start": 64.273,
+      "end": 64.401
+    },
+    {
+      "word": "is",
+      "start": 64.447,
+      "end": 64.517
+    },
+    {
+      "word": "refused",
+      "start": 64.587,
+      "end": 65.051
+    },
+    {
+      "word": "before",
+      "start": 65.086,
+      "end": 65.364
+    },
+    {
+      "word": "a",
+      "start": 65.388,
+      "end": 65.411
+    },
+    {
+      "word": "single",
+      "start": 65.481,
+      "end": 65.829
+    },
+    {
+      "word": "call",
+      "start": 65.875,
+      "end": 66.131
+    },
+    {
+      "word": "is",
+      "start": 66.189,
+      "end": 66.258
+    },
+    {
+      "word": "submitted.",
+      "start": 66.293,
+      "end": 66.85
+    },
+    {
+      "word": "A",
+      "start": 67.094,
+      "end": 67.164
+    },
+    {
+      "word": "submitted",
+      "start": 67.245,
+      "end": 67.652
+    },
+    {
+      "word": "step",
+      "start": 67.71,
+      "end": 67.953
+    },
+    {
+      "word": "is",
+      "start": 68.0,
+      "end": 68.07
+    },
+    {
+      "word": "a",
+      "start": 68.116,
+      "end": 68.151
+    },
+    {
+      "word": "charged",
+      "start": 68.209,
+      "end": 68.58
+    },
+    {
+      "word": "step.",
+      "start": 68.604,
+      "end": 69.01
+    },
+    {
+      "word": "Build",
+      "start": 69.521,
+      "end": 69.776
+    },
+    {
+      "word": "it",
+      "start": 69.823,
+      "end": 69.892
+    },
+    {
+      "word": "once,",
+      "start": 69.962,
+      "end": 70.415
+    },
+    {
+      "word": "and",
+      "start": 70.566,
+      "end": 70.705
+    },
+    {
+      "word": "the",
+      "start": 70.751,
+      "end": 70.821
+    },
+    {
+      "word": "second",
+      "start": 70.856,
+      "end": 71.123
+    },
+    {
+      "word": "video",
+      "start": 71.169,
+      "end": 71.483
+    },
+    {
+      "word": "is",
+      "start": 71.541,
+      "end": 71.611
+    },
+    {
+      "word": "cheap.",
+      "start": 71.68,
+      "end": 72.098
+    },
+    {
+      "word": "Cost",
+      "start": 72.539,
+      "end": 72.818
+    },
+    {
+      "word": "per",
+      "start": 72.864,
+      "end": 72.969
+    },
+    {
+      "word": "attempt",
+      "start": 73.004,
+      "end": 73.34
+    },
+    {
+      "word": "is",
+      "start": 73.387,
+      "end": 73.468
+    },
+    {
+      "word": "the",
+      "start": 73.515,
+      "end": 73.596
+    },
+    {
+      "word": "only",
+      "start": 73.666,
+      "end": 73.851
+    },
+    {
+      "word": "lever",
+      "start": 73.909,
+      "end": 74.142
+    },
+    {
+      "word": "left.",
+      "start": 74.211,
+      "end": 74.676
+    },
+    {
+      "word": "Here's",
+      "start": 75.117,
+      "end": 75.349
+    },
+    {
+      "word": "what",
+      "start": 75.372,
+      "end": 75.489
+    },
+    {
+      "word": "runs",
+      "start": 75.547,
+      "end": 75.79
+    },
+    {
+      "word": "it.",
+      "start": 75.848,
+      "end": 76.046
+    },
+    {
+      "word": "AWS",
+      "start": 76.22,
+      "end": 76.928
+    },
+    {
+      "word": "handles",
+      "start": 77.009,
+      "end": 77.358
+    },
+    {
+      "word": "the",
+      "start": 77.393,
+      "end": 77.462
+    },
+    {
+      "word": "logic.",
+      "start": 77.532,
+      "end": 78.066
+    },
+    {
+      "word": "Backblaze",
+      "start": 78.24,
+      "end": 78.786
+    },
+    {
+      "word": "B2",
+      "start": 78.821,
+      "end": 79.146
+    },
+    {
+      "word": "holds",
+      "start": 79.215,
+      "end": 79.436
+    },
+    {
+      "word": "the",
+      "start": 79.482,
+      "end": 79.552
+    },
+    {
+      "word": "bytes",
+      "start": 79.599,
+      "end": 79.889
+    },
+    {
+      "word": "\u2014",
+      "start": 79.935,
+      "end": 79.982
+    },
+    {
+      "word": "and",
+      "start": 80.016,
+      "end": 80.284
+    },
+    {
+      "word": "the",
+      "start": 80.342,
+      "end": 80.411
+    },
+    {
+      "word": "proof.",
+      "start": 80.458,
+      "end": 80.98
+    },
+    {
+      "word": "That",
+      "start": 81.584,
+      "end": 81.828
+    },
+    {
+      "word": "split",
+      "start": 81.897,
+      "end": 82.211
+    },
+    {
+      "word": "is",
+      "start": 82.269,
+      "end": 82.373
+    },
+    {
+      "word": "why",
+      "start": 82.42,
+      "end": 82.536
+    },
+    {
+      "word": "this",
+      "start": 82.594,
+      "end": 82.733
+    },
+    {
+      "word": "system",
+      "start": 82.791,
+      "end": 83.186
+    },
+    {
+      "word": "has",
+      "start": 83.256,
+      "end": 83.395
+    },
+    {
+      "word": "no",
+      "start": 83.476,
+      "end": 83.616
+    },
+    {
+      "word": "database.",
+      "start": 83.708,
+      "end": 84.37
+    },
+    {
+      "word": "A",
+      "start": 84.695,
+      "end": 84.753
+    },
+    {
+      "word": "label",
+      "start": 84.823,
+      "end": 85.067
+    },
+    {
+      "word": "stores",
+      "start": 85.125,
+      "end": 85.438
+    },
+    {
+      "word": "documents,",
+      "start": 85.531,
+      "end": 86.135
+    },
+    {
+      "word": "not",
+      "start": 86.193,
+      "end": 86.39
+    },
+    {
+      "word": "rows",
+      "start": 86.472,
+      "end": 86.855
+    },
+    {
+      "word": "\u2014",
+      "start": 86.982,
+      "end": 87.041
+    },
+    {
+      "word": "an",
+      "start": 87.366,
+      "end": 87.482
+    },
+    {
+      "word": "artist,",
+      "start": 87.551,
+      "end": 88.051
+    },
+    {
+      "word": "its",
+      "start": 88.109,
+      "end": 88.271
+    },
+    {
+      "word": "measurements,",
+      "start": 88.329,
+      "end": 88.933
+    },
+    {
+      "word": "a",
+      "start": 88.956,
+      "end": 89.026
+    },
+    {
+      "word": "finished",
+      "start": 89.107,
+      "end": 89.386
+    },
+    {
+      "word": "kit",
+      "start": 89.432,
+      "end": 89.688
+    },
+    {
+      "word": "\u2014",
+      "start": 89.862,
+      "end": 89.92
+    },
+    {
+      "word": "so",
+      "start": 90.129,
+      "end": 90.408
+    },
+    {
+      "word": "they",
+      "start": 90.559,
+      "end": 90.733
+    },
+    {
+      "word": "live",
+      "start": 90.791,
+      "end": 90.942
+    },
+    {
+      "word": "in",
+      "start": 90.965,
+      "end": 91.012
+    },
+    {
+      "word": "a",
+      "start": 91.035,
+      "end": 91.07
+    },
+    {
+      "word": "B2",
+      "start": 91.139,
+      "end": 91.534
+    },
+    {
+      "word": "bucket.",
+      "start": 91.65,
+      "end": 92.126
+    },
+    {
+      "word": "Eleven",
+      "start": 92.73,
+      "end": 93.113
+    },
+    {
+      "word": "services",
+      "start": 93.183,
+      "end": 93.647
+    },
+    {
+      "word": "became",
+      "start": 93.717,
+      "end": 94.042
+    },
+    {
+      "word": "five;",
+      "start": 94.1,
+      "end": 94.564
+    },
+    {
+      "word": "idle",
+      "start": 95.005,
+      "end": 95.319
+    },
+    {
+      "word": "cost,",
+      "start": 95.365,
+      "end": 95.748
+    },
+    {
+      "word": "under",
+      "start": 95.795,
+      "end": 95.992
+    },
+    {
+      "word": "a",
+      "start": 96.027,
+      "end": 96.05
+    },
+    {
+      "word": "dollar",
+      "start": 96.097,
+      "end": 96.375
+    },
+    {
+      "word": "a",
+      "start": 96.41,
+      "end": 96.433
+    },
+    {
+      "word": "month.",
+      "start": 96.491,
+      "end": 96.944
+    },
+    {
+      "word": "B2",
+      "start": 97.548,
+      "end": 97.908
+    },
+    {
+      "word": "does",
+      "start": 97.989,
+      "end": 98.152
+    },
+    {
+      "word": "four",
+      "start": 98.221,
+      "end": 98.454
+    },
+    {
+      "word": "jobs.",
+      "start": 98.523,
+      "end": 99.034
+    },
+    {
+      "word": "It's",
+      "start": 99.15,
+      "end": 99.359
+    },
+    {
+      "word": "the",
+      "start": 99.406,
+      "end": 99.487
+    },
+    {
+      "word": "upload",
+      "start": 99.568,
+      "end": 99.998
+    },
+    {
+      "word": "path",
+      "start": 100.056,
+      "end": 100.404
+    },
+    {
+      "word": "\u2014",
+      "start": 100.613,
+      "end": 100.717
+    },
+    {
+      "word": "masters",
+      "start": 101.159,
+      "end": 101.646
+    },
+    {
+      "word": "go",
+      "start": 101.704,
+      "end": 101.809
+    },
+    {
+      "word": "browser",
+      "start": 101.878,
+      "end": 102.308
+    },
+    {
+      "word": "straight",
+      "start": 102.366,
+      "end": 102.622
+    },
+    {
+      "word": "to",
+      "start": 102.645,
+      "end": 102.691
+    },
+    {
+      "word": "bucket,",
+      "start": 102.749,
+      "end": 103.214
+    },
+    {
+      "word": "never",
+      "start": 103.365,
+      "end": 103.574
+    },
+    {
+      "word": "touching",
+      "start": 103.62,
+      "end": 103.91
+    },
+    {
+      "word": "our",
+      "start": 103.957,
+      "end": 104.038
+    },
+    {
+      "word": "server.",
+      "start": 104.096,
+      "end": 104.572
+    },
+    {
+      "word": "It's",
+      "start": 104.955,
+      "end": 105.152
+    },
+    {
+      "word": "the",
+      "start": 105.199,
+      "end": 105.269
+    },
+    {
+      "word": "catalog.",
+      "start": 105.303,
+      "end": 105.977
+    },
+    {
+      "word": "Every",
+      "start": 106.79,
+      "end": 107.08
+    },
+    {
+      "word": "run",
+      "start": 107.161,
+      "end": 107.358
+    },
+    {
+      "word": "writes",
+      "start": 107.405,
+      "end": 107.788
+    },
+    {
+      "word": "under",
+      "start": 107.869,
+      "end": 108.055
+    },
+    {
+      "word": "tenant,",
+      "start": 108.125,
+      "end": 108.543
+    },
+    {
+      "word": "date,",
+      "start": 108.636,
+      "end": 109.042
+    },
+    {
+      "word": "run",
+      "start": 109.158,
+      "end": 109.355
+    },
+    {
+      "word": "ID.",
+      "start": 109.402,
+      "end": 109.924
+    },
+    {
+      "word": "It's",
+      "start": 110.075,
+      "end": 110.273
+    },
+    {
+      "word": "the",
+      "start": 110.307,
+      "end": 110.377
+    },
+    {
+      "word": "receipt.",
+      "start": 110.435,
+      "end": 110.888
+    },
+    {
+      "word": "Every",
+      "start": 111.097,
+      "end": 111.387
+    },
+    {
+      "word": "asset",
+      "start": 111.457,
+      "end": 111.782
+    },
+    {
+      "word": "lands",
+      "start": 111.852,
+      "end": 112.142
+    },
+    {
+      "word": "beside",
+      "start": 112.188,
+      "end": 112.513
+    },
+    {
+      "word": "a",
+      "start": 112.537,
+      "end": 112.56
+    },
+    {
+      "word": "manifest",
+      "start": 112.606,
+      "end": 113.082
+    },
+    {
+      "word": "naming",
+      "start": 113.163,
+      "end": 113.465
+    },
+    {
+      "word": "the",
+      "start": 113.512,
+      "end": 113.581
+    },
+    {
+      "word": "provider,",
+      "start": 113.616,
+      "end": 114.139
+    },
+    {
+      "word": "model",
+      "start": 114.174,
+      "end": 114.499
+    },
+    {
+      "word": "and",
+      "start": 114.58,
+      "end": 114.719
+    },
+    {
+      "word": "prompt",
+      "start": 114.8,
+      "end": 115.16
+    },
+    {
+      "word": "behind",
+      "start": 115.218,
+      "end": 115.59
+    },
+    {
+      "word": "every",
+      "start": 115.648,
+      "end": 115.845
+    },
+    {
+      "word": "step.",
+      "start": 115.892,
+      "end": 116.379
+    },
+    {
+      "word": "A",
+      "start": 116.704,
+      "end": 116.786
+    },
+    {
+      "word": "kit",
+      "start": 116.879,
+      "end": 117.064
+    },
+    {
+      "word": "that",
+      "start": 117.099,
+      "end": 117.215
+    },
+    {
+      "word": "can't",
+      "start": 117.262,
+      "end": 117.482
+    },
+    {
+      "word": "prove",
+      "start": 117.529,
+      "end": 117.807
+    },
+    {
+      "word": "how",
+      "start": 117.854,
+      "end": 117.982
+    },
+    {
+      "word": "it",
+      "start": 118.051,
+      "end": 118.121
+    },
+    {
+      "word": "was",
+      "start": 118.167,
+      "end": 118.295
+    },
+    {
+      "word": "made",
+      "start": 118.376,
+      "end": 118.678
+    },
+    {
+      "word": "never",
+      "start": 118.736,
+      "end": 118.957
+    },
+    {
+      "word": "reaches",
+      "start": 119.026,
+      "end": 119.328
+    },
+    {
+      "word": "ready.",
+      "start": 119.398,
+      "end": 119.816
+    },
+    {
+      "word": "And",
+      "start": 120.257,
+      "end": 120.408
+    },
+    {
+      "word": "it's",
+      "start": 120.455,
+      "end": 120.582
+    },
+    {
+      "word": "the",
+      "start": 120.617,
+      "end": 120.686
+    },
+    {
+      "word": "disclosure.",
+      "start": 120.733,
+      "end": 121.429
+    },
+    {
+      "word": "Download",
+      "start": 121.638,
+      "end": 122.068
+    },
+    {
+      "word": "a",
+      "start": 122.103,
+      "end": 122.126
+    },
+    {
+      "word": "clip",
+      "start": 122.196,
+      "end": 122.556
+    },
+    {
+      "word": "and",
+      "start": 122.672,
+      "end": 122.962
+    },
+    {
+      "word": "that",
+      "start": 123.02,
+      "end": 123.183
+    },
+    {
+      "word": "manifest",
+      "start": 123.252,
+      "end": 123.693
+    },
+    {
+      "word": "travels",
+      "start": 123.728,
+      "end": 124.123
+    },
+    {
+      "word": "inside",
+      "start": 124.204,
+      "end": 124.599
+    },
+    {
+      "word": "the",
+      "start": 124.622,
+      "end": 124.692
+    },
+    {
+      "word": "file,",
+      "start": 124.75,
+      "end": 125.261
+    },
+    {
+      "word": "while",
+      "start": 125.47,
+      "end": 125.69
+    },
+    {
+      "word": "the",
+      "start": 125.714,
+      "end": 125.783
+    },
+    {
+      "word": "stored",
+      "start": 125.83,
+      "end": 126.166
+    },
+    {
+      "word": "object",
+      "start": 126.236,
+      "end": 126.689
+    },
+    {
+      "word": "stays",
+      "start": 126.758,
+      "end": 127.211
+    },
+    {
+      "word": "byte-identical",
+      "start": 127.304,
+      "end": 128.198
+    },
+    {
+      "word": "\u2014",
+      "start": 128.407,
+      "end": 128.5
+    },
+    {
+      "word": "so",
+      "start": 129.313,
+      "end": 129.452
+    },
+    {
+      "word": "the",
+      "start": 129.522,
+      "end": 129.591
+    },
+    {
+      "word": "hash",
+      "start": 129.638,
+      "end": 129.893
+    },
+    {
+      "word": "still",
+      "start": 129.94,
+      "end": 130.16
+    },
+    {
+      "word": "means",
+      "start": 130.218,
+      "end": 130.439
+    },
+    {
+      "word": "something.",
+      "start": 130.474,
+      "end": 130.984
+    },
+    {
+      "word": "Drop",
+      "start": 131.588,
+      "end": 131.832
+    },
+    {
+      "word": "it",
+      "start": 131.89,
+      "end": 131.948
+    },
+    {
+      "word": "into",
+      "start": 131.983,
+      "end": 132.122
+    },
+    {
+      "word": "verify",
+      "start": 132.18,
+      "end": 132.761
+    },
+    {
+      "word": "and",
+      "start": 132.854,
+      "end": 132.981
+    },
+    {
+      "word": "it",
+      "start": 133.051,
+      "end": 133.109
+    },
+    {
+      "word": "says",
+      "start": 133.156,
+      "end": 133.411
+    },
+    {
+      "word": "exactly",
+      "start": 133.469,
+      "end": 133.899
+    },
+    {
+      "word": "how",
+      "start": 133.945,
+      "end": 134.05
+    },
+    {
+      "word": "it",
+      "start": 134.108,
+      "end": 134.166
+    },
+    {
+      "word": "was",
+      "start": 134.2,
+      "end": 134.305
+    },
+    {
+      "word": "made.",
+      "start": 134.363,
+      "end": 134.781
+    },
+    {
+      "word": "Nothing",
+      "start": 135.106,
+      "end": 135.385
+    },
+    {
+      "word": "is",
+      "start": 135.419,
+      "end": 135.478
+    },
+    {
+      "word": "looked",
+      "start": 135.524,
+      "end": 135.733
+    },
+    {
+      "word": "up.",
+      "start": 135.779,
+      "end": 136.139
+    },
+    {
+      "word": "The",
+      "start": 137.091,
+      "end": 137.219
+    },
+    {
+      "word": "proof",
+      "start": 137.266,
+      "end": 137.475
+    },
+    {
+      "word": "is",
+      "start": 137.533,
+      "end": 137.614
+    },
+    {
+      "word": "in",
+      "start": 137.672,
+      "end": 137.742
+    },
+    {
+      "word": "the",
+      "start": 137.788,
+      "end": 137.858
+    },
+    {
+      "word": "bytes.",
+      "start": 137.893,
+      "end": 138.496
+    },
+    {
+      "word": "You",
+      "start": 139.007,
+      "end": 139.135
+    },
+    {
+      "word": "cannot",
+      "start": 139.193,
+      "end": 139.471
+    },
+    {
+      "word": "buy",
+      "start": 139.518,
+      "end": 139.68
+    },
+    {
+      "word": "a",
+      "start": 139.727,
+      "end": 139.762
+    },
+    {
+      "word": "hit.",
+      "start": 139.82,
+      "end": 140.18
+    },
+    {
+      "word": "You",
+      "start": 140.354,
+      "end": 140.47
+    },
+    {
+      "word": "can",
+      "start": 140.516,
+      "end": 140.621
+    },
+    {
+      "word": "only",
+      "start": 140.667,
+      "end": 140.83
+    },
+    {
+      "word": "lower",
+      "start": 140.888,
+      "end": 141.097
+    },
+    {
+      "word": "the",
+      "start": 141.132,
+      "end": 141.201
+    },
+    {
+      "word": "cost",
+      "start": 141.236,
+      "end": 141.492
+    },
+    {
+      "word": "of",
+      "start": 141.538,
+      "end": 141.596
+    },
+    {
+      "word": "trying",
+      "start": 141.643,
+      "end": 142.002
+    },
+    {
+      "word": "\u2014",
+      "start": 142.211,
+      "end": 142.269
+    },
+    {
+      "word": "and",
+      "start": 142.711,
+      "end": 142.92
+    },
+    {
+      "word": "be",
+      "start": 142.989,
+      "end": 143.071
+    },
+    {
+      "word": "honest",
+      "start": 143.117,
+      "end": 143.419
+    },
+    {
+      "word": "about",
+      "start": 143.454,
+      "end": 143.639
+    },
+    {
+      "word": "what",
+      "start": 143.663,
+      "end": 143.79
+    },
+    {
+      "word": "came",
+      "start": 143.837,
+      "end": 144.034
+    },
+    {
+      "word": "out.",
+      "start": 144.069,
+      "end": 144.417
+    },
+    {
+      "word": "Bring",
+      "start": 144.928,
+      "end": 145.126
+    },
+    {
+      "word": "us",
+      "start": 145.172,
+      "end": 145.253
+    },
+    {
+      "word": "one",
+      "start": 145.323,
+      "end": 145.485
+    },
+    {
+      "word": "artist",
+      "start": 145.509,
+      "end": 145.811
+    },
+    {
+      "word": "and",
+      "start": 145.869,
+      "end": 145.938
+    },
+    {
+      "word": "one",
+      "start": 146.019,
+      "end": 146.182
+    },
+    {
+      "word": "song.",
+      "start": 146.228,
+      "end": 146.89
     }
   ]
 }

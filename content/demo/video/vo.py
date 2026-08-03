@@ -31,7 +31,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-SCRIPT = REPO / "docs" / "demo-voiceover.txt"
+# v2. `docs/demo-voiceover-v2-audit.md` is why: v1 claimed a Parquet index queryable by
+# Athena, and there is no Parquet and no Athena anywhere in the app. v1 is kept beside it
+# as the record of what the first cut said.
+SCRIPT = REPO / "docs" / "demo-voiceover-v2.txt"
 OUT = HERE / "out"
 
 # The intro is delivered on camera, live. The generated read starts here.

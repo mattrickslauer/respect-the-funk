@@ -228,7 +228,23 @@ RemixKit is a tool the Drafter calls. It is not a peer.
 
 ## 6. Retrieval — what justifies the vector index
 
-**R1 — Shortlist.** *Given this track, who should we approach on this channel?* ANN between `track_character.embedding` and `counterparty.profile_embedding`, filtered in the same query by kind, tenant, freshness (`last_refreshed_at`), provenance (measured demographics only, where it matters), and the absence of an open thread. The filter is a business gate, not a nicety — a shortlist that returns someone already mid-conversation is worse than useless.
+**R1 — Shortlist.** *Given this track, who should we approach on this channel?* ANN between `track_character.embedding` and `counterparty.profile_embedding`, gated by kind, tenant, freshness, and the absence of an open thread. The filter is a business gate, not a nicety — a shortlist that returns someone already mid-conversation is worse than useless.
+
+> ⚠️ **Amended 2026-08-06.** As first written this query does not work as intended. CockroachDB accelerates a vector-index filter **only on prefix columns, with equality or `IN`** — range comparisons and subqueries fall back to post-filtering. Freshness (a range), the open-thread test (a subquery) and any provenance join therefore would not be accelerated, forcing a `LIMIT k × n` over-fetch that degrades as the index grows.
+>
+> The fix is a denormalised `counterparty.contact_state` (`contactable | in_thread | stale | declined | unusable`), maintained in the transaction that already opens and closes a thread, so every predicate becomes equality:
+>
+> ```sql
+> CREATE VECTOR INDEX counterparty_shortlist
+>     ON counterparty (tenant_id, kind, contact_state,
+>                      profile_embedding vector_cosine_ops);
+>
+> SELECT id, handle FROM counterparty
+>  WHERE tenant_id = $1 AND kind = 'creator' AND contact_state = 'contactable'
+>  ORDER BY profile_embedding <=> $2 LIMIT 50;
+> ```
+>
+> The denormalisation is safe because it is written in the same serializable transaction as the fact it mirrors. Full detail and the source quotes in [`docs/reference/COCKROACHDB-AI.md`](./reference/COCKROACHDB-AI.md).
 
 **R2 — Lessons for drafting.** *What have we learned that applies here?* ANN over `lesson.embedding`, scoped to this artist, this counterparty kind, and this channel. This is the query that makes campaign *n+1* cheaper than campaign *n*, which is `SCOPE-RESET.md §1`'s entire justification for the artist being the root.
 
@@ -291,7 +307,9 @@ Fan and creator-facing surfaces, attribution links, rewards and payouts. Press, 
 ## 10. Risks and open decisions
 
 1. **Email deliverability is a time sink with low judging value.** Warmup and domain reputation take longer than twelve days. **Mitigation:** the demo sends only to owned and consented addresses; the outbox proves the mechanism without needing volume.
-2. **RU cost of a filtered vector scan is still unverified** — carried forward from `infra/MEMORY-WORKLOAD.md`. Day 1 measures it.
-3. **Counterparty acquisition is unresolved** — `SCOPE-RESET.md` open decision 4. `10-creator-indexing.md §4` is a hard "no scraper, ever"; §5 finds manual sound-page browsing both compliant and higher-signal. A human-in-the-loop Scout that surfaces candidates for bulk acceptance is the presumed middle, and is not yet a decision.
-4. **The improvement metric will have small N by Aug 18.** Label it with its N. Do not draw a flattering curve — the house rule in `MEMORY-WORKLOAD.md` and `screen_clips.py` applies to our own demo.
-5. **Still open from `SCOPE-RESET.md`:** repository topology (2), acquisition method (4), tenancy (6). Licence remains unchosen and is required for submission — Apache-2.0 recommended.
+2. **RU cost of a filtered vector scan is still unverified** — carried forward from `infra/MEMORY-WORKLOAD.md`. Day 1 measures it. Changefeeds are now **confirmed available on Basic and confirmed to consume RUs**; the rate is unpublished, and because a changefeed draws continuously rather than per-query it is the likelier of the two to erode the free allowance. Fallback if it does: poll `thread.next_action_at`, which is adequate at this volume and costs the architecture its elegance, not its function.
+3. **⚠️ Go/no-go: `SET CLUSTER SETTING feature.vector_index.enabled = true` on a Basic cluster.** Vector indexes require that setting, and cluster settings are generally restricted on serverless tiers. If it cannot be set on Basic, either it is on by default there or the tier is wrong — and the entire retrieval design depends on the answer. **This is the first thing to check on day 1, before anything else is built.**
+4. **No batching of vector writes.** The documentation states large batch inserts degrade the index, and `IMPORT INTO` is unsupported on tables carrying one. The day 3–5 synthetic backfill must use small `INSERT` batches.
+5. **Counterparty acquisition is unresolved** — `SCOPE-RESET.md` open decision 4. `10-creator-indexing.md §4` is a hard "no scraper, ever"; §5 finds manual sound-page browsing both compliant and higher-signal. A human-in-the-loop Scout that surfaces candidates for bulk acceptance is the presumed middle, and is not yet a decision.
+6. **The improvement metric will have small N by Aug 18.** Label it with its N. Do not draw a flattering curve — the house rule in `MEMORY-WORKLOAD.md` and `screen_clips.py` applies to our own demo.
+7. **Still open from `SCOPE-RESET.md`:** repository topology (2), acquisition method (4), tenancy (6). Licence remains unchosen and is required for submission — Apache-2.0 recommended.

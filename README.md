@@ -23,7 +23,7 @@ Four directories. Code, content, infrastructure, and everything written down.
 | | What's in it | Start at |
 |---|---|---|
 | **[`app/`](./app/)** | The artist console — FastAPI service, deployed on AWS. Ports and adapters: `domain/`, `ports/`, `adapters/`, `services/`, `api/`, `ui/`, plus `tests/`. | [`app/README.md`](./app/README.md) |
-| **[`content/`](./content/)** | The content pipeline and the specs that define it. `bin/` are the tools, `lib/` is the descriptor library (characters, hooks, stock, songs, overlays), `videos/` are the edits. | [`content/FORMAT-SPEC.md`](./content/FORMAT-SPEC.md) |
+| **[`content/`](./content/)** | The RemixKit asset pipeline — now a subproject. Fifteen tools in `bin/`, the descriptor library in `lib/`, one directory per edit in `videos/`, and five documents describing the formats they agree on. | [`content/README.md`](./content/README.md) |
 | **[`infra/`](./infra/)** | AWS infrastructure as Terraform (`terraform/envs/prod`, `terraform/modules/`), plus the priced workload models the shape was chosen from. | [`infra/README.md`](./infra/README.md) |
 | **[`docs/`](./docs/)** | Everything written: product and build specs, the research program, the architecture poster, the deck, the wireframe. | [`docs/PRODUCT.md`](./docs/PRODUCT.md) |
 

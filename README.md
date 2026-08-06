@@ -1,11 +1,20 @@
-# Respect the Funk / RemixKit
+# Respect the Funk
 
-![RemixKit — build an artist once, generate every release's media from it, and verify what came out](./docs/brand/thumbnail.png)
+> ## ⚠️ This repository is being greenfielded. Read [`docs/SCOPE-RESET.md`](./docs/SCOPE-RESET.md) first.
+>
+> The product described below — RemixKit, a media generation suite — is **now a subproject**,
+> not the thing being built. The platform above it takes an artist's catalogue to an audience:
+> one artist, many tracks, each analysed once, driving many outreach processes off that one
+> analysis.
+>
+> **`SCOPE-RESET.md` is the only binding document in this repository.** Every spec listed below
+> was written for the old scope. That document says which are reference and which are void;
+> take nothing in the void ones as fact or plan.
 
-A provenance-clean media generation suite for a record label: register an artist, build
-their identity once, attach songs, generate whatever the release needs — performance
-clips, press and cover stills, announcements to camera, voice-over, and backdrops a fan
-can copy — and verify what came out.
+## What is here today
+
+Four directories. Code, content, infrastructure, and everything written down. All of it
+predates the reset and describes the subproject.
 
 ## Layout
 
@@ -20,10 +29,10 @@ Four directories. Code, content, infrastructure, and everything written down.
 
 ## Reading order
 
-1. **[`docs/PRODUCT.md`](./docs/PRODUCT.md)** — who this is for and what they do, in one page.
-2. **[`docs/BUILD-SPEC.md`](./docs/BUILD-SPEC.md)** — what is being built.
-3. **[`docs/research/SYNTHESIS.md`](./docs/research/SYNTHESIS.md)** — what the research phase concluded, and why the strategy is what it is.
-4. **[`app/README.md`](./app/README.md)** — how the running thing is put together.
+1. **[`docs/SCOPE-RESET.md`](./docs/SCOPE-RESET.md)** — what is actually being built, and what every document below is now worth. **Binding.**
+2. **[`docs/research/SYNTHESIS.md`](./docs/research/SYNTHESIS.md)** and **[`STRATEGY-PIVOT.md`](./docs/research/STRATEGY-PIVOT.md)** — what the research phase concluded about the outside world. Findings stand; recommendations are scoped to the old product.
+3. **[`docs/PRODUCT.md`](./docs/PRODUCT.md)**, **[`BUILD-SPEC.md`](./docs/BUILD-SPEC.md)**, **[`MEMORY-SPEC.md`](./docs/MEMORY-SPEC.md)**, **[`MINDS-SPEC.md`](./docs/MINDS-SPEC.md)** — the old plan. Void as plan; read only for the reasoning `SCOPE-RESET.md` quotes forward.
+4. **[`app/README.md`](./app/README.md)** — how the running subproject is put together.
 
 ### The rest of `docs/`
 

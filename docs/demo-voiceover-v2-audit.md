@@ -1,6 +1,7 @@
 # The voice-over, line by line, against the code
 
-Every factual claim in `demo-voiceover.txt`, checked against the repository rather than
+Every factual claim in the original voice-over script — since retired, and recoverable
+from git history as `docs/demo-voiceover.txt` — checked against the repository rather than
 against memory or against `SCRIPT.md`. Verdicts are one of:
 
 - ✅ **true** — the code does this, cite included

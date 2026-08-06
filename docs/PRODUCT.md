@@ -1,10 +1,21 @@
 ---
 title: "RemixKit — Product Scope"
 subtitle: "Who this is for and what they do, in one page. Written because the repo's most detailed documents describe a larger product than the one being built, and every design decision was quietly being pulled toward it."
-status: "DECISION — narrows BUILD-SPEC §1. Supersedes its role scope; everything else in BUILD-SPEC stands."
+status: "VOID as plan (2026-08-06, by docs/SCOPE-RESET.md). Historical record only — it scopes the product to a media generation suite, which is no longer what is being built. Do not treat anything here as current scope, plan, or fact."
 date: "2026-07-26"
 amended: "2026-08-03 — 'What the product generates, precisely' rewritten. The product is a media generation suite for a label's catalogue, not a manufacturer of templatable UGC bait. Templatability is a research finding about how sounds spread, and it had been promoted into the definition of the product; it is one format among several. Supersedes the section it replaces and nothing else."
 ---
+
+> # ⛔ VOID AS PLAN — DO NOT BUILD FROM THIS
+>
+> Voided **2026-08-06** by [`docs/SCOPE-RESET.md`](./SCOPE-RESET.md). This document
+> scopes the product to a media generation suite with one role; the product is now a
+> platform for taking an artist's catalogue to an audience, and RemixKit is a subproject
+> inside it. The current binding documents are [`SCOPE-RESET.md`](./SCOPE-RESET.md) and
+> [`PLATFORM-SPEC.md`](./PLATFORM-SPEC.md).
+>
+> It is kept because code across `app/` cites it by section for design rationale. Read it
+> as *why the existing code looks the way it does*, never as what to build next.
 
 ## Why this document exists
 

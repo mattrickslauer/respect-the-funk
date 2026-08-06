@@ -1,7 +1,19 @@
 # PIPELINE-SPEC — previewing a run, and the nodes it is assembled from
 
+> # ⛔ VOID AS PLAN — DO NOT BUILD FROM THIS
+>
+> Voided **2026-08-06** by [`docs/SCOPE-RESET.md`](./SCOPE-RESET.md). This document was
+> missing from that file's status table on first writing, which left it reading as a live
+> plan for longer than the others; the row was added on the same date. It is a companion
+> to three documents that are all void, and it specifies a preview plane for a product
+> that is now a subproject. The current binding documents are
+> [`SCOPE-RESET.md`](./SCOPE-RESET.md) and [`PLATFORM-SPEC.md`](./PLATFORM-SPEC.md).
+>
+> It is kept because `app/` cites it by section for design rationale. Read it as *why the
+> existing code looks the way it does*, never as what to build next.
+
 Companion to BUILD-SPEC (how it is built), PRODUCT.md (what it is for), and MEMORY-SPEC
-(what an identity is). This one answers two questions that the 2026-07-31 "Un Poquito Más"
+(what an identity is) — **all three now void, as is this document**. This one answers two questions that the 2026-07-31 "Un Poquito Más"
 kit made urgent:
 
 1. **How do I see what I am about to buy, before I buy it?**

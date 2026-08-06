@@ -48,7 +48,7 @@ class RightsError(ServiceError):
     """Generation blocked because likeness consent is missing.
 
     Its own class because it is the one refusal in the system that is a product
-    feature rather than a validation failure — PRODUCT.md gap #3.
+    feature rather than a validation failure.
     """
 
     status_code = 422

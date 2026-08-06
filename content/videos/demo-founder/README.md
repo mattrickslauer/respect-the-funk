@@ -1,7 +1,13 @@
 # Demo overlays — founder to camera
 
 Twenty transparent-background cards to composite over the founder speaking, one per beat
-of [`docs/demo-voiceover.txt`](../../../docs/demo-voiceover.txt).
+of the original twenty-beat voice-over script (retired; recoverable from git history as
+`docs/demo-voiceover.txt`).
+
+> ⚠️ **These cards are one script behind.** The current script is
+> [`docs/demo-voiceover-v2.txt`](../../../docs/demo-voiceover-v2.txt), which has
+> twenty-two beats. Re-cut the cards from v2 before using them against the v2 narration —
+> the counts do not line up.
 
 Generated, not hand-made. The source of truth is
 [`content/lib/overlays/demo-founder.overlays.yaml`](../../lib/overlays/demo-founder.overlays.yaml)

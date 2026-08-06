@@ -1,7 +1,7 @@
 ---
 title: "Scope Reset — the platform is the product, RemixKit is a subproject"
 subtitle: "This repository's specs describe a media generation suite. That is no longer the thing being built. This document declares the reset, fixes the artist as the spine, and states which existing documents are binding, which are reference, and which are void."
-status: "DECISION — voids the plan status of PRODUCT.md, BUILD-SPEC.md, MEMORY-SPEC.md, MINDS-SPEC.md and the content/ specs. Research pillars 01–13 keep their status as findings. Until this document is extended, nothing in this repository describes the system being built."
+status: "DECISION — voids the plan status of PRODUCT.md, BUILD-SPEC.md, MEMORY-SPEC.md, MINDS-SPEC.md, PIPELINE-SPEC.md and the content/ specs. Research pillars 01–13 keep their status as findings. Until this document is extended, nothing in this repository describes the system being built."
 date: "2026-08-06"
 ---
 
@@ -85,6 +85,7 @@ The repository currently contains more written material than the new scope has d
 | `docs/BUILD-SPEC.md` | **VOID as plan** | Rule 6 (`tenant` as partition key everywhere) is carried forward into §1 above on its own merits. Nothing else survives. |
 | `docs/MEMORY-SPEC.md` | **VOID as plan** | Its memory model is scoped to generation attempts on a 28-clip corpus. §1's diagnosis of the write-back failure is carried forward into §2a rule 2. |
 | `docs/MINDS-SPEC.md` | **VOID as plan** | Email-as-approval-surface is a good idea and likely returns as the fleet's control plane. It returns as a new decision, not as this document. |
+| `docs/PIPELINE-SPEC.md` | **VOID as plan** | Added 2026-08-06; it was missing from this table when the table was first written, which left a thirty-kilobyte spec reading as live. It opens by naming itself a companion to BUILD-SPEC, PRODUCT.md and MEMORY-SPEC — all three void — and specifies a preview plane for kit assembly. Void by the same argument. |
 | `content/*-SPEC.md` | **REFERENCE — RemixKit subproject** | Accurate descriptions of the asset generator's file formats. They govern that subproject and nothing above it. |
 | `infra/README.md`, `infra/MEMORY-WORKLOAD.md` | **REFERENCE — costs only** | The measured rates and volumes remain useful. The architectures they describe are void. |
 

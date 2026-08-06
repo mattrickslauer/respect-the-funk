@@ -1,10 +1,21 @@
 ---
 title: "RemixKit — Build Spec"
 subtitle: "A provenance-clean UGC kit engine + creator marketplace. Backblaze Generative Media Hackathon submission and Respect the Funk's release-plumbing product, built as one thing."
-status: "DRAFT for approval — no code yet, by design (same discipline as /research)"
+status: "VOID as plan (2026-08-06, by docs/SCOPE-RESET.md). Historical record only. Rule 6 (tenant as partition key everywhere) is carried forward into SCOPE-RESET §1 on its own merits; nothing else survives."
 date: "2026-07-20"
 deadline: "2026-08-03 17:00 EDT"
 ---
+
+> # ⛔ VOID AS PLAN — DO NOT BUILD FROM THIS
+>
+> Voided **2026-08-06** by [`docs/SCOPE-RESET.md`](./SCOPE-RESET.md). Only rule 6
+> (`tenant` as a partition key everywhere) survives, and it was carried forward into
+> [SCOPE-RESET §1](./SCOPE-RESET.md) on its own merits. The current binding documents are
+> [`SCOPE-RESET.md`](./SCOPE-RESET.md) and [`PLATFORM-SPEC.md`](./PLATFORM-SPEC.md).
+>
+> It is kept because code across `app/` cites it by section (`BUILD-SPEC §2b rule 3`, and
+> so on) for design rationale. Read it as *why the existing code looks the way it does*,
+> never as what to build next. Deadlines and open decisions below are historical.
 
 > **Working name: RemixKit.** Placeholder — see [§13 Open decisions](#13-open-decisions). Product is generic (sold to any label/artist); **Respect the Funk is tenant #1** and *Losing Sleep* is the dogfood release.
 

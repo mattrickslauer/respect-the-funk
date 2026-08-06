@@ -1,7 +1,7 @@
 """Artist roster — register, list, update, and record likeness consent.
 
-PRODUCT.md's gap #1 closed: the artist is an entity that owns an identity, songs, and
-rights, rather than a string on a song.
+The artist is an entity that owns an identity, songs, and rights, rather than a string
+on a song.
 """
 
 from __future__ import annotations

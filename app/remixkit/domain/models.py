@@ -1,13 +1,13 @@
 """The document model.
 
-Five entities, and the vocabulary is PRODUCT.md's — `tenant`, `artist`, `identity`,
+Five entities — `tenant`, `artist`, `identity`,
 `song`, `kit`. Nothing here does I/O or knows what a bucket is; that is the whole
 point of keeping it separate. Persisting these is a `ports.repository` concern,
 generating from them is a `ports.generator` concern.
 
-`tenant_id` is on every model, per BUILD-SPEC §2b rule 6 — a partition key that is
-"cheap on day one and near-impossible to retrofit". It is populated today from the
-anonymous dev principal; when auth lands it comes off the real one and no model,
+`tenant_id` is on every model, per [SCOPE-RESET §1](../../../docs/SCOPE-RESET.md) — a
+partition key that is "cheap on day one and near-impossible to retrofit". It is populated
+today from the anonymous dev principal; when auth lands it comes off the real one and no model,
 service, or storage key changes shape.
 """
 
@@ -39,7 +39,7 @@ def slugify(value: str) -> str:
 
 
 class ApprovalState(str, Enum):
-    """PRODUCT.md gap #2: nothing in the repo carried editorial state.
+    """Editorial state, which nothing in the repo previously carried.
 
     This is deliberately *not* the same axis as `render_edit --check`, which is a
     technical gate (beats tile, cuts land on the grid). A label cannot auto-publish
@@ -230,7 +230,7 @@ class Base(BaseModel):
 
 
 class LikenessConsent(BaseModel):
-    """PRODUCT.md gap #3 — inverted for this use case, on purpose.
+    """Likeness consent, inverted for this use case on purpose.
 
     `nate-test` kept the speaker's face out of all 22 frames because source rights
     were unknown. A label generating content about its *own signed artists* wants the
@@ -400,7 +400,7 @@ class OtpChallenge(Base):
 
 
 class Artist(Base):
-    """A roster member. First-class, not a string on a song (PRODUCT.md gap #1)."""
+    """A roster member. First-class, not a string on a song."""
 
     id: str = Field(default_factory=lambda: new_id("art"))
     slug: str
@@ -475,8 +475,8 @@ class LockedStill(BaseModel):
 class Identity(Base):
     """The reusable "remap" — how this artist looks and reads on screen.
 
-    This is the thing PRODUCT.md step 2 describes, and the reason the second video for
-    an artist is cheap: built once, reused across every song and every kit.
+    This is the reason the second video for an artist is cheap: built once, reused
+    across every song and every kit.
     """
 
     id: str = Field(default_factory=lambda: new_id("idn"))

@@ -30,9 +30,10 @@ Four directories. Code, content, infrastructure, and everything written down.
 ## Reading order
 
 1. **[`docs/SCOPE-RESET.md`](./docs/SCOPE-RESET.md)** — what is actually being built, and what every document below is now worth. **Binding.**
-2. **[`docs/research/SYNTHESIS.md`](./docs/research/SYNTHESIS.md)** and **[`STRATEGY-PIVOT.md`](./docs/research/STRATEGY-PIVOT.md)** — what the research phase concluded about the outside world. Findings stand; recommendations are scoped to the old product.
-3. **[`docs/PRODUCT.md`](./docs/PRODUCT.md)**, **[`BUILD-SPEC.md`](./docs/BUILD-SPEC.md)**, **[`MEMORY-SPEC.md`](./docs/MEMORY-SPEC.md)**, **[`MINDS-SPEC.md`](./docs/MINDS-SPEC.md)** — the old plan. Void as plan; read only for the reasoning `SCOPE-RESET.md` quotes forward.
-4. **[`app/README.md`](./app/README.md)** — how the running subproject is put together.
+2. **[`docs/PLATFORM-SPEC.md`](./docs/PLATFORM-SPEC.md)** — the architecture: spine schema, agent fleet, coordination, changefeed topology, and the twelve-day plan. **Binding.**
+3. **[`docs/research/SYNTHESIS.md`](./docs/research/SYNTHESIS.md)** and **[`STRATEGY-PIVOT.md`](./docs/research/STRATEGY-PIVOT.md)** — what the research phase concluded about the outside world. Findings stand; recommendations are scoped to the old product.
+4. **[`docs/PRODUCT.md`](./docs/PRODUCT.md)**, **[`BUILD-SPEC.md`](./docs/BUILD-SPEC.md)**, **[`MEMORY-SPEC.md`](./docs/MEMORY-SPEC.md)**, **[`MINDS-SPEC.md`](./docs/MINDS-SPEC.md)** — the old plan. Void as plan; read only for the reasoning `SCOPE-RESET.md` quotes forward.
+5. **[`app/README.md`](./app/README.md)** — how the running subproject is put together.
 
 ### The rest of `docs/`
 

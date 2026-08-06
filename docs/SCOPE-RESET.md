@@ -78,7 +78,8 @@ The repository currently contains more written material than the new scope has d
 
 | Document | Status | Why |
 |---|---|---|
-| **This document** | **BINDING** | The only current statement of scope |
+| **This document** | **BINDING** | The current statement of scope |
+| **[`docs/PLATFORM-SPEC.md`](./PLATFORM-SPEC.md)** | **BINDING** | The architecture built on this scope — spine schema, agent fleet, coordination, changefeed topology, twelve-day plan. Resolves open decisions 1, 3 and 5 below. |
 | `docs/research/01–13`, `SYNTHESIS.md`, `STRATEGY-PIVOT.md` | **REFERENCE — findings stand** | These describe the outside world (Meta's targeting deprecation, FTC penalties, the hiQ outcome, creator rates, the measurement wall). Those facts did not change because our scope did. Their *recommendations* are scoped to the old product and are not binding. |
 | `docs/PRODUCT.md` | **VOID as plan** | Scopes the product to a media generation suite with one role. Superseded entirely. |
 | `docs/BUILD-SPEC.md` | **VOID as plan** | Rule 6 (`tenant` as partition key everywhere) is carried forward into §1 above on its own merits. Nothing else survives. |
@@ -103,11 +104,11 @@ Three things, kept because they are hard-won and scope-independent:
 
 ## 6. Open decisions
 
-Numbered so they are decisions rather than drift. None are resolved by this document.
+Numbered so they are decisions rather than drift.
 
-1. **Which processes ship first, and how many.** The scope is a superset by design and therefore unbounded. The first buildable slice is not chosen yet. *(This is the open question that prompted this document and is the next thing to settle.)*
-2. **Repository topology.** Whether the platform is built in this repository with RemixKit relocated beneath it, or in a new repository with this one vendored as a subproject.
-3. **The agent roster and the coordination model** — which agents exist, what each owns, and how work is claimed without two agents acting on the same counterparty.
-4. **Counterparty acquisition method.** Pillar 10 §4's verdict is *"no scraper, ever,"* and its §5 finding is that manual sound-page browsing is both compliant and the highest-signal path. A human-in-the-loop scout that surfaces candidates for bulk human acceptance is the middle option. Not decided.
-5. **The persistence layer**, and whether the Aug 18 CockroachDB submission remains a goal. Twelve days from this document's date, against a scope that is deliberately larger than a hackathon. If it stays a goal, the slice it ships is decision #1 and needs to be made immediately.
-6. **Tenancy.** Whether this is built for one label (Respect the Funk) with multi-tenancy designed in but unused, or as a product from the first commit.
+1. ~~**Which processes ship first, and how many.**~~ **RESOLVED 2026-08-06 by [`PLATFORM-SPEC.md §7`](./PLATFORM-SPEC.md).** Channels are data, not code, so all of them are supported in parallel by construction. **Two are built by Aug 18 — UGC creators and radio.** One cannot demonstrate the substrate is generic; five multiplies integration surface that is not memory-layer work.
+2. **Repository topology.** Whether the platform is built in this repository with RemixKit relocated beneath it, or in a new repository with this one vendored as a subproject. **Still open.**
+3. ~~**The agent roster and the coordination model.**~~ **RESOLVED 2026-08-06 by [`PLATFORM-SPEC.md §3` and `§5`](./PLATFORM-SPEC.md).** Eight agents; work claimed by lease with `FOR UPDATE SKIP LOCKED`; double-contact prevented structurally by a partial unique index rather than by convention.
+4. **Counterparty acquisition method.** Pillar 10 §4's verdict is *"no scraper, ever,"* and its §5 finding is that manual sound-page browsing is both compliant and the highest-signal path. A human-in-the-loop scout that surfaces candidates for bulk human acceptance is the middle option. **Still open — and it is now the most urgent of these**, because it gates the Scout agent.
+5. ~~**The persistence layer, and whether the Aug 18 submission remains a goal.**~~ **RESOLVED 2026-08-06 by [`PLATFORM-SPEC.md §1` and `§8`](./PLATFORM-SPEC.md).** CockroachDB, on a consolidation-and-correctness argument explicitly *not* a scale one. The Aug 18 submission stays a goal and has a day-by-day plan.
+6. **Tenancy.** Whether this is built for one label (Respect the Funk) with multi-tenancy designed in but unused, or as a product from the first commit. **Still open** — `tenant_id` is carried on every table regardless, so this decides policy, not schema.

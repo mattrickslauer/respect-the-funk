@@ -17,14 +17,6 @@ from typing import Any
 
 import psycopg
 
-# Suggestions only. `artist.type` is a free STRING — see schema/002_artist_type.sql
-# for why the set is open rather than enumerated.
-SUGGESTED_TYPES = [
-    "band", "solo", "dj", "singer", "songwriter", "composer",
-    "producer", "rapper", "orchestra", "ensemble", "duo", "collective",
-]
-
-
 def slugify(value: str) -> str:
     """A URL-safe key derived from the display name.
 

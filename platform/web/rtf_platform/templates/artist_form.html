@@ -18,14 +18,28 @@
              value="{{ artist.name if artist else '' }}">
     </div>
 
+    {% set current_type = artist.type if artist else default_type.value %}
     <div class="field">
       <label for="type">Type</label>
-      <input type="text" id="type" name="type" list="type-options"
-             value="{{ artist.type if artist else 'band' }}">
-      <datalist id="type-options">
-        {% for t in suggested_types %}<option value="{{ t }}">{% endfor %}
-      </datalist>
-      <span class="hint">Suggestions, not a fixed list — type anything that has a release.</span>
+      <select id="type" name="type">
+        {% for group, members in type_groups %}
+          <optgroup label="{{ group }}">
+            {% for t in members %}
+              <option value="{{ t.value }}" {% if current_type == t.value %}selected{% endif %}>
+                {{ t.label }}
+              </option>
+            {% endfor %}
+          </optgroup>
+        {% endfor %}
+        {# A type this build no longer defines. Kept selectable so editing a name
+           does not silently reclassify the act. #}
+        {% if artist and legacy_type %}
+          <optgroup label="No longer offered">
+            <option value="{{ legacy_type }}" selected>{{ legacy_type }}</option>
+          </optgroup>
+        {% endif %}
+      </select>
+      <span class="hint">A band, a DJ and an orchestra are all artists — this is which kind.</span>
     </div>
 
     {% if artist %}

@@ -90,11 +90,18 @@ can be billed by a runaway loop.
 
 ## Design notes
 
-**A band is an artist with a type.** One column, not a second table. `type` is a free
-STRING rather than an ENUM because "anything that has a music release" cannot be
-enumerated in advance, and an ENUM would make adding `orchestra` a deploy. The form
-offers suggestions and accepts anything. No lookup table until types need to be strict
-or carry their own outreach playbooks.
+**A band is an artist with a type.** One column, not a second table. The supported set
+is `domain.ArtistType` — fourteen values in two groups, rendered as a grouped `<select>`
+and enforced server-side, so the closed list is a rule rather than a UI convention.
+
+The database column stays `STRING` rather than becoming an ENUM, which is the part
+worth keeping straight now that the set is closed. An ENUM would make adding `mariachi`
+an `ALTER TYPE` — a migration coordinated with a deploy, for what is really a copy
+change — and, worse, a row written before a value was retired would no longer load.
+So: closed where writes happen, permissive where history lives. `domain.unrecognised`
+makes that concrete — an artist carrying a type this build no longer defines stays
+editable, renders under a "No longer offered" group, and keeps its value unless
+somebody deliberately changes it. Renaming an act never silently reclassifies it.
 
 **Anonymous reads, authenticated writes.** A judge clicking the demo URL sees the real
 console rather than a login box; only the operator cookie can change anything. The

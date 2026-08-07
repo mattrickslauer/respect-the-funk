@@ -13,6 +13,7 @@ Reads are open. Writes require a Principal that `may_write`, checked in one plac
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -22,6 +23,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from rtf_platform import auth, db, repo, settings as settings_mod
+from rtf_platform.domain import DEFAULT_TYPE, ArtistType, unrecognised
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -69,9 +71,41 @@ def _ctx(request: Request, principal: auth.Principal, **extra: Any) -> dict[str,
         "request": request,
         "principal": principal,
         "tenant_slug": SETTINGS.tenant_slug,
-        "suggested_types": repo.SUGGESTED_TYPES,
+        "type_groups": ArtistType.grouped(),
+        "default_type": DEFAULT_TYPE,
+        # Stored value -> what a human reads. A row whose type is absent here is
+        # rendered as its raw value rather than blanked.
+        "type_labels": {t.value: t.label for t in ArtistType},
         **extra,
     }
+
+
+@contextmanager
+def _friendly_conflict(name: str):
+    """Turn the slug uniqueness violation into something an operator can act on.
+
+    `artist (tenant_id, slug)` is unique and the slug is derived from the name, so
+    two artists whose names differ only by punctuation or case collide. Unhandled,
+    that surfaces as a 500 and reads like the console is broken rather than like
+    the roster already has this act.
+    """
+    try:
+        yield
+    except psycopg.errors.UniqueViolation:
+        raise HTTPException(
+            status_code=409,
+            detail=f"An artist already exists with the same URL key as {name!r}.",
+        ) from None
+
+
+def _validated_type(raw: str) -> str:
+    """The select offers only known values, so anything else is a crafted post.
+    Rejected rather than coerced — quietly storing the default would make an
+    artist the wrong kind and nobody would see it happen."""
+    parsed = ArtistType.parse(raw)
+    if parsed is None:
+        raise HTTPException(status_code=400, detail=f"{raw!r} is not a supported artist type.")
+    return parsed.value
 
 
 # --------------------------------------------------------------------- health
@@ -144,7 +178,7 @@ def artist_rows(request: Request, principal: Principal, q: str = "") -> Response
 def artist_new(request: Request, principal: Principal) -> Response:
     _require_write(principal)
     return templates.TemplateResponse(
-        request, "artist_form.html", _ctx(request, principal, artist=None)
+        request, "artist_form.html", _ctx(request, principal, artist=None, legacy_type=None)
     )
 
 
@@ -152,7 +186,7 @@ def artist_new(request: Request, principal: Principal) -> Response:
 def artist_create(
     principal: Principal,
     name: Annotated[str, Form()],
-    type: Annotated[str, Form()] = "artist",
+    type: Annotated[str, Form()] = DEFAULT_TYPE.value,
 ) -> Response:
     _require_write(principal)
     name = name.strip()
@@ -160,11 +194,13 @@ def artist_create(
         raise HTTPException(status_code=400, detail="An artist needs a name.")
     if not repo.slugify(name):
         raise HTTPException(status_code=400, detail="That name has no URL-safe form.")
+    artist_type = _validated_type(type)
 
     conn = _conn()
     # Creates the label row on first save, which is why there is no seed file.
     tenant = repo.ensure_tenant(conn, SETTINGS.tenant_slug, "Respect the Funk")
-    repo.create_artist(conn, str(tenant["id"]), name=name, type_=type.strip() or "artist")
+    with _friendly_conflict(name):
+        repo.create_artist(conn, str(tenant["id"]), name=name, type_=artist_type)
     return RedirectResponse("/artists", status_code=303)
 
 
@@ -176,7 +212,9 @@ def artist_detail(request: Request, principal: Principal, artist_id: str) -> Res
     if artist is None:
         raise HTTPException(status_code=404, detail="No such artist.")
     return templates.TemplateResponse(
-        request, "artist_form.html", _ctx(request, principal, artist=artist)
+        request,
+        "artist_form.html",
+        _ctx(request, principal, artist=artist, legacy_type=unrecognised(artist["type"])),
     )
 
 
@@ -185,7 +223,7 @@ def artist_update(
     principal: Principal,
     artist_id: str,
     name: Annotated[str, Form()],
-    type: Annotated[str, Form()] = "artist",
+    type: Annotated[str, Form()] = DEFAULT_TYPE.value,
     status: Annotated[str, Form()] = "active",
 ) -> Response:
     _require_write(principal)
@@ -195,9 +233,19 @@ def artist_update(
 
     conn = _conn()
     tenant_id = _tenant_id(conn)
-    if tenant_id is None or repo.update_artist(
-        conn, tenant_id, artist_id, name=name, type_=type.strip() or "artist", status=status
-    ) is None:
+    current = repo.get_artist(conn, tenant_id, artist_id) if tenant_id else None
+
+    # A type this build no longer defines is kept if the form sent it back
+    # unchanged, and validated normally if the operator picked something else.
+    # Editing a name must never silently reclassify the act.
+    legacy = unrecognised(current["type"]) if current else None
+    artist_type = type.strip() if legacy and type.strip() == legacy else _validated_type(type)
+
+    with _friendly_conflict(name):
+        updated = repo.update_artist(
+            conn, tenant_id, artist_id, name=name, type_=artist_type, status=status
+        ) if tenant_id else None
+    if updated is None:
         raise HTTPException(status_code=404, detail="No such artist.")
     return RedirectResponse("/artists", status_code=303)
 

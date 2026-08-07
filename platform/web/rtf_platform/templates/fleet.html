@@ -1,0 +1,114 @@
+{% extends "_layout.html" %}
+{% block title %}Fleet{% endblock %}
+
+{% block body %}
+  <h1>The fleet</h1>
+  <p class="lede">
+    Ten agents, one backbone. None of them calls another — each reads shared memory, acts,
+    writes the result back, and that write wakes the next one. <strong>This page renders a
+    specification, not a status board.</strong> The pill on every row says whether the thing
+    is running or only written down, and today most of it is only written down.
+  </p>
+
+  <h2>An agent is three layers <span class="cite">contract design §2</span></h2>
+  <p class="say">
+    Each layer is pure with respect to a different thing. That is the whole modularity claim:
+    an adapter is testable offline, a handler is testable with no database at all, and the
+    runtime is written exactly once for every agent below.
+  </p>
+  <div class="table-wrap">
+    <table class="wrap">
+      <thead>
+        <tr><th>Layer</th><th>Network</th><th>Database</th><th>Decides</th><th>What it is</th></tr>
+      </thead>
+      <tbody>
+        {% for layer in layers %}
+          <tr>
+            <td><strong>{{ layer.name }}</strong></td>
+            <td class="{{ 'yes' if layer.network else 'no' }}">{{ 'yes' if layer.network else 'no' }}</td>
+            <td class="{{ 'yes' if layer.database else 'no' }}">{{ 'yes' if layer.database else 'no' }}</td>
+            <td class="{{ 'yes' if layer.decisions else 'no' }}">{{ 'yes' if layer.decisions else 'no' }}</td>
+            <td>{{ layer.note }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="say" style="margin-top:.9rem">
+    A handler never writes to the database. It returns the facts, metrics, new work and state
+    changes it <em>wants</em>, and the runtime applies all of them in one transaction — so the
+    boundary that stops a crash from double-sending is written once rather than remembered by
+    every agent.
+  </p>
+
+  <h2>The roster <span class="cite">PLATFORM-SPEC §5, extended</span></h2>
+  <p class="say">
+    Adding one is a row in <span class="mono">agent_manifest</span> and a handler function.
+    <span class="mono">writes</span> is a declared blast radius — the runtime refuses a handler
+    that writes outside it, so when something wrong turns up in the store this column already
+    narrows who could have put it there.
+  </p>
+  <div class="table-wrap">
+    <table class="wrap">
+      <thead>
+        <tr>
+          <th>Agent</th><th>Claims from</th><th>Scope</th>
+          <th>Woken by</th><th>Writes</th><th>State</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for agent in agents %}
+          <tr>
+            <td>
+              <strong>{{ agent.title }}</strong><br>
+              <span class="say" style="font-size:12.5px">{{ agent.purpose }}</span>
+              {% if agent.adapters %}
+                <br><span class="mono" style="font-size:11.5px">{{ agent.adapters | join(' · ') }}</span>
+              {% endif %}
+            </td>
+            <td class="mono">{{ agent.work_table }}</td>
+            <td class="mono">{{ agent.scope_labels }}</td>
+            <td>{{ agent.woken_by }}</td>
+            <td class="mono">{{ agent.writes | join(', ') or '—' }}</td>
+            <td>
+              <span class="pill {{ agent.state.value }}">{{ agent.state.label }}</span><br>
+              <span class="mono" style="font-size:11px">{{ agent.source }}</span>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>The feedback ladder <span class="cite">contract design §9</span></h2>
+  <p class="say">
+    The fleet sends emails and wants the track to perform. Stream count is the goal and the
+    <em>worst</em> thing to train on — confounded by playlist adds, algorithmic push,
+    seasonality and our own channels firing at once. So the fast rungs train the loop and the
+    slow one only audits it.
+  </p>
+  <div class="table-wrap">
+    <table class="wrap">
+      <thead>
+        <tr><th>Rung</th><th>Signal</th><th>Latency</th><th>Attributable</th><th>Used for</th></tr>
+      </thead>
+      <tbody>
+        {% for rung in ladder %}
+          <tr>
+            <td><strong>{{ rung.n }}</strong></td>
+            <td>{{ rung.signal }}</td>
+            <td class="mono">{{ rung.latency }}</td>
+            <td class="{{ 'yes' if rung.n < 3 else 'no' }}">{{ rung.attributable }}</td>
+            <td>{{ rung.used_for }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="say" style="margin-top:.9rem">
+    Rung 2 closes through the Forager: verifying that a creator actually posted is itself a
+    crawl, so the same agent is both the intake organ and the sensor on the output. And stream
+    counts are stored with <strong>no basis edges to any thread</strong> — where the data does
+    not support a conclusion, the schema declines to encode one.
+  </p>
+{% endblock %}

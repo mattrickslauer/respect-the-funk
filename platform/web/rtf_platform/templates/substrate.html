@@ -1,0 +1,115 @@
+{% extends "_layout.html" %}
+{% block title %}Substrate{% endblock %}
+
+{% block body %}
+  <h1>The substrate</h1>
+  <p class="lede">
+    One store doing four jobs: <strong>memory</strong>, <strong>state</strong>,
+    <strong>coordination</strong> and <strong>event bus</strong>. The conventional stack for
+    that is Postgres plus a vector database plus Redis plus a queue — four systems and three
+    seams, and every seam is somewhere two agents can disagree about reality.
+  </p>
+
+  <div class="tally">
+    <div><b>{{ counts.live }}</b>live in defaultdb</div>
+    <div><b>{{ counts.next }}</b>next</div>
+    <div><b>{{ counts.planned }}</b>planned</div>
+  </div>
+
+  <p class="say">
+    A table arrives when something needs it, not because a spec lists it. That is why this page
+    is mostly grey — and why saying so is worth more than a progress bar that rounds up.
+  </p>
+
+  {% for area, tables in areas %}
+    <h2>{{ area }}</h2>
+    <div class="table-wrap">
+      <table class="wrap">
+        <tbody>
+          {% for table in tables %}
+            <tr>
+              <td class="mono" style="width:22%">{{ table.name }}</td>
+              <td>{{ table.purpose }}</td>
+              <td style="width:1%; text-align:right">
+                <span class="pill {{ table.state.value }}">{{ table.state.label }}</span>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+
+  <h2>Three kinds of truth get three shapes <span class="cite">SCOPE-RESET §2a, PLATFORM-SPEC §2b</span></h2>
+  <p class="say">
+    Every fact carries how it was obtained, and the three classes are stored differently on
+    purpose — so mixing them is a schema error rather than a discipline failure. A measured BPM
+    lives in a table with no confidence column, because a measurement does not have one. A
+    demographic estimate lives in a table that carries its error bar and sample size, because
+    it needs them. An estimate can never overwrite a measurement, because there is nowhere to
+    put it.
+  </p>
+  <div class="table-wrap">
+    <table class="wrap">
+      <thead><tr><th>Class</th><th>Means</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><strong>measured</strong></td><td>Computed from the artefact itself</td>
+            <td>BPM from the audio; median views from public posts</td></tr>
+        <tr><td><strong>inferred</strong></td><td>A model's estimate</td>
+            <td>Audience position; vendor demographic shares</td></tr>
+        <tr><td><strong>asserted</strong></td><td>A human stated it, and is accountable</td>
+            <td>Rights, splits, a rate agreed on a call</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>One edge table, two directions <span class="cite">contract design §5</span></h2>
+  <p class="say">
+    <span class="mono">fact_basis</span> records what every belief stands on. Its primary key
+    serves the walk <strong>up</strong> — <em>why do we believe this?</em> Its secondary index
+    serves the walk <strong>down</strong> — <em>what rests on this?</em> One table, two indexes,
+    and the second one is what makes ten agents behave as one system.
+  </p>
+  <div class="table-wrap">
+    <table class="wrap">
+      <tbody>
+        <tr><td style="width:22%"><strong>Provenance</strong></td>
+            <td>Walk up from any claim and you get the chain of evidence, back to the fetched
+                page or the human who said it. The runtime rejects an inferred fact that cites
+                nothing.</td></tr>
+        <tr><td><strong>Invalidation</strong></td>
+            <td>Retract one fact and a recursive query marks everything standing on it stale —
+                across agents, with no cross-agent code. It marks; it never deletes. A purge
+                destroys exactly the audit trail a label needs when a campaign goes sideways.</td></tr>
+        <tr><td><strong>Credit</strong></td>
+            <td>Walk down from an outcome and you get what was involved in producing it. Close
+                enough to causal on the fast rungs; deliberately not claimed on the slow one.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Verified against the real cluster <span class="cite">respect-the-funk-31317, v26.2.5</span></h2>
+  <div class="table-wrap">
+    <table class="wrap">
+      <tbody>
+        <tr><td style="width:1%"><span class="pill live">Yes</span></td>
+            <td><span class="mono">feature.vector_index.enabled</span> is already on — the
+                go/no-go the whole retrieval design depended on.</td></tr>
+        <tr><td><span class="pill live">Yes</span></td>
+            <td>Vector-index prefix filtering resolves to prefix spans, so a filtered search
+                does not over-fetch.</td></tr>
+        <tr><td><span class="pill live">Yes</span></td>
+            <td>A partial unique index stops two channels working the same counterparty, and
+                releases them when the thread closes.</td></tr>
+        <tr><td><span class="pill live">Yes</span></td>
+            <td><span class="mono">FOR UPDATE SKIP LOCKED</span> works, so the lease claim works.</td></tr>
+        <tr><td><span class="pill planned">Not yet</span></td>
+            <td>RU cost of a filtered vector scan, and changefeed RU draw. Both need real row
+                volume — a probe against an empty table measures nothing.</td></tr>
+        <tr><td><span class="pill planned">Not yet</span></td>
+            <td>Whether parallel inserts degrade a vector index. Decides whether
+                <span class="mono">chunk_staging</span> survives at all.</td></tr>
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

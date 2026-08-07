@@ -23,9 +23,21 @@ The platform described by [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md) and
 | `tenant`, `artist` | **live** in `defaultdb` |
 | `artist.type` — band, dj, singer, orchestra, composer, … | **live** |
 | Console: list, search, add, edit, delete artists | **works locally**, not yet deployed |
+| Console: `/fleet`, `/substrate`, `/artists/{id}/research` | **works locally** — renders the design, not data |
 | Tracks, derived facts, counterparties, threads, memory | not started |
 
 A table arrives when something needs it, not because `PLATFORM-SPEC §2` lists it.
+
+**Three pages render a specification rather than a database.** `/fleet` and `/substrate` read
+[`web/rtf_platform/fleet.py`](web/rtf_platform/fleet.py) and open no connection at all, so the
+architecture stays inspectable before the tables implementing it exist — and every row carries a
+pill saying whether it is running or only written down. Two of thirty-one tables are live, and
+the page says two. When `agent_manifest` becomes a table those routes read it instead and the
+templates do not change; `fleet.py`'s `Agent` fields are that table's columns, one for one.
+
+`/artists/{id}/research` is the same idea per act: each section is an empty state naming the
+table it waits on. Nothing is stubbed with plausible-looking data, because a roadmap that reads
+as a status page is worse than no page.
 
 ## Running it
 

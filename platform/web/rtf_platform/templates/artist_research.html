@@ -1,0 +1,103 @@
+{% extends "_layout.html" %}
+{% block title %}{{ artist.name }} — research{% endblock %}
+
+{% block body %}
+  <h1>{{ artist.name }}</h1>
+  <p class="sub">
+    <a href="/artists/{{ artist.id }}">Edit details</a> ·
+    <span class="type-tag">{{ type_labels.get(artist.type, artist.type) }}</span>
+  </p>
+
+  <p class="lede">
+    What the Forager will build about this act, and where it will look. Nothing here is
+    collected yet — <span class="mono">artist_profile</span>,
+    <span class="mono">lead</span> and <span class="mono">artist_fact</span> do not exist in
+    the cluster. <strong>This is the shape, rendered before it is built.</strong>
+  </p>
+
+  <h2>Where we look <span class="cite">Forager design §3</span></h2>
+  <p class="say">
+    Every artist is a different shape, and the configuration is optional all the way down. An
+    act with no TikTok is <span class="mono">absent</span> there — and we still search TikTok,
+    because fan activity is content about them whether they participate or not. That is the
+    difference between a roster tool and one that works for the artist who has one account.
+  </p>
+  <div class="table-wrap">
+    <table class="wrap">
+      <thead>
+        <tr><th>Platform</th><th>Mode</th><th>If we own it</th><th>If we do not</th></tr>
+      </thead>
+      <tbody>
+        {% for platform in platforms %}
+          <tr>
+            <td><strong>{{ platform.label }}</strong></td>
+            <td>
+              {# Disabled rather than absent: the control is the eventual control, and
+                 showing it inert says "not wired yet" more honestly than hiding it. #}
+              <select disabled aria-label="{{ platform.label }} mode">
+                <option>not configured</option>
+              </select>
+            </td>
+            <td>{{ platform.owned_api }}</td>
+            <td>{{ platform.absent_note }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>The frontier <span class="cite">Forager design §4</span></h2>
+  <p class="say">
+    Not a crawler with a list — a queue of leads, each scored, each remembering the lead that
+    produced it. Score decays with depth, so four hops out starts at a thirteenth of the weight
+    and mostly never runs. A lead with a cadence set comes back on a schedule instead of
+    finishing, which is how routine stream and view polling rides the same table, the same
+    claim query and the same worker as discovery.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Lead</th><th>Kind</th><th>Score</th><th>Why we looked</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td colspan="5" class="empty">
+          No frontier yet. The <span class="mono">lead</span> table is in the next migration.
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>What we would know <span class="cite">Forager design §5</span></h2>
+  <p class="say">
+    Claims, each carrying how it was obtained and what it stands on. When one is superseded it
+    is not deleted — it is marked, and everything built on it is marked too, down the basis
+    graph. The audit trail is the point; a purge destroys exactly the record you need when a
+    campaign goes sideways.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Dimension</th><th>Value</th><th>Provenance</th><th>Stands on</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td colspan="5" class="empty">
+          Nothing distilled yet. <span class="mono">artist_fact</span> and
+          <span class="mono">fact_basis</span> are in the next migration.
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Tracks <span class="cite">contract design §8</span></h2>
+  <p class="say">
+    The artist is where knowledge compounds across releases. The track is where the fleet
+    spends — a single in its launch window gets crawl budget that back-catalogue does not, and
+    outreach always hangs off a track rather than an act.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Track</th><th>Analysed</th><th>Campaigns</th><th>Streams</th></tr></thead>
+      <tbody>
+        <tr><td colspan="4" class="empty">
+          No tracks yet. <span class="mono">track</span> is the next table after the console.
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

@@ -8,6 +8,7 @@
       <td>{{ artist.status }}</td>
       <td>{{ artist.created_at.strftime('%Y-%m-%d') }}</td>
       <td style="text-align:right">
+        <a class="btn" href="/artists/{{ artist.id }}/research">Research</a>
         {% if principal.may_write %}
           <button class="btn danger"
                   hx-post="/artists/{{ artist.id }}/delete"

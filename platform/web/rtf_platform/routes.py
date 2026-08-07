@@ -22,7 +22,7 @@ from fastapi import APIRouter, Cookie, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from rtf_platform import auth, db, repo, settings as settings_mod
+from rtf_platform import auth, db, fleet, repo, settings as settings_mod
 from rtf_platform.domain import DEFAULT_TYPE, ArtistType, unrecognised
 
 router = APIRouter()
@@ -76,6 +76,10 @@ def _ctx(request: Request, principal: auth.Principal, **extra: Any) -> dict[str,
         # Stored value -> what a human reads. A row whose type is absent here is
         # rendered as its raw value rather than blanked.
         "type_labels": {t.value: t.label for t in ArtistType},
+        # Which nav entry is the current page. Declared here so it is always defined
+        # in the template rather than only on the pages that remembered to pass it;
+        # `**extra` below is what overrides it.
+        "nav_here": None,
         **extra,
     }
 
@@ -115,6 +119,32 @@ def healthz() -> dict[str, str]:
     """No database call. This answers "is the Lambda alive", and making it depend
     on the cluster would turn a database blip into a failing health check."""
     return {"status": "ok"}
+
+
+# ---------------------------------------------------- design surfaces
+
+# These two render `fleet.py` and touch no database at all, which is deliberate: the
+# architecture has to be inspectable before the tables that implement it exist, and a
+# page that 503s when DATABASE_URL is unset would defeat the purpose of having it.
+# When `agent_manifest` becomes a table, these routes read it instead and the templates
+# do not change.
+
+@router.get("/fleet", response_class=HTMLResponse)
+def fleet_page(request: Request, principal: Principal) -> Response:
+    return templates.TemplateResponse(
+        request, "fleet.html",
+        _ctx(request, principal, nav_here="fleet",
+             layers=fleet.LAYERS, agents=fleet.AGENTS, ladder=fleet.LADDER),
+    )
+
+
+@router.get("/substrate", response_class=HTMLResponse)
+def substrate_page(request: Request, principal: Principal) -> Response:
+    return templates.TemplateResponse(
+        request, "substrate.html",
+        _ctx(request, principal, nav_here="substrate",
+             areas=fleet.substrate_by_area(), counts=fleet.counts()),
+    )
 
 
 # ---------------------------------------------------------------------- auth
@@ -159,7 +189,8 @@ def artists_page(request: Request, principal: Principal, q: str = "") -> Respons
     tenant_id = _tenant_id(conn)
     artists = repo.list_artists(conn, tenant_id, q) if tenant_id else []
     return templates.TemplateResponse(
-        request, "artists.html", _ctx(request, principal, artists=artists, q=q)
+        request, "artists.html",
+        _ctx(request, principal, nav_here="artists", artists=artists, q=q),
     )
 
 
@@ -204,17 +235,39 @@ def artist_create(
     return RedirectResponse("/artists", status_code=303)
 
 
-@router.get("/artists/{artist_id}", response_class=HTMLResponse)
-def artist_detail(request: Request, principal: Principal, artist_id: str) -> Response:
+def _artist_or_404(artist_id: str) -> dict[str, Any]:
     conn = _conn()
     tenant_id = _tenant_id(conn)
     artist = repo.get_artist(conn, tenant_id, artist_id) if tenant_id else None
     if artist is None:
         raise HTTPException(status_code=404, detail="No such artist.")
+    return artist
+
+
+@router.get("/artists/{artist_id}", response_class=HTMLResponse)
+def artist_detail(request: Request, principal: Principal, artist_id: str) -> Response:
+    artist = _artist_or_404(artist_id)
     return templates.TemplateResponse(
         request,
         "artist_form.html",
-        _ctx(request, principal, artist=artist, legacy_type=unrecognised(artist["type"])),
+        _ctx(request, principal, nav_here="artists", artist=artist,
+             legacy_type=unrecognised(artist["type"])),
+    )
+
+
+@router.get("/artists/{artist_id}/research", response_class=HTMLResponse)
+def artist_research(request: Request, principal: Principal, artist_id: str) -> Response:
+    """The research surface for one act, rendered before the tables behind it exist.
+
+    Every section is an empty state naming the table it is waiting on, rather than a
+    placeholder that reads like data. The shape is the deliverable here; pretending to
+    have collected anything would make the page worth less than nothing.
+    """
+    artist = _artist_or_404(artist_id)
+    return templates.TemplateResponse(
+        request, "artist_research.html",
+        _ctx(request, principal, nav_here="artists", artist=artist,
+             platforms=fleet.PLATFORMS),
     )
 
 

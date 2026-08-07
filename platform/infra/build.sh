@@ -14,13 +14,16 @@ build="$here/build"
 rm -rf "$build"
 mkdir -p "$build"
 
+# Versions come from web/requirements.txt so the bundle and a local install cannot
+# drift. A dependency that resolves differently in the two places is a bug you only
+# find in production.
 python3 -m pip install \
   --target "$build" \
   --platform manylinux2014_aarch64 \
   --implementation cp \
   --python-version 3.13 \
   --only-binary=:all: --upgrade \
-  fastapi jinja2 "psycopg[binary]" python-multipart mangum
+  -r "$web/requirements.txt"
 
 # The app itself, templates included.
 cp -r "$web/rtf_platform" "$build/rtf_platform"

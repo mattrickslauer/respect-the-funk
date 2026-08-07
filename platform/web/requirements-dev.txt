@@ -1,0 +1,7 @@
+# Everything in the deployed function, plus a server to run it locally.
+# uvicorn is deliberately not in requirements.txt: Lambda invokes the ASGI app
+# through Mangum and never runs a server, so shipping one only grows the bundle.
+
+-r requirements.txt
+
+uvicorn[standard]==0.41.0

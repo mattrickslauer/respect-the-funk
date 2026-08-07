@@ -32,9 +32,15 @@ A table arrives when something needs it, not because `PLATFORM-SPEC §2` lists i
 ```bash
 cd platform/web
 python3 -m venv .venv
-.venv/bin/pip install fastapi jinja2 "psycopg[binary]" python-multipart mangum "uvicorn[standard]"
+.venv/bin/pip install -r requirements-dev.txt
 ./dev.sh            # reads DATABASE_URL from the repo-root .env; serves on :8099
 ```
+
+`requirements.txt` is pinned and is the single source of truth for both installs —
+`infra/build.sh` vendors the same file into the Lambda bundle, so a dependency cannot
+resolve one way locally and another way in the deployment. `requirements-dev.txt` adds
+uvicorn, which the deployed function never needs because Mangum invokes the ASGI app
+directly.
 
 There is no local database. CockroachDB Basic scales to zero and costs nothing idle,
 so developing against the real cluster is cheaper than maintaining a second one that
@@ -42,12 +48,20 @@ drifts out of sync with it.
 
 ## Deploying it
 
+Secrets go in `platform/infra/terraform.tfvars`, which is gitignored — not in `-var`
+flags, because command-line arguments are visible in the process table to anything
+running on the machine.
+
+```hcl
+# platform/infra/terraform.tfvars
+database_url = "postgresql://…"   # from .env
+admin_token  = "…"                # openssl rand -hex 24; this is how you sign in
+```
+
 ```bash
-./platform/infra/build.sh                       # vendors arm64 wheels into infra/build
+./platform/infra/build.sh              # vendors arm64 wheels into infra/build
 terraform -chdir=platform/infra init
-terraform -chdir=platform/infra apply \
-  -var="database_url=$DATABASE_URL" \
-  -var="admin_token=$(openssl rand -hex 24)"    # keep this; it is how you sign in
+terraform -chdir=platform/infra apply  # 5 resources: role, attachment, log group, fn, url
 ```
 
 `terraform output console_url` is the demo URL `PLATFORM-SPEC §8` day 12 requires.

@@ -1,0 +1,14 @@
+# Runtime dependencies, pinned to what was actually tested and deployed.
+#
+# This file is the single source of truth for both installs: `build.sh` vendors it
+# into the Lambda bundle, and you install it locally. Pinned rather than floating
+# because the two must agree — a version that resolves differently on your machine
+# than in the bundle is a bug you find in production.
+#
+# Local dev also needs a server: pip install -r requirements-dev.txt
+
+fastapi==0.141.1
+jinja2==3.1.6
+psycopg[binary]==3.2.13
+python-multipart==0.0.32
+mangum==0.21.0

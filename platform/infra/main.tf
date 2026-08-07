@@ -153,3 +153,19 @@ resource "aws_lambda_function_url" "console" {
   function_name      = aws_lambda_function.console.function_name
   authorization_type = "NONE"
 }
+
+# authorization_type = "NONE" on the URL is necessary but NOT sufficient: it says
+# "do not require SigV4", while the function's resource policy still has to allow
+# the call. Without this the URL answers every request with
+# {"Message":"Forbidden"}, which reads like a bug in the app and is not.
+#
+# `principal = "*"` is what public means here, and public is the intent — the
+# console authenticates its own callers (anonymous reads, operator-token writes),
+# so the authorization that matters happens in the app, not at the edge.
+resource "aws_lambda_permission" "public_url" {
+  statement_id           = "AllowPublicFunctionUrlInvoke"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.console.function_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}

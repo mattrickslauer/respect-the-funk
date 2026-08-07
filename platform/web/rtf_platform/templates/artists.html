@@ -17,10 +17,10 @@
   <div class="bar">
     <input type="search" name="q" value="{{ q }}" placeholder="Search name or type"
            aria-label="Search artists"
-           hx-get="/artists/rows" hx-target="#artist-rows" hx-swap="innerHTML"
+           hx-get="/roster/rows" hx-target="#artist-rows" hx-swap="innerHTML"
            hx-trigger="input changed delay:250ms, search">
     {% if principal.may_write %}
-      <a class="btn primary" href="/artists/new" style="margin-left:auto">Add artist</a>
+      <a class="btn primary" href="/roster/new" style="margin-left:auto">Add artist</a>
     {% endif %}
   </div>
 

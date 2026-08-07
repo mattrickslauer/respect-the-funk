@@ -1,0 +1,54 @@
+{# The third pane, rendered from demo.Section for every view in the product.
+
+   One partial, one set of section kinds, so a fact, a lead, an agent, a budget and a
+   failed run all get the same treatment — and adding a view costs no inspector code.
+   The chain kind is the one that matters: it renders the basis walk with indent rails,
+   which is the whole reason the pane is persistent rather than a drawer. #}
+<aside class="insp">
+  <div class="insphead">
+    <div class="k">{{ insp_kicker }}</div>
+    <div class="v">{{ insp_title }}</div>
+  </div>
+  <div class="inspbody">
+    {% if sel %}
+      {% for s in sel.insp %}
+        <div class="sect">
+          {% if s.title %}<h3>{{ s.title }}</h3>{% endif %}
+
+          {% if s.kind == 'kv' %}
+            <dl class="kv">
+              {% for k, v in s.items %}<dt>{{ k }}</dt><dd>{{ v }}</dd>{% endfor %}
+            </dl>
+
+          {% elif s.kind == 'chain' %}
+            <ul class="chain">
+              {% for depth, label, value, table in s.items %}
+                <li class="{{ 'q' if label == 'quote' else '' }}">
+                  <span class="rail2">{{ ('  ' * depth) ~ ('↳' if depth else '·') }}</span>
+                  {% if label != 'quote' %}<span class="lbl">{{ label }}</span>{% endif %}
+                  <span class="val">{{ value }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+
+          {% elif s.kind == 'quote' %}
+            {% for q in s.items %}<p class="quote">{{ q }}</p>{% endfor %}
+
+          {% elif s.kind == 'note' %}
+            {% for n in s.items %}<p class="note">{{ n }}</p>{% endfor %}
+
+          {% elif s.kind == 'actions' %}
+            <div class="acts" style="padding-left:0">
+              {% for a in s.items %}
+                {# Inert on purpose — this is the wireframe stage. #}
+                <button type="button" class="b {{ 'p' if loop.first else '' }}{{ ' d' if a in ('Retract','Reject','Disable','Suppress','Mark do-not-contact','Close as lost') else '' }}">{{ a }}</button>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">Nothing selected.</div>
+    {% endif %}
+  </div>
+</aside>

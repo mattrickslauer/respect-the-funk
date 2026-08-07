@@ -22,22 +22,46 @@ The platform described by [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md) and
 |---|---|
 | `tenant`, `artist` | **live** in `defaultdb` |
 | `artist.type` — band, dj, singer, orchestra, composer, … | **live** |
-| Console: list, search, add, edit, delete artists | **works locally**, not yet deployed |
-| Console: `/fleet`, `/substrate`, `/artists/{id}/research` | **works locally** — renders the design, not data |
+| Roster CRUD at `/roster` — list, search, add, edit, delete | **works locally**, not yet deployed |
+| Console — thirteen views at `/`, `/facts`, `/fleet`, … | **wireframe**, buttons inert |
 | Tracks, derived facts, counterparties, threads, memory | not started |
 
 A table arrives when something needs it, not because `PLATFORM-SPEC §2` lists it.
 
-**Three pages render a specification rather than a database.** `/fleet` and `/substrate` read
-[`web/rtf_platform/fleet.py`](web/rtf_platform/fleet.py) and open no connection at all, so the
-architecture stays inspectable before the tables implementing it exist — and every row carries a
-pill saying whether it is running or only written down. Two of thirty-one tables are live, and
-the page says two. When `agent_manifest` becomes a table those routes read it instead and the
-templates do not change; `fleet.py`'s `Agent` fields are that table's columns, one for one.
+## The console is a wireframe, and says so
 
-`/artists/{id}/research` is the same idea per act: each section is an empty state naming the
-table it waits on. Nothing is stubbed with plausible-looking data, because a roadmap that reads
-as a status page is worse than no page.
+Thirteen views in three panes — a rail with a scope switcher, a list, and a persistent
+inspector. Every screen carries a `wireframe` marker and every button is inert. The data
+comes from [`web/rtf_platform/demo.py`](web/rtf_platform/demo.py).
+
+**Why a wireframe rather than the real thing:** the tables behind these views do not
+exist, and a layout, an information hierarchy and an inspector cannot be judged from a
+spec. Building the screens first also settles what the queries have to return, which is
+cheaper than discovering it after the migration.
+
+**Why the inspector is persistent rather than a drawer.** Every object in this product
+has a *why* — a fact stands on evidence, a lead exists because another lead found it, a
+draft cites lessons. The third pane is that surface, and it renders from one partial for
+all thirteen views, so a fact, a lead, an agent, a budget and a failed run all get the
+same treatment. Adding a view costs a fixture and a route, not a screen.
+
+| | |
+|---|---|
+| **Work** | `/` needs-you queue · `/approvals` the send gate · `/inbox` replies |
+| **Knowledge** | `/artists` · `/tracks` · `/facts` · `/counterparties` |
+| **Campaigns** | `/campaigns` · `/threads` |
+| **System** | `/fleet` · `/queue` · `/runs` · `/budgets` |
+
+`/artists` is the seam: **live rows from the cluster, wireframe columns.** That is
+deliberate — it shows exactly where the real substrate currently stops, rather than
+letting the fixture hide it.
+
+**Nothing in `demo.py` is a real person, outlet or quote.** Artist names come from the
+live roster because that costs nothing and makes the screens legible; every counterparty,
+publication, handle and quotation hanging off them is invented. The *shapes* are not
+invented — column names, provenance classes, lead kinds, thread states, lease fields and
+budget units are the ones in the specs, so when a table lands the fixture becomes a
+`repo` call and the templates do not change.
 
 ## Running it
 

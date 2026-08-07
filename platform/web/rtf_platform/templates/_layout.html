@@ -14,18 +14,12 @@
       --bg: #fbfbfa;      --panel: #ffffff;  --ink: #1a1a19;
       --muted: #6b6b66;   --line: #e2e1dd;   --accent: #1a1a19;
       --danger: #a3271f;  --radius: 6px;
-      /* The one hue the wireframe earns. "This is actually running" versus "this is
-         written down" is the single distinction the fleet and substrate pages exist to
-         make, and muted-against-muted cannot carry it. Everything else stays greyscale
-         until the design pass. */
-      --live: #2f6b46;
     }
     @media (prefers-color-scheme: dark) {
       :root {
         --bg: #141413;    --panel: #1c1c1a;  --ink: #ececea;
         --muted: #97968f; --line: #2e2e2b;   --accent: #ececea;
         --danger: #e0796f;
-        --live: #6cc38d;
       }
     }
     * { box-sizing: border-box; }
@@ -83,42 +77,6 @@
       margin-bottom: 1.5rem;
     }
     form.inline { display: inline; }
-
-    /* --- design surfaces: the fleet, the substrate, the research shape ------------
-       These pages render a specification, not data. Everything on them is either
-       running or written down, and the pill is what says which. */
-    .pill {
-      font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
-      font-weight: 650; padding: 2px 8px; border-radius: 100px;
-      border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
-    }
-    .pill.live    { color: var(--live); border-color: var(--live); }
-    .pill.next    { color: var(--ink); border-color: var(--ink); }
-    .pill.planned { opacity: .75; }
-    .mono {
-      font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      color: var(--muted);
-    }
-    td .mono { white-space: nowrap; }
-    .wrap td, .wrap th { white-space: normal; }
-    .lede {
-      border-left: 2px solid var(--line); padding: .1rem 0 .1rem 1rem;
-      margin: 0 0 2rem; color: var(--muted); font-size: 14px; max-width: 62ch;
-    }
-    .lede strong { color: var(--ink); font-weight: 600; }
-    h2 {
-      font-size: 1rem; letter-spacing: -0.01em; margin: 2.5rem 0 .3rem;
-      display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap;
-    }
-    h2 .cite { font: inherit; font-size: 12px; font-weight: 400; color: var(--muted); }
-    .say { color: var(--muted); font-size: 13.5px; margin: 0 0 1rem; max-width: 68ch; }
-    .tally { display: flex; gap: 1.25rem; flex-wrap: wrap; margin: 0 0 1.75rem; }
-    .tally div { font-size: 13px; color: var(--muted); }
-    .tally b { color: var(--ink); font-size: 1.35rem; font-weight: 650; display: block;
-               letter-spacing: -0.02em; }
-    .yes { color: var(--live); font-weight: 650; }
-    .no  { color: var(--muted); }
-    nav a[aria-current=page] { font-weight: 650; }
   </style>
 </head>
 <body>
@@ -126,11 +84,7 @@
     <span class="mark">Respect the Funk</span>
     <span class="tenant">{{ tenant_slug }}</span>
     <nav>
-      {# `nav_here` is set by the pages that have a nav entry; unset elsewhere, which is
-         why this is a comparison and not a truthiness test. #}
-      <a href="/artists"   {% if nav_here == 'artists'   %}aria-current="page"{% endif %}>Artists</a>
-      <a href="/fleet"     {% if nav_here == 'fleet'     %}aria-current="page"{% endif %}>Fleet</a>
-      <a href="/substrate" {% if nav_here == 'substrate' %}aria-current="page"{% endif %}>Substrate</a>
+      <a href="/">&larr; Console</a>
       {% if principal.may_write %}
         <form class="inline" method="post" action="/signout">
           <button class="btn" type="submit">Sign out</button>

@@ -1,0 +1,57 @@
+{% extends "_console.html" %}
+{# Nine of the thirteen views are this template. A View supplies its columns, its rows
+   and its stats; the shell supplies the panes; the partial supplies the inspector. The
+   payoff is that adding "Lessons" or "Documents" later is a fixture and a route, not a
+   screen. #}
+{% block title %}{{ view.title }}{% endblock %}
+{% block h1 %}{{ view.title }}{% endblock %}
+{% block blurb %}{{ view.blurb }}{% endblock %}
+
+{% block stats %}
+  <div class="stats">
+    {% for label, value, extra in view.stats %}
+      <div class="stat">{{ label }}<b>{{ value }}</b>{% if extra %}<i>{{ extra }}</i>{% endif %}</div>
+    {% endfor %}
+  </div>
+{% endblock %}
+
+{% block centre %}
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          {% for c in view.cols %}
+            <th class="{{ c.cls }}" {% if c.width %}style="width:{{ c.width }}"{% endif %}>{{ c.label }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in view.rows %}
+          {# Selection is a query param, so the inspector follows without any JavaScript
+             and every row in the product is a linkable, shareable address. #}
+          <tr class="{{ 'on' if sel and row.id == sel.id }}"
+              onclick="location='?sel={{ row.id }}'">
+            {% for c in view.cols %}
+              <td class="{{ c.cls }}">
+                {% set val = row[c.key] %}
+                {% if c.cls == 'chip' %}
+                  <span class="chip {{ chip_tone(val) }}">{{ val }}</span>
+                {% elif c.cls == 'prov' %}
+                  <span class="prov {{ val }}">{{ row.glyph }} {{ prov_abbr(val) }}</span>
+                {% else %}
+                  {{ val }}
+                {% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% else %}
+          <tr><td colspan="{{ view.cols|length }}" class="empty">{{ view.empty }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}
+
+{% block inspector %}
+  {% include "console/_inspector.html" %}
+{% endblock %}

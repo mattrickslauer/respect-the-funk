@@ -1,0 +1,54 @@
+{% extends "_console.html" %}
+{# Sending is the only irreversible act in the system, so this screen is the gate. The
+   centre pane is a reading surface rather than a table: you cannot judge a pitch from a
+   row, and approving without reading it is exactly the failure this gate exists to stop.
+   The inspector carries what the draft drew on, so the "why does it say that" question
+   is answered without leaving the page. #}
+{% block title %}Approvals{% endblock %}
+{% block h1 %}Approvals{% endblock %}
+{% block blurb %}
+  Nothing leaves without a human. The drafter wrote these and stopped.
+{% endblock %}
+
+{% block stats %}
+  <div class="stats">
+    <div class="stat">waiting<b>3</b></div>
+    <div class="stat">oldest<b>5h</b></div>
+    <div class="stat">channel<b>ugc</b></div>
+    <div class="stat">suppression<b>clear</b><i>0 blocked</i></div>
+    <div class="stat">sends today<b>6</b><i>▁▂▁▃▂▁▂</i></div>
+  </div>
+{% endblock %}
+
+{% block centre %}
+  <div class="split">
+    <div class="col list">
+      {% for d in drafts %}
+        <a class="card {{ 'on' if sel and d.id == sel.id }}" href="?sel={{ d.id }}">
+          <div class="t">{{ d.who }}</div>
+          <div class="m">{{ d.artist }} · {{ d.track }} · {{ d.channel }} · waiting {{ d.waiting }}</div>
+          <div class="p">{{ d.subject }}</div>
+        </a>
+      {% endfor %}
+    </div>
+    <div class="col draft">
+      {% if sel %}
+        <p class="subj">{{ sel.subject }}</p>
+        <p class="meta">to {{ sel.who }} · {{ sel.artist }} · {{ sel.track }} · drafted {{ sel.waiting }} ago</p>
+        <div class="body">{{ sel.body }}</div>
+        <div class="acts" style="padding-left:0; margin-top:1.1rem">
+          <button type="button" class="b p">Approve &amp; send</button>
+          <button type="button" class="b">Edit</button>
+          <button type="button" class="b d">Reject</button>
+          <button type="button" class="b">Reject &amp; teach</button>
+        </div>
+      {% else %}
+        <div class="empty">Nothing waiting. The fleet is not blocked on you.</div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}
+
+{% block inspector %}
+  {% include "console/_inspector.html" %}
+{% endblock %}

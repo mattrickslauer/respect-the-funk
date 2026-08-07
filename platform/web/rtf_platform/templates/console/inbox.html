@@ -1,0 +1,54 @@
+{% extends "_console.html" %}
+{# Rung 1 of the feedback ladder. A reply is fast, clean and uncontaminated, which is why
+   it trains the scorer and stream count never does — so this screen matters more to the
+   system's learning than the campaign numbers do. #}
+{% block title %}Inbox{% endblock %}
+{% block h1 %}Inbox{% endblock %}
+{% block blurb %}
+  Every reply, classified and filed against its thread. If it is not a message row, it
+  did not happen.
+{% endblock %}
+
+{% block stats %}
+  <div class="stats">
+    <div class="stat">unhandled<b>1</b></div>
+    <div class="stat">reply rate<b>19%</b><i>████░░░░░░</i></div>
+    <div class="stat">agreed<b>12</b></div>
+    <div class="stat">declined<b>6</b></div>
+    <div class="stat">suppressed<b>1</b></div>
+  </div>
+{% endblock %}
+
+{% block centre %}
+  <div class="split">
+    <div class="col list">
+      {% for m in messages %}
+        <a class="card {{ 'on' if sel and m.id == sel.id }}" href="?sel={{ m.id }}">
+          <div class="t">{{ m.who }}
+            <span class="chip {{ chip_tone(m.state) }}" style="float:right">{{ m.state }}</span>
+          </div>
+          <div class="m">{{ m.artist }} · {{ m.intent }} · {{ m.when }}</div>
+          <div class="p">{{ m.preview }}</div>
+        </a>
+      {% endfor %}
+    </div>
+    <div class="col draft">
+      {% if sel %}
+        <p class="subj">{{ sel.who }}</p>
+        <p class="meta">{{ sel.artist }} · {{ sel.intent }} · {{ sel.when }}</p>
+        <div class="body">{{ sel.preview }}</div>
+        <div class="acts" style="padding-left:0; margin-top:1.1rem">
+          <button type="button" class="b p">Draft reply</button>
+          <button type="button" class="b">Open thread</button>
+          <button type="button" class="b">Mark handled</button>
+        </div>
+      {% else %}
+        <div class="empty">Nothing to read.</div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}
+
+{% block inspector %}
+  {% include "console/_inspector.html" %}
+{% endblock %}

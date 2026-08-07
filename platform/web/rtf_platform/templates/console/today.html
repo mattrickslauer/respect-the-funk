@@ -1,0 +1,35 @@
+{% extends "_console.html" %}
+{# The home screen is a queue, not a dashboard. If it is empty the fleet is healthy and
+   you close the tab — which is the point. Nothing here is a number to admire. #}
+{% block title %}Today{% endblock %}
+{% block h1 %}Needs you{% endblock %}
+{% block blurb %}
+  Four things the fleet will not decide on its own. Everything else it already did.
+{% endblock %}
+
+{% block centre %}
+  <div class="scroll">
+    <div class="queue">
+      {% for item in items %}
+        <div class="qrow {{ item.sev }} {{ 'on' if sel and item.id == sel.id }}"
+             onclick="location='?sel={{ item.id }}'">
+          <span class="ic">{{ item.icon }}</span>
+          <div style="min-width:0">
+            <div class="kind">{{ item.kind }}</div>
+            <div class="head2">{{ item.head }}</div>
+            <div class="sub">{{ item.sub }}</div>
+          </div>
+          <span class="cta"><a class="b" href="{{ item.href }}">{{ item.cta }}</a></span>
+        </div>
+      {% endfor %}
+
+      <div class="quiet">
+        {% for label, value in quiet %}<div>{{ label }} <b>{{ value }}</b></div>{% endfor %}
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block inspector %}
+  {% include "console/_inspector.html" %}
+{% endblock %}

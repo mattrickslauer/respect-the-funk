@@ -3,15 +3,14 @@
 {% if artists %}
   {% for artist in artists %}
     <tr id="artist-{{ artist.id }}">
-      <td><a href="/artists/{{ artist.id }}">{{ artist.name }}</a></td>
+      <td><a href="/roster/{{ artist.id }}">{{ artist.name }}</a></td>
       <td><span class="type-tag">{{ type_labels.get(artist.type, artist.type) }}</span></td>
       <td>{{ artist.status }}</td>
       <td>{{ artist.created_at.strftime('%Y-%m-%d') }}</td>
       <td style="text-align:right">
-        <a class="btn" href="/artists/{{ artist.id }}/research">Research</a>
         {% if principal.may_write %}
           <button class="btn danger"
-                  hx-post="/artists/{{ artist.id }}/delete"
+                  hx-post="/roster/{{ artist.id }}/delete"
                   hx-target="#artist-rows" hx-swap="innerHTML"
                   hx-confirm="Delete {{ artist.name }}? Everything hanging off this artist goes too.">
             Delete

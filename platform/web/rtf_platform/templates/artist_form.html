@@ -11,7 +11,7 @@
     {% endif %}
   </p>
 
-  <form method="post" action="{{ '/artists/' ~ artist.id if artist else '/artists' }}">
+  <form method="post" action="{{ '/roster/' ~ artist.id if artist else '/roster' }}">
     <div class="field">
       <label for="name">Name</label>
       <input type="text" id="name" name="name" required autofocus
@@ -55,7 +55,7 @@
 
     <div class="bar">
       <button class="btn primary" type="submit">{{ "Save" if artist else "Add artist" }}</button>
-      <a class="btn" href="/artists">Cancel</a>
+      <a class="btn" href="/roster">Cancel</a>
     </div>
   </form>
 {% endblock %}

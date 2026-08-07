@@ -1,11 +1,22 @@
-"""The console. Server-rendered Jinja + htmx, matching the precedent in
-`app/remixkit/ui/routes.py` — same reasoning, same component boundaries, so a
-later React front end would find the seams already cut.
+"""The console.
 
-Every fragment under `templates/components/` renders standalone and is addressable
-by a route returning *just that fragment*. `_artist_rows.html` is used by the full
-page render, by search-as-you-type, and by the response to a delete. One
-definition, three call sites.
+Two things live here and the split is deliberate.
+
+**The roster CRUD** (`/roster*`) is real: it reads and writes `tenant` and `artist` on
+the live cluster, and it is the only part of the product that currently persists
+anything. Server-rendered Jinja + htmx, matching `app/remixkit/ui/routes.py` — same
+reasoning, same component boundaries, so a later React front end would find the seams
+already cut.
+
+**The console** (everything else) is the wireframe: three panes, thirteen views, driven
+by `demo.py`. Buttons are inert. Every view is marked so on screen. It exists because a
+layout, an information hierarchy and an inspector have to be judged before the tables
+behind them are built, and judging them from a spec does not work.
+
+The seam between the two is one line per view: a route hands the template a `View`. When
+a table lands, the fixture becomes a `repo` call and the template does not change. The
+`/artists` view already does this halfway — live rows, wireframe columns — which is the
+honest way to show where the substrate currently stops.
 
 Reads are open. Writes require a Principal that `may_write`, checked in one place
 (`_require_write`) rather than remembered at each call site.
@@ -22,7 +33,7 @@ from fastapi import APIRouter, Cookie, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from rtf_platform import auth, db, fleet, repo, settings as settings_mod
+from rtf_platform import auth, db, demo, repo, settings as settings_mod
 from rtf_platform.domain import DEFAULT_TYPE, ArtistType, unrecognised
 
 router = APIRouter()
@@ -66,6 +77,43 @@ def _tenant_id(conn: psycopg.Connection) -> str | None:
     return str(tenant["id"]) if tenant else None
 
 
+#: Value -> chip tone. One mapping for the whole product, so `failed` in the queue and
+#: `failed` in the run log cannot drift apart into two different reds. Anything
+#: unrecognised renders neutral, which is the safe direction: a state nobody has
+#: classified should not shout.
+_TONES: dict[str, str] = {
+    "ok": "ok", "live": "ok", "agreed": "ok", "working": "ok", "sent": "ok",
+    "handled": "ok", "delivered": "ok", "measured": "ok", "running": "ok",
+    "warn": "warn", "stale": "warn", "pending": "warn", "claimed": "warn",
+    "negotiating": "warn", "awaiting_reply": "warn", "near cap": "warn",
+    "blocked_manual": "warn", "shortlisted": "warn", "winding down": "warn",
+    "conflict": "err", "error": "err", "failed": "err", "rejected": "err",
+    "429": "err", "do-not-contact": "err", "suppressed": "err", "paused": "err",
+    "needs you": "err", "unsubscribed": "err", "off": "err", "unanalysed": "err",
+    "idle": "info", "launch": "info", "holdout": "info", "replied": "info",
+    "declined": "info",
+}
+
+
+def _chip_tone(value: Any) -> str:
+    return _TONES.get(str(value).strip().lower(), "")
+
+
+#: Four characters, because the column is 10% wide and "inferred" does not fit. Spelled
+#: out rather than sliced — a naive `[:4]` gives INFE and ASSE, which read as typos.
+_PROV_ABBR: dict[str, str] = {
+    "measured": "MEAS", "inferred": "INFR", "asserted": "ASRT",
+}
+
+
+def _prov_abbr(value: Any) -> str:
+    return _PROV_ABBR.get(str(value), str(value)[:4].upper())
+
+
+templates.env.globals["chip_tone"] = _chip_tone
+templates.env.globals["prov_abbr"] = _prov_abbr
+
+
 def _ctx(request: Request, principal: auth.Principal, **extra: Any) -> dict[str, Any]:
     return {
         "request": request,
@@ -76,10 +124,11 @@ def _ctx(request: Request, principal: auth.Principal, **extra: Any) -> dict[str,
         # Stored value -> what a human reads. A row whose type is absent here is
         # rendered as its raw value rather than blanked.
         "type_labels": {t.value: t.label for t in ArtistType},
-        # Which nav entry is the current page. Declared here so it is always defined
-        # in the template rather than only on the pages that remembered to pass it;
-        # `**extra` below is what overrides it.
-        "nav_here": None,
+        "nav": demo.NAV,
+        "scopes": demo.SCOPES,
+        "here": None,
+        "insp_kicker": "",
+        "insp_title": "",
         **extra,
     }
 
@@ -121,30 +170,106 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# ---------------------------------------------------- design surfaces
+# -------------------------------------------------------------------- console
 
-# These two render `fleet.py` and touch no database at all, which is deliberate: the
-# architecture has to be inspectable before the tables that implement it exist, and a
-# page that 503s when DATABASE_URL is unset would defeat the purpose of having it.
-# When `agent_manifest` becomes a table, these routes read it instead and the templates
-# do not change.
+def _table(request: Request, principal: auth.Principal, view: demo.View,
+           sel_id: str | None, kicker: str, title_key: str) -> Response:
+    """Nine of the thirteen views are this call. The View carries its own columns,
+    rows and stats; everything else is shell."""
+    sel = demo.select(view.rows, sel_id)
+    return templates.TemplateResponse(
+        request, "console/table.html",
+        _ctx(request, principal, here=view.key, view=view, sel=sel,
+             insp_kicker=kicker,
+             insp_title=(sel or {}).get(title_key, "—")),
+    )
+
+
+@router.get("/", response_class=HTMLResponse)
+def today(request: Request, principal: Principal, sel: str = "") -> Response:
+    row = demo.select(demo.TODAY, sel or None)
+    return templates.TemplateResponse(
+        request, "console/today.html",
+        _ctx(request, principal, here="today", items=demo.TODAY, sel=row,
+             quiet=demo.TODAY_QUIET,
+             insp_kicker=(row or {}).get("kind", ""),
+             insp_title=(row or {}).get("head", "—")),
+    )
+
+
+@router.get("/approvals", response_class=HTMLResponse)
+def approvals(request: Request, principal: Principal, sel: str = "") -> Response:
+    row = demo.select(demo.APPROVALS, sel or None)
+    return templates.TemplateResponse(
+        request, "console/approvals.html",
+        _ctx(request, principal, here="approvals", drafts=demo.APPROVALS, sel=row,
+             insp_kicker="draft", insp_title=(row or {}).get("who", "—")),
+    )
+
+
+@router.get("/inbox", response_class=HTMLResponse)
+def inbox(request: Request, principal: Principal, sel: str = "") -> Response:
+    row = demo.select(demo.INBOX, sel or None)
+    return templates.TemplateResponse(
+        request, "console/inbox.html",
+        _ctx(request, principal, here="inbox", messages=demo.INBOX, sel=row,
+             insp_kicker="reply", insp_title=(row or {}).get("who", "—")),
+    )
+
+
+@router.get("/artists", response_class=HTMLResponse)
+def artists_console(request: Request, principal: Principal, sel: str = "") -> Response:
+    """The one console view backed by the live cluster. Its rows are real and most of
+    its columns are not, which is exactly where the substrate currently stops."""
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    rows = repo.list_artists(conn, tenant_id) if tenant_id else []
+    return _table(request, principal, demo.artist_view(rows), sel or None, "artist", "name")
+
+
+@router.get("/facts", response_class=HTMLResponse)
+def facts(request: Request, principal: Principal, sel: str = "") -> Response:
+    return _table(request, principal, demo.FACTS, sel or None, "claim", "dimension")
+
+
+@router.get("/queue", response_class=HTMLResponse)
+def queue(request: Request, principal: Principal, sel: str = "") -> Response:
+    return _table(request, principal, demo.QUEUE, sel or None, "lead", "target")
+
 
 @router.get("/fleet", response_class=HTMLResponse)
-def fleet_page(request: Request, principal: Principal) -> Response:
-    return templates.TemplateResponse(
-        request, "fleet.html",
-        _ctx(request, principal, nav_here="fleet",
-             layers=fleet.LAYERS, agents=fleet.AGENTS, ladder=fleet.LADDER),
-    )
+def fleet(request: Request, principal: Principal, sel: str = "") -> Response:
+    return _table(request, principal, demo.FLEET, sel or None, "agent", "agent")
 
 
-@router.get("/substrate", response_class=HTMLResponse)
-def substrate_page(request: Request, principal: Principal) -> Response:
-    return templates.TemplateResponse(
-        request, "substrate.html",
-        _ctx(request, principal, nav_here="substrate",
-             areas=fleet.substrate_by_area(), counts=fleet.counts()),
-    )
+@router.get("/budgets", response_class=HTMLResponse)
+def budgets(request: Request, principal: Principal, sel: str = "") -> Response:
+    return _table(request, principal, demo.BUDGETS, sel or None, "budget", "artist")
+
+
+@router.get("/runs", response_class=HTMLResponse)
+def runs(request: Request, principal: Principal, sel: str = "") -> Response:
+    return _table(request, principal, demo.RUNS, sel or None, "run", "what")
+
+
+@router.get("/counterparties", response_class=HTMLResponse)
+def counterparties(request: Request, principal: Principal, sel: str = "") -> Response:
+    return _table(request, principal, demo.COUNTERPARTIES, sel or None, "counterparty", "who")
+
+
+@router.get("/threads", response_class=HTMLResponse)
+def threads(request: Request, principal: Principal, sel: str = "") -> Response:
+    return _table(request, principal, demo.THREADS, sel or None, "thread", "who")
+
+
+@router.get("/tracks", response_class=HTMLResponse)
+def tracks(request: Request, principal: Principal, sel: str = "") -> Response:
+    return _table(request, principal, demo.TRACKS, sel or None, "track", "title")
+
+
+@router.get("/campaigns", response_class=HTMLResponse)
+def campaigns(request: Request, principal: Principal, sel: str = "") -> Response:
+    return _table(request, principal, demo.CAMPAIGNS, sel or None, "campaign", "name")
 
 
 # ---------------------------------------------------------------------- auth
@@ -161,7 +286,7 @@ def signin(token: Annotated[str, Form()]) -> Response:
     principal = auth.principal_from_cookie(token, SETTINGS.admin_token)
     if not principal.authenticated:
         raise HTTPException(status_code=401, detail="That token is not right.")
-    response = RedirectResponse("/artists", status_code=303)
+    response = RedirectResponse("/roster", status_code=303)
     # httpOnly so console JavaScript cannot read it and an XSS cannot exfiltrate it.
     response.set_cookie(
         auth.COOKIE_NAME, token, httponly=True, secure=True, samesite="lax", max_age=60 * 60 * 12
@@ -171,31 +296,25 @@ def signin(token: Annotated[str, Form()]) -> Response:
 
 @router.post("/signout")
 def signout() -> Response:
-    response = RedirectResponse("/artists", status_code=303)
+    response = RedirectResponse("/roster", status_code=303)
     response.delete_cookie(auth.COOKIE_NAME)
     return response
 
 
-# ------------------------------------------------------------------- artists
+# ------------------------------------------------------- roster CRUD (real)
 
-@router.get("/", include_in_schema=False)
-def index() -> Response:
-    return RedirectResponse("/artists", status_code=307)
-
-
-@router.get("/artists", response_class=HTMLResponse)
-def artists_page(request: Request, principal: Principal, q: str = "") -> Response:
+@router.get("/roster", response_class=HTMLResponse)
+def roster_page(request: Request, principal: Principal, q: str = "") -> Response:
     conn = _conn()
     tenant_id = _tenant_id(conn)
     artists = repo.list_artists(conn, tenant_id, q) if tenant_id else []
     return templates.TemplateResponse(
-        request, "artists.html",
-        _ctx(request, principal, nav_here="artists", artists=artists, q=q),
+        request, "artists.html", _ctx(request, principal, artists=artists, q=q)
     )
 
 
-@router.get("/artists/rows", response_class=HTMLResponse)
-def artist_rows(request: Request, principal: Principal, q: str = "") -> Response:
+@router.get("/roster/rows", response_class=HTMLResponse)
+def roster_rows(request: Request, principal: Principal, q: str = "") -> Response:
     """The fragment htmx swaps in on search. Same template the full page uses."""
     conn = _conn()
     tenant_id = _tenant_id(conn)
@@ -205,16 +324,16 @@ def artist_rows(request: Request, principal: Principal, q: str = "") -> Response
     )
 
 
-@router.get("/artists/new", response_class=HTMLResponse)
-def artist_new(request: Request, principal: Principal) -> Response:
+@router.get("/roster/new", response_class=HTMLResponse)
+def roster_new(request: Request, principal: Principal) -> Response:
     _require_write(principal)
     return templates.TemplateResponse(
         request, "artist_form.html", _ctx(request, principal, artist=None, legacy_type=None)
     )
 
 
-@router.post("/artists")
-def artist_create(
+@router.post("/roster")
+def roster_create(
     principal: Principal,
     name: Annotated[str, Form()],
     type: Annotated[str, Form()] = DEFAULT_TYPE.value,
@@ -232,47 +351,25 @@ def artist_create(
     tenant = repo.ensure_tenant(conn, SETTINGS.tenant_slug, "Respect the Funk")
     with _friendly_conflict(name):
         repo.create_artist(conn, str(tenant["id"]), name=name, type_=artist_type)
-    return RedirectResponse("/artists", status_code=303)
+    return RedirectResponse("/roster", status_code=303)
 
 
-def _artist_or_404(artist_id: str) -> dict[str, Any]:
+@router.get("/roster/{artist_id}", response_class=HTMLResponse)
+def roster_detail(request: Request, principal: Principal, artist_id: str) -> Response:
     conn = _conn()
     tenant_id = _tenant_id(conn)
     artist = repo.get_artist(conn, tenant_id, artist_id) if tenant_id else None
     if artist is None:
         raise HTTPException(status_code=404, detail="No such artist.")
-    return artist
-
-
-@router.get("/artists/{artist_id}", response_class=HTMLResponse)
-def artist_detail(request: Request, principal: Principal, artist_id: str) -> Response:
-    artist = _artist_or_404(artist_id)
     return templates.TemplateResponse(
         request,
         "artist_form.html",
-        _ctx(request, principal, nav_here="artists", artist=artist,
-             legacy_type=unrecognised(artist["type"])),
+        _ctx(request, principal, artist=artist, legacy_type=unrecognised(artist["type"])),
     )
 
 
-@router.get("/artists/{artist_id}/research", response_class=HTMLResponse)
-def artist_research(request: Request, principal: Principal, artist_id: str) -> Response:
-    """The research surface for one act, rendered before the tables behind it exist.
-
-    Every section is an empty state naming the table it is waiting on, rather than a
-    placeholder that reads like data. The shape is the deliverable here; pretending to
-    have collected anything would make the page worth less than nothing.
-    """
-    artist = _artist_or_404(artist_id)
-    return templates.TemplateResponse(
-        request, "artist_research.html",
-        _ctx(request, principal, nav_here="artists", artist=artist,
-             platforms=fleet.PLATFORMS),
-    )
-
-
-@router.post("/artists/{artist_id}")
-def artist_update(
+@router.post("/roster/{artist_id}")
+def roster_update(
     principal: Principal,
     artist_id: str,
     name: Annotated[str, Form()],
@@ -300,11 +397,11 @@ def artist_update(
         ) if tenant_id else None
     if updated is None:
         raise HTTPException(status_code=404, detail="No such artist.")
-    return RedirectResponse("/artists", status_code=303)
+    return RedirectResponse("/roster", status_code=303)
 
 
-@router.post("/artists/{artist_id}/delete", response_class=HTMLResponse)
-def artist_delete(request: Request, principal: Principal, artist_id: str) -> Response:
+@router.post("/roster/{artist_id}/delete", response_class=HTMLResponse)
+def roster_delete(request: Request, principal: Principal, artist_id: str) -> Response:
     _require_write(principal)
     conn = _conn()
     tenant_id = _tenant_id(conn)

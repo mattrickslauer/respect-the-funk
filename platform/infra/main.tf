@@ -128,9 +128,9 @@ resource "aws_lambda_function" "console" {
   filename         = data.archive_file.bundle.output_path
   source_code_hash = data.archive_file.bundle.output_base64sha256
 
-  # A cap, not a reservation. Without it a traffic spike (or a loop) can open
-  # unbounded connections to the cluster and bill both sides. Ten concurrent
-  # renders is far more than this console will ever legitimately need.
+  # -1 by default: unreserved. See variables.tf for why a reservation is not
+  # available on this account, and why the account's own 10-execution limit is a
+  # stricter ceiling than the one this was trying to set.
   reserved_concurrent_executions = var.max_concurrency
 
   environment {

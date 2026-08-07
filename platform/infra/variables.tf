@@ -33,9 +33,23 @@ variable "memory_mb" {
 }
 
 variable "max_concurrency" {
-  type        = number
-  default     = 10
-  description = "Hard ceiling on simultaneous executions, so neither AWS nor CockroachDB can be billed by a runaway loop."
+  type    = number
+  default = -1
+
+  # -1 means "no reservation", which is the only value this account can accept.
+  #
+  # The intent was a hard per-function ceiling so a runaway loop could not bill AWS
+  # and CockroachDB unbounded. It cannot be had here: this account's total Lambda
+  # concurrency is 10 (AWS's reduced default; the usual limit is 1000), and AWS
+  # refuses any reservation that leaves fewer than 10 unreserved. Reserving even 1
+  # is therefore rejected.
+  #
+  # The protection is not lost, only relocated — the account limit of 10 is itself a
+  # stricter ceiling than the 10 this variable was trying to impose. What *is* lost
+  # is isolation: this console shares those 10 with the other functions in the
+  # account, RemixKit's included. At the console's traffic that is not a real risk,
+  # but it is the reason to raise the account quota before anything here gets busy.
+  description = "Reserved concurrency. -1 leaves the function unreserved, sharing the account pool."
 }
 
 variable "log_retention_days" {

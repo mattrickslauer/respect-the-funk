@@ -6,6 +6,11 @@ date: "2026-08-07"
 deadline: "2026-08-18 17:00 EDT"
 ---
 
+> **On seven pages, for overview and audit: [`forager-vision.pdf`](./forager-vision.pdf)** —
+> vision, engineering, architecture, why it scales, and the submission case. Generated from
+> [`forager_vision.py`](./forager_vision.py); this document is its source of record, and where
+> the two disagree this one wins.
+
 ## 0. What this is
 
 The first agent in the fleet. Not the Scout.

@@ -1,0 +1,47 @@
+{% extends "_layout.html" %}
+{% block title %}{{ artist.name if artist else "New artist" }}{% endblock %}
+
+{% block body %}
+  <h1>{{ artist.name if artist else "Add artist" }}</h1>
+  <p class="sub">
+    {% if artist %}
+      Slug <code>{{ artist.slug }}</code> — regenerated from the name when you save.
+    {% else %}
+      The URL key is derived from the name; you do not set it.
+    {% endif %}
+  </p>
+
+  <form method="post" action="{{ '/artists/' ~ artist.id if artist else '/artists' }}">
+    <div class="field">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" required autofocus
+             value="{{ artist.name if artist else '' }}">
+    </div>
+
+    <div class="field">
+      <label for="type">Type</label>
+      <input type="text" id="type" name="type" list="type-options"
+             value="{{ artist.type if artist else 'band' }}">
+      <datalist id="type-options">
+        {% for t in suggested_types %}<option value="{{ t }}">{% endfor %}
+      </datalist>
+      <span class="hint">Suggestions, not a fixed list — type anything that has a release.</span>
+    </div>
+
+    {% if artist %}
+      <div class="field">
+        <label for="status">Status</label>
+        <select id="status" name="status">
+          {% for s in ["active", "paused", "archived"] %}
+            <option value="{{ s }}" {% if artist.status == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
+
+    <div class="bar">
+      <button class="btn primary" type="submit">{{ "Save" if artist else "Add artist" }}</button>
+      <a class="btn" href="/artists">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

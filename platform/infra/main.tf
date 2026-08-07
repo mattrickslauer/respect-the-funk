@@ -169,3 +169,23 @@ resource "aws_lambda_permission" "public_url" {
   principal              = "*"
   function_url_auth_type = "NONE"
 }
+
+# BOTH permissions are required, and this is the one every guide omits. With only
+# the InvokeFunctionUrl grant above, the URL answers {"Message":"Forbidden"} with
+# x-amzn-ErrorType: AccessDeniedException and the function is never invoked — no
+# log stream is even created, so it reads like a networking fault rather than an
+# authorization one. Verified by comparing against two working function URLs in
+# this account: both carry this second statement.
+#
+# The narrower condition those two use — Bool lambda:InvokedViaFunctionUrl = true —
+# is not expressible here: the AddPermission API rejects function_url_auth_type on
+# the InvokeFunction action, and aws_lambda_permission exposes no arbitrary
+# condition. The exposure that leaves is bounded: this function is deliberately
+# public at the URL already, and all real authorization is in the app (anonymous
+# reads, operator-token writes). Narrow it if that ever stops being true.
+resource "aws_lambda_permission" "public_invoke" {
+  statement_id  = "AllowInvokeViaFunctionUrl"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.console.function_name
+  principal     = "*"
+}

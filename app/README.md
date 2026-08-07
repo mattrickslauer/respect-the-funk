@@ -1,9 +1,15 @@
 ---
 title: "RemixKit — the artist console"
-subtitle: "The application PRODUCT.md describes: register an artist, build their identity once, attach songs, generate the media a release needs in whichever format it needs, and verify what came out."
+subtitle: "Register an artist, build their identity once, attach songs, generate the media a release needs in whichever format it needs, and verify what came out."
 status: "LIVE — deployed on AWS with real generation, real B2, and real auth. Also runs end-to-end with zero credentials."
 date: "2026-07-27"
 ---
+
+> **On the spec citations below.** This document and the code cite `PRODUCT.md`,
+> `BUILD-SPEC`, `MEMORY-SPEC` and `PIPELINE-SPEC` by section. All four are **void as
+> plan** — see [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md). The citations are kept
+> because they record *why this code looks the way it does*; none of them describes what
+> to build next. RemixKit is now a subproject of the platform, not the product.
 
 ## Run it
 

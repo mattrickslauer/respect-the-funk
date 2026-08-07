@@ -1,8 +1,9 @@
 ---
 title: "Clip Descriptor Spec (rtf.clip/v1)"
 subtitle: "A standard sidecar file that carries a clip's *meaning* so an editor — human or machine — can place it, cut it, and generate matching footage around it."
-status: "DRAFT v1 — in use for content/test01.MOV"
+status: "NORMATIVE v1 — in use across lib/hooks, lib/stock and all five edits in videos/"
 date: "2026-07-21"
+amended: "2026-08-06 — Layout, Companion files and the subjects comment rewritten. They described content/{characters,edits,formats,songs}/, content/generated/ and content/test01.MOV, none of which exist; inputs live in lib/ and outputs in videos/. Paths only — no rule, field or schema changed."
 ---
 
 ## Why this exists
@@ -60,7 +61,7 @@ rights:
   minors_in_frame: true | false        # if true, guardian consent is required to publish
   notes: <str>
 
-subjects: [<character id>, ...]  # → content/characters/<id>.character.yaml
+subjects: [<character id>, ...]  # → lib/characters/<id>.character.yaml
 setting: { place, interior_exterior, time_of_day, season, weather }
 mood: [<adjective>, ...]
 tags: [<free>, ...]
@@ -112,27 +113,29 @@ Optional blocks are omitted, never left empty-with-a-guess.
 
 ## Companion files
 
-**`content/characters/<id>.character.yaml`** — one per recurring person. Holds the description used verbatim in every generation prompt so the same face, hair, and wardrobe come back across clips. Character drift is the #1 reason AI cutaways don't cut.
+**`lib/characters/<id>.character.yaml`** — one per recurring person. Holds the description used verbatim in every generation prompt so the same face, hair, and wardrobe come back across clips. Character drift is the #1 reason AI cutaways don't cut.
 
-**`content/edits/<id>.edit.yaml`** — an edit instance: which clip is the hook, which song, and the pictures that pay it off. References clips by `id`, never by filename. It does *not* carry the timeline or the beat grid — those are compiled from the format and the song it names. See [FORMAT-SPEC](FORMAT-SPEC.md).
+**`videos/<edit-id>/edit.yaml`** — an edit instance: which clip is the hook, which song, and the pictures that pay it off. References clips by `id`, never by filename. It does *not* carry the timeline or the beat grid — those are compiled from the format and the song it names. See [FORMAT-SPEC](FORMAT-SPEC.md). A video directory is self-contained: the hook descriptor and the still descriptors are copied in beside it.
 
-**`content/formats/<id>.format.yaml`** and **`content/songs/<id>.song.yaml`** — the shape a video of this kind takes, and where one track's beats and drop actually are. A clip descriptor is the input to an edit; the format is the input to *every* edit.
+**`lib/formats/<id>.format.yaml`** and **`lib/songs/<id>.song.yaml`** — the shape a video of this kind takes, and where one track's beats and drop actually are. A clip descriptor is the input to an edit; the format is the input to *every* edit.
 
 ---
 
 ## Layout
 
+Inputs live in `lib/` and are reused across edits; outputs live in `videos/`, one directory
+per edit. Full map in [`content/README.md`](README.md).
+
 ```
 content/
   CLIP-SPEC.md              this file
   FORMAT-SPEC.md            the layer above: formats, songs, edit instances
-  test01.MOV                media
-  test01.clip.yaml          its descriptor
-  characters/*.character.yaml
-  formats/*.format.yaml
-  songs/*.song.yaml
-  edits/*.edit.yaml         + rtf.py, the resolver
-  generated/                AI stills/clips (each with its own .clip.yaml)
+  lib/characters/*.character.yaml
+  lib/formats/*.format.yaml
+  lib/songs/*.song.yaml
+  lib/hooks/<brief>/*.clip.yaml      mined hooks + their media
+  lib/stock/<library>/*.clip.yaml    fetched libraries + their media
+  videos/<edit-id>/edit.yaml         + its hook and stills/*.clip.yaml
 ```
 
 ## Validating

@@ -1,6 +1,6 @@
 """Render the voice-over, and keep the alignment that comes back with it.
 
-The words are not authored here. They are read out of `docs/demo-voiceover.txt`,
+The words are not authored here. They are read out of `docs/demo-voiceover-v2.txt`,
 sliced from the line the on-camera intro hands over at, so there is exactly one copy
 of the script in the repo and this file cannot drift from it.
 

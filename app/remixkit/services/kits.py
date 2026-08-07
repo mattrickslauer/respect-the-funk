@@ -8,11 +8,11 @@ framework in the picture at all.
 Two gates before anything is enqueued:
 
 1. **Likeness consent.** A kit that holds an artist's face invariant without recorded
-   rights does not get queued. This is PRODUCT.md gap #3 inverted correctly: for a
+   rights does not get queued. Likeness consent is inverted for this use case: for a
    label's own signed artists you want explicit, auditable rights so the face *can* be
    held invariant — and the refusal has to be in code, not convention.
-2. **Budget before enqueue, never mid-run.** BUILD-SPEC §6 carries the finding that
-   per-tenant hard caps mid-run are unreliable, so the estimate is checked here, up
+2. **Budget before enqueue, never mid-run.** Per-tenant hard caps mid-run are
+   unreliable, so the estimate is checked here, up
    front, where refusing is free.
 """
 

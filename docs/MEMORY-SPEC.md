@@ -1,10 +1,23 @@
 ---
 title: "Artist Memory (rtf.artist/v1, rtf.episode/v1)"
 subtitle: "Onboarding an artist is expensive and happens once. Every video after that should be cheaper than the last, because the system remembers what worked. This is the memory layer that makes that true — and the second hackathon track it is submitted to."
-status: "DECISION + DRAFT — adds a track to BUILD-SPEC §12. Reintroduces the database tier infra/README.md deliberately removed; that conflict is stated in §8, not hidden."
+status: "VOID as plan (2026-08-06, by docs/SCOPE-RESET.md). Historical record only — its memory model is scoped to generation attempts on a 28-clip corpus. §1's diagnosis of the write-back failure is carried forward into SCOPE-RESET §2a rule 2."
 date: "2026-07-26"
 deadline: "2026-08-18 17:00 EDT"
 ---
+
+> # ⛔ VOID AS PLAN — DO NOT BUILD FROM THIS
+>
+> Voided **2026-08-06** by [`docs/SCOPE-RESET.md`](./SCOPE-RESET.md). Its memory model is
+> scoped to generation attempts over a 28-clip corpus. What survives is §1's diagnosis of
+> the write-back failure — *"the identity is a YAML file that is read and never written
+> back to"* — carried into [SCOPE-RESET §2a rule 2](./SCOPE-RESET.md). The current binding
+> documents are [`SCOPE-RESET.md`](./SCOPE-RESET.md) and
+> [`PLATFORM-SPEC.md`](./PLATFORM-SPEC.md).
+>
+> It is kept because code across `app/` cites it for design rationale. Read it as *why the
+> existing code looks the way it does*, never as what to build next. The hackathon
+> sequencing and deadlines below are historical.
 
 ## 0. The decision
 

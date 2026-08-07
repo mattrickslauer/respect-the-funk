@@ -1,10 +1,21 @@
 ---
 title: "The Label's Mind (rtf.skill/v1)"
 subtitle: "MEMORY-SPEC closes the loop but leaves the judge in a terminal. A Mind moves that judge to email, where the label already is — and the write-back that was the hard part becomes a reply. This is the third hackathon track, and the only one that requires no new infrastructure."
-status: "DRAFT — adds a third track to the sequence in MEMORY-SPEC §0. Depends on MEMORY-SPEC §4–§6 shipping first; nothing here is buildable before Aug 18. ⚠️ Written against unverified rules — see §9."
+status: "VOID as plan (2026-08-06, by docs/SCOPE-RESET.md). Historical record only. Email-as-approval-surface is a good idea and likely returns as the agent fleet's control plane — but it returns as a new decision, not as this document. ⚠️ Also written against unverified rules — see §9."
 date: "2026-07-27"
 deadline: "2026-08-28 (time of day unconfirmed)"
 ---
+
+> # ⛔ VOID AS PLAN — DO NOT BUILD FROM THIS
+>
+> Voided **2026-08-06** by [`docs/SCOPE-RESET.md`](./SCOPE-RESET.md). It depends on
+> MEMORY-SPEC, which is itself void. Email-as-approval-surface is a good idea and likely
+> returns as the agent fleet's control plane — but it returns as a new decision, not as
+> this document. The current binding documents are [`SCOPE-RESET.md`](./SCOPE-RESET.md)
+> and [`PLATFORM-SPEC.md`](./PLATFORM-SPEC.md).
+>
+> Doubly unsafe to build from: §9 records that it was written against **unverified**
+> vendor rules. Read it as history, never as what to build next.
 
 ## 0. The decision
 

@@ -105,6 +105,11 @@ terraform -chdir=platform/infra apply  # 5 resources: role, attachment, log grou
 
 ## What it costs
 
+> **The rules live in [`COSTS.md`](COSTS.md), and `web/rtf_platform/spend.py` enforces
+> them.** Nothing metered is enabled: `RTF_PAID_ENABLED` is unset, so every paid call is
+> refused before it is made. This section covers the infrastructure; that one covers
+> models, ceilings and the kill switch.
+
 **$0.00/month idle.** Not "under a dollar" — zero. Each omission in `infra/main.tf` is
 deliberate:
 
@@ -118,8 +123,13 @@ deliberate:
 
 What can cost money: Lambda beyond the free tier (1M requests + 400k GB-seconds/month,
 which this will not approach) and CloudWatch ingestion, capped by 7-day retention.
-`reserved_concurrent_executions = 10` is a hard ceiling so neither AWS nor CockroachDB
-can be billed by a runaway loop.
+
+**Correction, 2026-08-07:** an earlier version of this paragraph claimed
+`reserved_concurrent_executions = 10` was a hard ceiling. It is not set —
+`infra/variables.tf` defaults `max_concurrency` to `-1`, because AWS refuses any
+reservation that would leave fewer than 10 unreserved and this account's *total* is 10.
+The ceiling is real but account-wide and shared with RemixKit, not per-function. Raising
+the account quota removes it, so raise the quota and add a reservation in the same change.
 
 **Every resource is tagged** `Project=rtf-platform`, `Env`, `ManagedBy=terraform`,
 `Repo=respect-the-funk`, `Component=console`, via provider `default_tags`. Group by
@@ -199,7 +209,20 @@ comes up, not as a plan.
 
 ## Still open
 
-- **Not deployed yet.** Everything above is local; `terraform apply` has not been run.
+- **The deployed function is running old code.** It *is* deployed —
+  `terraform output console_url` returns a live Function URL — but from a build that
+  predates the console and the auth gate, so `/` still 307s to the old roster and
+  `/facts` 404s. Worse, that build served the roster to anonymous readers, and the URL is
+  public. `./platform/infra/build.sh && terraform -chdir=platform/infra apply` fixes both;
+  the plan is **1 in-place update, 0 added, 0 destroyed**.
+- **Migration 004 is written and not applied.** `schema/004_research.sql` creates the
+  substrate the console currently fakes. Held deliberately pending the spend rules; it is
+  DDL against a free allowance, so applying it costs effectively nothing.
+- **Bedrock is unusable on this account.** On-demand inference quota is **0 requests per
+  minute for nearly every model**, including Titan Embeddings V2 — `AUTHORIZED` and
+  `AVAILABLE`, but zero capacity, so every invoke returns `ThrottlingException`. A quota
+  increase has to be requested before Bedrock can be the embedding or agent runtime that
+  `PLATFORM-SPEC §8` assumes. Until then the vector columns in migration 004 stay NULL.
 - **`POST /demo` has no rate limiting, no CAPTCHA and no email verification.** It is the
   one route a stranger can write through, and today nothing stops somebody filling the
   table with junk. Acceptable while the URL is unpublished and the Lambda is capped at

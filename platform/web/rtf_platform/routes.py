@@ -40,7 +40,7 @@ from fastapi import APIRouter, Cookie, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from rtf_platform import auth, db, demo, repo, settings as settings_mod
+from rtf_platform import auth, db, demo, repo, research, settings as settings_mod
 from rtf_platform.domain import DEFAULT_TYPE, ArtistType, unrecognised
 
 router = APIRouter()
@@ -158,6 +158,9 @@ def _ctx(request: Request, principal: auth.Principal, **extra: Any) -> dict[str,
         "here": None,
         "insp_kicker": "",
         "insp_title": "",
+        # False unless a route says otherwise. A view that forgets to declare itself
+        # reads as wireframe, which is the direction that cannot mislead.
+        "live": False,
         **extra,
     }
 
@@ -202,13 +205,14 @@ def healthz() -> dict[str, str]:
 # -------------------------------------------------------------------- console
 
 def _table(request: Request, principal: auth.Principal, view: demo.View,
-           sel_id: str | None, kicker: str, title_key: str) -> Response:
+           sel_id: str | None, kicker: str, title_key: str,
+           live: bool = False) -> Response:
     """Nine of the thirteen views are this call. The View carries its own columns,
     rows and stats; everything else is shell."""
     sel = demo.select(view.rows, sel_id)
     return templates.TemplateResponse(
         request, "console/table.html",
-        _ctx(request, principal, here=view.key, view=view, sel=sel,
+        _ctx(request, principal, here=view.key, view=view, sel=sel, live=live,
              insp_kicker=kicker,
              insp_title=(sel or {}).get(title_key, "—")),
     )
@@ -303,24 +307,39 @@ def inbox(request: Request, principal: Operator, sel: str = "") -> Response:
     )
 
 
-@router.get("/artists", response_class=HTMLResponse)
-def artists_console(request: Request, principal: Operator, sel: str = "") -> Response:
-    """The one console view backed by the live cluster. Its rows are real and most of
-    its columns are not, which is exactly where the substrate currently stops."""
+# ------------------------------------------------------ real, from the tables
+
+def _live(request: Request, principal: auth.Principal, build, sel_id: str | None,
+          kicker: str, title_key: str) -> Response:
+    """A view built from migration 004's tables rather than from `demo.py`.
+
+    Before the tenant row exists there is nothing to scope a query by, so these render
+    the view's own empty state rather than erroring — a fresh cluster should be
+    browsable before it has data, same rule the roster already follows.
+    """
     conn = _conn()
     tenant_id = _tenant_id(conn)
-    rows = repo.list_artists(conn, tenant_id) if tenant_id else []
-    return _table(request, principal, demo.artist_view(rows), sel or None, "artist", "name")
+    if tenant_id is None:
+        empty = demo.View(key="", title="", blurb="", stats=(), cols=(), rows=(),
+                          empty="Nothing here yet — save an artist first.")
+        return _table(request, principal, empty, None, kicker, title_key, live=True)
+    return _table(request, principal, build(conn, tenant_id), sel_id, kicker,
+                  title_key, live=True)
+
+
+@router.get("/artists", response_class=HTMLResponse)
+def artists_console(request: Request, principal: Operator, sel: str = "") -> Response:
+    return _live(request, principal, research.artists, sel or None, "artist", "name")
 
 
 @router.get("/facts", response_class=HTMLResponse)
 def facts(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _table(request, principal, demo.FACTS, sel or None, "claim", "dimension")
+    return _live(request, principal, research.facts, sel or None, "claim", "dimension")
 
 
 @router.get("/queue", response_class=HTMLResponse)
 def queue(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _table(request, principal, demo.QUEUE, sel or None, "lead", "target")
+    return _live(request, principal, research.queue, sel or None, "lead", "target")
 
 
 @router.get("/fleet", response_class=HTMLResponse)
@@ -330,12 +349,12 @@ def fleet(request: Request, principal: Operator, sel: str = "") -> Response:
 
 @router.get("/budgets", response_class=HTMLResponse)
 def budgets(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _table(request, principal, demo.BUDGETS, sel or None, "budget", "artist")
+    return _live(request, principal, research.budgets, sel or None, "budget", "artist")
 
 
 @router.get("/runs", response_class=HTMLResponse)
 def runs(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _table(request, principal, demo.RUNS, sel or None, "run", "what")
+    return _live(request, principal, research.runs, sel or None, "run", "what")
 
 
 @router.get("/counterparties", response_class=HTMLResponse)
@@ -350,7 +369,7 @@ def threads(request: Request, principal: Operator, sel: str = "") -> Response:
 
 @router.get("/tracks", response_class=HTMLResponse)
 def tracks(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _table(request, principal, demo.TRACKS, sel or None, "track", "title")
+    return _live(request, principal, research.tracks, sel or None, "track", "title")
 
 
 @router.get("/campaigns", response_class=HTMLResponse)

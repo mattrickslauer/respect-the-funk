@@ -103,6 +103,7 @@
       color:var(--warn); border:1px solid var(--warn); border-radius:8px;
       padding:0 6px; opacity:.85;
     }
+    .wire.live { color:var(--ok); border-color:var(--ok); }
     .search {
       margin-left:auto; font:inherit; font-size:12px; padding:.25rem .5rem; width:190px;
       background:var(--panel); color:var(--ink);
@@ -281,7 +282,13 @@
     <div class="head">
       <div class="headtop">
         <h1>{% block h1 %}{% endblock %}</h1>
-        <span class="wire">wireframe</span>
+        {# Per view, not per app. Six read migration 004; the rest are still fixtures,
+           and a single global badge would lie about both halves. #}
+        {% if live %}
+          <span class="wire live">live</span>
+        {% else %}
+          <span class="wire">wireframe</span>
+        {% endif %}
         <input class="search" type="search" placeholder="Filter…  ⌘K" aria-label="Filter">
       </div>
       <p class="blurb">{% block blurb %}{% endblock %}</p>

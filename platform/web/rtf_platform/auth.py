@@ -4,12 +4,14 @@ The shape is lifted from `app/remixkit/auth/` — a Principal carrying `tenant_i
 resolved on every request whether or not anyone is signed in. That app is frozen
 during Backblaze judging, so this is a copy of the pattern rather than an import.
 
-Two principals, and the split is the whole point:
+Two principals:
 
-  * **anonymous** — may read. This is what a hackathon judge clicking the demo URL
-    gets. The console is legible without a login, which is the difference between a
-    demo that shows something and a demo that shows a sign-in box.
-  * **admin** — may write. A shared token in an httpOnly cookie.
+  * **anonymous** — gets the landing page, the sign-in form, and one public POST to
+    ask for a demo call. Nothing else. An earlier build let anonymous readers browse
+    the whole console so a hackathon judge would land on the product rather than a
+    login box; that was reversed on purpose — the roster, the counterparty index and
+    the campaign state are the label's own information, and judges are handed a token.
+  * **admin** — sees the console and may write. A shared token in an httpOnly cookie.
 
 The token is not OTP, and is not pretending to be. `app/remixkit/auth/otp.py` is
 61 lines and is where this goes when there is more than one operator; until then a

@@ -12,7 +12,7 @@ The platform described by [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md) and
 
 | | |
 |---|---|
-| `schema/` | Migrations, applied in order. Two so far. |
+| `schema/` | Migrations, applied in order. Three so far. |
 | `web/` | The console — FastAPI + Jinja + htmx, the same shape as `app/remixkit/ui/`. |
 | `infra/` | Terraform. Lambda + Function URL, and nothing else that costs money. |
 
@@ -22,6 +22,7 @@ The platform described by [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md) and
 |---|---|
 | `tenant`, `artist` | **live** in `defaultdb` |
 | `artist.type` — band, dj, singer, orchestra, composer, … | **live** |
+| Landing page at `/` + `demo_request` capture | **live** — the console is gated behind sign-in |
 | Roster CRUD at `/roster` — list, search, add, edit, delete | **works locally**, not yet deployed |
 | Console — thirteen views at `/`, `/facts`, `/fleet`, … | **wireframe**, buttons inert |
 | Tracks, derived facts, counterparties, threads, memory | not started |
@@ -139,12 +140,29 @@ makes that concrete — an artist carrying a type this build no longer defines s
 editable, renders under a "No longer offered" group, and keeps its value unless
 somebody deliberately changes it. Renaming an act never silently reclassifies it.
 
-**Anonymous reads, authenticated writes.** A judge clicking the demo URL sees the real
-console rather than a login box; only the operator cookie can change anything. The
-`Principal` shape is copied from `app/remixkit/auth/` (frozen, so copied not imported),
-including its `tenant_id`. The shared token is not OTP and is not pretending to be —
-`app/remixkit/auth/otp.py` is 61 lines and is where this goes when there is a second
-operator.
+**The console is private. Four routes are public.** `/` serves a landing page to anyone
+without a session and the needs-you queue to anyone with one — the same address either
+way, so a bookmark survives getting a token. `/signin`, `POST /demo` and `/healthz` are
+the other three; everything else 303s a stranger back to the landing page.
+
+This reverses an earlier decision, and the earlier reasoning is worth keeping visible:
+anonymous reads existed so a hackathon judge clicking the demo URL would land on the
+product rather than a login box. **Overruled deliberately** — the roster, the counterparty
+index and the campaign state are the label's own information, and judges are handed a
+token instead.
+
+The gate is a FastAPI dependency (`require_operator`), not a call at the top of each
+handler, so a new console route is private by the act of annotating its principal
+`Operator`. The failure mode of the other shape is the one route where somebody forgets.
+The `Principal` shape is copied from `app/remixkit/auth/` (frozen, so copied not
+imported), including its `tenant_id`. The shared token is not OTP and is not pretending
+to be — `app/remixkit/auth/otp.py` is 61 lines and is where this goes when there is a
+second operator.
+
+**`demo_request` is the only table an unauthenticated visitor can write to**, and the
+only one carrying no `tenant_id` — the whole point of the row is that the label filling
+it in is not a customer yet. Field lengths are capped in `repo`, not trusted from the
+form, because `maxlength` is a hint to a browser rather than a constraint on a POST.
 
 **No seed file.** The label row is created by the first artist you save, so a fresh
 cluster becomes a working one through the UI rather than a script somebody must
@@ -182,6 +200,15 @@ comes up, not as a plan.
 ## Still open
 
 - **Not deployed yet.** Everything above is local; `terraform apply` has not been run.
+- **`POST /demo` has no rate limiting, no CAPTCHA and no email verification.** It is the
+  one route a stranger can write through, and today nothing stops somebody filling the
+  table with junk. Acceptable while the URL is unpublished and the Lambda is capped at
+  `reserved_concurrent_executions = 10`; not acceptable once the address is public. The
+  cheapest real fix is a per-IP limit at the edge, which the current no-API-Gateway
+  topology does not have a place for — so it is a topology decision, not a code one.
+- **Demo requests have no operator surface.** They land in `demo_request` and can only be
+  read with SQL. A `/requests` view is a route and a fixture-free table read, but nothing
+  reminds the operator a lead arrived, so a request could sit unseen indefinitely.
 - **Dev runs Python 3.14, Lambda runs 3.13.** No 3.12/3.13 interpreter exists on the dev
   machine, so version-sensitive behaviour is only truly proven in the deployed function.
 - **RU cost of a filtered vector scan** (`PLATFORM-SPEC §10` risk 2) — needs real row

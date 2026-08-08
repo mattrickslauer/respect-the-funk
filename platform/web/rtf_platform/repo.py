@@ -106,3 +106,34 @@ def delete_artist(conn: psycopg.Connection, tenant_id: str, artist_id: str) -> b
     with conn.cursor() as cur:
         cur.execute("DELETE FROM artist WHERE tenant_id = %s AND id = %s", (tenant_id, artist_id))
         return cur.rowcount > 0
+
+
+# --------------------------------------------------------------- demo requests
+
+#: Field caps. This is the only write in the system reachable without a session, so the
+#: length limit is enforced here rather than trusted from the form — a `maxlength`
+#: attribute is a hint to a browser, not a constraint on a POST.
+_CAPS: dict[str, int] = {
+    "name": 120, "label": 160, "email": 254, "roster_size": 40,
+    "note": 2000, "user_agent": 400,
+}
+
+
+def create_demo_request(conn: psycopg.Connection, **fields: str) -> dict[str, Any]:
+    """Record a demo request from the landing page.
+
+    No tenant scoping, uniquely in this module: the whole point of the row is that the
+    label filling it in does not have a tenant yet. Duplicates are allowed — somebody
+    submitting twice is a person who wants to talk to you, not an integrity problem.
+    """
+    clean = {k: (fields.get(k) or "").strip()[:cap] for k, cap in _CAPS.items()}
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO demo_request (name, label, email, roster_size, note,
+                                         source, user_agent)
+               VALUES (%(name)s, %(label)s, %(email)s, %(roster_size)s, %(note)s,
+                       %(source)s, %(user_agent)s)
+            RETURNING id, name, label, email, created_at""",
+            {**clean, "source": (fields.get("source") or "landing")[:40]},
+        )
+        return cur.fetchone()

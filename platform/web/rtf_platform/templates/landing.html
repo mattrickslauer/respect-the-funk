@@ -1,0 +1,147 @@
+{% extends "_public.html" %}
+{# What anyone without a session sees. The console is closed — there is no anonymous
+   read of it any more — so this page has exactly two jobs: let the operator in, and let
+   a label ask for a call. Everything else on it exists to make the second one worth
+   doing. #}
+{% block title %}Respect the Funk — an agentic OS for record labels{% endblock %}
+
+{% block topnav %}
+  <a class="btn" href="#demo">Book a demo</a>
+  <a class="btn p" href="/signin">Sign in</a>
+{% endblock %}
+
+{% block body %}
+<div class="wrap">
+
+  <section>
+    <h1>An agentic OS for record labels.</h1>
+    <p class="lede">
+      Release <i>n+1</i> should cost less and land harder than release <i>n</i>.
+      That only happens if <b>something accumulates in between</b> — the relationships,
+      the audience you actually reached, and what you learned the last four times.
+      This is the thing that accumulates.
+    </p>
+    <p>
+      <a class="btn p lg" href="#demo">Book a demo call</a>
+      <a class="btn lg" href="/signin" style="margin-left:.4rem">Sign in</a>
+    </p>
+  </section>
+
+  <section>
+    <h2>What it does</h2>
+
+    <p class="lede" style="margin-bottom:1.4rem">
+      <b>It researches your artists, and it does not stop.</b>
+      Not a one-off scrape — a queue that keeps going across every platform, including
+      the ones your artist has no account on. Fan activity is content about them whether
+      they take part or not.
+    </p>
+
+    <p class="lede" style="margin-bottom:1.4rem">
+      <b>It builds an index of everyone who can help.</b>
+      Creators, playlist runners, programmers, writers — with how you found each one, and
+      where the relationship actually stands. Two of your artists can never work the same
+      creator at once, because the database refuses it rather than trusting anyone to
+      remember.
+    </p>
+
+    <p class="lede" style="margin-bottom:1.4rem">
+      <b>It runs every channel at the same time.</b>
+      UGC, radio, curators, press. One engine, a different playbook each — adding a
+      channel is configuration, not a new product. Nothing sends without you approving it.
+    </p>
+
+    <p class="lede" style="margin-bottom:0">
+      <b>It learns from replies, not from stream counts.</b>
+      Streams are confounded by playlist adds, algorithmic push, seasonality and your own
+      campaigns firing at once. A reply is fast and clean. The fast signal is what teaches
+      it; the slow one only audits whether the fast one was lying.
+    </p>
+  </section>
+
+  <section>
+    <h2>Why you would trust it</h2>
+
+    <p class="lede" style="margin-bottom:1.4rem">
+      <b>It shows its work.</b> Every single thing it believes records what that belief
+      stands on, back to the page it was read from or the person who said it. Retract one
+      fact and everything built on top of it goes stale on its own.
+    </p>
+
+    <p class="lede" style="margin-bottom:1.4rem">
+      <b>It refuses to guess.</b> When your own answer and a public record disagree about
+      who owns a master, it stops and asks you. Rights are exactly where quietly picking a
+      winner costs real money.
+    </p>
+
+    <p class="lede" style="margin-bottom:0">
+      <b>It tells you what it skipped.</b> When an artist hits their daily budget, the
+      work it dropped is written down. A system that truncates silently reads as
+      “we covered everything” when it did not.
+    </p>
+  </section>
+
+  <section id="demo">
+    <h2>Book a demo call</h2>
+
+    {% if sent %}
+      <p class="notice">
+        <b>Got it — thank you.</b> Your request is recorded and somebody will write back
+        to {{ sent }} to find a time.
+      </p>
+    {% elif error %}
+      <p class="notice bad"><b>That did not go through.</b> {{ error }}</p>
+    {% endif %}
+
+    <p class="lede" style="font-size:16px; margin-bottom:1.6rem">
+      Tell us about the roster and we will walk you through it against one of your own
+      artists rather than a canned demo.
+    </p>
+
+    <form method="post" action="/demo#demo">
+      <div class="two">
+        <div class="field">
+          <label for="name">Your name</label>
+          <input id="name" name="name" required maxlength="120" autocomplete="name"
+                 value="{{ form.name or '' }}">
+        </div>
+        <div class="field">
+          <label for="label">Label</label>
+          <input id="label" name="label" required maxlength="160" autocomplete="organization"
+                 value="{{ form.label or '' }}">
+        </div>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" required maxlength="254"
+                 autocomplete="email" value="{{ form.email or '' }}">
+        </div>
+        <div class="field">
+          <label for="roster_size">Roster size</label>
+          <select id="roster_size" name="roster_size">
+            {% for opt in roster_sizes %}
+              <option {% if form.roster_size == opt %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="note">What are you trying to move? <span class="hint">Optional.</span></label>
+        <textarea id="note" name="note" maxlength="2000"
+                  placeholder="A release coming up, a channel that has stopped working, an artist you cannot get traction on…">{{ form.note or '' }}</textarea>
+      </div>
+      <button class="btn p lg" type="submit">Request a call</button>
+      <p class="hint" style="margin-top:.8rem">
+        Goes to the label, not to a CRM. No list, no sequence, and one reply from a person.
+      </p>
+    </form>
+  </section>
+
+  <footer>
+    Respect the Funk · the console is private —
+    <a href="/signin">sign in</a> if you have a token.
+  </footer>
+
+</div>
+{% endblock %}

@@ -18,8 +18,15 @@ a table lands, the fixture becomes a `repo` call and the template does not chang
 `/artists` view already does this halfway — live rows, wireframe columns — which is the
 honest way to show where the substrate currently stops.
 
-Reads are open. Writes require a Principal that `may_write`, checked in one place
-(`_require_write`) rather than remembered at each call site.
+**The console is private.** Four routes are public — `/` (the landing page), `/signin`,
+`POST /demo` and `/healthz` — and everything else is behind `require_operator`, which
+303s a visitor to the landing page rather than showing them a wall. An earlier build
+served the console to anonymous readers so a hackathon judge would see the product
+rather than a login box; that is reversed deliberately, and judges get a token instead.
+
+The gate is a dependency rather than a call at the top of each handler, so a new console
+route is private by the act of annotating its principal `Operator`. Writes additionally
+require `may_write`, checked in `_require_write`.
 """
 
 from __future__ import annotations
@@ -50,6 +57,28 @@ def current_principal(
 
 
 Principal = Annotated[auth.Principal, Depends(current_principal)]
+
+
+def require_operator(
+    rtf_session: Annotated[str | None, Cookie()] = None,
+) -> auth.Principal:
+    """The gate. Everything except `/`, `/signin`, `/demo` and `/healthz` is behind it.
+
+    A 303 with a Location rather than a 401: an unauthenticated browser should land on
+    the page that explains what this is and offers a way in, not on a wall. Declared as
+    a dependency so a new console route is private by the act of annotating its
+    principal — the failure mode of a `_require(...)` call at the top of each handler is
+    the one route where somebody forgets it.
+    """
+    principal = auth.principal_from_cookie(rtf_session, SETTINGS.admin_token)
+    if not principal.authenticated:
+        raise HTTPException(
+            status_code=303, detail="Sign in first.", headers={"Location": "/"}
+        )
+    return principal
+
+
+Operator = Annotated[auth.Principal, Depends(require_operator)]
 
 
 def _require_write(principal: auth.Principal) -> None:
@@ -185,8 +214,31 @@ def _table(request: Request, principal: auth.Principal, view: demo.View,
     )
 
 
+#: Offered on the demo form. A range rather than a number, because nobody knows their
+#: exact roster size off the top of their head and an empty required field loses the lead.
+ROSTER_SIZES: tuple[str, ...] = ("1–5 artists", "6–20", "21–50", "50+", "Not a label")
+
+
+def _landing(request: Request, principal: auth.Principal, *,
+             sent: str = "", error: str = "",
+             form: dict[str, str] | None = None) -> Response:
+    return templates.TemplateResponse(
+        request, "landing.html",
+        _ctx(request, principal, sent=sent, error=error, form=form or {},
+             roster_sizes=ROSTER_SIZES),
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
-def today(request: Request, principal: Principal, sel: str = "") -> Response:
+def home(request: Request, principal: Principal, sel: str = "") -> Response:
+    """The only route that serves two different products.
+
+    Signed out you get the landing page; signed in you get the needs-you queue. One
+    address either way, so a bookmark works before and after somebody has a token, and
+    there is no `/app` prefix to explain.
+    """
+    if not principal.authenticated:
+        return _landing(request, principal)
     row = demo.select(demo.TODAY, sel or None)
     return templates.TemplateResponse(
         request, "console/today.html",
@@ -197,8 +249,42 @@ def today(request: Request, principal: Principal, sel: str = "") -> Response:
     )
 
 
+@router.post("/demo", response_class=HTMLResponse)
+def demo_request(
+    request: Request,
+    principal: Principal,
+    name: Annotated[str, Form()] = "",
+    label: Annotated[str, Form()] = "",
+    email: Annotated[str, Form()] = "",
+    roster_size: Annotated[str, Form()] = "",
+    note: Annotated[str, Form()] = "",
+) -> Response:
+    """The one write in the system reachable without a session.
+
+    Re-renders the landing page rather than redirecting, so a failed submission comes
+    back with the fields still filled in. Validation is deliberately shallow — a real
+    address that bounces is the operator's problem to notice, and a form that argues
+    with people about their own email loses more leads than it filters.
+    """
+    form = {"name": name, "label": label, "email": email,
+            "roster_size": roster_size, "note": note}
+    if not (name.strip() and label.strip() and "@" in email):
+        return _landing(request, principal, form=form,
+                        error="A name, a label and an email are all needed.")
+    try:
+        repo.create_demo_request(
+            _conn(), source="landing",
+            user_agent=request.headers.get("user-agent", ""), **form,
+        )
+    except psycopg.Error:
+        # Never show a database error to a stranger, and never lose the typing.
+        return _landing(request, principal, form=form,
+                        error="Something broke on our side. Try again in a minute.")
+    return _landing(request, principal, sent=email.strip())
+
+
 @router.get("/approvals", response_class=HTMLResponse)
-def approvals(request: Request, principal: Principal, sel: str = "") -> Response:
+def approvals(request: Request, principal: Operator, sel: str = "") -> Response:
     row = demo.select(demo.APPROVALS, sel or None)
     return templates.TemplateResponse(
         request, "console/approvals.html",
@@ -208,7 +294,7 @@ def approvals(request: Request, principal: Principal, sel: str = "") -> Response
 
 
 @router.get("/inbox", response_class=HTMLResponse)
-def inbox(request: Request, principal: Principal, sel: str = "") -> Response:
+def inbox(request: Request, principal: Operator, sel: str = "") -> Response:
     row = demo.select(demo.INBOX, sel or None)
     return templates.TemplateResponse(
         request, "console/inbox.html",
@@ -218,7 +304,7 @@ def inbox(request: Request, principal: Principal, sel: str = "") -> Response:
 
 
 @router.get("/artists", response_class=HTMLResponse)
-def artists_console(request: Request, principal: Principal, sel: str = "") -> Response:
+def artists_console(request: Request, principal: Operator, sel: str = "") -> Response:
     """The one console view backed by the live cluster. Its rows are real and most of
     its columns are not, which is exactly where the substrate currently stops."""
     conn = _conn()
@@ -228,65 +314,78 @@ def artists_console(request: Request, principal: Principal, sel: str = "") -> Re
 
 
 @router.get("/facts", response_class=HTMLResponse)
-def facts(request: Request, principal: Principal, sel: str = "") -> Response:
+def facts(request: Request, principal: Operator, sel: str = "") -> Response:
     return _table(request, principal, demo.FACTS, sel or None, "claim", "dimension")
 
 
 @router.get("/queue", response_class=HTMLResponse)
-def queue(request: Request, principal: Principal, sel: str = "") -> Response:
+def queue(request: Request, principal: Operator, sel: str = "") -> Response:
     return _table(request, principal, demo.QUEUE, sel or None, "lead", "target")
 
 
 @router.get("/fleet", response_class=HTMLResponse)
-def fleet(request: Request, principal: Principal, sel: str = "") -> Response:
+def fleet(request: Request, principal: Operator, sel: str = "") -> Response:
     return _table(request, principal, demo.FLEET, sel or None, "agent", "agent")
 
 
 @router.get("/budgets", response_class=HTMLResponse)
-def budgets(request: Request, principal: Principal, sel: str = "") -> Response:
+def budgets(request: Request, principal: Operator, sel: str = "") -> Response:
     return _table(request, principal, demo.BUDGETS, sel or None, "budget", "artist")
 
 
 @router.get("/runs", response_class=HTMLResponse)
-def runs(request: Request, principal: Principal, sel: str = "") -> Response:
+def runs(request: Request, principal: Operator, sel: str = "") -> Response:
     return _table(request, principal, demo.RUNS, sel or None, "run", "what")
 
 
 @router.get("/counterparties", response_class=HTMLResponse)
-def counterparties(request: Request, principal: Principal, sel: str = "") -> Response:
+def counterparties(request: Request, principal: Operator, sel: str = "") -> Response:
     return _table(request, principal, demo.COUNTERPARTIES, sel or None, "counterparty", "who")
 
 
 @router.get("/threads", response_class=HTMLResponse)
-def threads(request: Request, principal: Principal, sel: str = "") -> Response:
+def threads(request: Request, principal: Operator, sel: str = "") -> Response:
     return _table(request, principal, demo.THREADS, sel or None, "thread", "who")
 
 
 @router.get("/tracks", response_class=HTMLResponse)
-def tracks(request: Request, principal: Principal, sel: str = "") -> Response:
+def tracks(request: Request, principal: Operator, sel: str = "") -> Response:
     return _table(request, principal, demo.TRACKS, sel or None, "track", "title")
 
 
 @router.get("/campaigns", response_class=HTMLResponse)
-def campaigns(request: Request, principal: Principal, sel: str = "") -> Response:
+def campaigns(request: Request, principal: Operator, sel: str = "") -> Response:
     return _table(request, principal, demo.CAMPAIGNS, sel or None, "campaign", "name")
 
 
 # ---------------------------------------------------------------------- auth
 
 @router.get("/signin", response_class=HTMLResponse)
-def signin_form(request: Request, principal: Principal) -> Response:
-    return templates.TemplateResponse(request, "signin.html", _ctx(request, principal))
+def signin_form(request: Request, principal: Principal, error: str = "") -> Response:
+    if principal.authenticated:
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse(
+        request, "signin.html", _ctx(request, principal, error=error)
+    )
 
 
 @router.post("/signin")
-def signin(token: Annotated[str, Form()]) -> Response:
+def signin(request: Request, principal: Principal,
+           token: Annotated[str, Form()]) -> Response:
+    """A wrong token re-renders the form rather than raising.
+
+    A bare 401 page is the wrong answer to a typo — it looks like the site is broken
+    instead of like the token was wrong, and it loses the operator's place.
+    """
     if not SETTINGS.admin_token:
         raise HTTPException(status_code=503, detail="No admin token is configured.")
-    principal = auth.principal_from_cookie(token, SETTINGS.admin_token)
-    if not principal.authenticated:
-        raise HTTPException(status_code=401, detail="That token is not right.")
-    response = RedirectResponse("/roster", status_code=303)
+    if not auth.principal_from_cookie(token, SETTINGS.admin_token).authenticated:
+        return templates.TemplateResponse(
+            request, "signin.html",
+            _ctx(request, principal, error="That token is not right."),
+            status_code=401,
+        )
+    response = RedirectResponse("/", status_code=303)
     # httpOnly so console JavaScript cannot read it and an XSS cannot exfiltrate it.
     response.set_cookie(
         auth.COOKIE_NAME, token, httponly=True, secure=True, samesite="lax", max_age=60 * 60 * 12
@@ -296,7 +395,7 @@ def signin(token: Annotated[str, Form()]) -> Response:
 
 @router.post("/signout")
 def signout() -> Response:
-    response = RedirectResponse("/roster", status_code=303)
+    response = RedirectResponse("/", status_code=303)
     response.delete_cookie(auth.COOKIE_NAME)
     return response
 
@@ -304,7 +403,7 @@ def signout() -> Response:
 # ------------------------------------------------------- roster CRUD (real)
 
 @router.get("/roster", response_class=HTMLResponse)
-def roster_page(request: Request, principal: Principal, q: str = "") -> Response:
+def roster_page(request: Request, principal: Operator, q: str = "") -> Response:
     conn = _conn()
     tenant_id = _tenant_id(conn)
     artists = repo.list_artists(conn, tenant_id, q) if tenant_id else []
@@ -314,7 +413,7 @@ def roster_page(request: Request, principal: Principal, q: str = "") -> Response
 
 
 @router.get("/roster/rows", response_class=HTMLResponse)
-def roster_rows(request: Request, principal: Principal, q: str = "") -> Response:
+def roster_rows(request: Request, principal: Operator, q: str = "") -> Response:
     """The fragment htmx swaps in on search. Same template the full page uses."""
     conn = _conn()
     tenant_id = _tenant_id(conn)
@@ -325,7 +424,7 @@ def roster_rows(request: Request, principal: Principal, q: str = "") -> Response
 
 
 @router.get("/roster/new", response_class=HTMLResponse)
-def roster_new(request: Request, principal: Principal) -> Response:
+def roster_new(request: Request, principal: Operator) -> Response:
     _require_write(principal)
     return templates.TemplateResponse(
         request, "artist_form.html", _ctx(request, principal, artist=None, legacy_type=None)
@@ -334,7 +433,7 @@ def roster_new(request: Request, principal: Principal) -> Response:
 
 @router.post("/roster")
 def roster_create(
-    principal: Principal,
+    principal: Operator,
     name: Annotated[str, Form()],
     type: Annotated[str, Form()] = DEFAULT_TYPE.value,
 ) -> Response:
@@ -355,7 +454,7 @@ def roster_create(
 
 
 @router.get("/roster/{artist_id}", response_class=HTMLResponse)
-def roster_detail(request: Request, principal: Principal, artist_id: str) -> Response:
+def roster_detail(request: Request, principal: Operator, artist_id: str) -> Response:
     conn = _conn()
     tenant_id = _tenant_id(conn)
     artist = repo.get_artist(conn, tenant_id, artist_id) if tenant_id else None
@@ -370,7 +469,7 @@ def roster_detail(request: Request, principal: Principal, artist_id: str) -> Res
 
 @router.post("/roster/{artist_id}")
 def roster_update(
-    principal: Principal,
+    principal: Operator,
     artist_id: str,
     name: Annotated[str, Form()],
     type: Annotated[str, Form()] = DEFAULT_TYPE.value,
@@ -401,7 +500,7 @@ def roster_update(
 
 
 @router.post("/roster/{artist_id}/delete", response_class=HTMLResponse)
-def roster_delete(request: Request, principal: Principal, artist_id: str) -> Response:
+def roster_delete(request: Request, principal: Operator, artist_id: str) -> Response:
     _require_write(principal)
     conn = _conn()
     tenant_id = _tenant_id(conn)

@@ -1,0 +1,29 @@
+Signing an artist is the easy part. Getting the record heard is the job — and most labels do it in spreadsheets and DMs.
+
+So every release starts from zero. The curator who said yes last time, the station that replied, what actually earned — none of it carries forward.
+
+It shouldn't be that way. Release n plus one ought to be cheaper and land harder, because something accumulated. Not the music — the relationships, the audience, the lessons.
+
+Respect the Funk is an operating system for that.
+
+You paste a link. The system maps the catalogue, pulls the ISRCs, reads the genre off the releases, and goes looking for who to take it to.
+
+And it never guesses at you. Every fact carries how we learned it: measured, inferred, or asserted. A name match is inferred, so it never becomes a contact — it becomes one question you answer in a click.
+
+So who do we take this record to? For a dance act, the top answer is Deezer's Dance and EDM editor. Not a keyword match — nearest neighbour in a vector index, filtered to people we aren't already talking to.
+
+Now the part we're proud of.
+
+This runs on one database. Not Postgres plus a vector store plus Redis plus a queue. One. CockroachDB is the memory, the state, the lock and the event bus at once.
+
+Agents never call each other. An agent claims work with a lease — select for update, skip locked, on the work row itself. Kill the fleet mid-run: nothing is lost, nothing is stuck. The lease expires and another worker takes it. No supervisor. The database is the runtime.
+
+A changefeed on that table wakes the next agent. No broker.
+
+Distributed vector indexing answers the shortlist — similarity and the business filters in one query. That is the honest reason this is one store and not four.
+
+Serializable by default. And we can ask what we believed an hour ago — as of system time, no audit table. It scales to zero: idle, this costs nothing.
+
+No queue. No Redis. No vector database bolted on the side. The memory is the coordination.
+
+Respect the Funk. Release n plus one should cost less than release one.

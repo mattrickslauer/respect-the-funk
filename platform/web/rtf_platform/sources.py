@@ -424,13 +424,16 @@ class DeezerSource:
         """
         harvest = Harvest()
 
-        # Genre terms first, artist name last. Searching playlists for an unsigned
-        # artist's *name* returns nothing, because nobody has made a playlist about
-        # somebody nobody has heard of — which is every artist this product is for. What
-        # a curator actually selects on is style, so style is what we search. The name
-        # stays in the list because for an act with any recognition it is the sharpest
-        # query there is, and this should get better as they do.
-        names = [t for t in terms if t] + [artist_name]
+        # Style, not name. Searching playlists for an unsigned artist's *name* does not
+        # merely return nothing — it returns the wrong thing, because Deezer falls back
+        # to fuzzy matching and a search for "Amanda Kurt" surfaces every curator called
+        # Amanda. That noise then gets embedded and ranked, and a shortlist quietly fills
+        # with people whose only connection to the artist is a first name.
+        #
+        # So the name is a *fallback*, used only when we know nothing about how the
+        # record sounds — never alongside genre terms that are actually about the music.
+        vibe = [t for t in terms if t]
+        names = vibe or [artist_name]
 
         if deezer_id:
             try:

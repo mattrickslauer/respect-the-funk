@@ -665,61 +665,70 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
             "this artist has no profile embedding yet — embed them first",
             permanent=True)
 
-    # `presence` is polymorphic and a party can have several rows in it — Spotify,
-    # Deezer, YouTube. A `LEFT JOIN presence` here would multiply the result: a party
-    # with three surfaces becomes three rows, `LIMIT` returns fewer distinct parties
-    # than asked for, and the same party can appear twice in the rerank. The CTE runs
-    # the vector search alone, with nothing joined to it, so no join can steer the
-    # planner away from the index; `url` is then a scalar subquery, which by
-    # construction returns at most one row, so it cannot duplicate a party. Do not
-    # "simplify" this back into a join — that is the bug this shape exists to avoid.
-    # `ORDER BY pr.url LIMIT 1` is arbitrary but deterministic, so the same shortlist
-    # renders the same surface on every load rather than whichever one the join order
-    # happened to pick.
-    with conn.cursor() as cur:
-        cur.execute(
-            """WITH shortlisted AS (
-                    SELECT id, name, contact_state,
-                           profile_embedding <=> %s::VECTOR(1024) AS distance
-                      FROM party
-                     WHERE tenant_id = %s
-                       AND embedding_model = %s
-                       AND party_class = 'counterparty'
-                       AND contact_state = 'contactable'
-                     ORDER BY profile_embedding <=> %s::VECTOR(1024)
-                     LIMIT %s
-                )
-                SELECT s.id, s.name, s.contact_state, s.distance,
-                       (SELECT pr.url FROM presence pr
-                         WHERE pr.subject_kind = 'party' AND pr.subject_id = s.id
-                         ORDER BY pr.url LIMIT 1) AS url
-                  FROM shortlisted s
-                 ORDER BY s.distance""",
-            (artist["vec"], tenant_id, artist["embedding_model"], artist["vec"],
-             SHORTLIST_CANDIDATES),
-        )
-        candidates = [dict(row) for row in cur.fetchall()]
-
-    # R2. The second pass, and the reason `SCOPE-RESET §1` puts the party at the root:
-    # without it this function returns the same answer on the hundredth campaign as on
-    # the first.
-    applicable = lessons.retrieve_for(
-        conn, tenant_id,
-        query_vector_literal=artist["vec"],
-        model=artist["embedding_model"],
-        candidate_ids=[str(row["id"]) for row in candidates],
-    )
-    ranked = lessons.rerank(candidates, applicable)[:limit]
-
-    # `hit_count` is what tells an operator which lessons earn their place. Incremented
-    # here rather than in the rerank, because the rerank is pure and must stay that way.
-    spent = {entry["lesson_id"] for row in ranked for entry in row["applied"]}
-    if spent:
+    # R1, R2 and the `hit_count` increment commit together. `db.py` opens the connection
+    # in autocommit, so without this the three are three separate commits and a crash
+    # between computing `ranked` and running the UPDATE loses the increment silently —
+    # and `hit_count` is not telemetry, it is how an operator decides which lessons have
+    # earned their place, so an undercount is a defect, not noise. No network call sits
+    # inside this span — `retrieve_for` takes an already-computed vector literal and does
+    # not embed — so the transaction holds no locks across I/O.
+    with conn.transaction():
+        # `presence` is polymorphic and a party can have several rows in it — Spotify,
+        # Deezer, YouTube. A `LEFT JOIN presence` here would multiply the result: a party
+        # with three surfaces becomes three rows, `LIMIT` returns fewer distinct parties
+        # than asked for, and the same party can appear twice in the rerank. The CTE runs
+        # the vector search alone, with nothing joined to it, so no join can steer the
+        # planner away from the index; `url` is then a scalar subquery, which by
+        # construction returns at most one row, so it cannot duplicate a party. Do not
+        # "simplify" this back into a join — that is the bug this shape exists to avoid.
+        # `ORDER BY pr.url LIMIT 1` is arbitrary but deterministic, so the same shortlist
+        # renders the same surface on every load rather than whichever one the join order
+        # happened to pick.
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE lesson SET hit_count = hit_count + 1 WHERE id = ANY(%s)",
-                (list(spent),),
+                """WITH shortlisted AS (
+                        SELECT id, name, contact_state,
+                               profile_embedding <=> %s::VECTOR(1024) AS distance
+                          FROM party
+                         WHERE tenant_id = %s
+                           AND embedding_model = %s
+                           AND party_class = 'counterparty'
+                           AND contact_state = 'contactable'
+                         ORDER BY profile_embedding <=> %s::VECTOR(1024)
+                         LIMIT %s
+                    )
+                    SELECT s.id, s.name, s.contact_state, s.distance,
+                           (SELECT pr.url FROM presence pr
+                             WHERE pr.subject_kind = 'party' AND pr.subject_id = s.id
+                             ORDER BY pr.url LIMIT 1) AS url
+                      FROM shortlisted s
+                     ORDER BY s.distance""",
+                (artist["vec"], tenant_id, artist["embedding_model"], artist["vec"],
+                 SHORTLIST_CANDIDATES),
             )
+            candidates = [dict(row) for row in cur.fetchall()]
+
+        # R2. The second pass, and the reason `SCOPE-RESET §1` puts the party at the
+        # root: without it this function returns the same answer on the hundredth
+        # campaign as on the first.
+        applicable = lessons.retrieve_for(
+            conn, tenant_id,
+            query_vector_literal=artist["vec"],
+            model=artist["embedding_model"],
+            candidate_ids=[str(row["id"]) for row in candidates],
+        )
+        ranked = lessons.rerank(candidates, applicable)[:limit]
+
+        # `hit_count` is what tells an operator which lessons earn their place.
+        # Incremented here rather than in the rerank, because the rerank is pure and
+        # must stay that way.
+        spent = {entry["lesson_id"] for row in ranked for entry in row["applied"]}
+        if spent:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE lesson SET hit_count = hit_count + 1 WHERE id = ANY(%s)",
+                    (list(spent),),
+                )
 
     return ranked
 

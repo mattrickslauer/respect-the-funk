@@ -138,8 +138,12 @@ def write(conn: psycopg.Connection, tenant_id: str, *, scope_kind: str, scope_id
     there is no window in which a lesson exists but cannot be retrieved. An agent that
     writes a lesson and immediately reranks sees it.
 
-    `valence` is clamped rather than rejected. A caller computing it from a ratio can
-    land at 1.0000001, and refusing the whole lesson over float noise loses the lesson.
+    `confidence` and `valence` are bounded by `_bounded`, not simply clamped: within
+    `CLAMP_EPSILON` of their legal range they are rounded into it, because a caller
+    computing one from a ratio can land at 1.0000001 and refusing the whole lesson over
+    float noise would lose the lesson. Further out than that, `_bounded` raises — a
+    confidence of 50 is a caller working in percent, not noise, and clamping it to 1.0
+    would hide the mistake instead of surfacing it.
     """
     provider = embed.load()
     vectors, _ = embed.embed_batch(gate, provider, [text])

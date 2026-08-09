@@ -1,0 +1,106 @@
+"""The rerank, offline.
+
+This is the arithmetic that turns "who resembles this artist" into "who resembles this
+artist and has not ignored us twice", and it is a pure function precisely so it can be
+tested without a cluster, a model, or a network. `PLATFORM-SPEC §6`'s R1 is the search;
+this is the part that makes the search remember.
+
+The property under test throughout: **an adjustment must be traceable to the lesson that
+caused it.** A rerank that produces a better order and cannot say why is not usable by
+the console's inspector, and the inspector is the reason the product claims every object
+has a why.
+"""
+
+from __future__ import annotations
+
+import unittest
+
+from rtf_platform import lessons
+
+
+def candidate(cid: str, distance: float) -> dict:
+    return {"id": cid, "name": f"party {cid}", "distance": distance}
+
+
+def lesson(scope_kind: str, scope_id: str, valence: float,
+           confidence: float = 1.0, lid: str = "l1", text: str = "a lesson") -> dict:
+    return {"id": lid, "scope_kind": scope_kind, "scope_id": scope_id,
+            "valence": valence, "confidence": confidence, "text": text}
+
+
+class Applies(unittest.TestCase):
+
+    def test_a_party_lesson_applies_only_to_that_party(self):
+        les = lesson("party", "a", -1.0)
+        self.assertTrue(lessons.applies(les, candidate("a", 0.5)))
+        self.assertFalse(lessons.applies(les, candidate("b", 0.5)))
+
+    def test_a_general_lesson_applies_to_everyone_in_the_run(self):
+        # Retrieval already scoped these by channel and kind; if it came back, it applies.
+        for kind in ("party_kind", "channel", "global"):
+            les = lesson(kind, "curator", 0.5)
+            self.assertTrue(lessons.applies(les, candidate("anyone", 0.5)),
+                            f"{kind} lesson should apply to every candidate")
+
+
+class Rerank(unittest.TestCase):
+
+    def test_no_lessons_preserves_distance_order(self):
+        cands = [candidate("far", 0.9), candidate("near", 0.1)]
+        out = lessons.rerank(cands, [])
+        self.assertEqual([c["id"] for c in out], ["near", "far"])
+        self.assertEqual(out[0]["adjusted"], 0.1)
+
+    def test_a_negative_lesson_sinks_the_candidate_it_names(self):
+        cands = [candidate("ghoster", 0.10), candidate("quiet", 0.12)]
+        out = lessons.rerank(cands, [lesson("party", "ghoster", -1.0)],
+                             weight=0.05)
+        self.assertEqual([c["id"] for c in out], ["quiet", "ghoster"],
+                         "a curator who ignored us twice must not outrank a fresh one")
+
+    def test_a_positive_lesson_lifts_the_candidate_it_names(self):
+        cands = [candidate("replied", 0.12), candidate("unknown", 0.10)]
+        out = lessons.rerank(cands, [lesson("party", "replied", 1.0)], weight=0.05)
+        self.assertEqual([c["id"] for c in out], ["replied", "unknown"])
+
+    def test_confidence_scales_the_shift(self):
+        cands = [candidate("a", 0.5)]
+        sure = lessons.rerank(cands, [lesson("party", "a", -1.0, confidence=1.0)],
+                              weight=0.05)[0]["adjusted"]
+        unsure = lessons.rerank(cands, [lesson("party", "a", -1.0, confidence=0.25)],
+                                weight=0.05)[0]["adjusted"]
+        self.assertGreater(sure, unsure,
+                           "a lesson we are sure of must move the needle further")
+
+    def test_a_general_lesson_shifts_everyone_and_changes_no_order(self):
+        cands = [candidate("a", 0.10), candidate("b", 0.20)]
+        out = lessons.rerank(cands, [lesson("channel", "email", 1.0)], weight=0.05)
+        self.assertEqual([c["id"] for c in out], ["a", "b"])
+
+    def test_every_adjustment_names_the_lesson_that_caused_it(self):
+        les = lesson("party", "a", -1.0, lid="L-42", text="ghosted twice")
+        out = lessons.rerank([candidate("a", 0.5)], [les], weight=0.05)
+        applied = out[0]["applied"]
+        self.assertEqual(len(applied), 1)
+        self.assertEqual(applied[0]["lesson_id"], "L-42")
+        self.assertEqual(applied[0]["text"], "ghosted twice")
+        self.assertAlmostEqual(applied[0]["shift"], 0.05)
+
+    def test_an_unaffected_candidate_reports_no_lessons(self):
+        out = lessons.rerank([candidate("a", 0.5), candidate("b", 0.5)],
+                             [lesson("party", "a", -1.0)])
+        by_id = {c["id"]: c for c in out}
+        self.assertEqual(by_id["b"]["applied"], [])
+
+    def test_inputs_are_not_mutated(self):
+        cands = [candidate("a", 0.5)]
+        lessons.rerank(cands, [lesson("party", "a", -1.0)])
+        self.assertNotIn("adjusted", cands[0],
+                         "rerank must not write into the caller's rows")
+
+    def test_many_lessons_cannot_drive_a_score_below_zero(self):
+        # Cosine distance is non-negative. A score that goes negative is not a distance
+        # any more, and anything reading it as one is now wrong.
+        piles = [lesson("party", "a", 1.0, lid=f"l{i}") for i in range(50)]
+        out = lessons.rerank([candidate("a", 0.1)], piles, weight=0.05)
+        self.assertGreaterEqual(out[0]["adjusted"], 0.0)

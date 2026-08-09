@@ -252,3 +252,74 @@ class RetrievalIsScoped(unittest.TestCase):
                                  query_vector_literal=self._vector(0.1),
                                  model="the-model", candidate_ids=[party_id])
         self.assertIn("ghosted twice", [row["text"] for row in found])
+
+
+@unittest.skipUnless(HAVE_DB, "DATABASE_URL unset — cluster tests skipped")
+class ShortlistDoesNotDuplicateOnPresence(unittest.TestCase):
+    """`presence` is polymorphic: a party can own several rows in it — Spotify, Deezer,
+    YouTube. R1 must not join against it, because a join multiplies: a party with three
+    surfaces would become three shortlist rows, `LIMIT` would return fewer distinct
+    parties than asked for, and the same party would earn `hit_count` more than once
+    per campaign for lessons that only actually applied to it once.
+    """
+
+    def setUp(self) -> None:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        self.conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True,
+                                    row_factory=dict_row)
+        self.tenant = str(uuid.uuid4())
+        with self.conn.cursor() as cur:
+            cur.execute("INSERT INTO tenant (id, slug, name) VALUES (%s, %s, %s)",
+                        (self.tenant, f"test-dedup-{self.tenant[:8]}", "dedup test"))
+
+    def tearDown(self) -> None:
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM tenant WHERE id = %s", (self.tenant,))
+        self.conn.close()
+
+    def _vector(self, fill: float) -> str:
+        return "[" + ",".join([str(fill)] * 1024) + "]"
+
+    def test_a_party_with_three_presence_rows_appears_once(self):
+        from rtf_platform import agents, spend
+
+        model = "the-model"
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO party (tenant_id, slug, name, party_class, contact_state,
+                                      profile_embedding, embedding_model)
+                   VALUES (%s, 'artist', 'the artist', 'roster', 'contactable',
+                           %s::VECTOR(1024), %s)
+                RETURNING id""",
+                (self.tenant, self._vector(0.1), model),
+            )
+            artist_id = str(cur.fetchone()["id"])
+
+            cur.execute(
+                """INSERT INTO party (tenant_id, slug, name, party_class, contact_state,
+                                      profile_embedding, embedding_model)
+                   VALUES (%s, 'curator', 'the curator', 'counterparty', 'contactable',
+                           %s::VECTOR(1024), %s)
+                RETURNING id""",
+                (self.tenant, self._vector(0.1), model),
+            )
+            curator_id = str(cur.fetchone()["id"])
+
+            for platform in ("spotify", "deezer", "youtube"):
+                cur.execute(
+                    """INSERT INTO presence (tenant_id, subject_kind, subject_id,
+                                             platform, url)
+                       VALUES (%s, 'party', %s, %s, %s)""",
+                    (self.tenant, curator_id, platform,
+                     f"https://{platform}.example/curator"),
+                )
+
+        gate = spend.Gate.open(self.conn, self.tenant)
+        rows = agents.shortlist(self.conn, self.tenant, artist_id, gate=gate)
+
+        matches = [row for row in rows if str(row["id"]) == curator_id]
+        self.assertEqual(len(matches), 1,
+                         "a party with three presence rows must shortlist once, "
+                         "not three times")

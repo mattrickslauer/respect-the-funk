@@ -665,19 +665,36 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
             "this artist has no profile embedding yet — embed them first",
             permanent=True)
 
+    # `presence` is polymorphic and a party can have several rows in it — Spotify,
+    # Deezer, YouTube. A `LEFT JOIN presence` here would multiply the result: a party
+    # with three surfaces becomes three rows, `LIMIT` returns fewer distinct parties
+    # than asked for, and the same party can appear twice in the rerank. The CTE runs
+    # the vector search alone, with nothing joined to it, so no join can steer the
+    # planner away from the index; `url` is then a scalar subquery, which by
+    # construction returns at most one row, so it cannot duplicate a party. Do not
+    # "simplify" this back into a join — that is the bug this shape exists to avoid.
+    # `ORDER BY pr.url LIMIT 1` is arbitrary but deterministic, so the same shortlist
+    # renders the same surface on every load rather than whichever one the join order
+    # happened to pick.
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT p.id, p.name, p.contact_state,
-                      p.profile_embedding <=> %s::VECTOR(1024) AS distance,
-                      pr.url
-                 FROM party p
-                 LEFT JOIN presence pr ON pr.subject_kind = 'party' AND pr.subject_id = p.id
-                WHERE p.tenant_id = %s
-                  AND p.embedding_model = %s
-                  AND p.party_class = 'counterparty'
-                  AND p.contact_state = 'contactable'
-                ORDER BY p.profile_embedding <=> %s::VECTOR(1024)
-                LIMIT %s""",
+            """WITH shortlisted AS (
+                    SELECT id, name, contact_state,
+                           profile_embedding <=> %s::VECTOR(1024) AS distance
+                      FROM party
+                     WHERE tenant_id = %s
+                       AND embedding_model = %s
+                       AND party_class = 'counterparty'
+                       AND contact_state = 'contactable'
+                     ORDER BY profile_embedding <=> %s::VECTOR(1024)
+                     LIMIT %s
+                )
+                SELECT s.id, s.name, s.contact_state, s.distance,
+                       (SELECT pr.url FROM presence pr
+                         WHERE pr.subject_kind = 'party' AND pr.subject_id = s.id
+                         ORDER BY pr.url LIMIT 1) AS url
+                  FROM shortlisted s
+                 ORDER BY s.distance""",
             (artist["vec"], tenant_id, artist["embedding_model"], artist["vec"],
              SHORTLIST_CANDIDATES),
         )

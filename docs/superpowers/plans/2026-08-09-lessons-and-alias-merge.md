@@ -818,6 +818,79 @@ Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m 
 
 Expected: PASS, 17 tests (16 from Tasks 2–3, plus this one).
 
+- [ ] **Step 4b: Absorb float noise, refuse a misunderstanding**
+
+Task 3's `write()` clamps `confidence` and `valence` into range. The justification was float noise — a ratio landing at `1.0000001` should not lose the whole lesson. That reasoning holds and the clamp stays. But the same line silently turns `confidence=50` into `1.0`, and a caller that has misunderstood the scale then looks exactly like a caller that is very sure. The two cases need separating.
+
+Add to `platform/web/rtf_platform/lessons.py`, beside `LESSON_WEIGHT`:
+
+```python
+#: How far outside its legal range a number may stray before `write` calls it a bug
+#: rather than rounding. A ratio that lands at 1.0000001 is arithmetic and gets clamped;
+#: a confidence of 50 is a caller working in percent, and storing 1.0 for it hides the
+#: mistake until somebody asks why every lesson is maximally confident.
+CLAMP_EPSILON = 1e-6
+```
+
+Add this helper below `applies()`:
+
+```python
+def _bounded(value: float, low: float, high: float, name: str) -> float:
+    """Clamp rounding error into range; refuse anything further out.
+
+    The distinction this draws is the whole point: absorbing noise keeps a good lesson,
+    and absorbing a scale error keeps a wrong one forever.
+    """
+    number = float(value)
+    if number < low - CLAMP_EPSILON or number > high + CLAMP_EPSILON:
+        raise ValueError(
+            f"{name}={number} is outside [{low}, {high}] by more than rounding error")
+    return max(low, min(high, number))
+```
+
+Then in `write()`, replace the two inline clamps:
+
+```python
+                 max(0.0, min(1.0, float(confidence))),
+                 max(-1.0, min(1.0, float(valence))),
+```
+
+with:
+
+```python
+                 _bounded(confidence, 0.0, 1.0, "confidence"),
+                 _bounded(valence, -1.0, 1.0, "valence"),
+```
+
+Add this test class to `platform/web/tests/test_lessons.py`:
+
+```python
+class Bounds(unittest.TestCase):
+    """Rounding error is absorbed; a misunderstanding is refused."""
+
+    def test_float_noise_is_clamped(self):
+        self.assertEqual(lessons._bounded(1.0000001, 0.0, 1.0, "confidence"), 1.0)
+        self.assertEqual(lessons._bounded(-1.0000001, -1.0, 1.0, "valence"), -1.0)
+
+    def test_a_value_in_range_is_unchanged(self):
+        self.assertEqual(lessons._bounded(0.5, 0.0, 1.0, "confidence"), 0.5)
+
+    def test_a_scale_error_is_refused_rather_than_flattened(self):
+        # A caller working in percent must not silently become "maximally confident".
+        with self.assertRaises(ValueError) as caught:
+            lessons._bounded(50, 0.0, 1.0, "confidence")
+        self.assertIn("confidence=50", str(caught.exception))
+
+    def test_the_bound_names_itself_in_the_error(self):
+        with self.assertRaises(ValueError) as caught:
+            lessons._bounded(-3, -1.0, 1.0, "valence")
+        self.assertIn("valence", str(caught.exception))
+```
+
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
+
+Expected: PASS, 21 tests (16 from Tasks 2–3, plus Step 4a's 1, plus these 4).
+
 - [ ] **Step 5: Wire the rerank into `shortlist`**
 
 In `platform/web/rtf_platform/agents.py`, add to the imports:
@@ -896,7 +969,7 @@ Update the `shortlist` docstring by appending this paragraph before the closing 
 
 Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
 
-Expected: PASS. **93 passed, 19 skipped** — the 77-test baseline plus the 16 offline tests from Tasks 2–3, with Task 4's 3 cluster tests joining the 16 already-skipped ones.
+Expected: PASS. **98 passed, 19 skipped** — the 77-test baseline, plus 16 offline tests from Tasks 2–3, plus Step 4a's 1 and Step 4b's 4, with Task 4's 3 cluster tests joining the 16 already-skipped ones.
 
 - [ ] **Step 7: Verify R1 still uses the index after the change**
 
@@ -1561,7 +1634,7 @@ Expected: PASS, 12 tests.
 
 Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
 
-Expected: **93 passed, 31 skipped** with `DATABASE_URL` unset — Task 6's 12 cluster tests are all skips in that mode.
+Expected: **98 passed, 31 skipped** with `DATABASE_URL` unset — Task 6's 12 cluster tests are all skips in that mode.
 
 - [ ] **Step 7: Commit**
 
@@ -1887,7 +1960,7 @@ Check every column the `INSERT` names is a key the dict above provides or that t
 
 Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
 
-Expected: **93 passed, 37 skipped** with `DATABASE_URL` unset. With `DATABASE_URL` set all 37 run: **130 passed, 0 skipped**.
+Expected: **98 passed, 37 skipped** with `DATABASE_URL` unset. With `DATABASE_URL` set all 37 run: **135 passed, 0 skipped**.
 
 - [ ] **Step 8: Commit**
 

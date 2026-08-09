@@ -1,0 +1,21 @@
+Respect the Funk
+Copyright 2026 Mattricks Lauer
+
+This product includes software developed for the CockroachDB × AWS Hackathon
+("Build with Agentic Memory", submission period 2026-06-30 to 2026-08-18).
+
+Pre-existing work incorporated into this repository, disclosed as the
+hackathon rules require:
+
+  * `content/` — RemixKit, an asset-generation pipeline, and `app/`, the
+    console that serves it. Both predate this hackathon's submission period
+    and were built for an earlier, unrelated hackathon. They are retained as
+    a subproject and are not part of the agentic-memory work being submitted.
+    See `docs/SCOPE-RESET.md` for the scope decision that made them a
+    subproject.
+
+  * The agentic memory platform submitted to this hackathon lives entirely in
+    `platform/`, first committed 2026-08-06, inside the submission period.
+
+Third-party dependencies retain their own licences; see
+`platform/web/requirements.txt` for the pinned set.

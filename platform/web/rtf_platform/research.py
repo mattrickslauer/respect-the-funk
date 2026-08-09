@@ -621,6 +621,7 @@ def artist_editor_sections(
     error: str = "",
     profile_error: str = "",
     confirm_delete: bool = False,
+    suggestions: list[dict[str, Any]] | None = None,
 ) -> tuple[Section, ...]:
     """Everything the inspector shows for one artist: read it, edit it, delete it.
 
@@ -663,6 +664,11 @@ def artist_editor_sections(
         ) or ((None, "Nothing configured — the forager has nowhere to start.", None),),
     )
 
+    #: Directly beneath the surfaces they are candidates for, so accepting one reads as
+    #: promoting a row in a list the operator is already looking at — not as a separate
+    #: workflow they have to remember exists.
+    suggested = suggestions_section(suggestions or [], back=f"/artists?sel={aid}")
+
     add = Section(
         "Add a surface", "form", (
             Field("platform", "Platform", "select", "", _PLATFORM_OPTIONS),
@@ -695,14 +701,173 @@ def artist_editor_sections(
         # First, not last. The control that asks for the confirmation sits at the
         # bottom of a scrolling pane, so a confirmation rendered in place would appear
         # below the fold and read as a click that did nothing.
-        return (danger, cancel, edit, record, where, add, note)
+        return (danger, cancel, edit, record, where, suggested, add, note)
 
     #: A link, not a submit. Deleting an artist cascades, so it takes two deliberate
     #: acts and the second one names what goes with it.
     danger = Section("", "actions", (
         ("Delete artist", f"/artists?sel={aid}&confirm=delete", "d"),
     ))
-    return (edit, record, where, add, note, danger)
+    return (edit, record, where, suggested, add, note, danger)
+
+
+# --------------------------------------------------------------- suggestions
+
+#: A suggestion is what an agent produces when it matched by inference rather than
+#: measurement — a name search that found a plausible artist, not a page an operator
+#: asserted. Nothing promotes one automatically, by design: `SCOPE-RESET` open decision 4
+#: settled on a human-in-the-loop scout that surfaces candidates for bulk acceptance,
+#: because Pillar 10 §4's verdict on scraping was "no scraper, ever" and §5 found that a
+#: person confirming a match is both compliant and the higher-signal path.
+#:
+#: These render into two surfaces that already exist — the needs-you queue and the artist
+#: inspector — rather than a page of their own. A decision queue nobody passes on their
+#: way to something else is a decision queue nobody empties.
+
+def pending_suggestions(conn: psycopg.Connection, tenant_id: str,
+                        party_id: str | None = None) -> list[dict[str, Any]]:
+    where = "s.tenant_id = %s AND s.state = 'pending'"
+    params: tuple[Any, ...] = (tenant_id,)
+    if party_id:
+        where += " AND s.party_id = %s"
+        params += (party_id,)
+    return _rows(conn, f"""
+        SELECT s.id, s.party_id, s.kind, s.payload, s.confidence, s.rationale,
+               p.name AS party_name, p.slug AS party_slug
+          FROM suggestion s
+          JOIN party p ON p.id = s.party_id
+         WHERE {where}
+         ORDER BY p.name, s.confidence DESC, s.created_at
+         LIMIT {LIMIT}""", params)
+
+
+def _suggestion_row(row: dict[str, Any], back: str) -> tuple[Any, Any, Any]:
+    """One `editlist` entry: what was found, how sure, and the two ways to answer.
+
+    The confidence is rendered next to the label rather than hidden in the inspector,
+    because 0.30 and 0.70 are the difference between "probably them" and "an artist who
+    happens to share three letters", and an operator clicking Accept is entitled to see
+    which one they are looking at without a second click.
+    """
+    payload = row["payload"] or {}
+    evidence = payload.get("evidence") or {}
+    detail = " · ".join(filter(None, (
+        payload.get("platform", ""),
+        f"{row['confidence']:.2f} confidence",
+        f"{evidence.get('fans')} fans" if evidence.get("fans") is not None else "",
+        f"{evidence.get('albums')} albums" if evidence.get("albums") is not None else "",
+    )))
+    sid = str(row["id"])
+    return (
+        payload.get("label") or payload.get("value") or "candidate",
+        detail,
+        (("Accept", f"/suggestions/{sid}/accept?back={back}", "p"),
+         ("Reject", f"/suggestions/{sid}/reject?back={back}", "d")),
+    )
+
+
+def suggestions_section(rows: list[dict[str, Any]], *, back: str) -> Section:
+    """The candidates block, shaped like the surfaces block it sits next to.
+
+    Same `editlist` renderer as "Where we look", deliberately: a suggested surface and a
+    configured one are the same kind of thing at different stages of certainty, and
+    showing them in two different shapes would imply a distinction that is not there.
+    """
+    return Section(
+        "Suggested surfaces", "editlist",
+        tuple(_suggestion_row(r, back) for r in rows) or
+        ((None, "Nothing pending — every candidate has been answered.", None),),
+    )
+
+
+# ----------------------------------------------------------------------- today
+
+def today(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]],
+                                                             tuple[tuple[str, str], ...]]:
+    """The needs-you queue, from rows rather than fixtures.
+
+    Two things land here today, and both are things the fleet genuinely will not decide:
+    an inferred match that needs confirming, and a lead that has been parked because it
+    failed for a reason a human has to remove. Everything else the fleet already did, and
+    an empty queue is the correct and common state — the template says so and it is right.
+
+    Suggestions are grouped per artist rather than listed one per row. Five candidate
+    Deezer pages for one artist is *one* decision made five times, and a queue that shows
+    it as five items makes an operator feel behind when they are not.
+    """
+    items: list[dict[str, Any]] = []
+
+    rows = pending_suggestions(conn, tenant_id)
+    by_party: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_party.setdefault(str(row["party_id"]), []).append(row)
+
+    for party_id, group in by_party.items():
+        name = group[0]["party_name"]
+        best = max(g["confidence"] for g in group)
+        platforms = sorted({(g["payload"] or {}).get("platform", "") for g in group} - {""})
+        items.append({
+            "id": f"sug-{party_id}",
+            # An exact-looking match is a different act from a shortlist of maybes.
+            "sev": "act" if best >= 0.7 else "warn",
+            "icon": "◇", "kind": "Confirm",
+            "head": f"{len(group)} candidate {'surface' if len(group) == 1 else 'surfaces'}"
+                    f" for {name}",
+            "sub": f"{', '.join(platforms) or 'search'} · best match {best:.2f}"
+                   f" · found by search, not asserted",
+            "cta": "Review", "href": f"/artists?sel={party_id}",
+            "insp": (
+                Section("Why this is here", "note", (
+                    "An agent searched a source by name and found these. A name match is "
+                    "inference, so none of them has been written as a surface — two acts "
+                    "can share a name, and a wrong accept quietly attaches somebody "
+                    "else's catalogue to your artist.",
+                )),
+                suggestions_section(group, back=f"/"),
+                Section("", "actions", (("Open the artist", f"/artists?sel={party_id}", ""),)),
+            ),
+        })
+
+    parked = _rows(conn, """
+        SELECT l.id, l.kind, l.platform, l.last_error, l.attempts, p.name AS party_name
+          FROM lead l LEFT JOIN party p ON p.id = l.party_id
+         WHERE l.tenant_id = %s AND l.state = 'failed'
+         ORDER BY l.updated_at DESC LIMIT 20""", (tenant_id,))
+    for row in parked:
+        items.append({
+            "id": f"lead-{row['id']}", "sev": "warn", "icon": "⚡", "kind": "Blocked",
+            "head": f"{row['kind']} parked" + (f" for {row['party_name']}"
+                                               if row["party_name"] else ""),
+            "sub": f"{row['platform'] or 'no platform'} · {row['attempts']} attempts"
+                   f" · {row['last_error'][:70]}",
+            "cta": "Open", "href": "/queue",
+            "insp": (
+                Section("Why this is here", "note", (
+                    "The lead failed enough times to be parked rather than retried. It is "
+                    "here because the cause is something outside the fleet — a missing "
+                    "credential, a disabled source — and no amount of backoff removes it.",
+                )),
+                Section("Lead", "kv", (
+                    ("kind", row["kind"]), ("platform", row["platform"] or "—"),
+                    ("attempts", str(row["attempts"])), ("error", row["last_error"][:200]),
+                )),
+            ),
+        })
+
+    counts = _one(conn, """
+        SELECT (SELECT count(*) FROM lead WHERE tenant_id = %s AND state = 'pending') AS pending,
+               (SELECT count(*) FROM party_chunk WHERE tenant_id = %s) AS chunks,
+               (SELECT count(*) FROM party_fact WHERE tenant_id = %s AND status = 'live') AS facts,
+               (SELECT count(*) FROM agent_run WHERE tenant_id = %s
+                 AND started_at > now() - INTERVAL '24 hours') AS runs
+    """, (tenant_id, tenant_id, tenant_id, tenant_id))
+    quiet = (
+        ("leads waiting", str(counts["pending"])),
+        ("live facts", str(counts["facts"])),
+        ("chunks indexed", str(counts["chunks"])),
+        ("runs / 24h", str(counts["runs"])),
+    )
+    return items, quiet
 
 
 # ------------------------------------------------------------------- artists
@@ -755,6 +920,7 @@ def artists(conn: psycopg.Connection, tenant_id: str, *,
                 error=(error if str(r["id"]) == editing_id else ""),
                 profile_error=(profile_error if str(r["id"]) == editing_id else ""),
                 confirm_delete=(confirm_delete and str(r["id"]) == editing_id),
+                suggestions=pending_suggestions(conn, tenant_id, str(r["id"])),
             ),
         })
 

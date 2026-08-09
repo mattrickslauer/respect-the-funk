@@ -90,19 +90,32 @@
             </form>
 
           {% elif s.kind == 'editlist' %}
-            {# A list where every entry can be removed on its own. The remove control is
-               a form, not a link, because a GET that deletes is a row lost to a
-               prefetch. #}
+            {# A list where every entry can be acted on its own. Controls are forms, not
+               links, because a GET that changes a row is a row changed by a prefetch.
+
+               `action` is either a URL — the plain remove case, rendered as ✕ — or a
+               sequence of (label, url, class) for a row that needs a real decision
+               rather than a deletion. Accepting a suggested surface and deleting a
+               configured one are the same shape of act on the same shape of list, so
+               they share the renderer instead of one growing its own section kind. #}
             <ul class="edlist">
               {% for label, detail, action in s.items %}
                 <li>
                   <span class="ell">
                     {% if label %}<b>{{ label }}</b>{% endif %}<i>{{ detail }}</i>
                   </span>
-                  {% if action %}
+                  {% if action is string %}
                     <form method="post" action="{{ action }}">
                       <button type="submit" class="b x" title="Remove {{ label }}">✕</button>
                     </form>
+                  {% elif action %}
+                    <span class="acts">
+                      {% for a_label, a_url, a_cls in action %}
+                        <form method="post" action="{{ a_url }}" style="display:inline">
+                          <button type="submit" class="b {{ a_cls }}">{{ a_label }}</button>
+                        </form>
+                      {% endfor %}
+                    </span>
                   {% endif %}
                 </li>
               {% endfor %}

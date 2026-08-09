@@ -254,11 +254,18 @@ def home(request: Request, principal: Principal, sel: str = "") -> Response:
     """
     if not principal.authenticated:
         return _landing(request, principal)
-    row = demo.select(demo.TODAY, sel or None)
+
+    # Real rows, not `demo.TODAY`. An empty queue is the correct and common state here —
+    # it means the fleet decided everything it was allowed to decide — so this renders
+    # nothing rather than falling back to fixtures. A fixture on the home screen is the
+    # one place a demo is most likely to be mistaken for the product.
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    items, quiet = research.today(conn, tenant_id) if tenant_id else ([], ())
+    row = demo.select(items, sel or None)
     return templates.TemplateResponse(
         request, "console/today.html",
-        _ctx(request, principal, here="today", items=demo.TODAY, sel=row,
-             quiet=demo.TODAY_QUIET,
+        _ctx(request, principal, here="today", items=items, sel=row, quiet=quiet,
              insp_kicker=(row or {}).get("kind", ""),
              insp_title=(row or {}).get("head", "—")),
     )
@@ -511,6 +518,47 @@ def artist_profile_add(request: Request, principal: Operator, artist_id: str,
         handle=handle.strip()[:200], profile_url=profile_url.strip()[:500],
     )
     return RedirectResponse(f"/artists?sel={artist_id}", status_code=303)
+
+
+def _safe_back(back: str, fallback: str = "/") -> str:
+    """Only ever redirect somewhere inside this console.
+
+    `back` arrives in a query string, so it is attacker-controlled. A bare
+    `startswith("/")` is not enough — `//evil.example` is a protocol-relative URL that
+    browsers follow off-site — so the second character has to be checked too.
+    """
+    if back.startswith("/") and not back.startswith("//"):
+        return back
+    return fallback
+
+
+#: Accept and reject are POSTs with no page of their own. A decision is an act on a
+#: record that is already open, so it happens in the inspector and returns you to
+#: exactly where you were — the needs-you queue or the artist. Adding a `/suggestions`
+#: page would make an operator go somewhere to do something they were already looking at.
+@router.post("/suggestions/{suggestion_id}/accept")
+def suggestion_accept(principal: Operator, suggestion_id: str,
+                      back: str = "/") -> Response:
+    """Confirm a match. Writes the surface and queues the mapping in one transaction."""
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is not None:
+        repo.accept_suggestion(conn, tenant_id, suggestion_id,
+                               by=principal.subject or "operator")
+    return RedirectResponse(_safe_back(back), status_code=303)
+
+
+@router.post("/suggestions/{suggestion_id}/reject")
+def suggestion_reject(principal: Operator, suggestion_id: str,
+                      back: str = "/") -> Response:
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is not None:
+        repo.reject_suggestion(conn, tenant_id, suggestion_id,
+                               by=principal.subject or "operator")
+    return RedirectResponse(_safe_back(back), status_code=303)
 
 
 @router.post("/artists/{artist_id}/profiles/{profile_id}/delete")

@@ -12,9 +12,10 @@ The platform described by [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md) and
 
 | | |
 |---|---|
-| `schema/` | Migrations, applied in order. Three so far. |
-| `web/` | The console — FastAPI + Jinja + htmx, the same shape as `app/remixkit/ui/`. |
+| `schema/` | Migrations, applied in order. Seven so far. |
+| `web/` | The console and the fleet — FastAPI + Jinja + htmx, the same shape as `app/remixkit/ui/`. |
 | `infra/` | Terraform. Lambda + Function URL, and nothing else that costs money. |
+| `bin/` | Setup that has to touch a vendor account: `ccloud-mcp-setup.sh`. |
 
 ## Where we are
 
@@ -25,7 +26,11 @@ The platform described by [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md) and
 | Landing page at `/` + `demo_request` capture | **live** — the console is gated behind sign-in |
 | Roster CRUD at `/roster` — list, search, add, edit, delete | **works locally**, not yet deployed |
 | Console — thirteen views at `/`, `/facts`, `/fleet`, … | **wireframe**, buttons inert |
-| Tracks, derived facts, counterparties, threads, memory | not started |
+| The fleet — lease claiming, backoff, follow-on leads, `agent_run` | **live** in `web/rtf_platform/fleet.py` |
+| Vector indexes on `party_chunk` and `party_fact` | **live**, cosine, prefix-filtered |
+| Embeddings — 856 chunks over 17 documents | **live**, via the OpenAI adapter |
+| Retrieval — R2 semantic search over the corpus | **live**, `python -m rtf_platform.ingest --search "…"` |
+| Counterparties, threads, outreach | not started |
 
 A table arrives when something needs it, not because `PLATFORM-SPEC §2` lists it.
 
@@ -209,20 +214,33 @@ comes up, not as a plan.
 
 ## Still open
 
-- **The deployed function is running old code.** It *is* deployed —
-  `terraform output console_url` returns a live Function URL — but from a build that
-  predates the console and the auth gate, so `/` still 307s to the old roster and
-  `/facts` 404s. Worse, that build served the roster to anonymous readers, and the URL is
-  public. `./platform/infra/build.sh && terraform -chdir=platform/infra apply` fixes both;
-  the plan is **1 in-place update, 0 added, 0 destroyed**.
+- ~~**The deployed function is running old code.**~~ **Resolved.** Checked 2026-08-09:
+  the Function URL returns `200` and serves the current landing page with the auth gate,
+  so the build was redeployed at some point after that note was written. The fleet code
+  added since is not in the bundle, but nothing in the console depends on it yet.
 - **Migrations 004 and 005 are applied.** `004` created the frontier, evidence and
   claims; `005_party_first.sql` replaced the artist-shaped root with a Party and added
   the industry's four layers — party, work, recording, release — per
   `docs/superpowers/specs/2026-08-08-party-first-identity-design.md`. `005` is
   destructive by design and `schema/apply.py` re-checks that the tables it drops are
   empty before running. Six console views read the party schema; five remain fixtures.
-- **The vector columns are still NULL** and will stay so while Bedrock's quota is 0
-  (below). `party_chunk.embedding` and `party_fact.embedding` are indexed and empty.
+- **`party_fact.embedding` is still NULL.** `party_chunk.embedding` is not: 856 chunks
+  across 17 documents carry real vectors, written by the fleet.
+
+  **Correction, 2026-08-09:** an earlier version of this line said both columns were
+  "indexed and empty". Only *empty* was true — there was no vector index anywhere in the
+  shipped schema, and the earlier verification had been done in a throwaway database that
+  was dropped. `007_vector_index.sql` creates them for real: `chunk_semantic` on
+  `party_chunk (tenant_id, model, …)` and `fact_semantic` on
+  `party_fact (tenant_id, model, status, …)`, both cosine. `EXPLAIN` on the retrieval in
+  `agents.retrieve` resolves to a `vector search` node with `prefix spans` over the
+  populated table — checked, not assumed.
+
+  The index also forced a schema fix. `party_chunk` had an `embedding` and no way to say
+  what produced it, and embeddings from two models are not comparable — the distance is a
+  well-formed float and noise. `model`/`model_version` are now columns, a `CHECK` refuses
+  an embedding that cannot name its model, and `model` is an equality predicate in every
+  retrieval, which is also what the index prefix needs.
 - **`presence` and `party_credit` have no foreign key on `subject_id`.** Both are
   polymorphic over party, recording and release, which is the price of one probe and
   one grid serving all three — so `ON DELETE CASCADE` cannot fire for either.
@@ -238,11 +256,18 @@ comes up, not as a plan.
   false everywhere and the loader refuses to write until an operator confirms it per
   import. Confirming a format is a one-line change once a real file has been through
   it, and `statement_import.format_verified` records what was true at the time.
-- **Bedrock is unusable on this account.** On-demand inference quota is **0 requests per
-  minute for nearly every model**, including Titan Embeddings V2 — `AUTHORIZED` and
-  `AVAILABLE`, but zero capacity, so every invoke returns `ThrottlingException`. A quota
-  increase has to be requested before Bedrock can be the embedding or agent runtime that
-  `PLATFORM-SPEC §8` assumes. Until then the vector columns in migration 004 stay NULL.
+- **Bedrock is still unusable on this account, and no longer blocks anything.** On-demand
+  quota is **0 requests per minute** for Titan Embeddings V2 — `ACTIVE` and access
+  granted, but zero capacity, so every invoke returns `ThrottlingException`. Service
+  Quotas reports the limit as `Adjustable: False`, so the self-service increase button
+  does not apply and it needs a support case; one has been filed.
+
+  It stopped being a blocker because embedding is now a **port**, not a Bedrock call.
+  `embed.py` has two adapters behind one interface, selected by environment variable;
+  OpenAI is the live one at 1024 dimensions (Matryoshka truncation, so it meets the
+  schema rather than the schema meeting it) and Titan drops in unchanged when the case
+  clears. The AWS requirement was never Bedrock's to carry anyway — Lambda already
+  satisfies it and is deployed.
 - **`POST /demo` has no rate limiting, no CAPTCHA and no email verification.** It is the
   one route a stranger can write through, and today nothing stops somebody filling the
   table with junk. Acceptable while the URL is unpublished and the Lambda is capped at
@@ -257,7 +282,15 @@ comes up, not as a plan.
 - **RU cost of a filtered vector scan** (`PLATFORM-SPEC §10` risk 2) — needs real row
   volume; a probe with no rows measures nothing.
 - **Changefeed RU draw** — needs a webhook sink to exist first.
-- **`ccloud` has not been used.** The cluster was made in the console, so
-  `PLATFORM-SPEC §8`'s claim of it as tool 3 "in the day-1 provisioning path" is not yet
-  earned — use it for something real or drop the claim.
-- **Licence is still unchosen** and is required for submission; Apache-2.0 recommended.
+- **`ccloud` is installed and wired, but nobody has logged in yet.**
+  `platform/bin/ccloud-mcp-setup.sh` uses it to resolve the cluster ID and writes the
+  MCP client config from it. That is a real use rather than a command run once to be able
+  to claim it — but the claim is only earned once the script has actually been run, and
+  `ccloud auth login` is an interactive browser flow that no script can do for you.
+- **The MCP server is configured but not yet connected.** Same blocker: the endpoint
+  (`https://cockroachlabs.cloud/mcp`) answers `401` with an OAuth challenge, which is the
+  correct response and confirms it is live. Read-only by default, which is the right
+  posture — the console is the write path.
+- **Licence chosen: Apache-2.0.** `LICENSE` and `NOTICE` are at the repository root. The
+  `NOTICE` carries the pre-existing-code disclosure the hackathon rules require, naming
+  `content/` and `app/` as out-of-period RemixKit work and `platform/` as the submission.

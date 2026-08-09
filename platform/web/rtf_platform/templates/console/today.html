@@ -4,12 +4,26 @@
 {% block title %}Today{% endblock %}
 {% block h1 %}Needs you{% endblock %}
 {% block blurb %}
-  Four things the fleet will not decide on its own. Everything else it already did.
+  {% if items %}
+    {{ items | length }} thing{{ '' if items | length == 1 else 's' }} the fleet will not
+    decide on its own. Everything else it already did.
+  {% else %}
+    Nothing needs you. Everything the fleet was allowed to decide, it decided.
+  {% endif %}
 {% endblock %}
 
 {% block centre %}
   <div class="scroll">
     <div class="queue">
+      {% if not items %}
+        {# An empty queue is success, not an error, and it must not read as a broken
+           page. It says what would put something here, so the operator can tell the
+           difference between "nothing to do" and "nothing is running". #}
+        <div class="empty">
+          Nothing pending. A candidate surface found by search, or a lead parked because
+          it needs a credential, would appear here.
+        </div>
+      {% endif %}
       {% for item in items %}
         <div class="qrow {{ item.sev }} {{ 'on' if sel and item.id == sel.id }}"
              onclick="location='?sel={{ item.id }}'">

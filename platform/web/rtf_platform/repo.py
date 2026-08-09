@@ -210,24 +210,138 @@ def upsert_presence(
     `match_basis` defaults to `asserted` because the caller is a person filling in a
     form. An adapter that finds the same surface writes `measured`, and the two must
     not be confused: one of them is somebody's judgement.
+
+    **Adding a surface also queues the work of mapping it.** The presence row and its
+    `map_source` lead are written in one transaction, so a source can never sit in the
+    console looking connected while nothing has ever gone and read it. That is the whole
+    behaviour the operator is asking for when they paste a URL — they are not recording
+    a bookmark, they are saying "go and find out what is there."
+
+    The lead carries the source's own `cadence_seconds` from `source_manifest`, which
+    makes it a recurring frontier entry rather than a one-shot: follower counts move, and
+    a catalogue that was mapped once in August is wrong by October. A source with no
+    cadence stays one-shot, which is `lead`'s single nullable column doing the work.
+    """
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO presence
+                        (tenant_id, subject_kind, subject_id, platform, mode, handle,
+                         url, state, match_basis)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, 'present', %s)
+              ON CONFLICT (tenant_id, subject_kind, subject_id, platform) DO UPDATE
+                      SET mode = excluded.mode,
+                          handle = excluded.handle,
+                          url = excluded.url,
+                          match_basis = excluded.match_basis,
+                          checked_at = now()
+                RETURNING id, platform, mode, handle, url AS profile_url, state, enabled""",
+                (tenant_id, subject_kind, subject_id, platform, mode, handle,
+                 profile_url, match_basis),
+            )
+            row = cur.fetchone()
+
+            if subject_kind == "party":
+                cur.execute(
+                    "SELECT cadence_seconds FROM source_manifest WHERE platform = %s",
+                    (platform,),
+                )
+                manifest = cur.fetchone()
+                target = profile_url or handle
+                if target:
+                    cur.execute(
+                        """INSERT INTO lead
+                                (tenant_id, scope_kind, party_id, kind, mode, adapter,
+                                 target, target_hash, platform, reason, score,
+                                 cadence_seconds)
+                           VALUES (%s, 'party', %s, 'map_source', 'auto', %s, %s, %s, %s,
+                                   'a source was added and has not been mapped', 0.9, %s)
+                           ON CONFLICT (tenant_id, target_hash) DO NOTHING""",
+                        (tenant_id, subject_id, platform, target,
+                         f"map:{platform}:{subject_id}", platform,
+                         manifest["cadence_seconds"] if manifest else None),
+                    )
+    return row
+
+
+# ------------------------------------------------------------------ suggestions
+
+def accept_suggestion(conn: psycopg.Connection, tenant_id: str,
+                      suggestion_id: str, *, by: str = "operator") -> bool:
+    """Promote an inferred match to an asserted surface, and queue the mapping.
+
+    This is the only place in the system where a guess becomes a fact, so it is the one
+    place the provenance changes class: the agent wrote `inferred` because it matched a
+    name, and a person clicking Accept is the thing that makes it `asserted`. They are
+    now the accountable party, which is precisely what `SCOPE-RESET §2a`'s third
+    provenance class means.
+
+    One transaction, and `upsert_presence` runs inside it — so accepting also writes the
+    `map_source` lead, and there is no window where a surface exists that nothing has
+    been told to go and read.
+
+    Sibling candidates for the same party and platform are rejected in the same breath.
+    An artist has one page on a service; leaving four other maybes pending after one has
+    been confirmed just asks the operator the same question again tomorrow.
+    """
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, party_id, payload FROM suggestion
+                    WHERE tenant_id = %s AND id = %s AND state = 'pending'
+                      FOR UPDATE""",
+                (tenant_id, suggestion_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return False
+
+            payload = row["payload"] or {}
+            platform = payload.get("platform", "")
+            if not platform:
+                return False
+
+            upsert_presence(
+                conn, tenant_id, str(row["party_id"]),
+                platform=platform,
+                mode=payload.get("mode", "owned"),
+                handle=payload.get("label", ""),
+                profile_url=payload.get("url", ""),
+                match_basis="asserted",
+            )
+
+            cur.execute(
+                """UPDATE suggestion SET state = 'accepted', decided_by = %s,
+                                         decided_at = now()
+                    WHERE tenant_id = %s AND id = %s""",
+                (by, tenant_id, suggestion_id),
+            )
+            cur.execute(
+                """UPDATE suggestion SET state = 'superseded', decided_by = %s,
+                                         decided_at = now()
+                    WHERE tenant_id = %s AND party_id = %s AND state = 'pending'
+                      AND payload->>'platform' = %s AND id != %s""",
+                (by, tenant_id, row["party_id"], platform, suggestion_id),
+            )
+    return True
+
+
+def reject_suggestion(conn: psycopg.Connection, tenant_id: str,
+                      suggestion_id: str, *, by: str = "operator") -> bool:
+    """Answer a candidate with no.
+
+    Kept as a state change rather than a delete: "we looked at this and it is not them"
+    is a finding, and a deleted row would let the same search re-suggest it next week
+    with nothing to say it had already been dismissed.
     """
     with conn.cursor() as cur:
         cur.execute(
-            """INSERT INTO presence
-                    (tenant_id, subject_kind, subject_id, platform, mode, handle,
-                     url, state, match_basis)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, 'present', %s)
-          ON CONFLICT (tenant_id, subject_kind, subject_id, platform) DO UPDATE
-                  SET mode = excluded.mode,
-                      handle = excluded.handle,
-                      url = excluded.url,
-                      match_basis = excluded.match_basis,
-                      checked_at = now()
-            RETURNING id, platform, mode, handle, url AS profile_url, state, enabled""",
-            (tenant_id, subject_kind, subject_id, platform, mode, handle,
-             profile_url, match_basis),
+            """UPDATE suggestion SET state = 'rejected', decided_by = %s,
+                                     decided_at = now()
+                WHERE tenant_id = %s AND id = %s AND state = 'pending'""",
+            (by, tenant_id, suggestion_id),
         )
-        return cur.fetchone()
+        return cur.rowcount > 0
 
 
 def delete_presence(conn: psycopg.Connection, tenant_id: str, subject_id: str,

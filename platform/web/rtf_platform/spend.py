@@ -95,8 +95,17 @@ RATES: dict[str, Rate] = {
 
 #: Free. Listed explicitly rather than assumed, so adding a source is a decision about
 #: whether it is metered rather than a silence.
+#:
+#: These must agree with `source_manifest.cost_class = 'free'`, and today they are two
+#: places recording one fact — the manifest is operational and lives in the database, this
+#: is a code-level guard that must be readable without a connection. When they disagree
+#: the gate wins, because the gate is what actually stops a call: a source the manifest
+#: calls free but that is missing here is refused as unpriced, which is the safe way round.
 FREE: frozenset[str] = frozenset({
     "musicbrainz", "coverartarchive", "wikidata", "web_page", "manual",
+    # Public catalogue APIs with no metering. Deezer needs no credential at all;
+    # Spotify's client-credentials flow is rate-limited but not billed.
+    "deezer", "spotify",
 })
 
 

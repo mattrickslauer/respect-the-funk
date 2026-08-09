@@ -150,7 +150,8 @@ class Claiming(unittest.TestCase):
     def test_completing_a_one_shot_lead_marks_it_done_and_clears_the_lease(self):
         lead_id = self._lead()
         lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
-        fleet.complete(self.conn, lead, fleet.Outcome(summary="did the thing"))
+        fleet.complete(self.conn, lead, fleet.Outcome(summary="did the thing"),
+                      agent_name="a")
         row = self._state(lead_id)
         self.assertEqual(row["state"], "done")
         self.assertIsNone(row["owner_agent"])
@@ -160,7 +161,7 @@ class Claiming(unittest.TestCase):
         """One nullable column is the difference between a crawler and a frontier."""
         lead_id = self._lead(cadence_seconds=900)
         lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
-        fleet.complete(self.conn, lead, fleet.Outcome())
+        fleet.complete(self.conn, lead, fleet.Outcome(), agent_name="a")
         row = self._state(lead_id)
         self.assertEqual(row["state"], "pending")
         self.assertIsNone(row["owner_agent"])
@@ -174,7 +175,7 @@ class Claiming(unittest.TestCase):
         fleet.complete(self.conn, lead, fleet.Outcome(follow_on=[
             {"kind": "downstream", "target_hash": child_hash, "target": "x",
              "adapter": "test", "reason": "because the parent said so"},
-        ]))
+        ]), agent_name="a")
         with self.conn.cursor() as cur:
             cur.execute("SELECT * FROM lead WHERE target_hash = %s", (child_hash,))
             child = cur.fetchone()
@@ -190,17 +191,46 @@ class Claiming(unittest.TestCase):
             lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
             fleet.complete(self.conn, lead, fleet.Outcome(follow_on=[
                 {"kind": "downstream", "target_hash": shared, "target": "x"},
-            ]))
+            ]), agent_name="a")
         with self.conn.cursor() as cur:
             cur.execute("SELECT count(*) AS n FROM lead WHERE target_hash = %s", (shared,))
             self.assertEqual(cur.fetchone()["n"], 1)
+
+    def test_completing_with_an_expired_lease_raises_instead_of_marking_it_done(self):
+        """The fence `complete`, `fail` and `_defer` share: a worker whose lease already
+        expired must not be able to silently finish a lead it no longer owns — that
+        silent no-op is exactly how the measured bug produced `agent_run` rows nobody
+        could explain and duplicate `party_metric` rows behind them.
+        """
+        lead_id = self._lead()
+        lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
+        with self.conn.cursor() as cur:
+            cur.execute("UPDATE lead SET lease_expires_at = now() - INTERVAL '1 minute' "
+                        "WHERE id = %s", (lead_id,))
+        with self.assertRaises(fleet.LeaseLost):
+            fleet.complete(self.conn, lead, fleet.Outcome(), agent_name="a")
+        row = self._state(lead_id)
+        self.assertNotEqual(row["state"], "done",
+                            "an expired lease must not be able to complete the lead")
+
+    def test_failing_with_an_expired_lease_raises_instead_of_touching_it(self):
+        lead_id = self._lead()
+        lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
+        with self.conn.cursor() as cur:
+            cur.execute("UPDATE lead SET lease_expires_at = now() - INTERVAL '1 minute' "
+                        "WHERE id = %s", (lead_id,))
+        with self.assertRaises(fleet.LeaseLost):
+            fleet.fail(self.conn, lead, "provider said 503", agent_name="a")
+        row = self._state(lead_id)
+        self.assertEqual(row["attempts"], 0,
+                         "an expired lease must not be able to record a failure either")
 
     # ---------------------------------------------------------------------- failure
 
     def test_failure_backs_off_and_stays_pending(self):
         lead_id = self._lead()
         lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
-        fleet.fail(self.conn, lead, "provider said 503")
+        fleet.fail(self.conn, lead, "provider said 503", agent_name="a")
         row = self._state(lead_id)
         self.assertEqual(row["state"], "pending")
         self.assertEqual(row["attempts"], 1)
@@ -211,7 +241,7 @@ class Claiming(unittest.TestCase):
     def test_a_permanent_failure_parks_immediately(self):
         lead_id = self._lead()
         lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
-        fleet.fail(self.conn, lead, "malformed target", permanent=True)
+        fleet.fail(self.conn, lead, "malformed target", agent_name="a", permanent=True)
         self.assertEqual(self._state(lead_id)["state"], "failed")
 
     def test_a_poisoned_lead_parks_rather_than_retrying_forever(self):
@@ -219,7 +249,19 @@ class Claiming(unittest.TestCase):
         lead = dict(fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0])
         for attempt in range(fleet.MAX_ATTEMPTS):
             lead["attempts"] = attempt
-            fleet.fail(self.conn, lead, "always throws")
+            # `fail` clears ownership on every non-parked call (it puts the lead back to
+            # `pending`, unowned, for backoff), so calling it again on the same captured
+            # `lead` — deliberately skipping the backoff-delayed re-claim, to exercise
+            # just the parking-threshold logic — needs ownership re-established each
+            # time, or `fail`'s new fence sees a lead it does not own and raises
+            # `LeaseLost` instead of the parking behaviour under test.
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE lead SET owner_agent = 'a', "
+                    "lease_expires_at = now() + INTERVAL '120 seconds' WHERE id = %s",
+                    (lead_id,),
+                )
+            fleet.fail(self.conn, lead, "always throws", agent_name="a")
         self.assertEqual(self._state(lead_id)["state"], "failed")
 
     # ------------------------------------------------------------------- the loop
@@ -311,6 +353,68 @@ class Claiming(unittest.TestCase):
                 "write's insert should have rolled back with its own failure")
 
         self.assertEqual(self._state(lead_id)["state"], "pending")
+
+    def test_a_successful_write_rolls_back_if_the_lease_is_lost_before_completion(self):
+        """The scenario the new transaction actually changes versus pre-fix: the
+        agent's own write succeeds — no exception, a perfectly good `Outcome` — but by
+        the time `complete` runs, another worker has legitimately claimed the same lead
+        (its lease having expired, e.g. during a slow `fetch` that already ran). Pre-fix,
+        the agent's write and `complete`'s silently-ignored no-op `UPDATE` were separate
+        autocommits, so the write survived regardless. Post-fix they are one transaction,
+        `complete`'s fence catches the lost ownership, and the whole thing — including
+        the agent's own write — rolls back with it.
+        """
+        import psycopg
+        from psycopg.rows import dict_row
+
+        lead_id = self._lead()
+        marker_hash = str(uuid.uuid4())
+        other = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True,
+                                row_factory=dict_row)
+
+        def agent(conn, lead, gate):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO lead (tenant_id, scope_kind, kind, adapter, target,
+                                         target_hash, next_action_at)
+                       VALUES (%s, 'tenant', 'marker', 'test', %s, %s, now())""",
+                    (self.tenant, marker_hash, marker_hash),
+                )
+            # A second worker claims this lead on its OWN connection, committing
+            # independently of ours — standing in for a lease that expired during a
+            # `fetch` slow enough to outlive `LEASE_SECONDS`, and a second worker that
+            # picked the lead back up before this one got back to finish it.
+            with other.cursor() as cur:
+                cur.execute(
+                    "UPDATE lead SET owner_agent = 'someone-else', "
+                    "lease_expires_at = now() + INTERVAL '120 seconds' WHERE id = %s",
+                    (lead_id,),
+                )
+            return fleet.Outcome(summary="looked done from here")
+
+        try:
+            fleet.work_once(self.conn, self.tenant, "prober", agent, kinds=["probe"])
+        finally:
+            other.close()
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM lead WHERE target_hash = %s",
+                        (marker_hash,))
+            self.assertEqual(
+                cur.fetchone()["n"], 0,
+                "the agent's write should have rolled back with the lost lease")
+
+        self.assertEqual(
+            self._state(lead_id)["owner_agent"], "someone-else",
+            "the lead must be left exactly as the new owner set it, untouched by us")
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT state, error, cost_micro_usd FROM agent_run "
+                        "WHERE lead_id = %s", (lead_id,))
+            runs = cur.fetchall()
+        self.assertEqual(len(runs), 1, "exactly one agent_run — the lease-lost record")
+        self.assertEqual(runs[0]["state"], "lease_lost")
+        self.assertIn(lead_id, runs[0]["error"])
 
     def test_one_bad_lead_does_not_stop_the_batch(self):
         good = self._lead()

@@ -85,6 +85,23 @@ class LeadFailed(RuntimeError):
         self.permanent = permanent
 
 
+class LeaseLost(RuntimeError):
+    """This worker's lease on a lead was gone by the time it tried to finish with it.
+
+    `LEASE_SECONDS` bounds a `claim`, not a `fetch`: an HTTP call to a source adapter or
+    an embedding provider can run long enough to outlive it, and a second worker can then
+    legitimately claim the same lead while the first is still fetching. `complete`,
+    `fail` and `_defer` each fence their `UPDATE … WHERE id = %s AND owner_agent = %s AND
+    lease_expires_at > now()` and raise this the instant that matches zero rows, instead
+    of returning as though nothing happened — a worker that has lost its lease and does
+    not know it is exactly the silent-duplication failure this module exists to close.
+
+    The row is no longer this worker's to touch. `work_once` catches this separately from
+    `LeadFailed` and does not write to the lead at all — only to `agent_run`, to record
+    whatever cost was actually incurred before the loss was discovered.
+    """
+
+
 @dataclass
 class Outcome:
     """What one agent run produced, for `agent_run` and for the lead's next state.
@@ -197,7 +214,8 @@ def claim(conn: psycopg.Connection, tenant_id: str, agent_name: str, *,
         return list(cur.fetchall())
 
 
-def complete(conn: psycopg.Connection, lead: dict[str, Any], outcome: Outcome) -> None:
+def complete(conn: psycopg.Connection, lead: dict[str, Any], outcome: Outcome, *,
+            agent_name: str) -> None:
     """Finish a lead, and insert whatever it decided should happen next.
 
     One transaction, so a follow-on lead cannot exist without the run that justified it
@@ -209,6 +227,12 @@ def complete(conn: psycopg.Connection, lead: dict[str, Any], outcome: Outcome) -
     A lead with a `cadence_seconds` goes back to `pending` for its next poll rather than
     to `done` — one nullable column is the whole difference between a crawler and a
     frontier, as migration 005 puts it.
+
+    Fenced on `owner_agent` and `lease_expires_at`: `agent_name` must still be the owner,
+    and the lease must still be live, or the `UPDATE` matches zero rows and this raises
+    `LeaseLost` instead of returning. A lease that expired mid-fetch can be reclaimed and
+    finished by someone else before this call runs — silently no-op'ing here is exactly
+    how a lead ends up marked `done` twice, or marked by the wrong worker's data.
     """
     with conn.transaction():
         with conn.cursor() as cur:
@@ -219,8 +243,8 @@ def complete(conn: psycopg.Connection, lead: dict[str, Any], outcome: Outcome) -
                               lease_expires_at = NULL, attempts = 0, last_error = '',
                               next_action_at = now() + (%s || ' seconds')::INTERVAL,
                               updated_at = now()
-                        WHERE id = %s""",
-                    (str(lead["cadence_seconds"]), lead["id"]),
+                        WHERE id = %s AND owner_agent = %s AND lease_expires_at > now()""",
+                    (str(lead["cadence_seconds"]), lead["id"], agent_name),
                 )
             else:
                 cur.execute(
@@ -228,19 +252,28 @@ def complete(conn: psycopg.Connection, lead: dict[str, Any], outcome: Outcome) -
                           SET state = 'done', owner_agent = NULL,
                               lease_expires_at = NULL, last_error = '',
                               updated_at = now()
-                        WHERE id = %s""",
-                    (lead["id"],),
+                        WHERE id = %s AND owner_agent = %s AND lease_expires_at > now()""",
+                    (lead["id"], agent_name),
                 )
+            if cur.rowcount == 0:
+                raise LeaseLost(
+                    f"lead {lead['id']} is no longer owned by {agent_name!r} — its "
+                    "lease expired and it may already be claimed, or completed, by "
+                    "another worker; not marking it done")
             for follow in outcome.follow_on:
                 _insert_lead(cur, lead, follow)
 
 
 def fail(conn: psycopg.Connection, lead: dict[str, Any], error: str,
-         *, permanent: bool = False) -> None:
+         *, agent_name: str, permanent: bool = False) -> None:
     """Reschedule a failed lead with backoff, or park it once it has failed enough.
 
     The error text is written to the row rather than only logged, because the console's
     frontier view is where an operator finds out, and a CloudWatch log group is not.
+
+    Fenced on `owner_agent` and `lease_expires_at`, exactly like `complete` — see its
+    docstring. Raises `LeaseLost` rather than returning if this worker no longer owns
+    the row by the time the failure is being recorded.
     """
     attempts = int(lead.get("attempts", 0)) + 1
     parked = permanent or attempts >= MAX_ATTEMPTS
@@ -250,8 +283,8 @@ def fail(conn: psycopg.Connection, lead: dict[str, Any], error: str,
                 """UPDATE lead
                       SET state = 'failed', owner_agent = NULL, lease_expires_at = NULL,
                           attempts = %s, last_error = %s, updated_at = now()
-                    WHERE id = %s""",
-                (attempts, error[:1000], lead["id"]),
+                    WHERE id = %s AND owner_agent = %s AND lease_expires_at > now()""",
+                (attempts, error[:1000], lead["id"], agent_name),
             )
         else:
             cur.execute(
@@ -260,9 +293,15 @@ def fail(conn: psycopg.Connection, lead: dict[str, Any], error: str,
                           attempts = %s, last_error = %s,
                           next_action_at = now() + (%s || ' seconds')::INTERVAL,
                           updated_at = now()
-                    WHERE id = %s""",
-                (attempts, error[:1000], str(backoff_seconds(attempts)), lead["id"]),
+                    WHERE id = %s AND owner_agent = %s AND lease_expires_at > now()""",
+                (attempts, error[:1000], str(backoff_seconds(attempts)), lead["id"],
+                 agent_name),
             )
+        if cur.rowcount == 0:
+            raise LeaseLost(
+                f"lead {lead['id']} is no longer owned by {agent_name!r} — its lease "
+                "expired before the failure could be recorded against it; not "
+                "touching it")
 
 
 def _insert_lead(cur: psycopg.Cursor, parent: dict[str, Any],
@@ -369,6 +408,57 @@ def _writer(conn: psycopg.Connection, agent: Agent | NetworkAgent,
     return lambda: agent(conn, lead, gate)
 
 
+def _reacquire(conn: psycopg.Connection, lead: dict[str, Any], agent_name: str) -> None:
+    """Re-validate ownership of a lead, and lock its row, before the write phase touches
+    anything.
+
+    Not required for the correctness `complete`'s own fence already provides — that
+    fence, checked at the end of the same transaction `_reacquire` opens, is what
+    actually stops a lease-losing worker's writes from becoming durable: raising there
+    rolls back the *whole* transaction, including everything the write phase already did.
+    This check exists for a narrower, still-real reason. Without it, a worker whose lease
+    already expired before `fetch` returned still runs its entire write phase — every
+    `INSERT` an agent can produce — only to discover the loss and roll all of it back on
+    the very last statement. That is real, wasted database work, every single time it
+    happens. `FOR UPDATE` also takes a row lock that makes `claim`'s `FOR UPDATE SKIP
+    LOCKED` skip this row for as long as this transaction holds it open, which closes the
+    much narrower window — the write phase only, typically milliseconds — during which a
+    second worker could claim it while this one is still writing. The long pole, the
+    network fetch, already ran with no transaction and no lock at all, by design, and
+    nothing here changes that: a lease lost *during* `fetch` is caught here, at the start
+    of the very next statement, not prevented.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT 1 FROM lead
+                WHERE id = %s AND owner_agent = %s AND lease_expires_at > now()
+                FOR UPDATE""",
+            (lead["id"], agent_name),
+        )
+        if cur.fetchone() is None:
+            raise LeaseLost(
+                f"lead {lead['id']} is no longer owned by {agent_name!r} — its lease "
+                "expired before any write was attempted; discarding this run without "
+                "writing anything")
+
+
+def _record_lease_lost(conn: psycopg.Connection, lead: dict[str, Any], agent_name: str,
+                       gate: spend.Gate, started: float, exc: LeaseLost) -> None:
+    """Record what happened when a lease was gone before a run could finish.
+
+    Runs in a transaction of its own — whichever transaction discovered the loss has
+    already rolled back by the time this is called. The lead itself is not touched: it
+    belongs to whoever holds it now, and writing to it here would just be this same race
+    again. `gate.incurred_usd`, though, is real money the network fetch already spent
+    before the loss was discovered, and it must land in `agent_run` regardless —
+    `spend.spent_today` sums that column, and a ceiling that only sees the runs that
+    happened to finish is a ceiling the next retry can quietly walk through.
+    """
+    with conn.transaction():
+        record_run(conn, lead, agent_name, Outcome(cost_usd=gate.incurred_usd), gate,
+                   state="lease_lost", error=str(exc), started=started)
+
+
 def work_once(conn: psycopg.Connection, tenant_id: str, agent_name: str,
               agent: Agent | NetworkAgent, *, kinds: Sequence[str],
               batch: int = BATCH) -> int:
@@ -380,14 +470,26 @@ def work_once(conn: psycopg.Connection, tenant_id: str, agent_name: str,
     Each lead is independent: one that throws is failed and the rest still run. A batch
     that aborts wholesale on the first bad row is how one malformed target stops a fleet.
 
-    The agent's writes, the `agent_run` row and the lead's completion commit together —
-    `with conn.transaction()` spans all three, so a crash between "the agent succeeded"
-    and "the lead is marked done" cannot happen: either every write in that span is
-    durable or none of it is, and a lead that looks unfinished is claimable again rather
-    than quietly re-run by the next worker that asks. `db.py` opens the connection in
-    autocommit, so without this each of those was its own commit, and that gap is exactly
-    what produced three `agent_run` rows with `state = 'ok'` for one lead before it
-    finally reached `done`, and three duplicate `party_metric` rows alongside them.
+    What this guarantees: the write phase, `record_run` and `complete`/`fail`/`_defer`
+    commit together, in one `with conn.transaction()` per lead. `db.py` opens the
+    connection in autocommit, so without this each of those was its own commit, and that
+    gap is exactly what produced three `agent_run` rows with `state = 'ok'` for one lead
+    before it finally reached `done`, and three duplicate `party_metric` rows alongside
+    them — a crash, or a lost lease, between "the write ran" and "the lead is marked
+    done" cannot leave a durable write with no completed lead: either the whole span
+    lands or none of it does.
+
+    What this does *not* guarantee: that the write phase only ever runs once per lead.
+    `fetch` can outlive its own lease — `embed_batch` and the source adapters make one
+    HTTP call per batch, and a big one can run past `LEASE_SECONDS` — and a second worker
+    can legitimately claim the same lead while the first is still fetching. When that
+    happens, `complete`/`fail`/`_defer` fence on `owner_agent` and `lease_expires_at`; the
+    loser of the race finds its `UPDATE` matches zero rows, raises `LeaseLost`, and its
+    entire write-phase transaction rolls back — so no duplicate row lands in the
+    database. But the loser's `fetch` already ran and, for a paid provider, already spent
+    money before that discovery; this function cannot prevent that fetch from happening,
+    only make sure its cost is still recorded (`state = 'lease_lost'` in `agent_run`,
+    via `gate.incurred_usd`) and that its writes never land.
 
     That transaction never spans a network call, because `_writer` runs the agent's fetch
     phase (if it has one) before the transaction opens. Only the write phase — database
@@ -400,41 +502,62 @@ def work_once(conn: psycopg.Connection, tenant_id: str, agent_name: str,
         try:
             write = _writer(conn, agent, lead, gate)
             with conn.transaction():
+                _reacquire(conn, lead, agent_name)
                 outcome = write()
                 record_run(conn, lead, agent_name, outcome, gate,
                            state="ok", error="", started=started)
-                complete(conn, lead, outcome)
+                complete(conn, lead, outcome, agent_name=agent_name)
+        except LeaseLost as exc:
+            _record_lease_lost(conn, lead, agent_name, gate, started, exc)
         except LeadFailed as exc:
-            with conn.transaction():
-                record_run(conn, lead, agent_name, Outcome(), gate,
-                           state="failed", error=str(exc), started=started)
-                fail(conn, lead, str(exc), permanent=exc.permanent)
+            try:
+                with conn.transaction():
+                    record_run(conn, lead, agent_name, Outcome(cost_usd=gate.incurred_usd),
+                               gate, state="failed", error=str(exc), started=started)
+                    fail(conn, lead, str(exc), agent_name=agent_name,
+                        permanent=exc.permanent)
+            except LeaseLost as lost:
+                _record_lease_lost(conn, lead, agent_name, gate, started, lost)
         except spend.SpendRefused as exc:
             # Not a failure of the work — a decision not to pay for it. Reschedule
             # rather than counting it against `attempts`, because raising the ceiling
             # should let it run, not leave it parked at four strikes.
-            with conn.transaction():
-                record_run(conn, lead, agent_name, Outcome(), gate,
-                           state="refused", error=str(exc), started=started)
-                _defer(conn, lead)
+            try:
+                with conn.transaction():
+                    record_run(conn, lead, agent_name, Outcome(cost_usd=gate.incurred_usd),
+                               gate, state="refused", error=str(exc), started=started)
+                    _defer(conn, lead, agent_name=agent_name)
+            except LeaseLost as lost:
+                _record_lease_lost(conn, lead, agent_name, gate, started, lost)
         except Exception as exc:  # noqa: BLE001 — an agent must not take the fleet down
-            with conn.transaction():
-                record_run(conn, lead, agent_name, Outcome(), gate,
-                           state="error", error=repr(exc), started=started)
-                fail(conn, lead, repr(exc))
+            try:
+                with conn.transaction():
+                    record_run(conn, lead, agent_name, Outcome(cost_usd=gate.incurred_usd),
+                               gate, state="error", error=repr(exc), started=started)
+                    fail(conn, lead, repr(exc), agent_name=agent_name)
+            except LeaseLost as lost:
+                _record_lease_lost(conn, lead, agent_name, gate, started, lost)
     return len(leads)
 
 
-def _defer(conn: psycopg.Connection, lead: dict[str, Any]) -> None:
-    """Put a lead back without counting a failure against it."""
+def _defer(conn: psycopg.Connection, lead: dict[str, Any], *, agent_name: str) -> None:
+    """Put a lead back without counting a failure against it.
+
+    Fenced exactly like `complete` and `fail` — see `complete`'s docstring. Raises
+    `LeaseLost` rather than returning if this worker no longer owns the row.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """UPDATE lead
                   SET state = 'pending', owner_agent = NULL, lease_expires_at = NULL,
                       next_action_at = now() + INTERVAL '10 minutes', updated_at = now()
-                WHERE id = %s""",
-            (lead["id"],),
+                WHERE id = %s AND owner_agent = %s AND lease_expires_at > now()""",
+            (lead["id"], agent_name),
         )
+        if cur.rowcount == 0:
+            raise LeaseLost(
+                f"lead {lead['id']} is no longer owned by {agent_name!r} — its lease "
+                "expired before the refusal could be deferred; not touching it")
 
 
 @contextmanager

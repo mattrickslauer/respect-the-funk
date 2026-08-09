@@ -209,6 +209,15 @@ class Gate:
     policy: Policy
     already_spent_usd: Decimal
     refused: list[tuple[str, Decimal, str]]
+    #: What *this* gate has actually spent via `record`, separate from
+    #: `already_spent_usd`'s running total (which starts from the day's prior spend and
+    #: also grows by the same amount). A caller that fails partway through a run — an
+    #: agent that embeds three batches and then hits `SpendRefused` on the fourth, or
+    #: raises `LeadFailed` after — needs *this* number: the cost already incurred, not
+    #: yet reflected in any committed row, that must still land in `agent_run` even
+    #: though the write it would have paired with is about to roll back. See
+    #: `fleet.work_once`.
+    incurred_usd: Decimal = Decimal("0")
 
     @classmethod
     def open(cls, conn: psycopg.Connection | None, tenant_id: str | None) -> "Gate":
@@ -260,9 +269,13 @@ class Gate:
 
         Kept separate from `check` so an estimate is never mistaken for a charge: a call
         that was allowed and then failed on the network cost nothing, and counting it
-        would spend the ceiling on requests that never billed.
+        would spend the ceiling on requests that never billed. Updates both totals:
+        `already_spent_usd` so the *next* `check` in this run sees it, and
+        `incurred_usd` so a caller that fails later can still recover exactly how much
+        this run spent, independent of whatever it started the day already owing.
         """
         self.already_spent_usd += cost_usd
+        self.incurred_usd += cost_usd
 
     def summary(self) -> dict[str, Any]:
         """What to write into `agent_run`. Refusals are data, not a log line."""
@@ -271,6 +284,7 @@ class Gate:
             "dry_run": self.policy.dry_run,
             "ceiling_usd": str(self.policy.daily_ceiling_usd),
             "spent_usd": str(self.already_spent_usd),
+            "incurred_usd": str(self.incurred_usd),
             "refused": [
                 {"key": k, "would_have_cost_usd": str(c), "reason": r}
                 for k, c, r in self.refused

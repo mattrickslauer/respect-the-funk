@@ -476,7 +476,6 @@ def _write_find_counterparties(conn: psycopg.Connection, lead: dict[str, Any],
     transaction as `agent_run` and the lead's completion.
     """
     platform, harvest, cap = prepared["platform"], prepared["harvest"], prepared["cap"]
-    party_id = lead["party_id"]
     tenant_id = lead["tenant_id"]
 
     written = 0

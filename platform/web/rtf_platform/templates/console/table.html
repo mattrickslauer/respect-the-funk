@@ -20,8 +20,14 @@
     <table>
       <thead>
         <tr>
+          {# `c-` prefix: a column's cls is an internal enum chosen by whoever wrote the
+             View, and it lands in the same global class namespace as the components.
+             Unprefixed, `b` collided with the button class and `chip` with the chip
+             class, so name cells rendered as buttons and chip cells fell out of the
+             table's column layout. Namespacing makes that collision impossible rather
+             than fixing the two that happened to bite. #}
           {% for c in view.cols %}
-            <th class="{{ c.cls }}" {% if c.width %}style="width:{{ c.width }}"{% endif %}>{{ c.label }}</th>
+            <th class="c-{{ c.cls }}" {% if c.width %}style="width:{{ c.width }}"{% endif %}>{{ c.label }}</th>
           {% endfor %}
         </tr>
       </thead>
@@ -32,8 +38,12 @@
           <tr class="{{ 'on' if sel and row.id == sel.id }}"
               onclick="location='?sel={{ row.id }}'">
             {% for c in view.cols %}
-              <td class="{{ c.cls }}">
-                {% set val = row[c.key] %}
+              {% set val = row[c.key] %}
+              {# A cell narrow enough to ellipsize must still be readable, so anything
+                 word-bearing carries its full value as a tooltip. Bars, sparks and
+                 numbers are excluded — a tooltip reading "0" is noise, not recovery. #}
+              <td class="c-{{ c.cls }}"
+                  {% if c.cls in ('chip', 'b', 'mono', '') %}title="{{ val }}"{% endif %}>
                 {% if c.cls == 'chip' %}
                   <span class="chip {{ chip_tone(val) }}">{{ val }}</span>
                 {% elif c.cls == 'prov' %}

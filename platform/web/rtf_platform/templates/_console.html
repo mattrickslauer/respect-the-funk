@@ -121,34 +121,49 @@
 
     /* ---- table -------------------------------------------------------- */
     .scroll { overflow:auto; flex:1; }
-    table { border-collapse:collapse; width:100%; }
+    /* `fixed` is load-bearing, not a preference. Under the default `auto` layout the
+       browser sizes columns from content and treats the declared widths as hints, so a
+       cell holding an inline-block chip collapsed to a sliver — a border with nothing
+       legible inside it. Fixed layout makes the per-column widths in `cols` the actual
+       contract, which is also what lets ellipsis work at all. */
+    table { border-collapse:collapse; width:100%; table-layout:fixed; }
     thead th {
       position:sticky; top:0; z-index:1; background:var(--sunk);
       text-align:left; font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
       color:var(--faint); font-weight:600; padding:.4rem .55rem;
-      border-bottom:1px solid var(--line); white-space:nowrap;
+      border-bottom:1px solid var(--line);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     }
     tbody td {
       padding:.32rem .55rem; border-bottom:1px solid var(--line);
-      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:0;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     }
     tbody tr { height:26px; }
     tbody tr:hover td { background:var(--panel); }
     tbody tr.on td { background:var(--sel); }
     tbody tr.on td:first-child { box-shadow:inset 2px 0 0 var(--selink); }
-    td.b { font-weight:560; }
-    td.num { text-align:right; font-family:ui-monospace,monospace; font-size:11.5px; }
-    td.mono { font-family:ui-monospace,monospace; font-size:11.5px; color:var(--dim); }
-    td.bar, td.spark { font-family:ui-monospace,monospace; font-size:11px; letter-spacing:-.5px; }
-    td.bar { color:var(--info); }
-    td.spark { color:var(--dim); }
+    td.c-b { font-weight:560; }
+    td.c-num { text-align:right; font-family:ui-monospace,monospace; font-size:11.5px; }
+    td.c-mono { font-family:ui-monospace,monospace; font-size:11.5px; color:var(--dim); }
+    td.c-bar, td.c-spark { font-family:ui-monospace,monospace; font-size:11px; letter-spacing:-.5px; }
+    td.c-bar { color:var(--info); }
+    td.c-spark { color:var(--dim); }
+    /* A numeric header sitting left of its own right-aligned column reads as a
+       different column. Header and values share an edge. */
+    th.c-num { text-align:right; }
     .empty { padding:3rem 1rem; text-align:center; color:var(--faint); font-size:12px; }
 
     /* ---- chips -------------------------------------------------------- */
+    /* Stays unscoped so a chip can be drawn on any element; the `c-` prefix on cell
+       classes is what keeps a chip *column* from accidentally matching this rule. */
     .chip {
       display:inline-block; font-size:10px; padding:1px 6px; border-radius:3px;
       border:1px solid var(--line2); color:var(--dim);
       font-family:ui-monospace,monospace; letter-spacing:.02em;
+      /* A chip narrower than its word must lose letters, not lose the word. Without
+         these, the box clips mid-border and reads as an empty control. */
+      max-width:100%; overflow:hidden; text-overflow:ellipsis;
+      white-space:nowrap; vertical-align:middle;
     }
     .chip.ok{color:var(--ok);border-color:var(--ok)} .chip.warn{color:var(--warn);border-color:var(--warn)}
     .chip.err{color:var(--err);border-color:var(--err)} .chip.info{color:var(--info);border-color:var(--info)}

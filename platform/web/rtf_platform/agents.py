@@ -31,7 +31,7 @@ from typing import Any
 
 import psycopg
 
-from rtf_platform import embed, fleet, repo, sources, spend
+from rtf_platform import embed, fleet, lessons, repo, sources, spend
 
 #: Target chunk size in characters. ~400 tokens at four characters per token, which is
 #: large enough to carry an argument and small enough that a hit points somewhere
@@ -41,6 +41,12 @@ CHUNK_CHARS = 1600
 #: Overlap between adjacent chunks, so a claim split across a boundary is still findable
 #: whole from one side of it.
 OVERLAP_CHARS = 200
+
+#: How many candidates R1 fetches before the rerank sees them. Wider than the caller's
+#: `limit`, because a rerank that can only reorder the rows it is going to return cannot
+#: promote anybody into them — and promoting a good match that similarity alone ranked
+#: 24th is the entire point of reading the lessons.
+SHORTLIST_CANDIDATES = 50
 
 
 def content_hash(text: str) -> str:
@@ -639,6 +645,13 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
 
     The query vector is the artist's own profile embedding, so this is genuinely
     "who resembles the audience this act already has", not a keyword match on genre.
+
+    Two passes. R1 is the vector search above — every predicate an equality on a prefix
+    column, resolving to a `vector search` node with `prefix spans`. R2 is
+    `lessons.retrieve_for`, and the rerank it feeds is what makes this function's answer
+    depend on what happened last time. A row comes back carrying `adjusted` and
+    `applied`, and `applied` names every lesson that moved it, because the console's
+    inspector has to be able to say why.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -665,9 +678,33 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
                   AND p.contact_state = 'contactable'
                 ORDER BY p.profile_embedding <=> %s::VECTOR(1024)
                 LIMIT %s""",
-            (artist["vec"], tenant_id, artist["embedding_model"], artist["vec"], limit),
+            (artist["vec"], tenant_id, artist["embedding_model"], artist["vec"],
+             SHORTLIST_CANDIDATES),
         )
-        return list(cur.fetchall())
+        candidates = [dict(row) for row in cur.fetchall()]
+
+    # R2. The second pass, and the reason `SCOPE-RESET §1` puts the party at the root:
+    # without it this function returns the same answer on the hundredth campaign as on
+    # the first.
+    applicable = lessons.retrieve_for(
+        conn, tenant_id,
+        query_vector_literal=artist["vec"],
+        model=artist["embedding_model"],
+        candidate_ids=[str(row["id"]) for row in candidates],
+    )
+    ranked = lessons.rerank(candidates, applicable)[:limit]
+
+    # `hit_count` is what tells an operator which lessons earn their place. Incremented
+    # here rather than in the rerank, because the rerank is pure and must stay that way.
+    spent = {entry["lesson_id"] for row in ranked for entry in row["applied"]}
+    if spent:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE lesson SET hit_count = hit_count + 1 WHERE id = ANY(%s)",
+                (list(spent),),
+            )
+
+    return ranked
 
 
 #: Which agent handles which lead kind. The fleet reads this; no agent reads it.

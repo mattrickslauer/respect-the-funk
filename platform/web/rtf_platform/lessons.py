@@ -47,6 +47,12 @@ LESSON_WEIGHT = 0.05
 #: it is in scope for the whole run.
 GENERAL_SCOPES = ("party_kind", "channel", "global")
 
+#: How far outside its legal range a number may stray before `write` calls it a bug
+#: rather than rounding. A ratio that lands at 1.0000001 is arithmetic and gets clamped;
+#: a confidence of 50 is a caller working in percent, and storing 1.0 for it hides the
+#: mistake until somebody asks why every lesson is maximally confident.
+CLAMP_EPSILON = 1e-6
+
 
 def applies(lesson: dict[str, Any], candidate: dict[str, Any]) -> bool:
     """Does this lesson bear on this candidate?
@@ -57,6 +63,19 @@ def applies(lesson: dict[str, Any], candidate: dict[str, Any]) -> bool:
     if lesson["scope_kind"] == "party":
         return str(lesson["scope_id"]) == str(candidate["id"])
     return lesson["scope_kind"] in GENERAL_SCOPES
+
+
+def _bounded(value: float, low: float, high: float, name: str) -> float:
+    """Clamp rounding error into range; refuse anything further out.
+
+    The distinction this draws is the whole point: absorbing noise keeps a good lesson,
+    and absorbing a scale error keeps a wrong one forever.
+    """
+    number = float(value)
+    if number < low - CLAMP_EPSILON or number > high + CLAMP_EPSILON:
+        raise ValueError(
+            f"{name}={number} is outside [{low}, {high}] by more than rounding error")
+    return max(low, min(high, number))
 
 
 def rerank(candidates: list[dict[str, Any]], lessons: list[dict[str, Any]], *,
@@ -84,7 +103,10 @@ def rerank(candidates: list[dict[str, Any]], lessons: list[dict[str, Any]], *,
             total += shift
             shifts.append({"lesson_id": str(lesson["id"]),
                            "text": lesson["text"],
-                           "shift": abs(shift)})
+                           # Signed. A consumer rendering this has to be able to say
+                           # "sank by 0.05 — ghosted twice" rather than only "0.05".
+                           # Positive lifted the candidate, negative sank it.
+                           "shift": shift})
 
         # Clamped at zero: a cosine distance is non-negative, and anything downstream
         # reading a negative one as a distance is now quietly wrong.
@@ -132,9 +154,58 @@ def write(conn: psycopg.Connection, tenant_id: str, *, scope_kind: str, scope_id
                 RETURNING id""",
                 (tenant_id, scope_kind, scope_id, text,
                  psycopg.types.json.Jsonb(evidence),
-                 max(0.0, min(1.0, float(confidence))),
-                 max(-1.0, min(1.0, float(valence))),
+                 _bounded(confidence, 0.0, 1.0, "confidence"),
+                 _bounded(valence, -1.0, 1.0, "valence"),
                  vectors[0].literal(), provider.model,
                  getattr(provider, "model_version", ""), supersedes_id),
             )
             return str(cur.fetchone()["id"])
+
+
+def retrieve_for(conn: psycopg.Connection, tenant_id: str, *,
+                 query_vector_literal: str, model: str,
+                 candidate_ids: list[str], limit: int = 10) -> list[dict[str, Any]]:
+    """Every lesson bearing on this shortlist: the general ones and the named ones.
+
+    Two queries, because they are two different questions and only one of them is a
+    similarity question.
+
+      * **General** — `party_kind`, `channel` and `global` lessons, by ANN over
+        `lesson_semantic`. `scope_kind IN (…)` is accelerated on a prefix column the same
+        way equality is; `docs/reference/COCKROACHDB-AI.md` has the constraint.
+      * **Named** — lessons about the specific parties R1 returned, by id over
+        `lesson_by_scope`. We already know who we mean; asking the vector index to
+        rediscover them would be slower and could miss one.
+
+    Superseded rows are dropped from each result separately, so a correction retrieved
+    without its predecessor still counts.
+    """
+    general: list[dict[str, Any]] = []
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id, scope_kind, scope_id, text, valence, confidence,
+                      supersedes_id, embedding <=> %s::VECTOR(1024) AS distance
+                 FROM lesson
+                WHERE tenant_id = %s AND model = %s
+                  AND scope_kind IN ('party_kind', 'channel', 'global')
+                ORDER BY embedding <=> %s::VECTOR(1024)
+                LIMIT %s""",
+            (query_vector_literal, tenant_id, model, query_vector_literal, limit),
+        )
+        general = list(cur.fetchall())
+
+    named: list[dict[str, Any]] = []
+    if candidate_ids:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, scope_kind, scope_id, text, valence, confidence,
+                          supersedes_id, NULL::FLOAT AS distance
+                     FROM lesson
+                    WHERE tenant_id = %s AND scope_kind = 'party'
+                      AND scope_id = ANY(%s)
+                    ORDER BY created_at DESC""",
+                (tenant_id, [str(cid) for cid in candidate_ids]),
+            )
+            named = list(cur.fetchall())
+
+    return heads(general) + heads(named)

@@ -84,7 +84,8 @@ class Rerank(unittest.TestCase):
         self.assertEqual(len(applied), 1)
         self.assertEqual(applied[0]["lesson_id"], "L-42")
         self.assertEqual(applied[0]["text"], "ghosted twice")
-        self.assertAlmostEqual(applied[0]["shift"], 0.05)
+        self.assertAlmostEqual(applied[0]["shift"], -0.05,
+                               msg="a discouraging lesson reports a negative shift")
 
     def test_an_unaffected_candidate_reports_no_lessons(self):
         out = lessons.rerank([candidate("a", 0.5), candidate("b", 0.5)],
@@ -104,6 +105,16 @@ class Rerank(unittest.TestCase):
         piles = [lesson("party", "a", 1.0, lid=f"l{i}") for i in range(50)]
         out = lessons.rerank([candidate("a", 0.1)], piles, weight=0.05)
         self.assertGreaterEqual(out[0]["adjusted"], 0.0)
+
+    def test_shift_sign_says_which_way_the_lesson_pushed(self):
+        # The inspector renders this. Magnitude alone cannot distinguish "we like them
+        # because they replied" from "we avoid them because they did not".
+        good = lessons.rerank([candidate("a", 0.5)],
+                              [lesson("party", "a", 1.0)], weight=0.05)
+        bad = lessons.rerank([candidate("a", 0.5)],
+                             [lesson("party", "a", -1.0)], weight=0.05)
+        self.assertGreater(good[0]["applied"][0]["shift"], 0)
+        self.assertLess(bad[0]["applied"][0]["shift"], 0)
 
 
 class Heads(unittest.TestCase):
@@ -138,3 +149,106 @@ class Heads(unittest.TestCase):
     def test_order_is_preserved(self):
         rows = [{"id": "a", "supersedes_id": None}, {"id": "b", "supersedes_id": None}]
         self.assertEqual([r["id"] for r in lessons.heads(rows)], ["a", "b"])
+
+
+class Bounds(unittest.TestCase):
+    """Rounding error is absorbed; a misunderstanding is refused."""
+
+    def test_float_noise_is_clamped(self):
+        self.assertEqual(lessons._bounded(1.0000001, 0.0, 1.0, "confidence"), 1.0)
+        self.assertEqual(lessons._bounded(-1.0000001, -1.0, 1.0, "valence"), -1.0)
+
+    def test_a_value_in_range_is_unchanged(self):
+        self.assertEqual(lessons._bounded(0.5, 0.0, 1.0, "confidence"), 0.5)
+
+    def test_a_scale_error_is_refused_rather_than_flattened(self):
+        # A caller working in percent must not silently become "maximally confident".
+        with self.assertRaises(ValueError) as caught:
+            lessons._bounded(50, 0.0, 1.0, "confidence")
+        self.assertIn("confidence=50", str(caught.exception))
+
+    def test_the_bound_names_itself_in_the_error(self):
+        with self.assertRaises(ValueError) as caught:
+            lessons._bounded(-3, -1.0, 1.0, "valence")
+        self.assertIn("valence", str(caught.exception))
+
+
+import os
+import uuid
+
+HAVE_DB = bool(os.environ.get("DATABASE_URL"))
+
+
+@unittest.skipUnless(HAVE_DB, "DATABASE_URL unset — cluster tests skipped")
+class RetrievalIsScoped(unittest.TestCase):
+    """Against the real cluster, in a tenant created and dropped per test.
+
+    What cannot be faked: that a lesson written under one embedding model is invisible to
+    a retrieval carrying another. A fake returning rows from a dict proves the fake works.
+    """
+
+    def setUp(self) -> None:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        self.conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True,
+                                    row_factory=dict_row)
+        self.tenant = str(uuid.uuid4())
+        with self.conn.cursor() as cur:
+            cur.execute("INSERT INTO tenant (id, slug, name) VALUES (%s, %s, %s)",
+                        (self.tenant, f"test-lesson-{self.tenant[:8]}", "lesson test"))
+
+    def tearDown(self) -> None:
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM tenant WHERE id = %s", (self.tenant,))
+        self.conn.close()
+
+    def _vector(self, fill: float) -> str:
+        return "[" + ",".join([str(fill)] * 1024) + "]"
+
+    def _insert(self, *, model: str, scope_kind: str = "global",
+                scope_id: str = "", text: str = "a lesson") -> str:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO lesson (tenant_id, scope_kind, scope_id, text,
+                                       valence, confidence, embedding, model)
+                   VALUES (%s, %s, %s, %s, 0.5, 0.9, %s::VECTOR(1024), %s)
+                RETURNING id""",
+                (self.tenant, scope_kind, scope_id, text, self._vector(0.1), model),
+            )
+            return str(cur.fetchone()["id"])
+
+    def test_a_lesson_from_another_model_is_invisible(self):
+        from rtf_platform import lessons as mod
+        self._insert(model="other-model")
+        found = mod.retrieve_for(self.conn, self.tenant,
+                                 query_vector_literal=self._vector(0.1),
+                                 model="the-model", candidate_ids=[])
+        self.assertEqual(found, [],
+                         "a vector from a different model is noise, not a near neighbour")
+
+    def test_a_lesson_from_the_same_model_is_found(self):
+        from rtf_platform import lessons as mod
+        self._insert(model="the-model", text="found me")
+        found = mod.retrieve_for(self.conn, self.tenant,
+                                 query_vector_literal=self._vector(0.1),
+                                 model="the-model", candidate_ids=[])
+        self.assertIn("found me", [row["text"] for row in found])
+
+    def test_a_party_lesson_is_fetched_by_id_not_by_similarity(self):
+        # A party-scoped lesson with a deliberately distant embedding must still come
+        # back when that party is a candidate — we know who we mean.
+        from rtf_platform import lessons as mod
+        party_id = str(uuid.uuid4())
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO lesson (tenant_id, scope_kind, scope_id, text,
+                                       valence, confidence, embedding, model)
+                   VALUES (%s, 'party', %s, 'ghosted twice', -1, 0.9,
+                           %s::VECTOR(1024), 'the-model')""",
+                (self.tenant, party_id, self._vector(0.9)),
+            )
+        found = mod.retrieve_for(self.conn, self.tenant,
+                                 query_vector_literal=self._vector(0.1),
+                                 model="the-model", candidate_ids=[party_id])
+        self.assertIn("ghosted twice", [row["text"] for row in found])

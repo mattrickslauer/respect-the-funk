@@ -30,6 +30,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import psycopg
+
+from rtf_platform import embed, spend
+
 #: How far one fully-confident, fully-signed lesson moves a candidate's cosine distance.
 #:
 #: 0.05 against distances that typically run 0.1–0.6: enough to reorder neighbours that
@@ -89,3 +93,48 @@ def rerank(candidates: list[dict[str, Any]], lessons: list[dict[str, Any]], *,
 
     out.sort(key=lambda row: row["adjusted"])
     return out
+
+
+def heads(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop every row that another row in this result supersedes.
+
+    Resolved within the result set rather than by a query, because retrieval is a top-k
+    and the superseded row may not have scored at all. A row whose `supersedes_id` points
+    outside the set is still current — it replaced something that simply is not here.
+    """
+    replaced = {str(row["supersedes_id"]) for row in rows if row.get("supersedes_id")}
+    return [row for row in rows if str(row["id"]) not in replaced]
+
+
+def write(conn: psycopg.Connection, tenant_id: str, *, scope_kind: str, scope_id: str,
+          text: str, valence: float, confidence: float, evidence: dict[str, Any],
+          gate: spend.Gate, supersedes_id: str | None = None) -> str:
+    """Record something learned, embedded and searchable at commit.
+
+    The embedding and the row are written in one transaction, which is
+    `PLATFORM-SPEC §1`'s stated reason for this database over a separate vector service:
+    there is no window in which a lesson exists but cannot be retrieved. An agent that
+    writes a lesson and immediately reranks sees it.
+
+    `valence` is clamped rather than rejected. A caller computing it from a ratio can
+    land at 1.0000001, and refusing the whole lesson over float noise loses the lesson.
+    """
+    provider = embed.load()
+    vectors, _ = embed.embed_batch(gate, provider, [text])
+
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO lesson (tenant_id, scope_kind, scope_id, text,
+                                       evidence_json, confidence, valence,
+                                       embedding, model, model_version, supersedes_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s::VECTOR(1024), %s, %s, %s)
+                RETURNING id""",
+                (tenant_id, scope_kind, scope_id, text,
+                 psycopg.types.json.Jsonb(evidence),
+                 max(0.0, min(1.0, float(confidence))),
+                 max(-1.0, min(1.0, float(valence))),
+                 vectors[0].literal(), provider.model,
+                 getattr(provider, "model_version", ""), supersedes_id),
+            )
+            return str(cur.fetchone()["id"])

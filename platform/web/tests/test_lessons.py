@@ -104,3 +104,37 @@ class Rerank(unittest.TestCase):
         piles = [lesson("party", "a", 1.0, lid=f"l{i}") for i in range(50)]
         out = lessons.rerank([candidate("a", 0.1)], piles, weight=0.05)
         self.assertGreaterEqual(out[0]["adjusted"], 0.0)
+
+
+class Heads(unittest.TestCase):
+    """A superseded lesson must never reach the rerank.
+
+    `SCOPE-RESET §2a` rule 1 says revisions are appended and the current value is the
+    head of the chain. If retrieval returns both a lesson and the correction that
+    replaced it, the rerank applies both and the correction is worth nothing.
+    """
+
+    def test_an_unsuperseded_row_is_a_head(self):
+        rows = [{"id": "a", "supersedes_id": None}]
+        self.assertEqual([r["id"] for r in lessons.heads(rows)], ["a"])
+
+    def test_a_superseded_row_is_dropped(self):
+        rows = [{"id": "old", "supersedes_id": None},
+                {"id": "new", "supersedes_id": "old"}]
+        self.assertEqual([r["id"] for r in lessons.heads(rows)], ["new"])
+
+    def test_a_chain_of_three_resolves_to_one_head(self):
+        rows = [{"id": "v1", "supersedes_id": None},
+                {"id": "v2", "supersedes_id": "v1"},
+                {"id": "v3", "supersedes_id": "v2"}]
+        self.assertEqual([r["id"] for r in lessons.heads(rows)], ["v3"])
+
+    def test_a_row_superseding_something_absent_is_still_a_head(self):
+        # Retrieval is a top-k: the row it replaced may simply not have scored. The
+        # replacement is still current, and dropping it would lose the lesson entirely.
+        rows = [{"id": "v2", "supersedes_id": "v1-not-in-this-result"}]
+        self.assertEqual([r["id"] for r in lessons.heads(rows)], ["v2"])
+
+    def test_order_is_preserved(self):
+        rows = [{"id": "a", "supersedes_id": None}, {"id": "b", "supersedes_id": None}]
+        self.assertEqual([r["id"] for r in lessons.heads(rows)], ["a", "b"])

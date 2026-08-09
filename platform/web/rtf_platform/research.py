@@ -254,9 +254,16 @@ def runs(conn: psycopg.Connection, tenant_id: str) -> View:
 
     counts = _one(conn, """
         SELECT count(*) AS total,
-               count(*) FILTER (WHERE state = 'error')   AS errors,
-               count(*) FILTER (WHERE state = 'refused') AS refused,
-               coalesce(sum(cost_micro_usd), 0)          AS micro
+               -- `failed` is an agent raising `LeadFailed`; `error` is one raising
+               -- anything else. Both are the work not getting done, and counting only
+               -- the second made a frontier full of 503s look clean.
+               count(*) FILTER (WHERE state IN ('error', 'failed')) AS errors,
+               count(*) FILTER (WHERE state = 'refused')            AS refused,
+               -- A run whose claim stopped being current: money spent on a fetch whose
+               -- writes were thrown away. Invisible until it had its own stat, which is
+               -- how a livelock burning the ceiling looked like a busy fleet.
+               count(*) FILTER (WHERE state = 'lease_lost')         AS lease_lost,
+               coalesce(sum(cost_micro_usd), 0)                     AS micro
           FROM agent_run
          WHERE tenant_id = %s AND started_at > now() - INTERVAL '24 hours'""",
         (tenant_id,))
@@ -301,6 +308,7 @@ def runs(conn: psycopg.Connection, tenant_id: str) -> View:
         stats=(("runs / 24h", str(counts.get("total", 0)), ""),
                ("errors", str(counts.get("errors", 0)), ""),
                ("refused", str(counts.get("refused", 0)), ""),
+               ("lease lost", str(counts.get("lease_lost", 0)), ""),
                ("spend / 24h", f"${micro / 1_000_000:.4f}", ""),
                ("shown", str(len(out)), "")),
         cols=(Col("at", "Time", "mono", "11%"), Col("agent", "Agent", "b", "12%"),

@@ -56,8 +56,8 @@ def facts(conn: psycopg.Connection, tenant_id: str) -> View:
         SELECT f.id, f.dimension, f.value_text, f.provenance, f.status, f.confidence,
                f.source, f.written_by, f.observed_at, f.model, f.supersedes_id,
                a.name AS artist_name
-          FROM artist_fact f
-          LEFT JOIN artist a ON a.id = f.artist_id
+          FROM party_fact f
+          LEFT JOIN party a ON a.id = f.party_id
          WHERE f.tenant_id = %s
          ORDER BY f.observed_at DESC
          LIMIT %s""", (tenant_id, LIMIT))
@@ -67,7 +67,7 @@ def facts(conn: psycopg.Connection, tenant_id: str) -> View:
                count(*) FILTER (WHERE status = 'live')       AS live,
                count(*) FILTER (WHERE status = 'stale')      AS stale,
                count(*) FILTER (WHERE status = 'retracted')  AS retracted
-          FROM artist_fact WHERE tenant_id = %s""", (tenant_id,))
+          FROM party_fact WHERE tenant_id = %s""", (tenant_id,))
 
     glyphs = {"measured": "●", "inferred": "○", "asserted": "◆"}
     out = []
@@ -98,8 +98,8 @@ def facts(conn: psycopg.Connection, tenant_id: str) -> View:
                     ("written by", r["written_by"] or "—"),
                     ("observed", _ago(r, "observed_at")),
                 )),
-                Section("Stands on", "chain", tuple(_basis(conn, "artist_fact", r["id"]))),
-                Section("Supports", "chain", tuple(_dependents(conn, "artist_fact", r["id"]))),
+                Section("Stands on", "chain", tuple(_basis(conn, "party_fact", r["id"]))),
+                Section("Supports", "chain", tuple(_dependents(conn, "party_fact", r["id"]))),
                 Section("", "actions", ("Relevant", "Not relevant", "Retract", "Recheck")),
             ),
         })
@@ -107,7 +107,7 @@ def facts(conn: psycopg.Connection, tenant_id: str) -> View:
     return View(
         key="facts", title="Facts",
         blurb="Everything the fleet believes, and what each belief stands on. Live from "
-              "artist_fact.",
+              "party_fact.",
         stats=(("claims", str(counts.get("total", 0)), ""),
                ("live", str(counts.get("live", 0)), ""),
                ("stale", str(counts.get("stale", 0)), ""),
@@ -154,7 +154,7 @@ def queue(conn: psycopg.Connection, tenant_id: str) -> View:
                l.last_error, l.cadence_seconds, l.scope_kind, l.reason,
                l.parent_lead_id, a.name AS artist_name
           FROM lead l
-          LEFT JOIN artist a ON a.id = l.artist_id
+          LEFT JOIN party a ON a.id = l.party_id
          WHERE l.tenant_id = %s
          ORDER BY (l.state = 'pending') DESC, l.score DESC, l.next_action_at
          LIMIT %s""", (tenant_id, LIMIT))
@@ -247,7 +247,7 @@ def runs(conn: psycopg.Connection, tenant_id: str) -> View:
                r.cost_micro_usd, r.refused_json, r.duration_ms, r.started_at,
                a.name AS artist_name
           FROM agent_run r
-          LEFT JOIN artist a ON a.id = r.artist_id
+          LEFT JOIN party a ON a.id = r.party_id
          WHERE r.tenant_id = %s
          ORDER BY r.started_at DESC LIMIT %s""", (tenant_id, LIMIT))
 
@@ -320,15 +320,16 @@ def budgets(conn: psycopg.Connection, tenant_id: str) -> View:
                coalesce(b.max_depth, 3)               AS max_depth,
                coalesce(b.max_leads_per_run, 25)      AS max_leads,
                (SELECT coalesce(sum(tokens_in + tokens_out), 0) FROM agent_run r
-                 WHERE r.artist_id = a.id AND r.started_at > now() - INTERVAL '1 hour')
+                 WHERE r.party_id = a.id AND r.started_at > now() - INTERVAL '1 hour')
                  AS spent,
                (SELECT coalesce(sum(cost_micro_usd), 0) FROM agent_run r
-                 WHERE r.artist_id = a.id AND r.started_at > now() - INTERVAL '24 hours')
+                 WHERE r.party_id = a.id AND r.started_at > now() - INTERVAL '24 hours')
                  AS micro,
                (SELECT count(*) FROM lead l
-                 WHERE l.artist_id = a.id AND l.state = 'pending') AS pending
-          FROM artist a
-          LEFT JOIN artist_budget b ON b.artist_id = a.id
+                 WHERE l.party_id = a.id AND l.state = 'pending') AS pending
+          FROM party a
+          JOIN party_role pr ON pr.party_id = a.id AND pr.role = 'roster_artist'
+          LEFT JOIN party_budget b ON b.party_id = a.id
          WHERE a.tenant_id = %s ORDER BY a.name""", (tenant_id,))
 
     out = []
@@ -385,25 +386,39 @@ def budgets(conn: psycopg.Connection, tenant_id: str) -> View:
 # -------------------------------------------------------------------- tracks
 
 def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
+    # A recording is not owned by an artist — credits are, which is what lets one
+    # recording carry two main artists instead of being stored twice. So the
+    # performer comes from `party_credit`, and `string_agg` because there can be
+    # more than one and picking the first would quietly hide the collaborator.
     rows = _rows(conn, """
         SELECT t.id, t.title, t.slug, t.isrc, t.released_on, t.status,
-               a.name AS artist_name,
-               (SELECT count(*) FROM artist_fact f WHERE f.track_id = t.id) AS facts,
-               (SELECT count(*) FROM lead l WHERE l.track_id = t.id)         AS leads
-          FROM track t JOIN artist a ON a.id = t.artist_id
-         WHERE t.tenant_id = %s ORDER BY a.name, t.title""", (tenant_id,))
+               coalesce(string_agg(a.name, ', ' ORDER BY a.name), '—') AS artist_name,
+               (SELECT count(*) FROM party_fact f WHERE f.recording_id = t.id) AS facts,
+               (SELECT count(*) FROM lead l WHERE l.recording_id = t.id)       AS leads,
+               (SELECT count(*) FROM presence pr
+                 WHERE pr.subject_kind = 'recording' AND pr.subject_id = t.id
+                   AND pr.state = 'present')                                   AS places
+          FROM recording t
+          LEFT JOIN party_credit c ON c.subject_kind = 'recording'
+                                  AND c.subject_id = t.id
+                                  AND c.role IN ('main_artist', 'featured')
+          LEFT JOIN party a ON a.id = c.party_id
+         WHERE t.tenant_id = %s
+         GROUP BY t.id, t.title, t.slug, t.isrc, t.released_on, t.status
+         ORDER BY t.title""", (tenant_id,))
 
     out = [{
         "id": str(r["id"]), "title": r["title"], "artist": r["artist_name"],
         "state": r["status"], "bpm": "—", "key": "—",
-        "campaigns": str(r["leads"]), "streams": "—", "spark": "▁▁▁▁▁▁▁",
+        "campaigns": str(r["leads"]), "streams": str(r["places"]),
+        "spark": "▁▁▁▁▁▁▁",
         "insp": (
-            Section("Track", "kv", (
-                ("title", r["title"]), ("artist", r["artist_name"]),
+            Section("Recording", "kv", (
+                ("title", r["title"]), ("credited", r["artist_name"]),
                 ("isrc", r["isrc"] or "—"),
                 ("released", str(r["released_on"]) if r["released_on"] else "—"),
                 ("status", r["status"]), ("facts", str(r["facts"])),
-                ("leads", str(r["leads"])),
+                ("leads", str(r["leads"])), ("platforms", str(r["places"])),
             )),
             Section("Not analysed yet", "note", (
                 "Measured facts — bpm, key, hook window — come from analysing the master "
@@ -415,8 +430,8 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
 
     return View(
         key="tracks", title="Tracks",
-        blurb="Analysed once. Every campaign, pitch and asset is a query against these "
-              "facts rather than a re-analysis. Live from track.",
+        blurb="Recordings — the masters, identified by ISRC. Credits decide who they "
+              "belong to, so a collaboration is one row. Live from recording.",
         stats=(("tracks", str(len(out)), ""), ("analysed", "0", ""),
                ("with leads", str(sum(1 for r in out if r["campaigns"] != "0")), ""),
                ("facts", str(sum(int(r["insp"][0].items[5][1]) for r in out)), ""),
@@ -424,9 +439,10 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
         cols=(Col("title", "Track", "b", "24%"), Col("artist", "Artist", "", "20%"),
               Col("state", "Status", "chip", "12%"), Col("bpm", "BPM", "num", "8%"),
               Col("key", "Key", "mono", "10%"), Col("campaigns", "Leads", "num", "8%"),
-              Col("streams", "30d", "num", "9%"), Col("spark", "", "spark", "9%")),
+              Col("streams", "On", "num", "9%"), Col("spark", "", "spark", "9%")),
         rows=tuple(out),
-        empty="No tracks yet. Add one from an artist — everything downstream hangs off it.",
+        empty="No recordings yet. One arrives with an ISRC, and the ISRC is what "
+              "places it on every platform.",
     )
 
 
@@ -580,26 +596,35 @@ def artist_editor_sections(
 def artists(conn: psycopg.Connection, tenant_id: str, *,
             editing_id: str | None = None, error: str = "",
             profile_error: str = "", confirm_delete: bool = False) -> View:
+    # The roster is a role, not a table. Joining `party_role` is what keeps a
+    # counterparty — a creator, a curator, a journalist — out of this view while
+    # letting it live in the same tables.
     rows = _rows(conn, """
-        SELECT a.id, a.name, a.type, a.slug, a.status, a.created_at,
-               (SELECT count(*) FROM track t        WHERE t.artist_id = a.id) AS tracks,
-               (SELECT count(*) FROM artist_fact f  WHERE f.artist_id = a.id
+        SELECT a.id, a.name, a.artist_type AS type, a.slug, a.kind, a.status,
+               a.created_at,
+               (SELECT count(*) FROM party_credit c
+                 WHERE c.party_id = a.id AND c.subject_kind = 'recording')    AS tracks,
+               (SELECT count(*) FROM party_fact f  WHERE f.party_id = a.id
                   AND f.status = 'live')                                      AS facts,
-               (SELECT count(*) FROM lead l         WHERE l.artist_id = a.id
+               (SELECT count(*) FROM lead l         WHERE l.party_id = a.id
                   AND l.state = 'pending')                                    AS pending,
-               (SELECT count(*) FROM artist_profile p WHERE p.artist_id = a.id
-                  AND p.mode <> 'absent')                                     AS profiles,
-               (SELECT count(*) FROM artist_document d WHERE d.artist_id = a.id) AS docs
-          FROM artist a WHERE a.tenant_id = %s ORDER BY a.name""", (tenant_id,))
+               (SELECT count(*) FROM presence p
+                 WHERE p.subject_kind = 'party' AND p.subject_id = a.id
+                   AND p.mode <> 'absent')                                    AS profiles,
+               (SELECT count(*) FROM party_document d WHERE d.party_id = a.id) AS docs
+          FROM party a
+          JOIN party_role r ON r.party_id = a.id AND r.role = 'roster_artist'
+         WHERE a.tenant_id = %s ORDER BY a.name""", (tenant_id,))
 
     out = []
     for r in rows:
         # `id` is needed because each surface is its own delete target, and the tenant
-        # predicate is here rather than implied by the artist — a scoped delete link
+        # predicate is here rather than implied by the party — a scoped delete link
         # built from an unscoped read is how one label removes another's row.
         profiles = _rows(conn, """
-            SELECT id, platform, mode, handle, profile_url FROM artist_profile
-             WHERE tenant_id = %s AND artist_id = %s
+            SELECT id, platform, mode, handle, url AS profile_url, state, match_basis
+              FROM presence
+             WHERE tenant_id = %s AND subject_kind = 'party' AND subject_id = %s
              ORDER BY platform""", (tenant_id, r["id"]))
         out.append({
             "id": str(r["id"]), "name": r["name"], "type": r["type"],

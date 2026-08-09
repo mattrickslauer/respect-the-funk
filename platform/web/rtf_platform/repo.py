@@ -48,115 +48,198 @@ def ensure_tenant(conn: psycopg.Connection, slug: str, name: str) -> dict[str, A
     return tenant
 
 
-# --------------------------------------------------------------------- artists
+# --------------------------------------------------------------------- parties
 
-def list_artists(conn: psycopg.Connection, tenant_id: str, query: str = "") -> list[dict[str, Any]]:
-    sql = """
-        SELECT id, slug, name, type, status, created_at
-          FROM artist
-         WHERE tenant_id = %s
+#: The roster is `party_role`, not a table. A label's artists, its writers and the
+#: creators it talks to are all parties; only the role differs, and a party may hold
+#: several — at an independent label the artist is usually also the writer.
+ROSTER_ROLE = "roster_artist"
+
+#: `artist_type` is selected as `type` throughout. The column is named for what it
+#: means (a presentation kind that only performers have), and the alias is what the
+#: console has always called it — keeping both means neither the schema nor the view
+#: layer has to carry the other's vocabulary.
+_PARTY_COLUMNS = "id, slug, name, kind, artist_type AS type, status, created_at"
+_PARTY_COLUMNS_P = ("p.id, p.slug, p.name, p.kind, p.artist_type AS type, "
+                    "p.status, p.created_at")
+
+
+def list_parties(conn: psycopg.Connection, tenant_id: str, query: str = "",
+                 role: str | None = ROSTER_ROLE) -> list[dict[str, Any]]:
+    """Parties, optionally narrowed to one role.
+
+    `role=None` returns every party the tenant knows, which is what the counterparty
+    view will want. The default is the roster, because that is what "artists" means
+    everywhere it is used today.
     """
-    params: list[Any] = [tenant_id]
+    sql = f"SELECT {_PARTY_COLUMNS_P} FROM party p"
+    params: list[Any] = []
+    if role:
+        sql += " JOIN party_role r ON r.party_id = p.id AND r.role = %s"
+        params.append(role)
+    sql += " WHERE p.tenant_id = %s"
+    params.append(tenant_id)
     if query:
-        sql += " AND (name ILIKE %s OR type ILIKE %s)"
+        sql += " AND (p.name ILIKE %s OR p.artist_type ILIKE %s)"
         params += [f"%{query}%", f"%{query}%"]
-    sql += " ORDER BY name"
+    sql += " ORDER BY p.name"
     with conn.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchall()
 
 
-def get_artist(conn: psycopg.Connection, tenant_id: str, artist_id: str) -> dict[str, Any] | None:
+def get_party(conn: psycopg.Connection, tenant_id: str,
+              party_id: str) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT id, slug, name, type, status, created_at
-                 FROM artist WHERE tenant_id = %s AND id = %s""",
-            (tenant_id, artist_id),
+            f"SELECT {_PARTY_COLUMNS} FROM party WHERE tenant_id = %s AND id = %s",
+            (tenant_id, party_id),
         )
         return cur.fetchone()
 
 
-def create_artist(
-    conn: psycopg.Connection, tenant_id: str, *, name: str, type_: str, status: str = "active"
+def create_party(
+    conn: psycopg.Connection, tenant_id: str, *, name: str, type_: str,
+    kind: str = "group", status: str = "active", role: str | None = ROSTER_ROLE,
 ) -> dict[str, Any]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """INSERT INTO artist (tenant_id, slug, name, type, status)
-               VALUES (%s, %s, %s, %s, %s)
-            RETURNING id, slug, name, type, status, created_at""",
-            (tenant_id, slugify(name), name, type_, status),
-        )
-        return cur.fetchone()
+    """The party and its role in one transaction.
+
+    A party with no role is invisible to every view that filters by one, so creating
+    the two separately would let a crash between them strand a row nobody can find.
+    The connection is autocommit, so the transaction has to be asked for.
+    """
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""INSERT INTO party (tenant_id, slug, name, kind, artist_type, status)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                 RETURNING {_PARTY_COLUMNS}""",
+                (tenant_id, slugify(name), name, kind, type_, status),
+            )
+            party = cur.fetchone()
+            if role:
+                cur.execute(
+                    """INSERT INTO party_role (tenant_id, party_id, role)
+                       VALUES (%s, %s, %s)
+                  ON CONFLICT (tenant_id, party_id, role) DO NOTHING""",
+                    (tenant_id, party["id"], role),
+                )
+    return party
 
 
-def update_artist(
-    conn: psycopg.Connection, tenant_id: str, artist_id: str, *, name: str, type_: str, status: str
+def update_party(
+    conn: psycopg.Connection, tenant_id: str, party_id: str, *,
+    name: str, type_: str, status: str,
 ) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(
-            """UPDATE artist SET slug = %s, name = %s, type = %s, status = %s
-                WHERE tenant_id = %s AND id = %s
-            RETURNING id, slug, name, type, status, created_at""",
-            (slugify(name), name, type_, status, tenant_id, artist_id),
+            f"""UPDATE party SET slug = %s, name = %s, artist_type = %s, status = %s
+                 WHERE tenant_id = %s AND id = %s
+             RETURNING {_PARTY_COLUMNS}""",
+            (slugify(name), name, type_, status, tenant_id, party_id),
         )
         return cur.fetchone()
 
 
-def delete_artist(conn: psycopg.Connection, tenant_id: str, artist_id: str) -> bool:
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM artist WHERE tenant_id = %s AND id = %s", (tenant_id, artist_id))
-        return cur.rowcount > 0
+def delete_party(conn: psycopg.Connection, tenant_id: str, party_id: str) -> bool:
+    """Deletes the party and the rows the database cannot cascade for it.
+
+    `presence` is polymorphic — `subject_id` carries no foreign key, which is the
+    price of one table serving parties, recordings and releases — so `ON DELETE
+    CASCADE` never fires for it. Left behind, those rows are not merely untidy: the
+    probe reconciler works from presence, so a deleted artist would keep being
+    fetched forever and nothing would explain why.
+
+    Everything with a real foreign key (`party_role`, `party_identifier`,
+    `party_credit`, `party_fact`, …) still cascades in the database, where it
+    belongs. This function exists for the exceptions, not instead of them.
+    """
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                """DELETE FROM presence
+                    WHERE tenant_id = %s AND subject_kind = 'party'
+                      AND subject_id = %s""",
+                (tenant_id, party_id),
+            )
+            cur.execute("DELETE FROM party WHERE tenant_id = %s AND id = %s",
+                        (tenant_id, party_id))
+            return cur.rowcount > 0
 
 
-# ------------------------------------------------------------- artist profiles
-
-def list_profiles(conn: psycopg.Connection, tenant_id: str,
-                  artist_id: str) -> list[dict[str, Any]]:
+def list_roles(conn: psycopg.Connection, tenant_id: str, party_id: str) -> list[str]:
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT id, platform, mode, handle, profile_url, enabled
-                 FROM artist_profile
-                WHERE tenant_id = %s AND artist_id = %s
+            "SELECT role FROM party_role WHERE tenant_id = %s AND party_id = %s"
+            " ORDER BY role",
+            (tenant_id, party_id),
+        )
+        return [r["role"] for r in cur.fetchall()]
+
+
+# -------------------------------------------------------------------- presence
+
+#: `presence` is polymorphic over party, recording and release, so every call here
+#: names its subject kind rather than assuming one. The console only edits party
+#: presence today; the recording and release grids read the same table.
+def list_presence(conn: psycopg.Connection, tenant_id: str, subject_id: str,
+                  subject_kind: str = "party") -> list[dict[str, Any]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id, platform, mode, handle, url AS profile_url, state,
+                      match_basis, enabled
+                 FROM presence
+                WHERE tenant_id = %s AND subject_kind = %s AND subject_id = %s
                 ORDER BY platform""",
-            (tenant_id, artist_id),
+            (tenant_id, subject_kind, subject_id),
         )
         return cur.fetchall()
 
 
-def upsert_profile(
-    conn: psycopg.Connection, tenant_id: str, artist_id: str, *,
+def upsert_presence(
+    conn: psycopg.Connection, tenant_id: str, subject_id: str, *,
     platform: str, mode: str, handle: str = "", profile_url: str = "",
+    subject_kind: str = "party", match_basis: str = "asserted",
 ) -> dict[str, Any]:
-    """One row per (artist, platform) — the table says so, and the editor relies on it.
+    """One row per (subject, platform) — the table says so, and the editor relies on it.
 
     An UPSERT rather than an insert-then-catch: adding Spotify twice is the operator
     correcting the handle they just typed, not an error worth showing them. The
     conflict target is the table's own unique key, so this cannot drift from it.
+
+    `match_basis` defaults to `asserted` because the caller is a person filling in a
+    form. An adapter that finds the same surface writes `measured`, and the two must
+    not be confused: one of them is somebody's judgement.
     """
     with conn.cursor() as cur:
         cur.execute(
-            """INSERT INTO artist_profile
-                    (tenant_id, artist_id, platform, mode, handle, profile_url)
-               VALUES (%s, %s, %s, %s, %s, %s)
-          ON CONFLICT (tenant_id, artist_id, platform) DO UPDATE
+            """INSERT INTO presence
+                    (tenant_id, subject_kind, subject_id, platform, mode, handle,
+                     url, state, match_basis)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 'present', %s)
+          ON CONFLICT (tenant_id, subject_kind, subject_id, platform) DO UPDATE
                   SET mode = excluded.mode,
                       handle = excluded.handle,
-                      profile_url = excluded.profile_url
-            RETURNING id, platform, mode, handle, profile_url, enabled""",
-            (tenant_id, artist_id, platform, mode, handle, profile_url),
+                      url = excluded.url,
+                      match_basis = excluded.match_basis,
+                      checked_at = now()
+            RETURNING id, platform, mode, handle, url AS profile_url, state, enabled""",
+            (tenant_id, subject_kind, subject_id, platform, mode, handle,
+             profile_url, match_basis),
         )
         return cur.fetchone()
 
 
-def delete_profile(conn: psycopg.Connection, tenant_id: str, artist_id: str,
-                   profile_id: str) -> bool:
-    """Scoped by artist as well as tenant. The id alone would be enough to find the
+def delete_presence(conn: psycopg.Connection, tenant_id: str, subject_id: str,
+                    presence_id: str, subject_kind: str = "party") -> bool:
+    """Scoped by subject as well as tenant. The id alone would be enough to find the
     row, which is exactly why it is not enough to authorise deleting it."""
     with conn.cursor() as cur:
         cur.execute(
-            """DELETE FROM artist_profile
-                WHERE tenant_id = %s AND artist_id = %s AND id = %s""",
-            (tenant_id, artist_id, profile_id),
+            """DELETE FROM presence
+                WHERE tenant_id = %s AND subject_kind = %s AND subject_id = %s
+                  AND id = %s""",
+            (tenant_id, subject_kind, subject_id, presence_id),
         )
         return cur.rowcount > 0
 

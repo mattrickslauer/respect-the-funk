@@ -99,12 +99,14 @@ class Platform(str, Enum):
 
     SPOTIFY     = ("spotify",     "Spotify")
     APPLE_MUSIC = ("apple_music", "Apple Music")
+    DEEZER      = ("deezer",      "Deezer")
     YOUTUBE     = ("youtube",     "YouTube")
     INSTAGRAM   = ("instagram",   "Instagram")
     TIKTOK      = ("tiktok",      "TikTok")
     SOUNDCLOUD  = ("soundcloud",  "SoundCloud")
     BANDCAMP    = ("bandcamp",    "Bandcamp")
     MUSICBRAINZ = ("musicbrainz", "MusicBrainz")
+    ACOUSTID    = ("acoustid",    "AcoustID")
     PRESS       = ("press",       "Press / web")
 
     @classmethod

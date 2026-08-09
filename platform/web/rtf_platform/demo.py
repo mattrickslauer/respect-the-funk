@@ -152,15 +152,15 @@ _FACT_ROWS: tuple[dict[str, Any], ...] = (
                 ("written by", "distiller"), ("model", "claude-sonnet-5"),
             )),
             Section("Stands on", "chain", (
-                (0, "chunk", "#4471", "artist_chunk"),
+                (0, "chunk", "#4471", "party_chunk"),
                 (1, "quote", "“…the trio, based in Berlin, have spent two years "
                              "building a live reputation before recording anything…”", ""),
-                (0, "document", "example-press.test/hallow-youth-live", "artist_document"),
+                (0, "document", "example-press.test/hallow-youth-live", "party_document"),
                 (1, "lead", "#221 · depth 1 · web_page", "lead"),
                 (2, "lead", "#204 · depth 0 · web_search “Hallow Youth”", "lead"),
             )),
             Section("Supports", "chain", (
-                (0, "fact", "audience.market_priority = DE/EU", "artist_fact"),
+                (0, "fact", "audience.market_priority = DE/EU", "party_fact"),
                 (0, "model", "artist_audience v3", "artist_audience"),
                 (0, "lesson", "“open with the Berlin live reputation”", "lesson"),
             )),
@@ -179,8 +179,8 @@ _FACT_ROWS: tuple[dict[str, Any], ...] = (
                 ("sample", "9 posts"), ("observed", "2026-08-05 22:40Z"),
             )),
             Section("Stands on", "chain", (
-                (0, "metric", "instagram · median_comment_age · 9 posts", "artist_metric"),
-                (0, "fact", "audience.city = Berlin", "artist_fact"),
+                (0, "metric", "instagram · median_comment_age · 9 posts", "party_metric"),
+                (0, "fact", "audience.city = Berlin", "party_fact"),
                 (0, "observation", "vendor demographic share", "counterparty_observation"),
             )),
             Section("Caution", "note", (
@@ -202,8 +202,8 @@ _FACT_ROWS: tuple[dict[str, Any], ...] = (
                 ("asserted by", "operator"), ("asserted", "2026-07-30 11:02Z"),
             )),
             Section("Conflicts with", "chain", (
-                (0, "fact", "rights.master = “licensed to a label” · measured", "artist_fact"),
-                (1, "document", "example-registry.test/works/2214", "artist_document"),
+                (0, "fact", "rights.master = “licensed to a label” · measured", "party_fact"),
+                (1, "document", "example-registry.test/works/2214", "party_document"),
             )),
             Section("Why nothing was decided", "note", (
                 "A human assertion and a crawled measurement disagree. The system raises a "
@@ -251,8 +251,8 @@ _FACT_ROWS: tuple[dict[str, Any], ...] = (
                 "purge destroys the audit trail you need when a campaign goes sideways.",
             )),
             Section("Stood on", "chain", (
-                (0, "fact", "catalogue.genre = post-punk · retracted", "artist_fact"),
-                (1, "document", "example-blog.test/scene-report", "artist_document"),
+                (0, "fact", "catalogue.genre = post-punk · retracted", "party_fact"),
+                (1, "document", "example-blog.test/scene-report", "party_document"),
             )),
             Section("", "actions", ("Recheck now", "Retract", "Keep anyway")),
         ),
@@ -268,7 +268,7 @@ _FACT_ROWS: tuple[dict[str, Any], ...] = (
                 ("mode", "owned"), ("verified", "graph api · standard access"),
             )),
             Section("Stands on", "chain", (
-                (0, "profile", "instagram · owned · credential #2", "artist_profile"),
+                (0, "profile", "instagram · owned · credential #2", "presence"),
             )),
             Section("", "actions", ("Relevant", "Not relevant", "Recheck")),
         ),
@@ -284,8 +284,8 @@ _FACT_ROWS: tuple[dict[str, Any], ...] = (
                 ("source", "musicbrainz"), ("anchored on", "MBID"),
             )),
             Section("Stands on", "chain", (
-                (0, "document", "musicbrainz · artist release-group list", "artist_document"),
-                (1, "identifier", "MBID · canonical", "artist_identifier"),
+                (0, "document", "musicbrainz · artist release-group list", "party_document"),
+                (1, "identifier", "MBID · canonical", "party_identifier"),
             )),
             Section("", "actions", ("Relevant", "Not relevant", "Recheck")),
         ),
@@ -301,8 +301,8 @@ _FACT_ROWS: tuple[dict[str, Any], ...] = (
                 ("confidence", "0.71"), ("sample", "11 listings"),
             )),
             Section("Stands on", "chain", (
-                (0, "document", "example-listings.test/hallow-youth", "artist_document"),
-                (0, "fact", "audience.city = Berlin", "artist_fact"),
+                (0, "document", "example-listings.test/hallow-youth", "party_document"),
+                (0, "fact", "audience.city = Berlin", "party_fact"),
             )),
             Section("", "actions", ("Relevant", "Not relevant", "Recheck")),
         ),
@@ -341,7 +341,7 @@ _QUEUE_ROWS: tuple[dict[str, Any], ...] = (
             Section("Why we are looking here", "chain", (
                 (0, "lead", "#2214 · engagement · owned profile comments", "lead"),
                 (1, "lead", "#2201 · profile · instagram owned", "lead"),
-                (2, "lead", "#2180 · seed · artist_profile mode=owned", "lead"),
+                (2, "lead", "#2180 · seed · presence mode=owned", "lead"),
             )),
             Section("Note", "note", (
                 "The attention trail is a recursive walk up parent_lead_id. For any document, "
@@ -481,8 +481,8 @@ _FLEET_ROWS: tuple[dict[str, Any], ...] = (
                 ("instagram_owned", "ok · 190ms p50"),
             )),
             Section("Writes", "kv", (
-                ("artist_fact", "declared"), ("artist_metric", "declared"),
-                ("artist_document", "declared"),
+                ("party_fact", "declared"), ("party_metric", "declared"),
+                ("party_document", "declared"),
             )),
             Section("Note", "note", (
                 "`writes` is a declared blast radius, not documentation. The runtime refuses a "
@@ -500,9 +500,9 @@ _FLEET_ROWS: tuple[dict[str, Any], ...] = (
             Section("Manifest", "kv", (
                 ("kind", "distiller"), ("work_table", "chunk_staging"),
                 ("scope_kinds", "artist, track"), ("adapters", "none"),
-                ("woken by", "artist_chunk insert"), ("enabled", "true"),
+                ("woken by", "party_chunk insert"), ("enabled", "true"),
             )),
-            Section("Writes", "kv", (("artist_fact", "declared"), ("fact_basis", "declared"))),
+            Section("Writes", "kv", (("party_fact", "declared"), ("fact_basis", "declared"))),
             Section("Note", "note", (
                 "No adapters at all — it never touches the network. It reads chunks and writes "
                 "claims with the basis edges under them, and the runtime rejects any inferred "
@@ -522,9 +522,9 @@ _FLEET_ROWS: tuple[dict[str, Any], ...] = (
                 ("depth cap", "8"), ("enabled", "true"),
             )),
             Section("Last cascade", "chain", (
-                (0, "retracted", "catalogue.genre = post-punk", "artist_fact"),
-                (1, "stale", "press.angle = post-punk revival", "artist_fact"),
-                (1, "stale", "audience.scene_affinity", "artist_fact"),
+                (0, "retracted", "catalogue.genre = post-punk", "party_fact"),
+                (1, "stale", "press.angle = post-punk revival", "party_fact"),
+                (1, "stale", "audience.scene_affinity", "party_fact"),
                 (2, "stale", "lesson “open with the scene angle”", "lesson"),
             )),
             Section("Note", "note", (
@@ -806,9 +806,9 @@ _RUN_ROWS: tuple[dict[str, Any], ...] = (
                 ("duration", "0.31s"),
             )),
             Section("Cascade", "chain", (
-                (0, "retracted", "catalogue.genre = post-punk", "artist_fact"),
-                (1, "stale", "press.angle", "artist_fact"),
-                (1, "stale", "audience.scene_affinity", "artist_fact"),
+                (0, "retracted", "catalogue.genre = post-punk", "party_fact"),
+                (1, "stale", "press.angle", "party_fact"),
+                (1, "stale", "audience.scene_affinity", "party_fact"),
                 (2, "stale", "lesson “open with the scene angle”", "lesson"),
             )),
             Section("", "actions", ("Open cascade", "Undo retraction")),
@@ -1430,9 +1430,9 @@ APPROVALS = (
                 ("tokens", "1,842"), ("channel", "ugc"),
             )),
             Section("What it drew on", "chain", (
-                (0, "fact", "sound.hook = 0:47–1:04 · measured", "artist_fact"),
-                (0, "fact", "audience.city = Berlin · measured", "artist_fact"),
-                (0, "metric", "median views 21,400 · measured", "artist_metric"),
+                (0, "fact", "sound.hook = 0:47–1:04 · measured", "party_fact"),
+                (0, "fact", "audience.city = Berlin · measured", "party_fact"),
+                (0, "metric", "median views 21,400 · measured", "party_metric"),
                 (0, "lesson", "“open with the live reputation”", "lesson"),
             )),
             Section("Checks", "kv", (

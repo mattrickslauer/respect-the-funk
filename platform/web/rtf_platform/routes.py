@@ -417,7 +417,7 @@ def artists_create(request: Request, principal: Operator,
     # Creates the label row on first save, which is why there is no seed file.
     tenant = repo.ensure_tenant(conn, SETTINGS.tenant_slug, "Respect the Funk")
     try:
-        created = repo.create_artist(conn, str(tenant["id"]), name=name, type_=artist_type)
+        created = repo.create_party(conn, str(tenant["id"]), name=name, type_=artist_type)
     except psycopg.errors.UniqueViolation:
         return _artists_page(
             request, principal, sel="new", form=typed, status_code=409,
@@ -441,7 +441,7 @@ def artists_update(request: Request, principal: Operator, artist_id: str,
 
     conn = _conn()
     tenant_id = _tenant_id(conn)
-    current = repo.get_artist(conn, tenant_id, artist_id) if tenant_id else None
+    current = repo.get_party(conn, tenant_id, artist_id) if tenant_id else None
     if current is None:
         raise HTTPException(status_code=404, detail="No such artist.")
 
@@ -456,7 +456,7 @@ def artists_update(request: Request, principal: Operator, artist_id: str,
                              error=str(exc.detail), status_code=400)
 
     try:
-        repo.update_artist(conn, tenant_id, artist_id,
+        repo.update_party(conn, tenant_id, artist_id,
                            name=name, type_=artist_type, status=status)
     except psycopg.errors.UniqueViolation:
         return _artists_page(
@@ -472,7 +472,7 @@ def artists_delete(principal: Operator, artist_id: str) -> Response:
     conn = _conn()
     tenant_id = _tenant_id(conn)
     if tenant_id is not None:
-        repo.delete_artist(conn, tenant_id, artist_id)
+        repo.delete_party(conn, tenant_id, artist_id)
     return RedirectResponse("/artists", status_code=303)
 
 
@@ -495,10 +495,10 @@ def artist_profile_add(request: Request, principal: Operator, artist_id: str,
 
     conn = _conn()
     tenant_id = _tenant_id(conn)
-    if tenant_id is None or repo.get_artist(conn, tenant_id, artist_id) is None:
+    if tenant_id is None or repo.get_party(conn, tenant_id, artist_id) is None:
         raise HTTPException(status_code=404, detail="No such artist.")
 
-    repo.upsert_profile(
+    repo.upsert_presence(
         conn, tenant_id, artist_id,
         platform=known_platform.value, mode=known_mode.value,
         handle=handle.strip()[:200], profile_url=profile_url.strip()[:500],
@@ -512,7 +512,7 @@ def artist_profile_delete(principal: Operator, artist_id: str, profile_id: str) 
     conn = _conn()
     tenant_id = _tenant_id(conn)
     if tenant_id is not None:
-        repo.delete_profile(conn, tenant_id, artist_id, profile_id)
+        repo.delete_presence(conn, tenant_id, artist_id, profile_id)
     return RedirectResponse(f"/artists?sel={artist_id}", status_code=303)
 
 
@@ -609,7 +609,7 @@ def signout() -> Response:
 def roster_page(request: Request, principal: Operator, q: str = "") -> Response:
     conn = _conn()
     tenant_id = _tenant_id(conn)
-    artists = repo.list_artists(conn, tenant_id, q) if tenant_id else []
+    artists = repo.list_parties(conn, tenant_id, q) if tenant_id else []
     return templates.TemplateResponse(
         request, "artists.html", _ctx(request, principal, artists=artists, q=q)
     )
@@ -620,7 +620,7 @@ def roster_rows(request: Request, principal: Operator, q: str = "") -> Response:
     """The fragment htmx swaps in on search. Same template the full page uses."""
     conn = _conn()
     tenant_id = _tenant_id(conn)
-    artists = repo.list_artists(conn, tenant_id, q) if tenant_id else []
+    artists = repo.list_parties(conn, tenant_id, q) if tenant_id else []
     return templates.TemplateResponse(
         request, "components/_artist_rows.html", _ctx(request, principal, artists=artists, q=q)
     )
@@ -652,7 +652,7 @@ def roster_create(
     # Creates the label row on first save, which is why there is no seed file.
     tenant = repo.ensure_tenant(conn, SETTINGS.tenant_slug, "Respect the Funk")
     with _friendly_conflict(name):
-        repo.create_artist(conn, str(tenant["id"]), name=name, type_=artist_type)
+        repo.create_party(conn, str(tenant["id"]), name=name, type_=artist_type)
     return RedirectResponse("/roster", status_code=303)
 
 
@@ -660,7 +660,7 @@ def roster_create(
 def roster_detail(request: Request, principal: Operator, artist_id: str) -> Response:
     conn = _conn()
     tenant_id = _tenant_id(conn)
-    artist = repo.get_artist(conn, tenant_id, artist_id) if tenant_id else None
+    artist = repo.get_party(conn, tenant_id, artist_id) if tenant_id else None
     if artist is None:
         raise HTTPException(status_code=404, detail="No such artist.")
     return templates.TemplateResponse(
@@ -685,7 +685,7 @@ def roster_update(
 
     conn = _conn()
     tenant_id = _tenant_id(conn)
-    current = repo.get_artist(conn, tenant_id, artist_id) if tenant_id else None
+    current = repo.get_party(conn, tenant_id, artist_id) if tenant_id else None
 
     # A type this build no longer defines is kept if the form sent it back
     # unchanged, and validated normally if the operator picked something else.
@@ -694,7 +694,7 @@ def roster_update(
     artist_type = type.strip() if legacy and type.strip() == legacy else _validated_type(type)
 
     with _friendly_conflict(name):
-        updated = repo.update_artist(
+        updated = repo.update_party(
             conn, tenant_id, artist_id, name=name, type_=artist_type, status=status
         ) if tenant_id else None
     if updated is None:
@@ -708,8 +708,8 @@ def roster_delete(request: Request, principal: Operator, artist_id: str) -> Resp
     conn = _conn()
     tenant_id = _tenant_id(conn)
     if tenant_id is not None:
-        repo.delete_artist(conn, tenant_id, artist_id)
-    artists = repo.list_artists(conn, tenant_id) if tenant_id else []
+        repo.delete_party(conn, tenant_id, artist_id)
+    artists = repo.list_parties(conn, tenant_id) if tenant_id else []
     return templates.TemplateResponse(
         request, "components/_artist_rows.html", _ctx(request, principal, artists=artists, q="")
     )

@@ -215,9 +215,19 @@ comes up, not as a plan.
   `/facts` 404s. Worse, that build served the roster to anonymous readers, and the URL is
   public. `./platform/infra/build.sh && terraform -chdir=platform/infra apply` fixes both;
   the plan is **1 in-place update, 0 added, 0 destroyed**.
-- **Migration 004 is written and not applied.** `schema/004_research.sql` creates the
-  substrate the console currently fakes. Held deliberately pending the spend rules; it is
-  DDL against a free allowance, so applying it costs effectively nothing.
+- **Migrations 004 and 005 are applied.** `004` created the frontier, evidence and
+  claims; `005_party_first.sql` replaced the artist-shaped root with a Party and added
+  the industry's four layers — party, work, recording, release — per
+  `docs/superpowers/specs/2026-08-08-party-first-identity-design.md`. `005` is
+  destructive by design and `schema/apply.py` re-checks that the tables it drops are
+  empty before running. Six console views read the party schema; five remain fixtures.
+- **The vector columns are still NULL** and will stay so while Bedrock's quota is 0
+  (below). `party_chunk.embedding` and `party_fact.embedding` are indexed and empty.
+- **`presence` has no foreign key on `subject_id`.** It is polymorphic over party,
+  recording and release, which is the price of one probe and one grid serving all
+  three — so `ON DELETE CASCADE` cannot fire for it and `repo.delete_party` deletes
+  presence rows itself. Any future deleter of a subject must do the same, or the
+  probe reconciler will keep fetching a row nobody can see.
 - **Bedrock is unusable on this account.** On-demand inference quota is **0 requests per
   minute for nearly every model**, including Titan Embeddings V2 — `AUTHORIZED` and
   `AVAILABLE`, but zero capacity, so every invoke returns `ThrottlingException`. A quota

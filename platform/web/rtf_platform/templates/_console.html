@@ -231,6 +231,18 @@
       font-size:11px; color:var(--err); border:1px solid var(--err); border-radius:var(--r);
       padding:.3rem .45rem; margin:0 0 .55rem; background:var(--panel);
     }
+    .ednote {
+      font-size:11px; color:var(--dim); border:1px solid var(--line2);
+      border-radius:var(--r); padding:.35rem .45rem; margin:0 0 .55rem;
+      background:var(--panel); white-space:pre-wrap; line-height:1.5;
+      font-family:ui-monospace,monospace;
+    }
+    .edchk { display:flex; gap:.4rem; align-items:flex-start; margin:0 0 .55rem;
+             font-size:11.5px; cursor:pointer; }
+    .edchk input { margin-top:.15rem; flex:none; }
+    .edchk i { display:block; font-style:normal; font-size:10px; color:var(--faint);
+               line-height:1.4; }
+    .edf input[type=file] { padding:.2rem; font-size:11px; }
     .edlist { list-style:none; margin:0; padding:0; font-size:11.5px; }
     .edlist li {
       display:flex; align-items:baseline; gap:.4rem; padding:.22rem 0;

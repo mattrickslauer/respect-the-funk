@@ -23,6 +23,7 @@ it.
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 
 
@@ -147,6 +148,51 @@ class ProfileMode(str, Enum):
 #: The statuses an artist row may carry. Kept here rather than inline in the form so the
 #: select and the validation cannot drift apart.
 ARTIST_STATUSES: tuple[str, ...] = ("active", "paused", "archived")
+
+
+# ------------------------------------------------------------------ identifiers
+
+# Every identifier in this industry arrives in more than one spelling, and a naive
+# unique index files the same recording as two rows. So each is stored twice: the
+# canonical form joins, and the raw form is kept because the provenance model has to
+# be able to show what a source actually said.
+#
+# These return "" for anything that is not a well-formed identifier rather than
+# guessing at a repair. A blank canonical value means "we hold no identifier", which
+# is a state the schema already models — a wrong one is not.
+
+def canonical_isrc(raw: str | None) -> str:
+    """`QZ-ABC-25-00001` and `qzabc2500001` are one recording. ISO 3901: two letters
+    of country, three of registrant, two digits of year, five of designation."""
+    if not raw:
+        return ""
+    stripped = re.sub(r"[^A-Za-z0-9]", "", raw).upper()
+    return stripped if re.fullmatch(r"[A-Z]{2}[A-Z0-9]{3}[0-9]{7}", stripped) else ""
+
+
+def canonical_gtin(raw: str | None) -> str:
+    """UPC-12, EAN-13 and GTIN-14 are the same number with different leading zeros.
+    Padding to 14 is what makes `602557123456` and `0602557123456` compare equal."""
+    if not raw:
+        return ""
+    digits = re.sub(r"[^0-9]", "", raw)
+    return digits.zfill(14) if 8 <= len(digits) <= 14 else ""
+
+
+def canonical_iswc(raw: str | None) -> str:
+    """`T-123.456.789-C` and `T1234567891` are one work. ISO 15707."""
+    if not raw:
+        return ""
+    stripped = re.sub(r"[^A-Za-z0-9]", "", raw).upper()
+    return stripped if re.fullmatch(r"T[0-9]{10}", stripped) else ""
+
+
+def canonical_isni(raw: str | None) -> str:
+    """16 characters, no spaces. The final one may be an X check digit."""
+    if not raw:
+        return ""
+    stripped = re.sub(r"[^0-9Xx]", "", raw).upper()
+    return stripped if re.fullmatch(r"[0-9]{15}[0-9X]", stripped) else ""
 
 
 def unrecognised(raw: str | None) -> str | None:

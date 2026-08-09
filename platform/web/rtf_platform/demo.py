@@ -37,6 +37,7 @@ NAV: tuple[tuple[str, tuple[tuple[str, str, str, str], ...]], ...] = (
     ("Knowledge", (
         ("artists",   "Artists",        "/artists",        ""),
         ("tracks",    "Tracks",         "/tracks",         ""),
+        ("imports",   "Statements",     "/imports",        ""),
         ("facts",     "Facts",          "/facts",          ""),
         ("counter",   "Counterparties", "/counterparties", ""),
     )),
@@ -85,7 +86,7 @@ class Field:
     """
     name: str
     label: str
-    kind: str = "text"                  # text | url | select | static
+    kind: str = "text"                  # text | url | select | static | file | check
     value: str = ""
     #: Grouped `((group, ((value, label), ...)), ...)`. A group of "" renders with no
     #: <optgroup>, so a flat select and a grouped one are the same structure.
@@ -116,6 +117,13 @@ class Section:
     #: `form` only. Rendered above the fields when the last post was rejected, so the
     #: operator sees why next to what they typed rather than on a separate error page.
     error: str = ""
+    #: `form` only. Set when the form carries a file — a multipart form with a text
+    #: encoding sends the filename and drops the bytes, which looks like an empty
+    #: upload rather than a mistake.
+    multipart: bool = False
+    #: `form` only. Rendered above the fields as neutral prose — a preview, a result,
+    #: anything that is neither an error nor a field.
+    note: str = ""
 
 
 @dataclass(frozen=True)

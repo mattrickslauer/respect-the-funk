@@ -223,11 +223,21 @@ comes up, not as a plan.
   empty before running. Six console views read the party schema; five remain fixtures.
 - **The vector columns are still NULL** and will stay so while Bedrock's quota is 0
   (below). `party_chunk.embedding` and `party_fact.embedding` are indexed and empty.
-- **`presence` has no foreign key on `subject_id`.** It is polymorphic over party,
-  recording and release, which is the price of one probe and one grid serving all
-  three — so `ON DELETE CASCADE` cannot fire for it and `repo.delete_party` deletes
-  presence rows itself. Any future deleter of a subject must do the same, or the
-  probe reconciler will keep fetching a row nobody can see.
+- **`presence` and `party_credit` have no foreign key on `subject_id`.** Both are
+  polymorphic over party, recording and release, which is the price of one probe and
+  one grid serving all three — so `ON DELETE CASCADE` cannot fire for either.
+  `repo.delete_party` deletes presence rows itself. **Any future deleter of a party,
+  recording or release must do the same**, and a deleter of a recording must also
+  clear `party_credit`. This has already bitten once: an orphaned presence row
+  survived a deleted party and was only found by counting. A periodic orphan sweep
+  over both tables is worth writing before either grows.
+- **Distributor statements are the only real stream counts.** `distributors/` reads
+  exported files — DistroKid has no API, so a reader is the whole integration —
+  and `statements.load` writes `recording` and `party_metric` rows from them.
+  **No column map has been checked against a real export**, so `Format.verified` is
+  false everywhere and the loader refuses to write until an operator confirms it per
+  import. Confirming a format is a one-line change once a real file has been through
+  it, and `statement_import.format_verified` records what was true at the time.
 - **Bedrock is unusable on this account.** On-demand inference quota is **0 requests per
   minute for nearly every model**, including Titan Embeddings V2 — `AUTHORIZED` and
   `AVAILABLE`, but zero capacity, so every invoke returns `ThrottlingException`. A quota

@@ -17,6 +17,7 @@ should be able to tell without opening a log.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 import psycopg
@@ -443,6 +444,119 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
         rows=tuple(out),
         empty="No recordings yet. One arrives with an ISRC, and the ISRC is what "
               "places it on every platform.",
+    )
+
+
+# ----------------------------------------------------------------- statements
+
+def _upload_sections(*, error: str = "", note: str = "",
+                     pending_token: str = "") -> tuple[Section, ...]:
+    """The import form, and whatever the last attempt had to say about itself.
+
+    `pending_token` is set once a file has been previewed and refused only because
+    its reader is unverified. Re-submitting with the box ticked is the second,
+    deliberate act — the first upload cannot both preview and write.
+    """
+    from rtf_platform import distributors
+
+    readable = ", ".join(sorted({f.distributor for f in distributors.FORMATS}))
+    return (
+        Section(
+            "Import a statement", "form", (
+                Field("file", "Statement file", "file", required=True,
+                      placeholder=".tsv,.csv,.txt",
+                      hint="The export from your distributor. Nothing is fetched — "
+                           "DistroKid has no API, so the file is the interface."),
+                Field("distributor", "Distributor", "select", "distrokid",
+                      (("", tuple(distributors.KNOWN_DISTRIBUTORS)),),
+                      hint=f"Readable today: {readable}. The rest need one real "
+                           "export each before a column map can be written."),
+                Field("confirm_unverified", "I accept an unchecked column map",
+                      "check", pending_token,
+                      hint="No reader has been run against a real export yet, so a "
+                           "column could be mapped wrongly and still look right."),
+            ),
+            action="/imports", submit="Import", multipart=True,
+            error=error, note=note,
+        ),
+        Section("Why a file", "note", (
+            "Stream counts do not come from a streaming API. They come back down the "
+            "supply chain as DSR — monthly, per ISRC, per territory — and a label "
+            "holds whatever its distributor passes on. Importing one is also what "
+            "seeds the catalogue: every ISRC in the file becomes a recording, and "
+            "that is what the platform probe fans out over.",
+        )),
+    )
+
+
+def imports(conn: psycopg.Connection, tenant_id: str) -> View:
+    from rtf_platform import statements
+
+    rows = statements.recent(conn, tenant_id)
+    out = []
+    for r in rows:
+        period = "—"
+        if r["period_start"]:
+            period = str(r["period_start"])[:7]
+            if r["period_end"] and str(r["period_end"])[:7] != period:
+                period += f" → {str(r['period_end'])[:7]}"
+        out.append({
+            "id": str(r["id"]),
+            "file": r["filename"] or "(unnamed)",
+            "distributor": r["distributor"],
+            "period": period,
+            "rows": str(r["rows_loaded"]),
+            "plays": f"{r['total_quantity']:,}",
+            "money": f"{r['total_earnings']:.2f}",
+            "state": "unchecked" if not r["format_verified"] else r["state"],
+            "when": r["created_at"].strftime("%m-%d %H:%M"),
+            "insp": (
+                Section("Import", "kv", (
+                    ("file", r["filename"] or "—"),
+                    ("distributor", r["distributor"]),
+                    ("read as", r["format_key"]),
+                    ("column map", "confirmed against a real export"
+                     if r["format_verified"] else "never checked against a real export"),
+                    ("period", period),
+                    ("rows read", str(r["rows_read"])),
+                    ("rows loaded", str(r["rows_loaded"])),
+                    ("no usable ISRC", str(r["rows_no_isrc"])),
+                    ("recordings created", str(r["recordings_created"])),
+                    ("plays", f"{r['total_quantity']:,}"),
+                    ("earnings", f"{r['total_earnings']:.2f} {r['currency']}"),
+                    ("imported by", r["imported_by"] or "—"),
+                )),
+                Section("Names nobody claimed", "editlist",
+                        tuple((name, "no roster party with this exact name", None)
+                              for name in (r["unmatched_artists"] or []))
+                        or ((None, "Every artist in the file matched the roster.",
+                             None),)),
+                Section("Note", "note", (
+                    "A name is not an identity, so an unmatched one is reported "
+                    "rather than turned into a party. Creating one from a string is "
+                    "how a roster quietly acquires three spellings of one act.",
+                )),
+            ),
+        })
+
+    return View(
+        key="imports", title="Statements",
+        blurb="What the distributor actually paid, per recording per territory per "
+              "month. The only source of real stream counts. Live from "
+              "statement_import.",
+        stats=(("imports", str(len(out)), ""),
+               ("plays", f"{sum(r['total_quantity'] for r in rows):,}", ""),
+               ("earnings", f"{sum((r['total_earnings'] for r in rows), Decimal(0)):.2f}", ""),
+               ("recordings made", str(sum(r["recordings_created"] for r in rows)), ""),
+               ("unclaimed names",
+                str(len({n for r in rows for n in (r["unmatched_artists"] or [])})), "")),
+        cols=(Col("file", "File", "b", "24%"), Col("distributor", "Distributor", "chip", "13%"),
+              Col("period", "Period", "mono", "13%"), Col("rows", "Rows", "num", "8%"),
+              Col("plays", "Plays", "num", "11%"), Col("money", "Earnings", "num", "11%"),
+              Col("state", "Map", "chip", "11%"), Col("when", "When", "mono", "9%")),
+        rows=tuple(out),
+        empty="No statements imported. Export one from your distributor and drop it "
+              "in — it is the only place real stream counts come from.",
     )
 
 

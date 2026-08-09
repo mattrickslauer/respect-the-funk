@@ -36,11 +36,15 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import psycopg
-from fastapi import APIRouter, Cookie, Depends, Form, HTTPException, Request
+from fastapi import (
+    APIRouter, Cookie, Depends, File, Form, HTTPException, Request, UploadFile,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from rtf_platform import auth, db, demo, repo, research, settings as settings_mod
+from rtf_platform import (
+    auth, db, demo, repo, research, settings as settings_mod, statements,
+)
 from rtf_platform.domain import (
     ARTIST_STATUSES, DEFAULT_TYPE, ArtistType, Platform, ProfileMode, unrecognised,
 )
@@ -118,6 +122,9 @@ _TONES: dict[str, str] = {
     "warn": "warn", "stale": "warn", "pending": "warn", "claimed": "warn",
     "negotiating": "warn", "awaiting_reply": "warn", "near cap": "warn",
     "blocked_manual": "warn", "shortlisted": "warn", "winding down": "warn",
+    # A statement read through a column map nobody has checked against a real
+    # export. The numbers may be perfectly plausible and still wrong.
+    "unchecked": "warn",
     "conflict": "err", "error": "err", "failed": "err", "rejected": "err",
     "429": "err", "do-not-contact": "err", "suppressed": "err", "paused": "err",
     "needs you": "err", "unsubscribed": "err", "off": "err", "unanalysed": "err",
@@ -514,6 +521,126 @@ def artist_profile_delete(principal: Operator, artist_id: str, profile_id: str) 
     if tenant_id is not None:
         repo.delete_presence(conn, tenant_id, artist_id, profile_id)
     return RedirectResponse(f"/artists?sel={artist_id}", status_code=303)
+
+
+# ------------------------------------------------------- distributor statements
+
+#: Bigger than any statement a small roster produces, small enough that a mistaken
+#: upload cannot exhaust a Lambda's memory. Enforced on the bytes actually read
+#: rather than on a declared content-length, which a client chooses.
+MAX_STATEMENT_BYTES = 12 * 1024 * 1024
+
+
+def _imports_page(request: Request, principal: auth.Principal, *,
+                  sel: str = "", error: str = "", note: str = "",
+                  keep_confirm: bool = False, status_code: int = 200) -> Response:
+    """Statements, with the import form always present in the inspector.
+
+    The form is prepended to whatever row is selected rather than living behind its
+    own `?sel=new`: importing is the reason to open this view, and hiding it behind
+    a second click on a screen that is usually empty gets it missed.
+    """
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    view = (research.imports(conn, tenant_id) if tenant_id
+            else demo.View(key="imports", title="Statements",
+                           blurb=_IMPORTS_BLURB, stats=(), cols=(), rows=(),
+                           empty="Save an artist first — a statement needs a label "
+                                 "to belong to."))
+    upload = research._upload_sections(
+        error=error, note=note, pending_token="yes" if keep_confirm else "")
+    row = demo.select(view.rows, sel or None)
+    sel_row = {**row, "insp": (*upload, *row["insp"])} if row else {
+        "id": "new", "file": "Import", "insp": upload}
+    return templates.TemplateResponse(
+        request, "console/table.html",
+        _ctx(request, principal, here="imports", view=view, sel=sel_row, live=True,
+             insp_kicker="statement", insp_title=sel_row.get("file", "Import")),
+        status_code=status_code,
+    )
+
+
+_IMPORTS_BLURB = ("What the distributor actually paid, per recording per territory "
+                  "per month. The only source of real stream counts.")
+
+
+@router.get("/imports", response_class=HTMLResponse)
+def imports_console(request: Request, principal: Operator, sel: str = "") -> Response:
+    return _imports_page(request, principal, sel=sel)
+
+
+@router.post("/imports", response_class=HTMLResponse)
+async def imports_upload(
+    request: Request, principal: Operator,
+    file: Annotated[UploadFile, File()],
+    distributor: Annotated[str, Form()] = "",
+    confirm_unverified: Annotated[str, Form()] = "",
+) -> Response:
+    """Read the uploaded statement and, if confirmed, load it.
+
+    Two passes on purpose. The first reports what the file says and refuses to write,
+    because no reader here has been checked against a real export and a wrong column
+    map produces numbers that look entirely reasonable. Ticking the box and
+    submitting again is the second, deliberate act.
+    """
+    _require_write(principal)
+    raw = await file.read(MAX_STATEMENT_BYTES + 1)
+    if len(raw) > MAX_STATEMENT_BYTES:
+        return _imports_page(
+            request, principal, status_code=413,
+            error=f"That file is larger than {MAX_STATEMENT_BYTES // (1024 * 1024)}MB. "
+                  "Split it by period and import the parts.")
+    if not raw:
+        return _imports_page(request, principal, status_code=400,
+                             error="That file is empty.")
+
+    # Statements are exported by spreadsheets and arrive in whatever encoding the
+    # machine that made them preferred. Decoding with replacement keeps a stray byte
+    # from costing the whole import; the identifiers are ASCII either way.
+    text = raw.decode("utf-8-sig", errors="replace")
+    confirmed = confirm_unverified.strip().lower() in {"yes", "on", "true", "1"}
+
+    conn = _conn()
+    tenant = repo.ensure_tenant(conn, SETTINGS.tenant_slug, "Respect the Funk")
+    report = statements.load(
+        conn, str(tenant["id"]), text,
+        filename=(file.filename or "")[:200], distributor=distributor,
+        imported_by=principal.subject,
+        allow_unverified=confirmed,
+    )
+
+    if report.written:
+        return RedirectResponse("/imports", status_code=303)
+    return _imports_page(
+        request, principal,
+        error=report.refused,
+        note=_report_note(report),
+        keep_confirm=bool(report.format and not report.format.verified),
+        status_code=409 if report.duplicate_of else 400,
+    )
+
+
+def _report_note(report: statements.Report) -> str:
+    """What the file says, whether or not it was written. An operator confirming an
+    unchecked column map needs to see the numbers it produced before agreeing to
+    them — a confirmation with nothing to inspect is a rubber stamp."""
+    if report.format is None:
+        return ""
+    period = "no period"
+    if report.period_start:
+        period = str(report.period_start)[:7]
+        if report.period_end and str(report.period_end)[:7] != period:
+            period += f" → {str(report.period_end)[:7]}"
+    lines = [
+        f"read as   {report.format.key}",
+        f"period    {period}",
+        f"rows      {report.rows_read}"
+        + (f"  ({report.rows_no_isrc} with no usable ISRC)" if report.rows_no_isrc else ""),
+        f"plays     {report.total_quantity:,}",
+        f"earnings  {report.total_earnings} {report.currency}",
+        f"stores    {', '.join(report.stores) or '—'}",
+    ]
+    return "\n".join(lines)
 
 
 @router.get("/facts", response_class=HTMLResponse)

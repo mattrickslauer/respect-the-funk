@@ -44,11 +44,19 @@
             {# The write surface. Method POST with a full-page response and no htmx: an
                editor that silently swaps a fragment gives the operator no way to tell a
                saved record from a rendered one. A redirect proves the row moved. #}
-            <form class="ed" method="post" action="{{ s.action }}">
+            <form class="ed" method="post" action="{{ s.action }}"
+                  {% if s.multipart %}enctype="multipart/form-data"{% endif %}>
               {% if s.error %}<p class="ederr">{{ s.error }}</p>{% endif %}
+              {% if s.note %}<p class="ednote">{{ s.note }}</p>{% endif %}
               {% for f in s.items %}
                 {% if f.kind == 'static' %}
                   <p class="note" style="margin:0 0 .5rem">{{ f.label or f.value }}</p>
+                {% elif f.kind == 'check' %}
+                  <label class="edchk">
+                    <input type="checkbox" name="{{ f.name }}" value="yes"
+                           {% if f.value %}checked{% endif %}>
+                    <span>{{ f.label }}{% if f.hint %}<i>{{ f.hint }}</i>{% endif %}</span>
+                  </label>
                 {% else %}
                   <div class="edf">
                     <label for="f-{{ s.action }}-{{ f.name }}">{{ f.label }}</label>
@@ -62,6 +70,11 @@
                           {% if group %}</optgroup>{% endif %}
                         {% endfor %}
                       </select>
+                    {% elif f.kind == 'file' %}
+                      <input type="file" id="f-{{ s.action }}-{{ f.name }}"
+                             name="{{ f.name }}"
+                             {% if f.placeholder %}accept="{{ f.placeholder }}"{% endif %}
+                             {% if f.required %}required{% endif %}>
                     {% else %}
                       <input type="{{ 'url' if f.kind == 'url' else 'text' }}"
                              id="f-{{ s.action }}-{{ f.name }}" name="{{ f.name }}"

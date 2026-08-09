@@ -71,11 +71,21 @@ fi
 
 cluster_id="$(ccloud cluster list -o json \
   | python3 -c "
-import json,sys
+import json, sys
 want = sys.argv[1]
-for c in json.load(sys.stdin).get('clusters', []):
-    if c.get('name') == want:
-        print(c['id']); break
+doc = json.load(sys.stdin)
+# ccloud 0.8 returns a bare array; older and newer builds have wrapped it in an
+# object. Accept either rather than pinning to whichever one is installed today.
+clusters = doc if isinstance(doc, list) else doc.get('clusters', [])
+
+# CockroachDB Cloud's connection host carries a numeric label the cluster's own name
+# does not — 'respect-the-funk-31317.j77.aws…' is the host for a cluster displayed as
+# 'respect-the-funk'. .env holds the host form, because that is what you paste from the
+# console, so the exact name is tried first and the stripped form second.
+import re
+stripped = re.sub(r'-\d+$', '', want)
+by_name = {c.get('name'): c.get('id') for c in clusters}
+print(by_name.get(want) or by_name.get(stripped) or '')
 " "$cluster_name")"
 
 if [[ -z "$cluster_id" ]]; then

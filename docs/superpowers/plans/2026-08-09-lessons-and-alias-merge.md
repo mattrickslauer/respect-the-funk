@@ -770,6 +770,54 @@ Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep
 
 Expected: PASS, 19 tests.
 
+- [ ] **Step 4a: Make `applied` carry the sign, not just the magnitude**
+
+Task 2 shipped `rerank` reporting `abs(shift)`. That was wrong in the spec and it becomes load-bearing here: this task makes `applied` the inspector's evidence trail, and a reader who cannot tell whether a lesson *helped* or *hurt* a candidate has a trail that explains nothing. Magnitude without direction is not an explanation.
+
+In `platform/web/rtf_platform/lessons.py`, in `rerank`, change:
+
+```python
+            shifts.append({"lesson_id": str(lesson["id"]),
+                           "text": lesson["text"],
+                           "shift": abs(shift)})
+```
+
+to:
+
+```python
+            shifts.append({"lesson_id": str(lesson["id"]),
+                           "text": lesson["text"],
+                           # Signed. A consumer rendering this has to be able to say
+                           # "sank by 0.05 — ghosted twice" rather than only "0.05".
+                           # Positive lifted the candidate, negative sank it.
+                           "shift": shift})
+```
+
+Then fix the one Task 2 test that asserted the magnitude, in `platform/web/tests/test_lessons.py`:
+
+```python
+        self.assertAlmostEqual(applied[0]["shift"], -0.05,
+                               msg="a discouraging lesson reports a negative shift")
+```
+
+And add this test to the `Rerank` class:
+
+```python
+    def test_shift_sign_says_which_way_the_lesson_pushed(self):
+        # The inspector renders this. Magnitude alone cannot distinguish "we like them
+        # because they replied" from "we avoid them because they did not".
+        good = lessons.rerank([candidate("a", 0.5)],
+                              [lesson("party", "a", 1.0)], weight=0.05)
+        bad = lessons.rerank([candidate("a", 0.5)],
+                             [lesson("party", "a", -1.0)], weight=0.05)
+        self.assertGreater(good[0]["applied"][0]["shift"], 0)
+        self.assertLess(bad[0]["applied"][0]["shift"], 0)
+```
+
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
+
+Expected: PASS, 17 tests (16 from Tasks 2–3, plus this one).
+
 - [ ] **Step 5: Wire the rerank into `shortlist`**
 
 In `platform/web/rtf_platform/agents.py`, add to the imports:

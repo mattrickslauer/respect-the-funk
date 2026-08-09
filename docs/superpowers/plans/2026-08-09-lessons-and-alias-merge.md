@@ -1622,7 +1622,12 @@ class Deduplicating(unittest.TestCase):
                         (self.tenant,))
             self.assertEqual(cur.fetchone()["n"], 0,
                              "dedup_party must propose, never merge")
-        self.assertIsNotNone(other)
+            cur.execute("""SELECT party_class, alias_of FROM party WHERE id = %s""",
+                        (other,))
+            row = cur.fetchone()
+        self.assertEqual(row["party_class"], "counterparty",
+                         "the near-duplicate must be left exactly as it was found")
+        self.assertIsNone(row["alias_of"])
 
     def test_a_distant_party_produces_nothing(self):
         from rtf_platform import agents, spend

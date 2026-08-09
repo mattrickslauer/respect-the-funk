@@ -92,19 +92,10 @@ def split(text: str, *, size: int = CHUNK_CHARS,
     return chunks
 
 
-def embedder(conn: psycopg.Connection, lead: dict[str, Any],
-             gate: spend.Gate) -> fleet.Outcome:
-    """Chunk and embed one `party_document`, writing `party_chunk` rows.
-
-    `lead.target` is the document id. The document is expected to already exist — this
-    agent turns evidence into something retrievable, it does not go and find evidence.
-    Keeping fetch and embed in separate agents means a provider outage on one does not
-    strand the other, and the boundary between them is a row.
-
-    Chunks are written **one `INSERT` at a time inside one transaction**. Not batched,
-    because the vendor documents that large batch inserts degrade a vector index; not
-    autocommitted per row, because a crash halfway would leave a document half-indexed
-    with nothing recording that it was.
+def _fetch_embed_document(conn: psycopg.Connection, lead: dict[str, Any],
+                          gate: spend.Gate) -> dict[str, Any]:
+    """Load the document, chunk it, and embed the chunks. No writes — `embed_batch` calls
+    an embedding provider over the network, so nothing here may run inside a transaction.
     """
     document_id = lead["target"]
     with conn.cursor() as cur:
@@ -125,25 +116,41 @@ def embedder(conn: psycopg.Connection, lead: dict[str, Any],
 
     chunks = split(body)
     if not chunks:
-        return fleet.Outcome(summary="nothing to embed")
+        return {"doc": doc, "chunks": []}
 
     provider = embed.load()
     vectors, cost = embed.embed_batch(gate, provider, chunks)
+    return {"doc": doc, "chunks": chunks, "vectors": vectors, "cost": cost}
 
-    with conn.transaction():
-        with conn.cursor() as cur:
-            # Replace rather than append: re-embedding a document with a different model
-            # must not leave the old model's chunks behind, because a retrieval filtered
-            # to one model would then silently see a partial document.
-            cur.execute("DELETE FROM party_chunk WHERE document_id = %s", (doc["id"],))
-            for ordinal, (text, vector) in enumerate(zip(chunks, vectors)):
-                cur.execute(
-                    """INSERT INTO party_chunk (tenant_id, party_id, document_id, ordinal,
-                                                text, embedding, token_count, model)
-                       VALUES (%s, %s, %s, %s, %s, %s::VECTOR(1024), %s, %s)""",
-                    (doc["tenant_id"], doc["party_id"], doc["id"], ordinal, text,
-                     vector.literal(), len(text) // 4, vector.model),
-                )
+
+def _write_embed_document(conn: psycopg.Connection, lead: dict[str, Any],
+                          gate: spend.Gate, prepared: dict[str, Any]) -> fleet.Outcome:
+    """Write `party_chunk` rows from what `_fetch_embed_document` already fetched and
+    embedded. Nothing here does network I/O, so `fleet.work_once` runs this inside the
+    same transaction as `agent_run` and the lead's completion.
+
+    Chunks are written **one `INSERT` at a time**. Not batched, because the vendor
+    documents that large batch inserts degrade a vector index.
+    """
+    doc = prepared["doc"]
+    chunks = prepared["chunks"]
+    if not chunks:
+        return fleet.Outcome(summary="nothing to embed")
+    vectors, cost = prepared["vectors"], prepared["cost"]
+
+    with conn.cursor() as cur:
+        # Replace rather than append: re-embedding a document with a different model
+        # must not leave the old model's chunks behind, because a retrieval filtered
+        # to one model would then silently see a partial document.
+        cur.execute("DELETE FROM party_chunk WHERE document_id = %s", (doc["id"],))
+        for ordinal, (text, vector) in enumerate(zip(chunks, vectors)):
+            cur.execute(
+                """INSERT INTO party_chunk (tenant_id, party_id, document_id, ordinal,
+                                            text, embedding, token_count, model)
+                   VALUES (%s, %s, %s, %s, %s, %s::VECTOR(1024), %s, %s)""",
+                (doc["tenant_id"], doc["party_id"], doc["id"], ordinal, text,
+                 vector.literal(), len(text) // 4, vector.model),
+            )
 
     return fleet.Outcome(
         summary=f"{len(chunks)} chunks from {doc['title'][:60]!r}",
@@ -152,6 +159,15 @@ def embedder(conn: psycopg.Connection, lead: dict[str, Any],
         tokens_in=embed.estimate_tokens(chunks),
         cost_usd=cost,
     )
+
+
+#: `lead.target` is the document id. The document is expected to already exist — this
+#: agent turns evidence into something retrievable, it does not go and find evidence.
+#: Keeping fetch and embed in separate agents means a provider outage on one does not
+#: strand the other, and the boundary between them is a row. Split into fetch/write
+#: because `embed_batch` calls an embedding provider over the network — see
+#: `fleet.NetworkAgent`.
+embedder = fleet.NetworkAgent(fetch=_fetch_embed_document, write=_write_embed_document)
 
 
 def retrieve(conn: psycopg.Connection, tenant_id: str, query: str, *,
@@ -183,26 +199,10 @@ def retrieve(conn: psycopg.Connection, tenant_id: str, query: str, *,
         return list(cur.fetchall())
 
 
-def map_source(conn: psycopg.Connection, lead: dict[str, Any],
-               gate: spend.Gate) -> fleet.Outcome:
-    """Map one surface for one party: fetch it, write what it says, queue what it implies.
-
-    This is the agent the product is actually about. An operator asserts "this Spotify
-    page is my artist" and stops there; from that single row this fills in the
-    identifiers, the follower count, the genres, the catalogue and the releases, and
-    writes a lead for every release so the expansion continues without anyone asking.
-
-    Three rules it does not get to break:
-
-      * **Provenance is not the adapter's opinion.** What the platform measured is
-        `measured`, what it classified is `inferred`, what a human typed is `asserted`.
-        The adapter labels each item and this writes the label through unchanged.
-      * **A guess is a suggestion, never a fact.** An adapter that matched by name
-        returns `suggestions`, and they land in `suggestion` as `pending` for a person
-        to accept. Nothing here promotes one.
-      * **One transaction.** Facts, metrics, catalogue and the follow-on leads commit
-        together, so a crash cannot leave an artist half-mapped with no record that it
-        happened.
+def _fetch_map_source(conn: psycopg.Connection, lead: dict[str, Any],
+                      gate: spend.Gate) -> dict[str, Any]:
+    """Resolve the adapter and fetch the surface. `adapter.map_party` is an HTTP call to
+    a third party, so nothing here may run inside a transaction — see `fleet.NetworkAgent`.
     """
     party_id = lead.get("party_id")
     if not party_id:
@@ -223,147 +223,169 @@ def map_source(conn: psycopg.Connection, lead: dict[str, Any],
     except sources.SourceUnavailable as exc:
         raise fleet.LeadFailed(str(exc), permanent=exc.permanent) from exc
 
+    return {"platform": platform, "harvest": harvest}
+
+
+def _write_map_source(conn: psycopg.Connection, lead: dict[str, Any], gate: spend.Gate,
+                      prepared: dict[str, Any]) -> fleet.Outcome:
+    """Write what `_fetch_map_source` fetched: identifiers, facts, metrics, catalogue and
+    the follow-on leads it implies.
+
+    Three rules it does not get to break:
+
+      * **Provenance is not the adapter's opinion.** What the platform measured is
+        `measured`, what it classified is `inferred`, what a human typed is `asserted`.
+        The adapter labels each item and this writes the label through unchanged.
+      * **A guess is a suggestion, never a fact.** An adapter that matched by name
+        returns `suggestions`, and they land in `suggestion` as `pending` for a person
+        to accept. Nothing here promotes one.
+      * **One transaction.** Facts, metrics, catalogue and the follow-on leads commit
+        together with `agent_run` and the lead's own completion — `fleet.work_once`
+        wraps all of it, because nothing here does network I/O and holding a
+        transaction around a pure database write costs nothing extra.
+    """
+    platform, harvest = prepared["platform"], prepared["harvest"]
+    party_id = lead["party_id"]
     tenant_id = lead["tenant_id"]
     written = {"identifiers": 0, "facts": 0, "metrics": 0,
                "recordings": 0, "releases": 0, "suggestions": 0}
 
-    with conn.transaction():
-        with conn.cursor() as cur:
-            for item in harvest.identifiers:
-                cur.execute(
-                    """INSERT INTO party_identifier
-                            (tenant_id, party_id, kind, value, value_raw, provenance,
-                             source_lead_id)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s)
-                       ON CONFLICT (tenant_id, kind, value) DO NOTHING""",
-                    (tenant_id, party_id, item["kind"], item["value"],
-                     item.get("value_raw", item["value"]),
-                     item.get("provenance", "measured"), lead["id"]),
-                )
-                written["identifiers"] += cur.rowcount
-
-            for fact in harvest.facts:
-                # `fact_one_live_per_dimension` is unique per (tenant, party, dimension,
-                # provenance) while live, so a second genre would collide with the first.
-                # Superseding rather than skipping keeps the newest reading live and the
-                # history intact, which is what `supersedes_id` is for.
-                cur.execute(
-                    """UPDATE party_fact SET status = 'superseded'
-                        WHERE tenant_id = %s AND party_id = %s AND dimension = %s
-                          AND provenance = %s AND status = 'live' AND value_text != %s""",
-                    (tenant_id, party_id, fact["dimension"],
-                     fact.get("provenance", "inferred"), fact["value_text"]),
-                )
-                cur.execute(
-                    """INSERT INTO party_fact
-                            (tenant_id, party_id, dimension, value_text, provenance,
-                             confidence, source, written_by)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                       ON CONFLICT DO NOTHING""",
-                    (tenant_id, party_id, fact["dimension"], fact["value_text"],
-                     fact.get("provenance", "inferred"), fact.get("confidence"),
-                     platform, "map_source"),
-                )
-                written["facts"] += cur.rowcount
-
-            for metric in harvest.metrics:
-                cur.execute(
-                    """INSERT INTO party_metric
-                            (tenant_id, party_id, platform, entity_kind, metric, value,
-                             unit, provenance, source)
-                       VALUES (%s, %s, %s, 'party', %s, %s, %s, %s, %s)""",
-                    (tenant_id, party_id, platform, metric["metric"],
-                     metric["value"], metric.get("unit", "count"),
-                     metric.get("provenance", "measured"), platform),
-                )
-                written["metrics"] += 1
-
-            for track in harvest.recordings:
-                title = (track.get("title") or "").strip()
-                if not title:
-                    continue
-                isrc = (track.get("isrc") or "").strip().upper()
-                slug = repo.slugify(title)[:60] or "untitled"
-                if isrc:
-                    slug = f"{slug}-{isrc.lower()}"
-                cur.execute(
-                    """INSERT INTO recording (tenant_id, slug, title, isrc, isrc_raw,
-                                              duration_ms)
-                       VALUES (%s, %s, %s, %s, %s, %s)
-                       ON CONFLICT (tenant_id, slug) DO NOTHING
-                    RETURNING id""",
-                    (tenant_id, slug, title, isrc, track.get("isrc") or "",
-                     track.get("duration_ms")),
-                )
-                row = cur.fetchone()
-                if row is None:
-                    continue
-                written["recordings"] += 1
-                # A recording nobody is credited on is orphaned data. The credit is what
-                # ties the catalogue back to the artist it was fetched for.
-                cur.execute(
-                    """INSERT INTO party_credit (tenant_id, party_id, subject_kind,
-                                                 subject_id, role, provenance)
-                       VALUES (%s, %s, 'recording', %s, 'main_artist', 'measured')
-                       ON CONFLICT DO NOTHING""",
-                    (tenant_id, party_id, row["id"]),
-                )
-
-            for rel in harvest.releases:
-                title = (rel.get("title") or "").strip()
-                if not title:
-                    continue
-                released_on = (rel.get("release_date") or "")[:10] or None
-                gtin = (rel.get("gtin") or "").strip()
-
-                # A GTIN is the release's real identity and the table has a unique index
-                # on it. Without one — Spotify's album payload carries none — fall back
-                # to title and date, and accept that a re-release on the same day looks
-                # like the same row. The fallback is the weaker test, so it is only used
-                # when the strong one is unavailable rather than as well as.
-                if gtin:
-                    cur.execute("SELECT id FROM release WHERE tenant_id = %s AND gtin = %s",
-                                (tenant_id, gtin))
-                else:
-                    cur.execute(
-                        """SELECT id FROM release
-                            WHERE tenant_id = %s AND title = %s
-                              AND coalesce(released_on::STRING, '') = coalesce(%s, '')""",
-                        (tenant_id, title, released_on),
-                    )
-                if cur.fetchone():
-                    continue
-                cur.execute(
-                    """INSERT INTO release (tenant_id, title, gtin, gtin_raw,
-                                            release_type, released_on)
-                       VALUES (%s, %s, %s, %s, %s, %s)""",
-                    (tenant_id, title, gtin, rel.get("gtin") or "",
-                     rel.get("kind") or "single",
-                     released_on if released_on and len(released_on) == 10 else None),
-                )
-                written["releases"] += 1
-
-            for hint in harvest.suggestions:
-                cur.execute(
-                    """INSERT INTO suggestion (tenant_id, party_id, kind, payload,
-                                               confidence, rationale, source_lead_id)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                    (tenant_id, party_id, hint["kind"],
-                     psycopg.types.json.Jsonb(hint),
-                     hint.get("confidence", 0.5),
-                     f"{platform} matched on name — needs a human to confirm",
-                     lead["id"]),
-                )
-                written["suggestions"] += 1
-
-            # The surface has now actually been looked at, which is a different claim
-            # from the operator having asserted it exists.
+    with conn.cursor() as cur:
+        for item in harvest.identifiers:
             cur.execute(
-                """UPDATE presence SET checked_at = now(), state = 'present'
-                    WHERE tenant_id = %s AND subject_kind = 'party'
-                      AND subject_id = %s AND platform = %s""",
-                (tenant_id, party_id, platform),
+                """INSERT INTO party_identifier
+                        (tenant_id, party_id, kind, value, value_raw, provenance,
+                         source_lead_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (tenant_id, kind, value) DO NOTHING""",
+                (tenant_id, party_id, item["kind"], item["value"],
+                 item.get("value_raw", item["value"]),
+                 item.get("provenance", "measured"), lead["id"]),
             )
+            written["identifiers"] += cur.rowcount
+
+        for fact in harvest.facts:
+            # `fact_one_live_per_dimension` is unique per (tenant, party, dimension,
+            # provenance) while live, so a second genre would collide with the first.
+            # Superseding rather than skipping keeps the newest reading live and the
+            # history intact, which is what `supersedes_id` is for.
+            cur.execute(
+                """UPDATE party_fact SET status = 'superseded'
+                    WHERE tenant_id = %s AND party_id = %s AND dimension = %s
+                      AND provenance = %s AND status = 'live' AND value_text != %s""",
+                (tenant_id, party_id, fact["dimension"],
+                 fact.get("provenance", "inferred"), fact["value_text"]),
+            )
+            cur.execute(
+                """INSERT INTO party_fact
+                        (tenant_id, party_id, dimension, value_text, provenance,
+                         confidence, source, written_by)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT DO NOTHING""",
+                (tenant_id, party_id, fact["dimension"], fact["value_text"],
+                 fact.get("provenance", "inferred"), fact.get("confidence"),
+                 platform, "map_source"),
+            )
+            written["facts"] += cur.rowcount
+
+        for metric in harvest.metrics:
+            cur.execute(
+                """INSERT INTO party_metric
+                        (tenant_id, party_id, platform, entity_kind, metric, value,
+                         unit, provenance, source)
+                   VALUES (%s, %s, %s, 'party', %s, %s, %s, %s, %s)""",
+                (tenant_id, party_id, platform, metric["metric"],
+                 metric["value"], metric.get("unit", "count"),
+                 metric.get("provenance", "measured"), platform),
+            )
+            written["metrics"] += 1
+
+        for track in harvest.recordings:
+            title = (track.get("title") or "").strip()
+            if not title:
+                continue
+            isrc = (track.get("isrc") or "").strip().upper()
+            slug = repo.slugify(title)[:60] or "untitled"
+            if isrc:
+                slug = f"{slug}-{isrc.lower()}"
+            cur.execute(
+                """INSERT INTO recording (tenant_id, slug, title, isrc, isrc_raw,
+                                          duration_ms)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (tenant_id, slug) DO NOTHING
+                RETURNING id""",
+                (tenant_id, slug, title, isrc, track.get("isrc") or "",
+                 track.get("duration_ms")),
+            )
+            row = cur.fetchone()
+            if row is None:
+                continue
+            written["recordings"] += 1
+            # A recording nobody is credited on is orphaned data. The credit is what
+            # ties the catalogue back to the artist it was fetched for.
+            cur.execute(
+                """INSERT INTO party_credit (tenant_id, party_id, subject_kind,
+                                             subject_id, role, provenance)
+                   VALUES (%s, %s, 'recording', %s, 'main_artist', 'measured')
+                   ON CONFLICT DO NOTHING""",
+                (tenant_id, party_id, row["id"]),
+            )
+
+        for rel in harvest.releases:
+            title = (rel.get("title") or "").strip()
+            if not title:
+                continue
+            released_on = (rel.get("release_date") or "")[:10] or None
+            gtin = (rel.get("gtin") or "").strip()
+
+            # A GTIN is the release's real identity and the table has a unique index
+            # on it. Without one — Spotify's album payload carries none — fall back
+            # to title and date, and accept that a re-release on the same day looks
+            # like the same row. The fallback is the weaker test, so it is only used
+            # when the strong one is unavailable rather than as well as.
+            if gtin:
+                cur.execute("SELECT id FROM release WHERE tenant_id = %s AND gtin = %s",
+                            (tenant_id, gtin))
+            else:
+                cur.execute(
+                    """SELECT id FROM release
+                        WHERE tenant_id = %s AND title = %s
+                          AND coalesce(released_on::STRING, '') = coalesce(%s, '')""",
+                    (tenant_id, title, released_on),
+                )
+            if cur.fetchone():
+                continue
+            cur.execute(
+                """INSERT INTO release (tenant_id, title, gtin, gtin_raw,
+                                        release_type, released_on)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                (tenant_id, title, gtin, rel.get("gtin") or "",
+                 rel.get("kind") or "single",
+                 released_on if released_on and len(released_on) == 10 else None),
+            )
+            written["releases"] += 1
+
+        for hint in harvest.suggestions:
+            cur.execute(
+                """INSERT INTO suggestion (tenant_id, party_id, kind, payload,
+                                           confidence, rationale, source_lead_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (tenant_id, party_id, hint["kind"],
+                 psycopg.types.json.Jsonb(hint),
+                 hint.get("confidence", 0.5),
+                 f"{platform} matched on name — needs a human to confirm",
+                 lead["id"]),
+            )
+            written["suggestions"] += 1
+
+        # The surface has now actually been looked at, which is a different claim
+        # from the operator having asserted it exists.
+        cur.execute(
+            """UPDATE presence SET checked_at = now(), state = 'present'
+                WHERE tenant_id = %s AND subject_kind = 'party'
+                  AND subject_id = %s AND platform = %s""",
+            (tenant_id, party_id, platform),
+        )
 
     return fleet.Outcome(
         summary=harvest.summary or f"mapped {platform}",
@@ -375,17 +397,20 @@ def map_source(conn: psycopg.Connection, lead: dict[str, Any],
     )
 
 
-def find_counterparties(conn: psycopg.Connection, lead: dict[str, Any],
-                        gate: spend.Gate) -> fleet.Outcome:
-    """Find people worth pitching this artist to, and queue each one for embedding.
+#: The agent the product is actually about. An operator asserts "this Spotify page is my
+#: artist" and stops there; from that single row this fills in the identifiers, the
+#: follower count, the genres, the catalogue and the releases, and writes a lead for
+#: every release so the expansion continues without anyone asking. Split into fetch/write
+#: because `adapter.map_party` is an HTTP call — see `fleet.NetworkAgent`.
+map_source = fleet.NetworkAgent(fetch=_fetch_map_source, write=_write_map_source)
 
-    Writes them as parties with `party_class = 'counterparty'`, because a curator is a
-    party — migration 009 argues that at length. They arrive `contactable` and unembedded;
-    an `embed_party` lead per curator is what makes them findable by R1.
 
-    Discovery is bounded by `party_budget.max_leads_per_run` rather than by a constant, so
-    an operator can widen or narrow it per artist without a deploy. A frontier with no
-    ceiling is how one artist's expansion consumes an afternoon of somebody's free tier.
+def _fetch_find_counterparties(conn: psycopg.Connection, lead: dict[str, Any],
+                               gate: spend.Gate) -> dict[str, Any]:
+    """Read what discovery needs and call `adapter.discover_counterparties` — an HTTP
+    call, so nothing here may run inside a transaction (see `fleet.NetworkAgent`). The
+    reads are ordinary autocommitted statements; they only need to happen before the
+    network call, not inside anything.
     """
     party_id = lead.get("party_id")
     if not party_id:
@@ -437,72 +462,98 @@ def find_counterparties(conn: psycopg.Connection, lead: dict[str, Any],
     except sources.SourceUnavailable as exc:
         raise fleet.LeadFailed(str(exc), permanent=exc.permanent) from exc
 
+    return {"platform": platform, "harvest": harvest, "cap": cap}
+
+
+def _write_find_counterparties(conn: psycopg.Connection, lead: dict[str, Any],
+                               gate: spend.Gate, prepared: dict[str, Any]) -> fleet.Outcome:
+    """Write the curators `_fetch_find_counterparties` discovered, as parties with
+    `party_class = 'counterparty'` — migration 009 argues that at length. They arrive
+    `contactable` and unembedded; an `embed_party` lead per curator is what makes them
+    findable by R1.
+
+    Nothing here does network I/O, so `fleet.work_once` runs it inside the same
+    transaction as `agent_run` and the lead's completion.
+    """
+    platform, harvest, cap = prepared["platform"], prepared["harvest"], prepared["cap"]
+    party_id = lead["party_id"]
+    tenant_id = lead["tenant_id"]
+
     written = 0
     follow_on: list[dict[str, Any]] = []
-    with conn.transaction():
-        with conn.cursor() as cur:
-            for cp in harvest.counterparties[:cap]:
-                slug = f"{repo.slugify(cp['name'])[:50]}-{platform}-{cp['platform_id']}"
-                cur.execute(
-                    """INSERT INTO party (tenant_id, slug, name, kind, party_class,
-                                          contact_state, status)
-                       VALUES (%s, %s, %s, 'person', 'counterparty', 'contactable', 'active')
-                       ON CONFLICT (tenant_id, slug) DO NOTHING
-                    RETURNING id""",
-                    (tenant_id, slug, cp["name"]),
-                )
-                created = cur.fetchone()
-                if created is None:
-                    # Already known. Discovery finding the same curator again is the
-                    # normal case, not an error, and it must not re-queue an embedding.
-                    continue
-                cp_id = created["id"]
-                written += 1
+    with conn.cursor() as cur:
+        for cp in harvest.counterparties[:cap]:
+            slug = f"{repo.slugify(cp['name'])[:50]}-{platform}-{cp['platform_id']}"
+            cur.execute(
+                """INSERT INTO party (tenant_id, slug, name, kind, party_class,
+                                      contact_state, status)
+                   VALUES (%s, %s, %s, 'person', 'counterparty', 'contactable', 'active')
+                   ON CONFLICT (tenant_id, slug) DO NOTHING
+                RETURNING id""",
+                (tenant_id, slug, cp["name"]),
+            )
+            created = cur.fetchone()
+            if created is None:
+                # Already known. Discovery finding the same curator again is the
+                # normal case, not an error, and it must not re-queue an embedding.
+                continue
+            cp_id = created["id"]
+            written += 1
 
-                cur.execute(
-                    """INSERT INTO party_role (tenant_id, party_id, role)
-                       VALUES (%s, %s, %s) ON CONFLICT DO NOTHING""",
-                    (tenant_id, cp_id, cp.get("role", "curator")),
-                )
-                cur.execute(
-                    """INSERT INTO presence (tenant_id, subject_kind, subject_id, platform,
-                                             mode, handle, url, state, match_basis,
-                                             confidence)
-                       VALUES (%s, 'party', %s, %s, 'observed', %s, %s, 'present',
-                               'measured', 1.0)
-                       ON CONFLICT (tenant_id, subject_kind, subject_id, platform)
-                       DO NOTHING""",
-                    (tenant_id, cp_id, platform, cp["name"], cp.get("url", "")),
-                )
+            cur.execute(
+                """INSERT INTO party_role (tenant_id, party_id, role)
+                   VALUES (%s, %s, %s) ON CONFLICT DO NOTHING""",
+                (tenant_id, cp_id, cp.get("role", "curator")),
+            )
+            cur.execute(
+                """INSERT INTO presence (tenant_id, subject_kind, subject_id, platform,
+                                         mode, handle, url, state, match_basis,
+                                         confidence)
+                   VALUES (%s, 'party', %s, %s, 'observed', %s, %s, 'present',
+                           'measured', 1.0)
+                   ON CONFLICT (tenant_id, subject_kind, subject_id, platform)
+                   DO NOTHING""",
+                (tenant_id, cp_id, platform, cp["name"], cp.get("url", "")),
+            )
 
-                # The profile text is evidence, so it is a document rather than a column:
-                # it is what an embedding was computed from, and a fact whose basis has
-                # been thrown away cannot be argued with later.
-                body = cp["profile_text"]
-                cur.execute(
-                    """INSERT INTO party_document (tenant_id, party_id, lead_id, platform,
-                                                   url, title, body, content_hash, mime,
-                                                   lang, http_status)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'text/plain', 'en', 200)
-                       ON CONFLICT (tenant_id, content_hash) DO NOTHING""",
-                    (tenant_id, cp_id, lead["id"], platform, cp.get("url", ""),
-                     f"{cp['name']} — curator profile", body, content_hash(body)),
-                )
+            # The profile text is evidence, so it is a document rather than a column:
+            # it is what an embedding was computed from, and a fact whose basis has
+            # been thrown away cannot be argued with later.
+            body = cp["profile_text"]
+            cur.execute(
+                """INSERT INTO party_document (tenant_id, party_id, lead_id, platform,
+                                               url, title, body, content_hash, mime,
+                                               lang, http_status)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'text/plain', 'en', 200)
+                   ON CONFLICT (tenant_id, content_hash) DO NOTHING""",
+                (tenant_id, cp_id, lead["id"], platform, cp.get("url", ""),
+                 f"{cp['name']} — curator profile", body, content_hash(body)),
+            )
 
-                follow_on.append({
-                    "kind": "embed_party", "adapter": platform, "platform": platform,
-                    "party_id": str(cp_id), "scope_kind": "party",
-                    "target": str(cp_id),
-                    "target_hash": f"embed_party:{cp_id}",
-                    "reason": f"curator discovered via {platform}, not yet searchable",
-                    "score": 0.7,
-                })
+            follow_on.append({
+                "kind": "embed_party", "adapter": platform, "platform": platform,
+                "party_id": str(cp_id), "scope_kind": "party",
+                "target": str(cp_id),
+                "target_hash": f"embed_party:{cp_id}",
+                "reason": f"curator discovered via {platform}, not yet searchable",
+                "score": 0.7,
+            })
 
     return fleet.Outcome(
         summary=f"{written} new curator(s) from {harvest.summary}",
         calls=harvest.calls, leads=len(follow_on), follow_on=follow_on,
         dropped=max(0, len(harvest.counterparties) - cap),
     )
+
+
+#: Find people worth pitching this artist to, and queue each one for embedding.
+#: Discovery is bounded by `party_budget.max_leads_per_run` rather than by a constant, so
+#: an operator can widen or narrow it per artist without a deploy. A frontier with no
+#: ceiling is how one artist's expansion consumes an afternoon of somebody's free tier.
+#: Split into fetch/write because `adapter.discover_counterparties` is an HTTP call — see
+#: `fleet.NetworkAgent`.
+find_counterparties = fleet.NetworkAgent(fetch=_fetch_find_counterparties,
+                                         write=_write_find_counterparties)
 
 
 def profile_party(conn: psycopg.Connection, lead: dict[str, Any],
@@ -592,14 +643,10 @@ def profile_party(conn: psycopg.Connection, lead: dict[str, Any],
     )
 
 
-def embed_party(conn: psycopg.Connection, lead: dict[str, Any],
-                gate: spend.Gate) -> fleet.Outcome:
-    """Make one party findable by similarity.
-
-    Writes `party.profile_embedding` and the model beside it, which is what R1's index
-    prefix filters on. A party with an embedding and no model is unsearchable by
-    construction — migration 009 has a CHECK saying so — so the two are written together
-    or not at all.
+def _fetch_embed_party(conn: psycopg.Connection, lead: dict[str, Any],
+                       gate: spend.Gate) -> dict[str, Any]:
+    """Read the party's most recent profile text and embed it. `embed_batch` calls an
+    embedding provider over the network, so nothing here may run inside a transaction.
     """
     party_id = lead.get("party_id") or lead["target"]
     with conn.cursor() as cur:
@@ -616,16 +663,34 @@ def embed_party(conn: psycopg.Connection, lead: dict[str, Any],
 
     provider = embed.load()
     vectors, cost = embed.embed_batch(gate, provider, [row["body"]])
+    return {"body": row["body"], "vector": vectors[0], "cost": cost, "model": provider.model}
 
+
+def _write_embed_party(conn: psycopg.Connection, lead: dict[str, Any], gate: spend.Gate,
+                       prepared: dict[str, Any]) -> fleet.Outcome:
+    """Write `party.profile_embedding` and the model beside it, which is what R1's index
+    prefix filters on. A party with an embedding and no model is unsearchable by
+    construction — migration 009 has a CHECK saying so — so the two are written together.
+
+    Nothing here does network I/O, so `fleet.work_once` runs it inside the same
+    transaction as `agent_run` and the lead's completion.
+    """
+    party_id = lead.get("party_id") or lead["target"]
     with conn.cursor() as cur:
         cur.execute(
             """UPDATE party SET profile_embedding = %s::VECTOR(1024), embedding_model = %s
                 WHERE tenant_id = %s AND id = %s""",
-            (vectors[0].literal(), provider.model, lead["tenant_id"], party_id),
+            (prepared["vector"].literal(), prepared["model"], lead["tenant_id"], party_id),
         )
 
-    return fleet.Outcome(summary=f"embedded {provider.model}", facts=0, calls=1,
-                         tokens_in=embed.estimate_tokens([row["body"]]), cost_usd=cost)
+    return fleet.Outcome(summary=f"embedded {prepared['model']}", facts=0, calls=1,
+                         tokens_in=embed.estimate_tokens([prepared["body"]]),
+                         cost_usd=prepared["cost"])
+
+
+#: Make one party findable by similarity. Split into fetch/write because `embed_batch`
+#: calls an embedding provider — see `fleet.NetworkAgent`.
+embed_party = fleet.NetworkAgent(fetch=_fetch_embed_party, write=_write_embed_party)
 
 
 def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
@@ -734,7 +799,7 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
 
 
 #: Which agent handles which lead kind. The fleet reads this; no agent reads it.
-REGISTRY: dict[str, fleet.Agent] = {
+REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     "embed_document": embedder,
     "map_source": map_source,
     "find_counterparties": find_counterparties,

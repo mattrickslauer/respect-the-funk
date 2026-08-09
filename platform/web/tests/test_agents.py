@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import unittest
 
-from rtf_platform import agents
+from rtf_platform import agents, fleet
 
 
 class Hashing(unittest.TestCase):
@@ -50,9 +50,18 @@ class Splitting(unittest.TestCase):
         self.assertGreater(len(chunks), 1)
         self.assertTrue(all(len(c) <= agents.CHUNK_CHARS for c in chunks))
 
-    def test_registry_maps_kinds_to_callables(self):
+    def test_registry_maps_kinds_to_something_the_fleet_can_run(self):
+        """Either a plain `(conn, lead, gate) -> Outcome` callable — for an agent whose
+        body is free of network I/O — or a `fleet.NetworkAgent`, whose `fetch` and
+        `write` must themselves each be callable. `work_once` dispatches on which shape
+        it got; this is the contract that dispatch depends on.
+        """
         for kind, agent in agents.REGISTRY.items():
-            self.assertTrue(callable(agent), f"{kind} is not callable")
+            if isinstance(agent, fleet.NetworkAgent):
+                self.assertTrue(callable(agent.fetch), f"{kind}.fetch is not callable")
+                self.assertTrue(callable(agent.write), f"{kind}.write is not callable")
+            else:
+                self.assertTrue(callable(agent), f"{kind} is not callable")
 
 
 if __name__ == "__main__":

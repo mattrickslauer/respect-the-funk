@@ -111,7 +111,41 @@ class Outcome:
 
 
 Agent = Callable[[psycopg.Connection, dict[str, Any], spend.Gate], Outcome]
-"""`(conn, lead, gate) -> Outcome`. Raise `LeadFailed` to reschedule or park the lead."""
+"""`(conn, lead, gate) -> Outcome`. Raise `LeadFailed` to reschedule or park the lead.
+
+Use this shape only for an agent whose entire body is free of network I/O —
+`agents.profile_party` is the only one. `work_once` runs this callable *inside* the same
+transaction that writes `agent_run` and completes the lead, so anything it does — a
+blocking HTTP call to a source adapter, a call to an embedding provider — would hold that
+transaction open across the call. An agent that needs the network is a `NetworkAgent`
+instead.
+"""
+
+
+@dataclass(frozen=True)
+class NetworkAgent:
+    """An agent split into a network fetch and a database write, because the two must not
+    share a transaction.
+
+    `fetch(conn, lead, gate)` runs first, with no transaction open. It may still read the
+    database — `sources.enabled_for` looks up the manifest, `embedder`'s fetch reads the
+    document it is about to chunk — because a read outside a transaction is just an
+    autocommitted statement, not a held lock. What it returns is whatever `write` needs:
+    a `sources.Harvest`, a batch of embedding vectors, anything already fetched and not
+    going to change. `fetch` may raise `LeadFailed` or `spend.SpendRefused`, exactly as a
+    plain `Agent` could.
+
+    `write(conn, lead, gate, prepared)` runs second, inside the transaction `work_once`
+    also uses for `record_run` and `complete`. It touches the database and nothing else —
+    no adapter call, no embedding call — so holding a transaction around it costs nothing
+    it was not already going to cost. This is what makes the fetch, the write, the run
+    record and the lead's completion land together or not at all: a crash after the fetch
+    but before the write commits leaves no trace of either, and the lease brings the lead
+    back for the next worker to fetch again — repeating work, never duplicating it.
+    """
+
+    fetch: Callable[[psycopg.Connection, dict[str, Any], spend.Gate], Any]
+    write: Callable[[psycopg.Connection, dict[str, Any], spend.Gate, Any], Outcome]
 
 
 def backoff_seconds(attempts: int) -> int:
@@ -318,8 +352,26 @@ def record_run(conn: psycopg.Connection, lead: dict[str, Any], agent_name: str,
         )
 
 
+def _writer(conn: psycopg.Connection, agent: Agent | NetworkAgent,
+           lead: dict[str, Any], gate: spend.Gate) -> Callable[[], Outcome]:
+    """Do whatever network I/O the agent needs, with no transaction open, and return a
+    zero-argument callable that performs its database writes.
+
+    The callable must only be invoked from inside the transaction that also writes
+    `agent_run` and completes the lead — that is the whole point of splitting the two:
+    `fetch` can block on an HTTP response for as long as it needs to without a
+    transaction sitting open on the fleet's one connection, and everything the returned
+    callable does is a database write, so wrapping it costs nothing extra.
+    """
+    if isinstance(agent, NetworkAgent):
+        prepared = agent.fetch(conn, lead, gate)
+        return lambda: agent.write(conn, lead, gate, prepared)
+    return lambda: agent(conn, lead, gate)
+
+
 def work_once(conn: psycopg.Connection, tenant_id: str, agent_name: str,
-              agent: Agent, *, kinds: Sequence[str], batch: int = BATCH) -> int:
+              agent: Agent | NetworkAgent, *, kinds: Sequence[str],
+              batch: int = BATCH) -> int:
     """Claim a batch, run the agent over each lead, write everything back.
 
     Returns how many leads were worked, so a caller can loop until it returns zero and
@@ -327,32 +379,49 @@ def work_once(conn: psycopg.Connection, tenant_id: str, agent_name: str,
 
     Each lead is independent: one that throws is failed and the rest still run. A batch
     that aborts wholesale on the first bad row is how one malformed target stops a fleet.
+
+    The agent's writes, the `agent_run` row and the lead's completion commit together —
+    `with conn.transaction()` spans all three, so a crash between "the agent succeeded"
+    and "the lead is marked done" cannot happen: either every write in that span is
+    durable or none of it is, and a lead that looks unfinished is claimable again rather
+    than quietly re-run by the next worker that asks. `db.py` opens the connection in
+    autocommit, so without this each of those was its own commit, and that gap is exactly
+    what produced three `agent_run` rows with `state = 'ok'` for one lead before it
+    finally reached `done`, and three duplicate `party_metric` rows alongside them.
+
+    That transaction never spans a network call, because `_writer` runs the agent's fetch
+    phase (if it has one) before the transaction opens. Only the write phase — database
+    statements, nothing else — sits inside it alongside `record_run` and `complete`.
     """
     leads = claim(conn, tenant_id, agent_name, kinds=kinds, batch=batch)
     for lead in leads:
         started = time.monotonic()
         gate = spend.Gate.open(conn, str(lead["tenant_id"]))
         try:
-            outcome = agent(conn, lead, gate)
+            write = _writer(conn, agent, lead, gate)
+            with conn.transaction():
+                outcome = write()
+                record_run(conn, lead, agent_name, outcome, gate,
+                           state="ok", error="", started=started)
+                complete(conn, lead, outcome)
         except LeadFailed as exc:
-            record_run(conn, lead, agent_name, Outcome(), gate,
-                       state="failed", error=str(exc), started=started)
-            fail(conn, lead, str(exc), permanent=exc.permanent)
+            with conn.transaction():
+                record_run(conn, lead, agent_name, Outcome(), gate,
+                           state="failed", error=str(exc), started=started)
+                fail(conn, lead, str(exc), permanent=exc.permanent)
         except spend.SpendRefused as exc:
             # Not a failure of the work — a decision not to pay for it. Reschedule
             # rather than counting it against `attempts`, because raising the ceiling
             # should let it run, not leave it parked at four strikes.
-            record_run(conn, lead, agent_name, Outcome(), gate,
-                       state="refused", error=str(exc), started=started)
-            _defer(conn, lead)
+            with conn.transaction():
+                record_run(conn, lead, agent_name, Outcome(), gate,
+                           state="refused", error=str(exc), started=started)
+                _defer(conn, lead)
         except Exception as exc:  # noqa: BLE001 — an agent must not take the fleet down
-            record_run(conn, lead, agent_name, Outcome(), gate,
-                       state="error", error=repr(exc), started=started)
-            fail(conn, lead, repr(exc))
-        else:
-            record_run(conn, lead, agent_name, outcome, gate,
-                       state="ok", error="", started=started)
-            complete(conn, lead, outcome)
+            with conn.transaction():
+                record_run(conn, lead, agent_name, Outcome(), gate,
+                           state="error", error=repr(exc), started=started)
+                fail(conn, lead, repr(exc))
     return len(leads)
 
 

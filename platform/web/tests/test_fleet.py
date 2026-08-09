@@ -238,6 +238,80 @@ class Claiming(unittest.TestCase):
                         "AND state = 'ok'", (self.tenant,))
             self.assertEqual(cur.fetchone()["n"], 2)
 
+    def test_a_network_agents_successful_write_commits_with_completion(self):
+        """`fleet.NetworkAgent` is the shape a real agent that calls out to a source
+        adapter or an embedding provider uses. `fetch` does the network I/O; `write`
+        does the database writes and runs inside `work_once`'s transaction alongside
+        `record_run` and `complete`, exactly like a plain `Agent`.
+        """
+        lead_id = self._lead()
+
+        def fetch(conn, lead, gate):
+            return {"value": 42}
+
+        def write(conn, lead, gate, prepared):
+            return fleet.Outcome(summary=f"wrote {prepared['value']}", facts=1)
+
+        worked = fleet.work_once(self.conn, self.tenant, "prober",
+                                 fleet.NetworkAgent(fetch=fetch, write=write),
+                                 kinds=["probe"])
+        self.assertEqual(worked, 1)
+        self.assertEqual(self._state(lead_id)["state"], "done")
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT state, facts FROM agent_run WHERE lead_id = %s", (lead_id,))
+            run = cur.fetchone()
+        self.assertEqual(run["state"], "ok")
+        self.assertEqual(run["facts"], 1)
+
+    def test_a_network_agents_fetch_runs_outside_the_transaction_its_write_runs_inside(self):
+        """The reason `NetworkAgent` exists: a slow network call must never sit inside the
+        transaction that also writes `agent_run` and completes the lead. Prove both
+        halves — whatever `fetch` writes on its own is durable even when `write` later
+        fails, because `fetch` ran with no transaction open; whatever `write` does rolls
+        back together with its own failure, because it runs inside `work_once`'s
+        transaction.
+        """
+        lead_id = self._lead()
+        fetch_marker = str(uuid.uuid4())
+        write_marker = str(uuid.uuid4())
+
+        def fetch(conn, lead, gate):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO lead (tenant_id, scope_kind, kind, adapter, target,
+                                         target_hash, next_action_at)
+                       VALUES (%s, 'tenant', 'marker', 'test', %s, %s, now())""",
+                    (self.tenant, fetch_marker, fetch_marker),
+                )
+            return {"ok": True}
+
+        def write(conn, lead, gate, prepared):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO lead (tenant_id, scope_kind, kind, adapter, target,
+                                         target_hash, next_action_at)
+                       VALUES (%s, 'tenant', 'marker', 'test', %s, %s, now())""",
+                    (self.tenant, write_marker, write_marker),
+                )
+            raise fleet.LeadFailed("write blew up after its own insert")
+
+        agent = fleet.NetworkAgent(fetch=fetch, write=write)
+        fleet.work_once(self.conn, self.tenant, "prober", agent, kinds=["probe"])
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM lead WHERE target_hash = %s",
+                        (fetch_marker,))
+            self.assertEqual(
+                cur.fetchone()["n"], 1,
+                "fetch's own write should survive — it ran with no transaction open")
+            cur.execute("SELECT count(*) AS n FROM lead WHERE target_hash = %s",
+                        (write_marker,))
+            self.assertEqual(
+                cur.fetchone()["n"], 0,
+                "write's insert should have rolled back with its own failure")
+
+        self.assertEqual(self._state(lead_id)["state"], "pending")
+
     def test_one_bad_lead_does_not_stop_the_batch(self):
         good = self._lead()
         bad = self._lead(target_hash=str(uuid.uuid4()))
@@ -267,6 +341,47 @@ class Claiming(unittest.TestCase):
         with self.conn.cursor() as cur:
             cur.execute("SELECT state FROM agent_run WHERE lead_id = %s", (lead_id,))
             self.assertEqual(cur.fetchone()["state"], "refused")
+
+    def test_an_agents_write_rolls_back_with_its_failure(self):
+        """The property this fix exists for. `db.py` opens the connection in autocommit,
+        so an agent's write and the failure that follows it are two separate commits
+        unless `work_once` puts them in the same transaction. Measured on the live
+        cluster as three `agent_run` rows with `state = 'ok'` for one lead before it
+        reached `done`, and three duplicate `party_metric` rows alongside them — a crash
+        (or here, a raise) between the write and the lead's completion left the write
+        durable and the lead still claimable, so the next worker ran it again.
+
+        A fake agent that writes a row and then raises reproduces the same shape without
+        needing an actual crash: on the current, unfixed code the row survives the
+        failure, because the write already committed by the time `LeadFailed` is raised.
+        """
+        lead_id = self._lead()
+        marker_hash = str(uuid.uuid4())
+
+        def bad_agent(conn, lead, gate):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO lead (tenant_id, scope_kind, kind, adapter, target,
+                                         target_hash, next_action_at)
+                       VALUES (%s, 'tenant', 'marker', 'test', %s, %s, now())""",
+                    (self.tenant, marker_hash, marker_hash),
+                )
+            raise fleet.LeadFailed("wrote something, then blew up")
+
+        fleet.work_once(self.conn, self.tenant, "prober", bad_agent, kinds=["probe"])
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM lead WHERE target_hash = %s",
+                        (marker_hash,))
+            self.assertEqual(
+                cur.fetchone()["n"], 0,
+                "the agent's write survived a failure it should have rolled back with")
+
+        row = self._state(lead_id)
+        self.assertEqual(row["state"], "pending",
+                         "a failed lead must be claimable again or parked, "
+                         "not stuck as though nothing happened")
+        self.assertEqual(row["attempts"], 1)
 
     def test_an_unexpected_exception_is_contained(self):
         lead_id = self._lead()

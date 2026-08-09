@@ -718,7 +718,8 @@ def runs(request: Request, principal: Operator, sel: str = "") -> Response:
 
 @router.get("/counterparties", response_class=HTMLResponse)
 def counterparties(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _table(request, principal, demo.COUNTERPARTIES, sel or None, "counterparty", "who")
+    return _live(request, principal, research.counterparties, sel or None,
+                 "counterparty", "who")
 
 
 @router.get("/threads", response_class=HTMLResponse)

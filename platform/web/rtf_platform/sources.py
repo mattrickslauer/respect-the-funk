@@ -50,7 +50,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, Sequence
 
 import psycopg
 
@@ -80,6 +80,7 @@ class Harvest:
     recordings: list[dict[str, Any]] = field(default_factory=list)
     releases: list[dict[str, Any]] = field(default_factory=list)
     suggestions: list[dict[str, Any]] = field(default_factory=list)
+    counterparties: list[dict[str, Any]] = field(default_factory=list)
     leads: list[dict[str, Any]] = field(default_factory=list)
     documents: list[dict[str, Any]] = field(default_factory=list)
     calls: int = 0
@@ -355,6 +356,17 @@ class DeezerSource:
                     harvest.calls += 1
                     gtin = (detail.get("upc") or "").strip()
                     tracks = ((detail.get("tracks") or {}).get("data") or [])
+                    # Deezer puts genres on the release, not the artist. They are the
+                    # only description of *style* the free API gives, and style is what
+                    # a curator actually selects on — so this is the field that makes
+                    # counterparty discovery possible at all for an unknown act.
+                    for genre in ((detail.get("genres") or {}).get("data") or []):
+                        name_ = (genre.get("name") or "").strip()
+                        if name_:
+                            harvest.facts.append({
+                                "dimension": "genre", "value_text": name_,
+                                "provenance": "inferred", "confidence": 0.6,
+                            })
                 except SourceUnavailable:
                     pass
 
@@ -385,6 +397,109 @@ class DeezerSource:
                     "duration_ms": (track.get("duration") or 0) * 1000 or None,
                 })
 
+        return harvest
+
+
+    # ------------------------------------------------------------ counterparties
+
+    def discover_counterparties(self, artist_name: str, deezer_id: str = "",
+                                terms: Sequence[str] = ()) -> Harvest:
+        """Find playlist curators worth pitching this artist to.
+
+        The sourcing question `SCOPE-RESET` open decision 4 left open, answered the way
+        Pillar 10 §4 and §5 demanded: **no scraper.** This reads two public, documented,
+        keyless endpoints — related artists, and playlist search — and everything it
+        finds becomes a candidate for a human to accept, never a contact to mail.
+
+        The signal is deliberately indirect. A playlist whose title matches an artist
+        similar to ours, made by somebody who is not us, is a person whose taste already
+        points at this kind of record. That is a far better pitch target than anyone
+        found by follower count, and it is the reasoning a person does manually when they
+        browse a sound page — which §5 found to be both compliant and the highest-signal
+        path available.
+
+        What this is *not*: a claim that these people are reachable. Deezer exposes a
+        creator's name and id, not an email. Turning a curator into a contact is a
+        separate act with its own consent question, and nothing here pretends otherwise.
+        """
+        harvest = Harvest()
+
+        # Genre terms first, artist name last. Searching playlists for an unsigned
+        # artist's *name* returns nothing, because nobody has made a playlist about
+        # somebody nobody has heard of — which is every artist this product is for. What
+        # a curator actually selects on is style, so style is what we search. The name
+        # stays in the list because for an act with any recognition it is the sharpest
+        # query there is, and this should get better as they do.
+        names = [t for t in terms if t] + [artist_name]
+
+        if deezer_id:
+            try:
+                related = _get(f"https://api.deezer.com/artist/{deezer_id}/related?limit=8")
+                harvest.calls += 1
+                names += [a.get("name", "") for a in (related.get("data") or [])[:8]]
+            except SourceUnavailable:
+                # Related artists is an enrichment, not the mechanism, and a brand new
+                # artist has none. Genre terms still work.
+                pass
+
+        # Aggregate per creator: one curator who made four matching playlists is a
+        # stronger candidate than four who made one each, and the count is the evidence.
+        found: dict[str, dict[str, Any]] = {}
+        for name in [n for n in dict.fromkeys(names) if n][:6]:
+            try:
+                query = urllib.parse.urlencode({"q": name, "limit": 25})
+                page = _get(f"https://api.deezer.com/search/playlist?{query}")
+                harvest.calls += 1
+            except SourceUnavailable:
+                continue
+
+            for playlist in (page.get("data") or [])[:25]:
+                # Deezer names the owner `user` on a search result and `creator` on the
+                # full playlist resource. Reading only one of them returns nothing and
+                # looks exactly like "no curators exist for this genre" — which is a
+                # believable answer for an unsigned artist, and was wrong.
+                creator = playlist.get("creator") or playlist.get("user") or {}
+                creator_id = str(creator.get("id") or "")
+                creator_name = creator.get("name") or ""
+                if not creator_id or not creator_name:
+                    continue
+                entry = found.setdefault(creator_id, {
+                    "name": creator_name,
+                    "platform": "deezer",
+                    "platform_id": creator_id,
+                    "url": f"https://www.deezer.com/profile/{creator_id}",
+                    "role": "curator",
+                    "playlists": [],
+                    "matched": set(),
+                })
+                entry["playlists"].append({
+                    "title": playlist.get("title", ""),
+                    "tracks": playlist.get("nb_tracks"),
+                    "url": playlist.get("link", ""),
+                })
+                entry["matched"].add(name)
+
+        for entry in found.values():
+            titles = [p["title"] for p in entry["playlists"]][:12]
+            # The text that becomes the embedding. Their playlist titles are the only
+            # description of taste Deezer gives us, and they are a surprisingly good one —
+            # people name playlists after the feeling they are for.
+            entry["profile_text"] = (
+                f"{entry['name']} curates playlists on Deezer including: "
+                + "; ".join(titles)
+                + f". Playlists matched searches for: {', '.join(sorted(entry['matched']))}."
+            )
+            entry["evidence"] = {
+                "playlists": len(entry["playlists"]),
+                "matched_artists": sorted(entry["matched"]),
+                "total_tracks": sum(p["tracks"] or 0 for p in entry["playlists"]),
+            }
+            entry.pop("matched")
+            harvest.counterparties.append(entry)
+
+        harvest.counterparties.sort(key=lambda c: -c["evidence"]["playlists"])
+        harvest.summary = (f"deezer: {len(harvest.counterparties)} curators across "
+                           f"{len(names)} artist name(s)")
         return harvest
 
 

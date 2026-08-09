@@ -780,6 +780,91 @@ def suggestions_section(rows: list[dict[str, Any]], *, back: str) -> Section:
     )
 
 
+# --------------------------------------------------------------- counterparties
+
+def counterparties(conn: psycopg.Connection, tenant_id: str) -> View:
+    """Everyone we could take a record to, and what we actually know about each.
+
+    Live from `party` where `party_class = 'counterparty'` — the same table the roster
+    lives in, which is the whole argument of migration 009. The columns that differ are
+    the ones the shortlist needs: whether they are contactable, and whether they have an
+    embedding, because a counterparty without one is invisible to R1 no matter how good a
+    match they would be.
+
+    `searchable` is shown as its own column rather than folded into a status, because
+    "we know about them but cannot find them" is a specific, fixable state and a reader
+    should be able to count them at a glance.
+    """
+    rows = _rows(conn, """
+        SELECT p.id, p.name, p.contact_state, p.embedding_model,
+               (p.profile_embedding IS NOT NULL) AS searchable,
+               pr.platform, pr.url,
+               (SELECT count(*) FROM party_role r
+                 WHERE r.party_id = p.id) AS roles,
+               (SELECT string_agg(r.role, ', ') FROM party_role r
+                 WHERE r.party_id = p.id) AS role_list,
+               (SELECT d.body FROM party_document d
+                 WHERE d.party_id = p.id ORDER BY d.fetched_at DESC LIMIT 1) AS profile
+          FROM party p
+          LEFT JOIN presence pr ON pr.subject_kind = 'party' AND pr.subject_id = p.id
+         WHERE p.tenant_id = %s AND p.party_class = 'counterparty'
+         ORDER BY p.name
+         LIMIT %s""", (tenant_id, LIMIT))
+
+    out = []
+    for r in rows:
+        profile = (r["profile"] or "").strip()
+        out.append({
+            "id": str(r["id"]), "who": r["name"],
+            "kind": r["role_list"] or "—",
+            "platform": r["platform"] or "—",
+            "state": r["contact_state"],
+            "searchable": "yes" if r["searchable"] else "no",
+            "spark": "▁▁▁▁▁▁▁",
+            "insp": (
+                Section("Counterparty", "kv", (
+                    ("name", r["name"]),
+                    ("roles", r["role_list"] or "none recorded"),
+                    ("platform", r["platform"] or "—"),
+                    ("contact state", r["contact_state"]),
+                    ("searchable", "yes" if r["searchable"]
+                     else "no — not embedded, so R1 cannot see them"),
+                    ("embedding model", r["embedding_model"] or "—"),
+                )),
+                Section("What we read", "quote", (profile[:600] or
+                        "Nothing recorded. Without a profile there is nothing to embed.",)),
+                Section("How they were found", "note", (
+                    "Discovered by searching a public playlist index for this artist's "
+                    "genre, then aggregated per curator. Nothing here was scraped and "
+                    "nothing here is a contact — a name and a public profile is not "
+                    "permission to email somebody.",
+                )),
+                Section("", "actions", (
+                    (("Open profile", r["url"], "") if r["url"] else ("No URL", "#", "")),
+                )),
+            ),
+        })
+
+    embedded = sum(1 for r in out if r["searchable"] == "yes")
+    return View(
+        key="counterparties", title="Counterparties",
+        blurb="Curators, programmers and writers we could take a record to. Live from "
+              "party where the class is counterparty — the same table the roster is in.",
+        stats=(("known", str(len(out)), ""),
+               ("searchable", str(embedded), ""),
+               ("contactable", str(sum(1 for r in out if r["state"] == "contactable")), ""),
+               ("shown", str(len(out)), "")),
+        cols=(Col("who", "Who", "b", "30%"), Col("kind", "Role", "chip", "14%"),
+              Col("platform", "Platform", "", "12%"),
+              Col("state", "Contact", "chip", "14%"),
+              Col("searchable", "Indexed", "chip", "10%"),
+              Col("spark", "", "spark", "10%")),
+        rows=tuple(out),
+        empty="Nobody discovered yet. Map a source for an artist, then run prospecting — "
+              "curators come from the playlists that already carry their genre.",
+    )
+
+
 # ----------------------------------------------------------------------- today
 
 def today(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]],

@@ -369,8 +369,312 @@ def map_source(conn: psycopg.Connection, lead: dict[str, Any],
     )
 
 
+def find_counterparties(conn: psycopg.Connection, lead: dict[str, Any],
+                        gate: spend.Gate) -> fleet.Outcome:
+    """Find people worth pitching this artist to, and queue each one for embedding.
+
+    Writes them as parties with `party_class = 'counterparty'`, because a curator is a
+    party — migration 009 argues that at length. They arrive `contactable` and unembedded;
+    an `embed_party` lead per curator is what makes them findable by R1.
+
+    Discovery is bounded by `party_budget.max_leads_per_run` rather than by a constant, so
+    an operator can widen or narrow it per artist without a deploy. A frontier with no
+    ceiling is how one artist's expansion consumes an afternoon of somebody's free tier.
+    """
+    party_id = lead.get("party_id")
+    if not party_id:
+        raise fleet.LeadFailed("find_counterparties needs a party", permanent=True)
+
+    platform = lead.get("platform") or lead.get("adapter") or "deezer"
+    try:
+        adapter = sources.enabled_for(conn, platform)
+    except sources.SourceUnavailable as exc:
+        raise fleet.LeadFailed(str(exc), permanent=exc.permanent) from exc
+    if not hasattr(adapter, "discover_counterparties"):
+        raise fleet.LeadFailed(f"{platform} cannot discover counterparties",
+                               permanent=True)
+
+    gate.check(platform)
+    tenant_id = lead["tenant_id"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT name FROM party WHERE id = %s", (party_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise fleet.LeadFailed("the artist is gone", permanent=True)
+        artist_name = row["name"]
+        cur.execute(
+            """SELECT value FROM party_identifier
+                WHERE tenant_id = %s AND party_id = %s AND kind = %s""",
+            (tenant_id, party_id, f"{platform}_artist"),
+        )
+        ident = cur.fetchone()
+        cur.execute(
+            "SELECT max_leads_per_run FROM party_budget WHERE tenant_id = %s AND party_id = %s",
+            (tenant_id, party_id),
+        )
+        budget = cur.fetchone()
+        # Style, not name. A curator selects on what a record sounds like, and for an
+        # artist nobody has heard of the name returns nothing at all.
+        cur.execute(
+            """SELECT DISTINCT value_text FROM party_fact
+                WHERE tenant_id = %s AND party_id = %s AND dimension = 'genre'
+                  AND status = 'live' LIMIT 5""",
+            (tenant_id, party_id),
+        )
+        terms = [r["value_text"] for r in cur.fetchall()]
+    cap = int(budget["max_leads_per_run"]) if budget else 25
+
+    try:
+        harvest = adapter.discover_counterparties(
+            artist_name, ident["value"] if ident else "", terms=terms)
+    except sources.SourceUnavailable as exc:
+        raise fleet.LeadFailed(str(exc), permanent=exc.permanent) from exc
+
+    written = 0
+    follow_on: list[dict[str, Any]] = []
+    with conn.transaction():
+        with conn.cursor() as cur:
+            for cp in harvest.counterparties[:cap]:
+                slug = f"{repo.slugify(cp['name'])[:50]}-{platform}-{cp['platform_id']}"
+                cur.execute(
+                    """INSERT INTO party (tenant_id, slug, name, kind, party_class,
+                                          contact_state, status)
+                       VALUES (%s, %s, %s, 'person', 'counterparty', 'contactable', 'active')
+                       ON CONFLICT (tenant_id, slug) DO NOTHING
+                    RETURNING id""",
+                    (tenant_id, slug, cp["name"]),
+                )
+                created = cur.fetchone()
+                if created is None:
+                    # Already known. Discovery finding the same curator again is the
+                    # normal case, not an error, and it must not re-queue an embedding.
+                    continue
+                cp_id = created["id"]
+                written += 1
+
+                cur.execute(
+                    """INSERT INTO party_role (tenant_id, party_id, role)
+                       VALUES (%s, %s, %s) ON CONFLICT DO NOTHING""",
+                    (tenant_id, cp_id, cp.get("role", "curator")),
+                )
+                cur.execute(
+                    """INSERT INTO presence (tenant_id, subject_kind, subject_id, platform,
+                                             mode, handle, url, state, match_basis,
+                                             confidence)
+                       VALUES (%s, 'party', %s, %s, 'observed', %s, %s, 'present',
+                               'measured', 1.0)
+                       ON CONFLICT (tenant_id, subject_kind, subject_id, platform)
+                       DO NOTHING""",
+                    (tenant_id, cp_id, platform, cp["name"], cp.get("url", "")),
+                )
+
+                # The profile text is evidence, so it is a document rather than a column:
+                # it is what an embedding was computed from, and a fact whose basis has
+                # been thrown away cannot be argued with later.
+                body = cp["profile_text"]
+                cur.execute(
+                    """INSERT INTO party_document (tenant_id, party_id, lead_id, platform,
+                                                   url, title, body, content_hash, mime,
+                                                   lang, http_status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'text/plain', 'en', 200)
+                       ON CONFLICT (tenant_id, content_hash) DO NOTHING""",
+                    (tenant_id, cp_id, lead["id"], platform, cp.get("url", ""),
+                     f"{cp['name']} — curator profile", body, content_hash(body)),
+                )
+
+                follow_on.append({
+                    "kind": "embed_party", "adapter": platform, "platform": platform,
+                    "party_id": str(cp_id), "scope_kind": "party",
+                    "target": str(cp_id),
+                    "target_hash": f"embed_party:{cp_id}",
+                    "reason": f"curator discovered via {platform}, not yet searchable",
+                    "score": 0.7,
+                })
+
+    return fleet.Outcome(
+        summary=f"{written} new curator(s) from {harvest.summary}",
+        calls=harvest.calls, leads=len(follow_on), follow_on=follow_on,
+        dropped=max(0, len(harvest.counterparties) - cap),
+    )
+
+
+def profile_party(conn: psycopg.Connection, lead: dict[str, Any],
+                  gate: spend.Gate) -> fleet.Outcome:
+    """Compose what we know about one of our own artists into text, then queue embedding.
+
+    A counterparty's profile comes from the outside — playlist titles somebody else wrote.
+    Ours has to be composed from the catalogue, because nobody has written about these
+    artists yet; that is the problem the product exists to solve.
+
+    Composed from structured rows rather than invented prose, and it reads a little flat
+    as a result. That is the correct trade: every clause here is a row somebody can go and
+    check, and a fluent biography generated by a model would be an `inferred` fact wearing
+    the costume of an `asserted` one.
+    """
+    party_id = lead.get("party_id") or lead["target"]
+    tenant_id = lead["tenant_id"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT name, artist_type, kind FROM party WHERE id = %s", (party_id,))
+        party = cur.fetchone()
+        if party is None:
+            raise fleet.LeadFailed("the party is gone", permanent=True)
+
+        cur.execute(
+            """SELECT r.title, r.isrc FROM recording r
+                 JOIN party_credit c ON c.subject_id = r.id AND c.subject_kind = 'recording'
+                WHERE c.tenant_id = %s AND c.party_id = %s ORDER BY r.title""",
+            (tenant_id, party_id),
+        )
+        recordings = cur.fetchall()
+
+        cur.execute(
+            """SELECT DISTINCT value_text FROM party_fact
+                WHERE tenant_id = %s AND party_id = %s AND dimension = 'genre'
+                  AND status = 'live'""",
+            (tenant_id, party_id),
+        )
+        genres = [r["value_text"] for r in cur.fetchall()]
+
+        cur.execute(
+            """SELECT platform, metric, value FROM party_metric
+                WHERE tenant_id = %s AND party_id = %s
+                ORDER BY observed_at DESC LIMIT 5""",
+            (tenant_id, party_id),
+        )
+        metrics = cur.fetchall()
+
+    parts = [f"{party['name']} is a {party['artist_type'] or party['kind']}."]
+    if genres:
+        parts.append(f"Genres: {', '.join(genres)}.")
+    if recordings:
+        parts.append("Recordings: "
+                     + "; ".join(f"{r['title']}" for r in recordings[:20]) + ".")
+    if metrics:
+        parts.append("Audience: " + "; ".join(
+            f"{m['metric']} {int(m['value'])} on {m['platform']}" for m in metrics) + ".")
+    if len(parts) == 1:
+        # Name and type alone is not a profile, and embedding it would put the artist
+        # somewhere arbitrary in the vector space rather than nowhere. Nowhere is better.
+        raise fleet.LeadFailed(
+            "nothing known about this artist yet beyond a name — map a source first",
+            permanent=False)
+
+    body = " ".join(parts)
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO party_document (tenant_id, party_id, lead_id, platform,
+                                               url, title, body, content_hash, mime,
+                                               lang, http_status)
+                   VALUES (%s, %s, %s, 'internal', '', %s, %s, %s, 'text/plain', 'en', 200)
+                   ON CONFLICT (tenant_id, content_hash) DO NOTHING""",
+                (tenant_id, party_id, lead["id"],
+                 f"{party['name']} — composed profile", body, content_hash(body)),
+            )
+
+    return fleet.Outcome(
+        summary=f"profiled {party['name']} from {len(recordings)} recording(s)",
+        documents=1,
+        follow_on=[{
+            "kind": "embed_party", "adapter": "internal", "party_id": str(party_id),
+            "scope_kind": "party", "target": str(party_id),
+            "target_hash": f"embed_party:{party_id}",
+            "reason": "profile composed, not yet searchable", "score": 0.7,
+        }],
+    )
+
+
+def embed_party(conn: psycopg.Connection, lead: dict[str, Any],
+                gate: spend.Gate) -> fleet.Outcome:
+    """Make one party findable by similarity.
+
+    Writes `party.profile_embedding` and the model beside it, which is what R1's index
+    prefix filters on. A party with an embedding and no model is unsearchable by
+    construction — migration 009 has a CHECK saying so — so the two are written together
+    or not at all.
+    """
+    party_id = lead.get("party_id") or lead["target"]
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT body FROM party_document
+                WHERE tenant_id = %s AND party_id = %s AND body != ''
+                ORDER BY fetched_at DESC LIMIT 1""",
+            (lead["tenant_id"], party_id),
+        )
+        row = cur.fetchone()
+    if row is None:
+        raise fleet.LeadFailed("nothing written about this party to embed",
+                               permanent=True)
+
+    provider = embed.load()
+    vectors, cost = embed.embed_batch(gate, provider, [row["body"]])
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE party SET profile_embedding = %s::VECTOR(1024), embedding_model = %s
+                WHERE tenant_id = %s AND id = %s""",
+            (vectors[0].literal(), provider.model, lead["tenant_id"], party_id),
+        )
+
+    return fleet.Outcome(summary=f"embedded {provider.model}", facts=0, calls=1,
+                         tokens_in=embed.estimate_tokens([row["body"]]), cost_usd=cost)
+
+
+def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
+              gate: spend.Gate, limit: int = 20) -> list[dict[str, Any]]:
+    """R1 — given one of our artists, who should we take them to?
+
+    The whole point of the vector index, and the reason `PLATFORM-SPEC §6` says this
+    database rather than a simpler one. Every predicate is equality on a prefix column:
+
+        tenant_id = $1 AND embedding_model = $2
+        AND party_class = 'counterparty' AND contact_state = 'contactable'
+
+    so the plan is a `vector search` node with `prefix spans`, not a full scan with a
+    post-filter. Drop `contact_state` from the query and it still returns rows — it just
+    starts returning people we are already talking to, which is the failure the column
+    exists to make impossible.
+
+    The query vector is the artist's own profile embedding, so this is genuinely
+    "who resembles the audience this act already has", not a keyword match on genre.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT profile_embedding::STRING AS vec, embedding_model, name
+                 FROM party WHERE tenant_id = %s AND id = %s""",
+            (tenant_id, party_id),
+        )
+        artist = cur.fetchone()
+    if artist is None or not artist["vec"]:
+        raise fleet.LeadFailed(
+            "this artist has no profile embedding yet — embed them first",
+            permanent=True)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT p.id, p.name, p.contact_state,
+                      p.profile_embedding <=> %s::VECTOR(1024) AS distance,
+                      pr.url
+                 FROM party p
+                 LEFT JOIN presence pr ON pr.subject_kind = 'party' AND pr.subject_id = p.id
+                WHERE p.tenant_id = %s
+                  AND p.embedding_model = %s
+                  AND p.party_class = 'counterparty'
+                  AND p.contact_state = 'contactable'
+                ORDER BY p.profile_embedding <=> %s::VECTOR(1024)
+                LIMIT %s""",
+            (artist["vec"], tenant_id, artist["embedding_model"], artist["vec"], limit),
+        )
+        return list(cur.fetchall())
+
+
 #: Which agent handles which lead kind. The fleet reads this; no agent reads it.
 REGISTRY: dict[str, fleet.Agent] = {
     "embed_document": embedder,
     "map_source": map_source,
+    "find_counterparties": find_counterparties,
+    "profile_party": profile_party,
+    "embed_party": embed_party,
 }

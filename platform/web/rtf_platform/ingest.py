@@ -192,6 +192,58 @@ def discover_sources(conn: psycopg.Connection, tenant_id: str) -> int:
         return cur.rowcount
 
 
+def prospect(conn: psycopg.Connection, tenant_id: str) -> int:
+    """Queue profiling and counterparty discovery for every roster artist.
+
+    Only the roster: discovering counterparties *for* a counterparty is how a frontier
+    turns into a crawl of the whole of Deezer, and `lead.depth` bounding it after the fact
+    is a worse answer than not starting.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO lead (tenant_id, scope_kind, party_id, kind, mode, adapter,
+                                 target, target_hash, platform, reason, score)
+               SELECT %s, 'party', p.id, k.kind, 'auto', 'deezer', p.id::STRING,
+                      k.kind || ':' || p.id::STRING, 'deezer', k.reason, 0.8
+                 FROM party p
+                 CROSS JOIN (VALUES
+                     ('profile_party', 'roster artist, no profile composed yet'),
+                     ('find_counterparties', 'roster artist, nobody shortlisted yet')
+                 ) AS k(kind, reason)
+                WHERE p.tenant_id = %s AND p.status = 'active'
+                  AND p.party_class = 'roster'
+               ON CONFLICT (tenant_id, target_hash) DO NOTHING""",
+            (tenant_id, tenant_id),
+        )
+        return cur.rowcount
+
+
+def show_shortlist(conn: psycopg.Connection, tenant_id: str, slug: str) -> int:
+    """R1 at the command line: who should we take this artist to?"""
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, name FROM party WHERE tenant_id = %s AND slug = %s",
+                    (tenant_id, slug))
+        artist = cur.fetchone()
+    if artist is None:
+        print(f"no artist with slug {slug!r}")
+        return 1
+
+    gate = spend.Gate.open(conn, tenant_id)
+    try:
+        hits = agents.shortlist(conn, tenant_id, str(artist["id"]), gate=gate)
+    except fleet.LeadFailed as exc:
+        print(f"cannot shortlist {artist['name']}: {exc}")
+        return 1
+
+    if not hits:
+        print(f"no contactable counterparties embedded yet for {artist['name']}")
+        return 0
+    print(f"who to take {artist['name']} to:\n")
+    for hit in hits:
+        print(f"  {hit['distance']:.4f}  {hit['name'][:44]:44s} {hit['url'] or ''}")
+    return 0
+
+
 def retry_failed(conn: psycopg.Connection, tenant_id: str) -> int:
     """Un-park failed leads, clearing the attempt count that parked them.
 
@@ -222,6 +274,9 @@ def main() -> int:
                         help="return parked leads to the frontier (after fixing the cause)")
     parser.add_argument("--discover", action="store_true",
                         help="search every enabled keyless source for every artist")
+    parser.add_argument("--prospect", action="store_true",
+                        help="profile each roster artist and find counterparties for them")
+    parser.add_argument("--shortlist", help="artist slug: who should we take them to?")
     parser.add_argument("--kinds", help="comma-separated lead kinds to work")
     parser.add_argument("--search", help="run a retrieval against what is indexed")
     parser.add_argument("--worker", default="ingest-cli")
@@ -263,12 +318,19 @@ def main() -> int:
             seeded = seed_sources(conn, tenant_id)
             print(f"seeded {seeded} map_source lead(s) from presence rows")
 
+        if args.shortlist:
+            return show_shortlist(conn, tenant_id, args.shortlist)
+
         if args.discover:
             found = discover_sources(conn, tenant_id)
             print(f"queued {found} discovery search(es) across keyless sources")
 
+        if args.prospect:
+            queued = prospect(conn, tenant_id)
+            print(f"queued {queued} profiling / prospecting lead(s)")
+
         if (args.paths or args.drain_only or args.seed_sources or args.retry_failed
-                or args.discover):
+                or args.discover or args.prospect):
             print("draining the frontier")
             kinds = args.kinds.split(",") if args.kinds else None
             total = drain(conn, tenant_id, worker_name=args.worker, kinds=kinds)

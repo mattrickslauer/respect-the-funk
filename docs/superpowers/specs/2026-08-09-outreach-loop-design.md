@@ -147,6 +147,7 @@ CREATE TABLE thread (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id        UUID NOT NULL REFERENCES tenant(id) ON DELETE CASCADE,
     party_id         UUID NOT NULL REFERENCES party(id) ON DELETE CASCADE,
+    canonical_party_id UUID NOT NULL REFERENCES party(id) ON DELETE CASCADE,
     recording_id     UUID REFERENCES recording(id) ON DELETE SET NULL,
     channel          STRING NOT NULL,
     state            STRING NOT NULL DEFAULT 'discovered',
@@ -207,9 +208,14 @@ without a second write path.
 
 ```sql
 CREATE UNIQUE INDEX one_open_thread_per_party
-    ON thread (tenant_id, party_id)
+    ON thread (tenant_id, canonical_party_id)
  WHERE state NOT IN ('closed_won','closed_lost','closed_no_reply');
 ```
+
+On `canonical_party_id` rather than `party_id`, for the reason argued in §4a-i: an alias
+and the row it aliases are two ids for one person, and an index on the raw id would let
+both hold an open thread. `thread` therefore carries both columns — `party_id` for who
+the thread is literally with, `canonical_party_id` for who that turns out to be.
 
 Four lines, and they are the sharpest demonstration the architecture has: a curator who
 is also a UGC creator cannot be worked by two fleets at once, and the second fleet's
@@ -250,6 +256,62 @@ because you no longer know there were two.
 Name similarity is a tiebreaker on the evidence, never the trigger. `Amanda Goncalves`
 and `Amanda Rocha da Silva` share a token and are probably different people; the
 embedding of what they curate is the stronger signal.
+
+### 4a-i. Merging is reversible, and rewrites nothing
+
+**Decision, 2026-08-09, resolving §10 open item 2: accepting a merge keeps both rows and
+flags one as an alias.** No references are rewritten.
+
+The mechanism costs one column and one enum value:
+
+```sql
+ALTER TABLE party ADD COLUMN alias_of UUID REFERENCES party(id) ON DELETE SET NULL;
+
+ALTER TABLE party DROP CONSTRAINT party_class_known;
+ALTER TABLE party ADD CONSTRAINT party_class_known
+    CHECK (party_class IN ('roster', 'counterparty', 'alias'));
+
+ALTER TABLE party ADD CONSTRAINT party_alias_is_classed
+    CHECK ((party_class = 'alias') = (alias_of IS NOT NULL));
+```
+
+`party_class` is already an equality prefix column on `party_shortlist`, and R1 filters
+`party_class = 'counterparty'`. So **an alias falls out of the shortlist for free** —
+no new predicate, no index change, and none of the acceleration lost. This is the same
+reason `contact_state` exists, reused rather than reinvented.
+
+Accepting a merge is two column writes. Reversing it is two column writes back. Nothing
+is destroyed, so there is nothing to restore.
+
+**The cost, stated plainly:** references keep pointing at the alias row. A read that
+wants everything known about a person must resolve the chain — `presence`,
+`party_credit`, `lesson` and `party_fact` for the canonical row are the union over its
+aliases. That is one join in `repo`, and it is a better cost than an irreversible
+rewrite. Alias chains are one level deep: merging an alias resolves to its canonical
+first, enforced in `repo` and covered by a test.
+
+**One hole the flag alone does not close.** The §3c unique index is on
+`thread (tenant_id, party_id)`, so an alias and its canonical are two different
+`party_id` values and both could hold an open thread — which is exactly the
+double-contact the index exists to prevent, arriving by the back door.
+
+The fix follows the pattern `009` already established for `contact_state`: `thread`
+carries a denormalised **`canonical_party_id`**, written in the same serializable
+transaction as the insert, and the partial unique index is on that column rather than
+`party_id`:
+
+```sql
+CREATE UNIQUE INDEX one_open_thread_per_party
+    ON thread (tenant_id, canonical_party_id)
+ WHERE state NOT IN ('closed_won','closed_lost','closed_no_reply');
+```
+
+Accepting a merge therefore does touch one thing besides the two columns: it repoints
+`thread.canonical_party_id` for the aliased party's open threads. That write can
+*collide* — if both rows already have open threads, the merge is telling us they were
+always the same person and we have been contacting them twice. The accept fails with
+that as the message, which is the correct outcome: it is a fact the operator needs to
+know before the rows are joined, not an error to swallow.
 
 ### 4b. `draft_pitch` — R2, and the only place a model writes prose
 
@@ -403,6 +465,13 @@ network. New coverage:
   noise, and an embedding without a model is refused by the `CHECK`.
 - **`dedup_party` proposes and never merges** — the agent writes a suggestion and leaves
   `party` untouched.
+- **A merge round-trips** — accept, then reverse, and every row reads as it did before.
+- **An alias is invisible to R1** — a shortlist run after a merge returns the canonical
+  row and never the alias, without the query gaining a predicate.
+- **Merging two parties that both have open threads is refused**, with the collision as
+  the message rather than a swallowed constraint violation.
+- **Alias chains stay one level deep** — merging into an alias resolves to its canonical
+  first.
 - **Scraper** — a fixture page parses to the expected candidates; a `robots.txt`
   disallow refuses the fetch; the rate limit is read from `source_manifest`. No test
   touches a network.
@@ -444,10 +513,14 @@ Named so they are omissions rather than oversights.
    starts deliberately conservative: a missed duplicate costs a human one glance at a
    list, and a proposed merge between two real people costs the operator's trust in the
    whole queue.
-2. **Merge acceptance is destructive and has no undo.** Accepting a merge suggestion
-   rewrites references across `presence`, `party_credit`, `lesson` and `thread`. A
-   reversible merge — keeping both rows with one marked as an alias — is the safer
-   shape and costs a column. **Decide before `dedup_party` ships, not after.**
+2. ~~**Merge acceptance is destructive and has no undo.**~~ **RESOLVED 2026-08-09 by
+   §4a-i.** Both rows are kept and one is flagged `party_class = 'alias'` with
+   `alias_of` set. Nothing is rewritten, so a merge is two column writes and reversing
+   it is two column writes back. The alias falls out of R1 for free because
+   `party_class` is already an equality prefix column on `party_shortlist`. The cost is
+   a resolve-the-chain join in `repo`, and one genuine new obligation:
+   `thread.canonical_party_id`, without which the §3c index would let an alias and its
+   canonical both hold an open thread.
 3. **RU cost of a filtered vector scan** remains unmeasured, carried from
    `PLATFORM-SPEC §10` risk 2. The rerank adds a second ANN per shortlist, which
    roughly doubles whatever that number turns out to be. Measure once there are enough

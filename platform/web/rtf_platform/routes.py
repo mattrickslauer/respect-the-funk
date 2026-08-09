@@ -41,7 +41,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from rtf_platform import auth, db, demo, repo, research, settings as settings_mod
-from rtf_platform.domain import DEFAULT_TYPE, ArtistType, unrecognised
+from rtf_platform.domain import (
+    ARTIST_STATUSES, DEFAULT_TYPE, ArtistType, Platform, ProfileMode, unrecognised,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -158,6 +160,8 @@ def _ctx(request: Request, principal: auth.Principal, **extra: Any) -> dict[str,
         "here": None,
         "insp_kicker": "",
         "insp_title": "",
+        # (href, label) for the inspector's create control, on the views that have one.
+        "insp_new": None,
         # False unless a route says otherwise. A view that forgets to declare itself
         # reads as wireframe, which is the direction that cannot mislead.
         "live": False,
@@ -327,9 +331,189 @@ def _live(request: Request, principal: auth.Principal, build, sel_id: str | None
                   title_key, live=True)
 
 
+#: Artists is the one console view that writes. Everything below it is the editor that
+#: used to live at `/roster`, moved into the inspector so changing a record does not
+#: cost the selection you were working from.
+
+_ARTISTS_BLURB = (
+    "The spine. Relationships, audience model and lessons accumulate here and are "
+    "inherited by every release. Live from artist — and editable in place."
+)
+
+
+def _artists_page(
+    request: Request, principal: auth.Principal, *,
+    sel: str = "", confirm: str = "", error: str = "", profile_error: str = "",
+    form: dict[str, str] | None = None, status_code: int = 200,
+) -> Response:
+    """The Artists view, including whichever editor state the inspector is in.
+
+    One function for the GET and for every rejected POST, so a validation failure
+    renders the same page the operator was already looking at, with the message beside
+    the field instead of on an error page that loses their place.
+    """
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    creating = sel == "new"
+
+    if tenant_id is None:
+        view = demo.View(
+            key="artists", title="Artists", blurb=_ARTISTS_BLURB, stats=(), cols=(),
+            rows=(), empty="No artists yet — start with ＋ New artist.",
+        )
+    else:
+        view = research.artists(
+            conn, tenant_id, editing_id=(None if creating else sel or None),
+            error=("" if creating else error),
+            profile_error=profile_error, confirm_delete=(confirm == "delete"),
+        )
+
+    if creating:
+        # A synthetic selection: there is no row yet, and the inspector is the form
+        # that would make one.
+        sel_row: dict[str, Any] | None = {
+            "id": "new", "name": "New artist",
+            "insp": research.new_artist_sections(form=form, error=error),
+        }
+    else:
+        sel_row = demo.select(view.rows, sel or None)
+
+    return templates.TemplateResponse(
+        request, "console/table.html",
+        _ctx(request, principal, here="artists", view=view, sel=sel_row, live=True,
+             insp_kicker="artist",
+             insp_title=(sel_row or {}).get("name", "—"),
+             insp_new=None if creating else ("/artists?sel=new", "New artist")),
+        status_code=status_code,
+    )
+
+
 @router.get("/artists", response_class=HTMLResponse)
-def artists_console(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _live(request, principal, research.artists, sel or None, "artist", "name")
+def artists_console(request: Request, principal: Operator, sel: str = "",
+                    confirm: str = "") -> Response:
+    return _artists_page(request, principal, sel=sel, confirm=confirm)
+
+
+@router.post("/artists", response_class=HTMLResponse)
+def artists_create(request: Request, principal: Operator,
+                   name: Annotated[str, Form()] = "",
+                   type: Annotated[str, Form()] = DEFAULT_TYPE.value) -> Response:
+    _require_write(principal)
+    typed = {"name": name, "type": type}
+    name = name.strip()
+    if not name:
+        return _artists_page(request, principal, sel="new", form=typed,
+                             error="An artist needs a name.", status_code=400)
+    if not repo.slugify(name):
+        return _artists_page(request, principal, sel="new", form=typed,
+                             error="That name has no URL-safe form.", status_code=400)
+    try:
+        artist_type = _validated_type(type)
+    except HTTPException as exc:
+        return _artists_page(request, principal, sel="new", form=typed,
+                             error=str(exc.detail), status_code=400)
+
+    conn = _conn()
+    # Creates the label row on first save, which is why there is no seed file.
+    tenant = repo.ensure_tenant(conn, SETTINGS.tenant_slug, "Respect the Funk")
+    try:
+        created = repo.create_artist(conn, str(tenant["id"]), name=name, type_=artist_type)
+    except psycopg.errors.UniqueViolation:
+        return _artists_page(
+            request, principal, sel="new", form=typed, status_code=409,
+            error=f"An artist already exists with the same URL key as {name!r}.")
+    return RedirectResponse(f"/artists?sel={created['id']}", status_code=303)
+
+
+@router.post("/artists/{artist_id}", response_class=HTMLResponse)
+def artists_update(request: Request, principal: Operator, artist_id: str,
+                   name: Annotated[str, Form()] = "",
+                   type: Annotated[str, Form()] = DEFAULT_TYPE.value,
+                   status: Annotated[str, Form()] = "active") -> Response:
+    _require_write(principal)
+    name = name.strip()
+    if not name:
+        return _artists_page(request, principal, sel=artist_id,
+                             error="An artist needs a name.", status_code=400)
+    if status not in ARTIST_STATUSES:
+        return _artists_page(request, principal, sel=artist_id, status_code=400,
+                             error=f"{status!r} is not a supported status.")
+
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    current = repo.get_artist(conn, tenant_id, artist_id) if tenant_id else None
+    if current is None:
+        raise HTTPException(status_code=404, detail="No such artist.")
+
+    # A type this build no longer defines is kept if the form sent it back unchanged,
+    # and validated normally if the operator picked something else. Editing a name must
+    # never silently reclassify the act.
+    legacy = unrecognised(current["type"])
+    try:
+        artist_type = type.strip() if legacy and type.strip() == legacy else _validated_type(type)
+    except HTTPException as exc:
+        return _artists_page(request, principal, sel=artist_id,
+                             error=str(exc.detail), status_code=400)
+
+    try:
+        repo.update_artist(conn, tenant_id, artist_id,
+                           name=name, type_=artist_type, status=status)
+    except psycopg.errors.UniqueViolation:
+        return _artists_page(
+            request, principal, sel=artist_id, status_code=409,
+            error=f"An artist already exists with the same URL key as {name!r}.")
+    return RedirectResponse(f"/artists?sel={artist_id}", status_code=303)
+
+
+@router.post("/artists/{artist_id}/delete")
+def artists_delete(principal: Operator, artist_id: str) -> Response:
+    """Reached only from the confirmation step, which names what cascades with it."""
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is not None:
+        repo.delete_artist(conn, tenant_id, artist_id)
+    return RedirectResponse("/artists", status_code=303)
+
+
+@router.post("/artists/{artist_id}/profiles", response_class=HTMLResponse)
+def artist_profile_add(request: Request, principal: Operator, artist_id: str,
+                       platform: Annotated[str, Form()] = "",
+                       mode: Annotated[str, Form()] = "",
+                       handle: Annotated[str, Form()] = "",
+                       profile_url: Annotated[str, Form()] = "") -> Response:
+    """Add or correct one surface. Where the forager is allowed to look for this act."""
+    _require_write(principal)
+    known_platform = Platform.parse(platform)
+    known_mode = ProfileMode.parse(mode)
+    if known_platform is None:
+        return _artists_page(request, principal, sel=artist_id, status_code=400,
+                             profile_error=f"{platform!r} is not a supported platform.")
+    if known_mode is None:
+        return _artists_page(request, principal, sel=artist_id, status_code=400,
+                             profile_error=f"{mode!r} is not a supported mode.")
+
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None or repo.get_artist(conn, tenant_id, artist_id) is None:
+        raise HTTPException(status_code=404, detail="No such artist.")
+
+    repo.upsert_profile(
+        conn, tenant_id, artist_id,
+        platform=known_platform.value, mode=known_mode.value,
+        handle=handle.strip()[:200], profile_url=profile_url.strip()[:500],
+    )
+    return RedirectResponse(f"/artists?sel={artist_id}", status_code=303)
+
+
+@router.post("/artists/{artist_id}/profiles/{profile_id}/delete")
+def artist_profile_delete(principal: Operator, artist_id: str, profile_id: str) -> Response:
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is not None:
+        repo.delete_profile(conn, tenant_id, artist_id, profile_id)
+    return RedirectResponse(f"/artists?sel={artist_id}", status_code=303)
 
 
 @router.get("/facts", response_class=HTMLResponse)

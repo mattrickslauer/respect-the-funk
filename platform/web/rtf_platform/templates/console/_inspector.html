@@ -8,6 +8,9 @@
   <div class="insphead">
     <div class="k">{{ insp_kicker }}</div>
     <div class="v">{{ insp_title }}</div>
+    {# The create affordance lives with the editor rather than above the table: the
+       inspector is where a record is made, so it is where a new one starts. #}
+    {% if insp_new %}<a class="newbtn" href="{{ insp_new[0] }}">＋ {{ insp_new[1] }}</a>{% endif %}
   </div>
   <div class="inspbody">
     {% if sel %}
@@ -37,11 +40,70 @@
           {% elif s.kind == 'note' %}
             {% for n in s.items %}<p class="note">{{ n }}</p>{% endfor %}
 
+          {% elif s.kind == 'form' %}
+            {# The write surface. Method POST with a full-page response and no htmx: an
+               editor that silently swaps a fragment gives the operator no way to tell a
+               saved record from a rendered one. A redirect proves the row moved. #}
+            <form class="ed" method="post" action="{{ s.action }}">
+              {% if s.error %}<p class="ederr">{{ s.error }}</p>{% endif %}
+              {% for f in s.items %}
+                {% if f.kind == 'static' %}
+                  <p class="note" style="margin:0 0 .5rem">{{ f.label or f.value }}</p>
+                {% else %}
+                  <div class="edf">
+                    <label for="f-{{ s.action }}-{{ f.name }}">{{ f.label }}</label>
+                    {% if f.kind == 'select' %}
+                      <select id="f-{{ s.action }}-{{ f.name }}" name="{{ f.name }}">
+                        {% for group, opts in f.options %}
+                          {% if group %}<optgroup label="{{ group }}">{% endif %}
+                          {% for value, label in opts %}
+                            <option value="{{ value }}" {% if f.value == value %}selected{% endif %}>{{ label }}</option>
+                          {% endfor %}
+                          {% if group %}</optgroup>{% endif %}
+                        {% endfor %}
+                      </select>
+                    {% else %}
+                      <input type="{{ 'url' if f.kind == 'url' else 'text' }}"
+                             id="f-{{ s.action }}-{{ f.name }}" name="{{ f.name }}"
+                             value="{{ f.value }}"
+                             {% if f.placeholder %}placeholder="{{ f.placeholder }}"{% endif %}
+                             {% if f.required %}required{% endif %}>
+                    {% endif %}
+                    {% if f.hint %}<span class="edh">{{ f.hint }}</span>{% endif %}
+                  </div>
+                {% endif %}
+              {% endfor %}
+              <button type="submit" class="b {{ 'd' if s.tone == 'danger' else 'p' }}">{{ s.submit }}</button>
+            </form>
+
+          {% elif s.kind == 'editlist' %}
+            {# A list where every entry can be removed on its own. The remove control is
+               a form, not a link, because a GET that deletes is a row lost to a
+               prefetch. #}
+            <ul class="edlist">
+              {% for label, detail, action in s.items %}
+                <li>
+                  <span class="ell">
+                    {% if label %}<b>{{ label }}</b>{% endif %}<i>{{ detail }}</i>
+                  </span>
+                  {% if action %}
+                    <form method="post" action="{{ action }}">
+                      <button type="submit" class="b x" title="Remove {{ label }}">✕</button>
+                    </form>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+
           {% elif s.kind == 'actions' %}
             <div class="acts" style="padding-left:0">
               {% for a in s.items %}
-                {# Inert on purpose — this is the wireframe stage. #}
-                <button type="button" class="b {{ 'p' if loop.first else '' }}{{ ' d' if a in ('Retract','Reject','Disable','Suppress','Mark do-not-contact','Close as lost') else '' }}">{{ a }}</button>
+                {% if a is string %}
+                  {# Inert on purpose — the views still on fixtures have nothing to post to. #}
+                  <button type="button" class="b {{ 'p' if loop.first else '' }}{{ ' d' if a in ('Retract','Reject','Disable','Suppress','Mark do-not-contact','Close as lost') else '' }}">{{ a }}</button>
+                {% else %}
+                  <a class="b {{ a[2] }}" href="{{ a[1] }}">{{ a[0] }}</a>
+                {% endif %}
               {% endfor %}
             </div>
           {% endif %}

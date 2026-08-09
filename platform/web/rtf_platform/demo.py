@@ -75,17 +75,47 @@ class Col:
 
 
 @dataclass(frozen=True)
+class Field:
+    """One input in a `form` section.
+
+    Deliberately not a Pydantic model or a WTForms field: this describes what to
+    *render*, and the server validates the post independently against `domain`.
+    A field descriptor that also claimed to validate would invite trusting it, and
+    the browser is not where the closed sets are enforced.
+    """
+    name: str
+    label: str
+    kind: str = "text"                  # text | url | select | static
+    value: str = ""
+    #: Grouped `((group, ((value, label), ...)), ...)`. A group of "" renders with no
+    #: <optgroup>, so a flat select and a grouped one are the same structure.
+    options: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = ()
+    hint: str = ""
+    required: bool = False
+    placeholder: str = ""
+
+
+@dataclass(frozen=True)
 class Section:
     """One block in the inspector.
 
     `kind` decides rendering: `kv` is a definition list, `chain` is the provenance
     walk with its indent rails, `quote` is verbatim evidence, `note` is prose,
-    `actions` is a row of buttons. The inspector is the only place in the product
-    where an operator can act on a single object, so the actions belong to it.
+    `actions` is a row of buttons, `form` is an editor that posts. The inspector is
+    the only place in the product where an operator can act on a single object, so
+    the actions — and now the writes — belong to it.
     """
     title: str
     kind: str
     items: tuple[Any, ...] = ()
+    #: `form` only. Where it posts, what the submit button says, and whether it is
+    #: styled as destructive. Empty on every other kind.
+    action: str = ""
+    submit: str = "Save"
+    tone: str = ""                      # "" | "danger"
+    #: `form` only. Rendered above the fields when the last post was rejected, so the
+    #: operator sees why next to what they typed rather than on a separate error page.
+    error: str = ""
 
 
 @dataclass(frozen=True)

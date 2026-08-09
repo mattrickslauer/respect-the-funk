@@ -21,7 +21,10 @@ from typing import Any
 
 import psycopg
 
-from rtf_platform.demo import Col, Section, View, _bar
+from rtf_platform.demo import Col, Field, Section, View, _bar
+from rtf_platform.domain import (
+    ARTIST_STATUSES, DEFAULT_TYPE, ArtistType, Platform, ProfileMode, unrecognised,
+)
 
 # How many rows a list view pulls. The console is a working surface, not a report: past
 # a couple of hundred rows nobody is scanning, they are filtering, and the filter should
@@ -427,9 +430,156 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
     )
 
 
+# ------------------------------------------------------------- artist editing
+
+def _flat(pairs: tuple[tuple[str, str], ...]) -> tuple[tuple[str, tuple[tuple[str, str], ...]], ...]:
+    """A select with no <optgroup>, in the grouped shape the renderer expects."""
+    return (("", pairs),)
+
+
+def _type_options(current: str) -> tuple[tuple[str, tuple[tuple[str, str], ...]], ...]:
+    """The supported types, plus the artist's own if this build has retired it.
+
+    Without that last group, opening the editor to fix a typo in the name would
+    silently reclassify the act to whatever the select happened to land on. The
+    value survives an unrelated edit because it is offered back, already selected.
+    """
+    groups = [(group, tuple((t.value, t.label) for t in members))
+              for group, members in ArtistType.grouped()]
+    legacy = unrecognised(current)
+    if legacy:
+        groups.append(("No longer offered", ((legacy, legacy),)))
+    return tuple(groups)
+
+
+_MODE_OPTIONS = _flat(tuple((m.value, f"{m.label} — {m.hint}") for m in ProfileMode))
+_PLATFORM_OPTIONS = _flat(tuple((p.value, p.label) for p in Platform))
+
+
+def _identity_fields(name: str, type_: str) -> tuple[Field, ...]:
+    return (
+        Field("name", "Name", "text", name, required=True,
+              hint="The URL key is derived from this; you do not set it."),
+        Field("type", "Type", "select", type_, _type_options(type_),
+              hint="A band, a DJ and an orchestra are all artists — this is which kind."),
+    )
+
+
+def new_artist_sections(*, form: dict[str, str] | None = None,
+                        error: str = "") -> tuple[Section, ...]:
+    """The inspector when `?sel=new`. Same pane, same fields, one fewer of them —
+    status is not offered because an artist nobody has saved cannot be paused."""
+    form = form or {}
+    return (
+        Section("New artist", "form",
+                _identity_fields(form.get("name", ""),
+                                 form.get("type", DEFAULT_TYPE.value)),
+                action="/artists", submit="Add artist", error=error),
+        Section("", "actions", (("Cancel", "/artists", ""),)),
+        Section("Note", "note", (
+            "Saving here creates the label row too, on the first artist. There is no "
+            "seed file to run and no fixture to clear out.",
+        )),
+    )
+
+
+def artist_editor_sections(
+    artist: dict[str, Any],
+    profiles: list[dict[str, Any]],
+    counts: dict[str, Any],
+    *,
+    error: str = "",
+    profile_error: str = "",
+    confirm_delete: bool = False,
+) -> tuple[Section, ...]:
+    """Everything the inspector shows for one artist: read it, edit it, delete it.
+
+    This used to be four read-only blocks and three buttons that did nothing, with the
+    real editing a page away at `/roster`. Navigating away to change a name costs the
+    selection, the scroll position and the comparison you were in the middle of — so
+    the write lives where the record is already open.
+    """
+    aid = str(artist["id"])
+
+    edit = Section(
+        "Artist", "form",
+        _identity_fields(artist["name"], artist["type"]) + (
+            Field("status", "Status", "select", artist["status"],
+                  _flat(tuple((s, s) for s in ARTIST_STATUSES)),
+                  hint="Paused keeps the history and stops the agents."),
+        ),
+        action=f"/artists/{aid}", submit="Save", error=error,
+    )
+
+    record = Section("Record", "kv", (
+        ("slug", artist["slug"]),
+        ("added", artist["created_at"].strftime("%Y-%m-%d")),
+        ("tracks", str(counts["tracks"])),
+        ("live facts", str(counts["facts"])),
+        ("documents", str(counts["docs"])),
+        ("pending leads", str(counts["pending"])),
+    ))
+
+    #: Each profile is its own delete target. Rendered as a list with a control per row
+    #: rather than a multi-select, because removing the wrong surface is silent — the
+    #: artist simply stops being researched there and nothing announces it.
+    where = Section(
+        "Where we look", "editlist",
+        tuple(
+            (p["platform"],
+             f"{p['mode']} · {p['handle'] or p['profile_url'] or 'no handle'}",
+             f"/artists/{aid}/profiles/{p['id']}/delete")
+            for p in profiles
+        ) or ((None, "Nothing configured — the forager has nowhere to start.", None),),
+    )
+
+    add = Section(
+        "Add a surface", "form", (
+            Field("platform", "Platform", "select", "", _PLATFORM_OPTIONS),
+            Field("mode", "Mode", "select", ProfileMode.OWNED.value, _MODE_OPTIONS),
+            Field("handle", "Handle", "text", "", placeholder="@example"),
+            Field("profile_url", "URL", "url", "", placeholder="https://…"),
+        ),
+        action=f"/artists/{aid}/profiles", submit="Add surface", error=profile_error,
+    )
+
+    note = Section("Note", "note", (
+        "An artist with no account on a platform is still worth searching there — fan "
+        "activity is content about them whether they take part or not. That is why "
+        "Absent is a mode rather than a missing row.",
+    ))
+
+    if confirm_delete:
+        danger = Section(
+            "Delete", "form", (
+                Field("", "", "static",
+                      f"Deleting {artist['name']} also deletes "
+                      f"{counts['tracks']} tracks, {counts['facts']} live facts, "
+                      f"{counts['docs']} documents, {len(profiles)} surfaces and every "
+                      "lead beneath them. This cannot be undone."),
+            ),
+            action=f"/artists/{aid}/delete", submit="Yes, delete permanently",
+            tone="danger",
+        )
+        cancel = Section("", "actions", (("Cancel", f"/artists?sel={aid}", ""),))
+        # First, not last. The control that asks for the confirmation sits at the
+        # bottom of a scrolling pane, so a confirmation rendered in place would appear
+        # below the fold and read as a click that did nothing.
+        return (danger, cancel, edit, record, where, add, note)
+
+    #: A link, not a submit. Deleting an artist cascades, so it takes two deliberate
+    #: acts and the second one names what goes with it.
+    danger = Section("", "actions", (
+        ("Delete artist", f"/artists?sel={aid}&confirm=delete", "d"),
+    ))
+    return (edit, record, where, add, note, danger)
+
+
 # ------------------------------------------------------------------- artists
 
-def artists(conn: psycopg.Connection, tenant_id: str) -> View:
+def artists(conn: psycopg.Connection, tenant_id: str, *,
+            editing_id: str | None = None, error: str = "",
+            profile_error: str = "", confirm_delete: bool = False) -> View:
     rows = _rows(conn, """
         SELECT a.id, a.name, a.type, a.slug, a.status, a.created_at,
                (SELECT count(*) FROM track t        WHERE t.artist_id = a.id) AS tracks,
@@ -444,34 +594,28 @@ def artists(conn: psycopg.Connection, tenant_id: str) -> View:
 
     out = []
     for r in rows:
+        # `id` is needed because each surface is its own delete target, and the tenant
+        # predicate is here rather than implied by the artist — a scoped delete link
+        # built from an unscoped read is how one label removes another's row.
         profiles = _rows(conn, """
-            SELECT platform, mode, handle, profile_url FROM artist_profile
-             WHERE artist_id = %s ORDER BY platform""", (r["id"],))
+            SELECT id, platform, mode, handle, profile_url FROM artist_profile
+             WHERE tenant_id = %s AND artist_id = %s
+             ORDER BY platform""", (tenant_id, r["id"]))
         out.append({
             "id": str(r["id"]), "name": r["name"], "type": r["type"],
             "tracks": str(r["tracks"]), "facts": str(r["facts"]),
             "camps": str(r["pending"]), "streams": "—", "spark": "▁▁▁▁▁▁▁",
             "budget": f"{r['docs']}", "bar": _bar(min(100, int(r["docs"]) * 5)),
-            "insp": (
-                Section("Artist", "kv", (
-                    ("name", r["name"]), ("type", r["type"]), ("slug", r["slug"]),
-                    ("status", r["status"]),
-                    ("added", r["created_at"].strftime("%Y-%m-%d")),
-                    ("tracks", str(r["tracks"])), ("live facts", str(r["facts"])),
-                    ("documents", str(r["docs"])),
-                    ("pending leads", str(r["pending"])),
-                )),
-                Section("Where we look", "kv",
-                        tuple((p["platform"], f"{p['mode']} · {p['handle'] or p['profile_url'] or '—'}")
-                              for p in profiles)
-                        or (("nothing configured", "no artist_profile rows"),)),
-                Section("Note", "note", (
-                    "An artist with no account on a platform is still worth searching "
-                    "there — fan activity is content about them whether they take part "
-                    "or not. Mode is per artist per platform, which is what makes a "
-                    "one-account act and a five-account act the same code path.",
-                )),
-                Section("", "actions", ("Edit profiles", "Seed frontier", "Open facts")),
+            "insp": artist_editor_sections(
+                r, profiles,
+                {"tracks": r["tracks"], "facts": r["facts"],
+                 "docs": r["docs"], "pending": r["pending"]},
+                # Only the row actually being edited carries the errors and the delete
+                # confirmation; the other rows render their ordinary editor, so
+                # selecting a different artist abandons a half-finished delete.
+                error=(error if str(r["id"]) == editing_id else ""),
+                profile_error=(profile_error if str(r["id"]) == editing_id else ""),
+                confirm_delete=(confirm_delete and str(r["id"]) == editing_id),
             ),
         })
 

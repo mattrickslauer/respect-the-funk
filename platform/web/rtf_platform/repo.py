@@ -108,6 +108,59 @@ def delete_artist(conn: psycopg.Connection, tenant_id: str, artist_id: str) -> b
         return cur.rowcount > 0
 
 
+# ------------------------------------------------------------- artist profiles
+
+def list_profiles(conn: psycopg.Connection, tenant_id: str,
+                  artist_id: str) -> list[dict[str, Any]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id, platform, mode, handle, profile_url, enabled
+                 FROM artist_profile
+                WHERE tenant_id = %s AND artist_id = %s
+                ORDER BY platform""",
+            (tenant_id, artist_id),
+        )
+        return cur.fetchall()
+
+
+def upsert_profile(
+    conn: psycopg.Connection, tenant_id: str, artist_id: str, *,
+    platform: str, mode: str, handle: str = "", profile_url: str = "",
+) -> dict[str, Any]:
+    """One row per (artist, platform) — the table says so, and the editor relies on it.
+
+    An UPSERT rather than an insert-then-catch: adding Spotify twice is the operator
+    correcting the handle they just typed, not an error worth showing them. The
+    conflict target is the table's own unique key, so this cannot drift from it.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO artist_profile
+                    (tenant_id, artist_id, platform, mode, handle, profile_url)
+               VALUES (%s, %s, %s, %s, %s, %s)
+          ON CONFLICT (tenant_id, artist_id, platform) DO UPDATE
+                  SET mode = excluded.mode,
+                      handle = excluded.handle,
+                      profile_url = excluded.profile_url
+            RETURNING id, platform, mode, handle, profile_url, enabled""",
+            (tenant_id, artist_id, platform, mode, handle, profile_url),
+        )
+        return cur.fetchone()
+
+
+def delete_profile(conn: psycopg.Connection, tenant_id: str, artist_id: str,
+                   profile_id: str) -> bool:
+    """Scoped by artist as well as tenant. The id alone would be enough to find the
+    row, which is exactly why it is not enough to authorise deleting it."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """DELETE FROM artist_profile
+                WHERE tenant_id = %s AND artist_id = %s AND id = %s""",
+            (tenant_id, artist_id, profile_id),
+        )
+        return cur.rowcount > 0
+
+
 # --------------------------------------------------------------- demo requests
 
 #: Field caps. This is the only write in the system reachable without a session, so the

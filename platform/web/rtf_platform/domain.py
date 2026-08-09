@@ -83,6 +83,70 @@ class ArtistType(str, Enum):
 DEFAULT_TYPE = ArtistType.BAND
 
 
+class Platform(str, Enum):
+    """A surface the label can look at for an artist.
+
+    Closed for the same reason `ArtistType` is: an adapter branches on this value, so
+    a typo in a text field would be an artist nobody ever researches, failing silently.
+    The column stays STRING (`004_research.sql`) so a retired surface still loads.
+    """
+
+    def __new__(cls, value: str, label: str) -> "Platform":
+        obj = str.__new__(cls, value)
+        obj._value_ = value
+        obj.label = label      # type: ignore[attr-defined]
+        return obj
+
+    SPOTIFY     = ("spotify",     "Spotify")
+    APPLE_MUSIC = ("apple_music", "Apple Music")
+    YOUTUBE     = ("youtube",     "YouTube")
+    INSTAGRAM   = ("instagram",   "Instagram")
+    TIKTOK      = ("tiktok",      "TikTok")
+    SOUNDCLOUD  = ("soundcloud",  "SoundCloud")
+    BANDCAMP    = ("bandcamp",    "Bandcamp")
+    MUSICBRAINZ = ("musicbrainz", "MusicBrainz")
+    PRESS       = ("press",       "Press / web")
+
+    @classmethod
+    def parse(cls, raw: str) -> "Platform | None":
+        try:
+            return cls(raw.strip().lower())
+        except ValueError:
+            return None
+
+
+class ProfileMode(str, Enum):
+    """Whether the artist holds the account on a platform — not whether we look there.
+
+    `absent` is a real answer, not a missing one: an act with no TikTok account still
+    has TikTok content made about them, and that content is the point. Recording the
+    mode is what lets one code path serve a one-account act and a five-account act.
+    """
+
+    def __new__(cls, value: str, label: str, hint: str) -> "ProfileMode":
+        obj = str.__new__(cls, value)
+        obj._value_ = value
+        obj.label = label    # type: ignore[attr-defined]
+        obj.hint = hint      # type: ignore[attr-defined]
+        return obj
+
+    OWNED   = ("owned",   "Owned",   "the artist runs this account")
+    UNOWNED = ("unowned", "Unowned", "someone else's account about them")
+    ABSENT  = ("absent",  "Absent",  "no account — still worth searching")
+
+    @classmethod
+    def parse(cls, raw: str) -> "ProfileMode | None":
+        try:
+            return cls(raw.strip().lower())
+        except ValueError:
+            return None
+
+
+#: The statuses an artist row may carry. Kept here rather than inline in the form so the
+#: select and the validation cannot drift apart.
+ARTIST_STATUSES: tuple[str, ...] = ("active", "paused", "archived")
+
+
 def unrecognised(raw: str | None) -> str | None:
     """A stored type this build does not define, or None if it is known/empty.
 

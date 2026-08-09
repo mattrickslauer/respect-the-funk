@@ -18,21 +18,33 @@ Every task's requirements implicitly include these. All are existing house rules
 - **A guess is a suggestion, never a fact.** Anything a model inferred lands in `suggestion` as `pending` for a human. `agents.map_source`'s docstring states this as a rule the agents do not get to break.
 - **Tuning constants are named module-level constants with the reasoning in a comment, never literals inline.** Spec §10 item 1.
 - **No test touches the network.** Cluster tests skip when `DATABASE_URL` is unset, via `@unittest.skipUnless(HAVE_DB, …)`, and clean up through a tenant dropped in `tearDown` — the pattern in `tests/test_fleet.py`.
-- **Run tests with** `cd platform/web && .venv/bin/python -m pytest tests -q`. Baseline before this plan: **77 passed, 16 skipped.**
+- **Run tests with** `cd platform/web && .venv/bin/python -m pytest tests -q`. Baseline in this worktree: **77 passed, 16 skipped.** The main tree reports 87/33 — it has the outreach tests this branch does not. Do not "fix" the difference.
 - **Migrations are applied with** `python platform/schema/apply.py <file>.sql`. Neither migration here is destructive, so neither is added to `apply.DESTRUCTIVE`.
 
-## Carried-forward obligation — do not lose this
+## Read this before Task 1 — the branch and the cluster disagree, on purpose
 
-`thread.canonical_party_id` and the `one_open_thread_per_party` index (spec §3b, §4a-i) **cannot be built in this plan**, because `thread` does not exist until step 3. Without them, an alias and its canonical could each hold an open thread — the exact double-contact the §3c index exists to prevent.
+**Revised 2026-08-09, after a parallel session shipped outreach.** This plan was written when `thread` did not exist. It does now, and the revision changes four things. Work through this section before starting; it is the difference between the plan applying and the plan corrupting a live cluster.
 
-Task 5 writes this obligation into `011_party_alias.sql` as a comment, and Task 8 writes it into `platform/README.md`'s "Still open". **The plan that creates `thread` must implement `repo.merge_party`'s open-thread conflict check.** It is stubbed nowhere; it simply does not apply yet, and both files say so.
+**1. This plan runs in a git worktree branched from `96a5c29`.** That commit does **not** contain the parallel session's outreach work, which is uncommitted in the main working tree. So inside this worktree:
+
+- `platform/schema/` holds `001`–`009` and **no `010`**. That gap is expected. `010_outreach.sql` exists only in the other tree.
+- `rtf_platform/outreach.py` does not exist. Nothing in this plan imports it. Do not create it, and do not "restore" it.
+- **The test baseline is 77 passed, 16 skipped** — the numbers in this plan are correct for this branch. The main tree reports 87/33 because it has tests this branch does not.
+
+**2. The cluster is shared, and it is ahead of this branch.** `campaign`, `thread`, `message` and `outbox` are live on `defaultdb` right now, created by a migration that is in no commit. Task 5a therefore `ALTER`s a table whose `CREATE` this branch cannot see. That is correct and deliberate — migrations run against the cluster, not against the branch — but it means:
+
+> **If `010_outreach.sql` is never committed, `012_party_alias.sql` references a table with no creating migration in history.** Task 5a's comment says so. Do not work around it by recreating the table.
+
+**3. Migrations are numbered `011` and `012`, skipping `010`.** Not because this branch has an `010`, but because the other tree does, and two files claiming `010` is a merge conflict in the one place a merge conflict is most dangerous. Applied order after both branches merge is `010` → `011` → `012`, which is also the dependency order.
+
+**4. The obligation this plan used to defer is now in scope.** The §3c index shipped as `one_open_thread_per_counterparty` on `thread (tenant_id, counterparty_id)`. It is **live and, once aliases exist, unmet**: an alias and the party it aliases are two `counterparty_id` values, so both could hold an open thread — the exact double-contact the index exists to prevent, arriving by the back door as spec §4a-i predicted. **Task 5a closes it, and must land before Task 7 puts a merge suggestion in front of anybody.**
 
 ## File structure
 
 | File | Responsibility |
 |---|---|
-| `platform/schema/010_lesson.sql` | **create** — the `lesson` table, its `CHECK`s, and `lesson_semantic` |
-| `platform/schema/011_party_alias.sql` | **create** — `party.alias_of`, `party_class = 'alias'` |
+| `platform/schema/011_lesson.sql` | **create** — the `lesson` table, its `CHECK`s, and `lesson_semantic` |
+| `platform/schema/012_party_alias.sql` | **create** — `party.alias_of`, `party_class = 'alias'` |
 | `platform/web/rtf_platform/lessons.py` | **create** — write, retrieve, resolve a supersession chain, and the pure rerank |
 | `platform/web/rtf_platform/agents.py` | **modify** — `shortlist` gains the rerank; `dedup_party` is added; `REGISTRY` gains it |
 | `platform/web/rtf_platform/repo.py` | **modify** — `merge_party`, `unmerge_party`, `resolve_canonical`; `delete_party` clears lessons |
@@ -45,10 +57,10 @@ Task 5 writes this obligation into `011_party_alias.sql` as a comment, and Task 
 
 ---
 
-### Task 1: Migration 010 — the `lesson` table
+### Task 1: Migration 011 — the `lesson` table
 
 **Files:**
-- Create: `platform/schema/010_lesson.sql`
+- Create: `platform/schema/011_lesson.sql`
 - Modify: `docs/superpowers/specs/2026-08-09-outreach-loop-design.md` (§3a DDL — add `valence`)
 
 **Interfaces:**
@@ -77,7 +89,7 @@ and auditable.
 
 - [ ] **Step 2: Write the migration**
 
-Create `platform/schema/010_lesson.sql`:
+Create `platform/schema/011_lesson.sql`:
 
 ```sql
 -- 010 — the lesson: the only table in this schema whose job is to make the next run
@@ -176,7 +188,7 @@ CREATE INDEX IF NOT EXISTS lesson_by_scope
 
 - [ ] **Step 3: Apply it against the cluster**
 
-Run: `cd /home/mattricks/Code/respect-the-funk && python platform/schema/apply.py 010_lesson.sql`
+Run: `cd "$(git rev-parse --show-toplevel)" && python platform/schema/apply.py 011_lesson.sql`
 
 Expected: each statement reported applied, no error. If `CREATE VECTOR INDEX` errors with a feature-disabled message, stop — `feature.vector_index.enabled` was verified `t` on this cluster and a change to that is a go/no-go, not a workaround.
 
@@ -200,7 +212,7 @@ psql "$DATABASE_URL" -c "DELETE FROM lesson WHERE text = 'no model'"
 - [ ] **Step 5: Commit**
 
 ```bash
-git add platform/schema/010_lesson.sql docs/superpowers/specs/2026-08-09-outreach-loop-design.md
+git add platform/schema/011_lesson.sql docs/superpowers/specs/2026-08-09-outreach-loop-design.md
 git commit -m "platform: the lesson, and a valence so the rerank can have a sign"
 ```
 
@@ -336,7 +348,7 @@ class Rerank(unittest.TestCase):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && .venv/bin/python -m pytest tests/test_lessons.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
 
 Expected: FAIL — `ModuleNotFoundError: No module named 'rtf_platform.lessons'`
 
@@ -440,7 +452,7 @@ def rerank(candidates: list[dict[str, Any]], lessons: list[dict[str, Any]], *,
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && .venv/bin/python -m pytest tests/test_lessons.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
 
 Expected: PASS, 11 tests.
 
@@ -506,7 +518,7 @@ class Heads(unittest.TestCase):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && .venv/bin/python -m pytest tests/test_lessons.py::Heads -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py::Heads -q`
 
 Expected: FAIL — `AttributeError: module 'rtf_platform.lessons' has no attribute 'heads'`
 
@@ -570,13 +582,13 @@ def write(conn: psycopg.Connection, tenant_id: str, *, scope_kind: str, scope_id
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && .venv/bin/python -m pytest tests/test_lessons.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
 
 Expected: PASS, 16 tests.
 
 - [ ] **Step 5: Confirm `model_version` exists on the provider, and fix if not**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && .venv/bin/python -c "from rtf_platform import embed; print([f for f in embed.OpenAIEmbedder.__dataclass_fields__])"`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -c "from rtf_platform import embed; print([f for f in embed.OpenAIEmbedder.__dataclass_fields__])"`
 
 If `model_version` is not among the fields, the `getattr(provider, "model_version", "")` above already returns `""` — which the schema permits. Leave it. Do **not** add a field to `OpenAIEmbedder` for this; `007`'s rule is that `model` must be nameable, and it is.
 
@@ -691,7 +703,7 @@ class RetrievalIsScoped(unittest.TestCase):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_lessons.py::RetrievalIsScoped -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_lessons.py::RetrievalIsScoped -q`
 
 Expected: FAIL — `AttributeError: module 'rtf_platform.lessons' has no attribute 'retrieve_for'`
 
@@ -751,7 +763,7 @@ def retrieve_for(conn: psycopg.Connection, tenant_id: str, *,
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_lessons.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_lessons.py -q`
 
 Expected: PASS, 19 tests.
 
@@ -831,7 +843,7 @@ Update the `shortlist` docstring by appending this paragraph before the closing 
 
 - [ ] **Step 6: Verify the whole suite still passes**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && .venv/bin/python -m pytest tests -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
 
 Expected: PASS. **93 passed, 19 skipped** — the 77-test baseline plus the 16 offline tests from Tasks 2–3, with Task 4's 3 cluster tests joining the 16 already-skipped ones.
 
@@ -840,7 +852,7 @@ Expected: PASS. **93 passed, 19 skipped** — the 77-test baseline plus the 16 o
 Run:
 
 ```bash
-cd /home/mattricks/Code/respect-the-funk
+cd "$(git rev-parse --show-toplevel)"
 psql "$DATABASE_URL" -c "EXPLAIN SELECT p.id FROM party p \
   WHERE p.tenant_id = (SELECT id FROM tenant LIMIT 1) \
     AND p.embedding_model = 'text-embedding-3-large' \
@@ -864,10 +876,10 @@ git commit -m "platform: the shortlist reads what we learned, and says which les
 
 ---
 
-### Task 5: Migration 011 — the alias
+### Task 5: Migration 012 — the alias
 
 **Files:**
-- Create: `platform/schema/011_party_alias.sql`
+- Create: `platform/schema/012_party_alias.sql`
 
 **Interfaces:**
 - Consumes: `party.party_class` and its `party_class_known` constraint from `009`.
@@ -875,7 +887,7 @@ git commit -m "platform: the shortlist reads what we learned, and says which les
 
 - [ ] **Step 1: Write the migration**
 
-Create `platform/schema/011_party_alias.sql`:
+Create `platform/schema/012_party_alias.sql`:
 
 ```sql
 -- 011 — a merge that can be undone.
@@ -912,24 +924,22 @@ Create `platform/schema/011_party_alias.sql`:
 -- over the alias chain. That is one join in `repo`, and it is the better trade.
 --
 --
--- ## What this migration deliberately does NOT do
+-- ## The hole this opens in `thread`, closed by 012a
 --
--- `thread` does not exist yet — it arrives with step 3 of
--- `docs/superpowers/specs/2026-08-09-outreach-loop-design.md`. Until it does, there is
--- a hole this migration cannot close:
+-- `thread` already exists on the cluster, with a partial unique index
+-- `one_open_thread_per_counterparty` on `(tenant_id, counterparty_id)` enforcing
+-- `PLATFORM-SPEC §3c`: one open conversation per person, across every channel.
 --
---     An alias and the party it aliases are two different `party_id` values, so a
---     unique index on `thread (tenant_id, party_id)` would let both hold an open
---     thread — which is exactly the double-contact `PLATFORM-SPEC §3c` exists to
---     prevent, arriving by the back door.
+-- An alias and the party it aliases are **two different `counterparty_id` values**. So
+-- the moment this migration makes aliases possible, that index stops meaning what it
+-- says — both rows can hold an open thread, and the label contacts one person twice
+-- through the back door the index was built to lock.
 --
--- **The migration that creates `thread` must give it a denormalised
--- `canonical_party_id`, written in the same transaction as the insert, and put the
--- partial unique index on that column rather than on `party_id`.** Spec §4a-i has the
--- argument. `repo.merge_party` must then refuse a merge where both parties hold open
--- threads, because that is a fact the operator needs before the rows are joined.
---
--- This note is the only thing standing between that requirement and being forgotten.
+-- `012a_thread_canonical.sql` closes it, in the same session as this file, by adding a
+-- denormalised `thread.canonical_party_id` and moving the index onto that column. The
+-- two migrations are separable only in the sense that they are separate files; shipping
+-- this one without that one is a regression in a correctness guarantee that already
+-- holds today.
 
 
 ALTER TABLE party ADD COLUMN IF NOT EXISTS alias_of UUID REFERENCES party(id) ON DELETE SET NULL;
@@ -951,7 +961,7 @@ CREATE INDEX IF NOT EXISTS party_aliases_of
 
 - [ ] **Step 2: Apply it**
 
-Run: `cd /home/mattricks/Code/respect-the-funk && python platform/schema/apply.py 011_party_alias.sql`
+Run: `cd "$(git rev-parse --show-toplevel)" && python platform/schema/apply.py 012_party_alias.sql`
 
 Expected: applied without error. The 21 existing rows all have `alias_of IS NULL` and `party_class IN ('roster','counterparty')`, so `party_alias_is_classed` validates against them.
 
@@ -969,8 +979,130 @@ Expected: FAILS with `party_alias_is_classed` — the class was set without a ta
 - [ ] **Step 4: Commit**
 
 ```bash
-git add platform/schema/011_party_alias.sql
+git add platform/schema/012_party_alias.sql
 git commit -m "platform: a merge keeps both rows, and an alias falls out of R1 for free"
+```
+
+---
+
+### Task 5a: Migration 012a — the collision index follows the canonical
+
+**Do not stop between Task 5 and this one.** Task 5 makes aliases possible; until this lands, `one_open_thread_per_counterparty` no longer enforces what it claims.
+
+**Files:**
+- Create: `platform/schema/012a_thread_canonical.sql`
+
+**Interfaces:**
+- Consumes: `party.alias_of` (Task 5); the live `thread` table and its `one_open_thread_per_counterparty` index, created by `010_outreach.sql` — **which is not in this branch**, only on the cluster.
+- Produces: `thread.canonical_party_id UUID NOT NULL`; index `one_open_thread_per_canonical`; `one_open_thread_per_counterparty` dropped.
+
+- [ ] **Step 1: Confirm the cluster is in the state this migration assumes**
+
+Run:
+
+```bash
+psql "$DATABASE_URL" -c "SELECT count(*) AS threads FROM thread" \
+                     -c "SELECT indexdef FROM pg_indexes WHERE tablename = 'thread'"
+```
+
+Expected: `one_open_thread_per_counterparty` is present. Note the thread count — Step 3's backfill has to cover it. **If `thread` does not exist, stop and report:** the parallel session's work has been reverted and this task's premise is gone.
+
+- [ ] **Step 2: Write the migration**
+
+Create `platform/schema/012a_thread_canonical.sql`:
+
+```sql
+-- 012a — the collision index has to follow the person, not the row.
+--
+-- Numbered `012a` rather than `013` because it is not a separable change: `012` makes
+-- aliases possible and this repairs what that breaks. A cluster carrying `012` without
+-- this file has a `PLATFORM-SPEC §3c` guarantee that reads as enforced and is not.
+--
+--
+-- ## What breaks
+--
+-- `010_outreach.sql` shipped the §3c guarantee as a partial unique index:
+--
+--     one_open_thread_per_counterparty ON thread (tenant_id, counterparty_id)
+--       WHERE state NOT IN ('closed_won','closed_lost','closed_no_reply')
+--
+-- One open conversation per person, across every channel — the constraint that makes
+-- running channels in parallel safe, and the sharpest thing the architecture does.
+--
+-- `012` makes an alias and the party it aliases two rows for one person, with two ids.
+-- The index counts ids. So the UGC fleet opens a thread with `Amanda Gonçalves` and the
+-- curator fleet opens one with `Amanda Goncalves`, and the database — correctly, by its
+-- own lights — permits both. The person gets contacted twice, which is the failure the
+-- index exists to make impossible.
+--
+--
+-- ## The fix, and why it is a denormalised column and not a join
+--
+-- The index needs a single value per person. `alias_of` lives on `party`, and a partial
+-- unique index cannot reach across a join to find it. So the canonical id is carried on
+-- `thread`, written in the same serializable transaction as the insert.
+--
+-- This is the third application of the argument `009` made for `contact_state` and `012`
+-- made for `party_class`: **the denormalisation is safe because it is written in the same
+-- transaction as the fact it mirrors.** It is not a cache and it cannot go stale within a
+-- transaction boundary.
+--
+-- Both columns are kept. `counterparty_id` is who the thread is literally with — which
+-- row the operator clicked, whose handle is on the message. `canonical_party_id` is who
+-- that turns out to be. Collapsing them would lose the first, and the first is what the
+-- inbox has to show.
+--
+--
+-- ## Accepting a merge now touches threads
+--
+-- `repo.merge_party` repoints `canonical_party_id` for the alias's open threads. That
+-- write can violate the new index — which is the correct outcome, not an error to
+-- swallow: it means both rows already had open threads, so the label has been talking to
+-- one person twice and somebody needs to know before the rows are joined.
+
+
+ALTER TABLE thread ADD COLUMN IF NOT EXISTS canonical_party_id UUID
+    REFERENCES party(id) ON DELETE CASCADE;
+
+-- Backfill before the NOT NULL: every existing thread predates aliases, so its
+-- counterparty is its own canonical.
+UPDATE thread SET canonical_party_id = counterparty_id WHERE canonical_party_id IS NULL;
+
+ALTER TABLE thread ALTER COLUMN canonical_party_id SET NOT NULL;
+
+-- Order matters. Create the replacement before dropping the incumbent, so there is no
+-- window in which §3c is unenforced — a window a concurrent fleet could open two threads
+-- through.
+CREATE UNIQUE INDEX IF NOT EXISTS one_open_thread_per_canonical
+    ON thread (tenant_id, canonical_party_id)
+ WHERE state NOT IN ('closed_won', 'closed_lost', 'closed_no_reply');
+
+DROP INDEX IF EXISTS one_open_thread_per_counterparty;
+
+CREATE INDEX IF NOT EXISTS thread_by_canonical
+    ON thread (tenant_id, canonical_party_id, state);
+```
+
+- [ ] **Step 3: Apply it**
+
+Run: `cd "$(git rev-parse --show-toplevel)" && python platform/schema/apply.py 012a_thread_canonical.sql`
+
+Expected: applied without error. If `ALTER COLUMN … SET NOT NULL` fails, the backfill missed rows — inspect with `SELECT count(*) FROM thread WHERE canonical_party_id IS NULL` rather than dropping the `NOT NULL`.
+
+- [ ] **Step 4: Prove the guarantee survived the swap**
+
+```bash
+psql "$DATABASE_URL" -c "SELECT indexdef FROM pg_indexes \
+  WHERE tablename = 'thread' AND indexname LIKE 'one_open%'"
+```
+
+Expected: exactly one row, `one_open_thread_per_canonical`, on `canonical_party_id`. Two rows means the drop did not fire and merges will now fail against the stale index; zero means §3c is unenforced and the cluster must not be left in that state.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add platform/schema/012a_thread_canonical.sql
+git commit -m "platform: one open thread per person, not per row"
 ```
 
 ---
@@ -1131,6 +1263,75 @@ class Merging(unittest.TestCase):
             repo.merge_party(self.conn, self.tenant,
                              alias_id=self.keeper, canonical_id=third)
 
+    def _campaign(self) -> str:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO campaign (tenant_id, party_id, channel, goal, state)
+                   VALUES (%s, %s, 'email', 'test', 'active') RETURNING id""",
+                (self.tenant, self.keeper),
+            )
+            return str(cur.fetchone()["id"])
+
+    def _thread(self, campaign_id: str, party_id: str) -> str:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO thread (tenant_id, campaign_id, counterparty_id,
+                                       canonical_party_id, state)
+                   VALUES (%s, %s, %s, %s, 'discovered') RETURNING id""",
+                (self.tenant, campaign_id, party_id, party_id),
+            )
+            return str(cur.fetchone()["id"])
+
+    def test_an_open_thread_follows_the_merge(self):
+        from rtf_platform import repo
+        thread_id = self._thread(self._campaign(), self.dupe)
+        repo.merge_party(self.conn, self.tenant,
+                         alias_id=self.dupe, canonical_id=self.keeper)
+        with self.conn.cursor() as cur:
+            cur.execute("""SELECT counterparty_id, canonical_party_id
+                             FROM thread WHERE id = %s""", (thread_id,))
+            row = cur.fetchone()
+        self.assertEqual(str(row["canonical_party_id"]), self.keeper,
+                         "the thread is now with the surviving party")
+        self.assertEqual(str(row["counterparty_id"]), self.dupe,
+                         "but it still records which row we actually wrote to")
+
+    def test_merging_two_parties_that_both_have_open_threads_is_refused(self):
+        # The §3c guarantee, arriving late: if both are open, we already contacted one
+        # person twice, and that is the operator's problem to see rather than ours to
+        # paper over.
+        from rtf_platform import repo
+        campaign = self._campaign()
+        self._thread(campaign, self.dupe)
+        self._thread(campaign, self.keeper)
+        with self.assertRaises(repo.MergeRefused) as caught:
+            repo.merge_party(self.conn, self.tenant,
+                             alias_id=self.dupe, canonical_id=self.keeper)
+        self.assertIn("open thread", str(caught.exception))
+
+    def test_a_closed_thread_does_not_block_a_merge(self):
+        from rtf_platform import repo
+        campaign = self._campaign()
+        self._thread(campaign, self.dupe)
+        closed = self._thread(campaign, self.keeper)
+        with self.conn.cursor() as cur:
+            cur.execute("UPDATE thread SET state = 'closed_lost' WHERE id = %s",
+                        (closed,))
+        repo.merge_party(self.conn, self.tenant,
+                         alias_id=self.dupe, canonical_id=self.keeper)
+        self.assertEqual(self._row(self.dupe)["party_class"], "alias")
+
+    def test_unmerging_puts_the_thread_back(self):
+        from rtf_platform import repo
+        thread_id = self._thread(self._campaign(), self.dupe)
+        repo.merge_party(self.conn, self.tenant,
+                         alias_id=self.dupe, canonical_id=self.keeper)
+        repo.unmerge_party(self.conn, self.tenant, self.dupe)
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT canonical_party_id FROM thread WHERE id = %s",
+                        (thread_id,))
+            self.assertEqual(str(cur.fetchone()["canonical_party_id"]), self.dupe)
+
     def test_the_alias_keeps_its_presence_rows(self):
         # The whole argument for the flag: nothing is rewritten, so nothing is lost.
         from rtf_platform import repo
@@ -1151,7 +1352,7 @@ class Merging(unittest.TestCase):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_merge.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_merge.py -q`
 
 Expected: FAIL — `AttributeError: module 'rtf_platform.repo' has no attribute 'merge_party'`
 
@@ -1199,11 +1400,11 @@ def merge_party(conn: psycopg.Connection, tenant_id: str, *,
     Merging a party that already has aliases of its own is refused rather than resolved,
     because the alternative is silently repointing somebody else's merge.
 
-    **Not yet enforced, because `thread` does not exist:** a merge between two parties
-    that both hold an open thread must fail, because it means the label has been
-    contacting one person twice and that is a fact the operator needs before the rows are
-    joined. `011_party_alias.sql` carries the full note; the plan that creates `thread`
-    implements it.
+    Open threads follow the merge: `canonical_party_id` is repointed for the alias's
+    threads, inside the same transaction. If both parties hold an open thread the unique
+    index from `012a` refuses it, and that refusal is re-raised as `MergeRefused` with
+    the collision named — because it means the label has been contacting one person
+    twice, which the operator needs to know *before* the rows are joined, not after.
     """
     target = resolve_canonical(conn, tenant_id, canonical_id)
     if str(alias_id) == str(target):
@@ -1228,6 +1429,22 @@ def merge_party(conn: psycopg.Connection, tenant_id: str, *,
             if cur.rowcount == 0:
                 raise MergeRefused("no such party, or it is already an alias")
 
+            # The threads follow the person. `012a` put §3c's unique index on
+            # `canonical_party_id`, so this UPDATE is where a double-contact that
+            # already happened finally surfaces.
+            try:
+                cur.execute(
+                    """UPDATE thread SET canonical_party_id = %s, updated_at = now()
+                        WHERE tenant_id = %s AND canonical_party_id = %s""",
+                    (target, tenant_id, alias_id),
+                )
+            except psycopg.errors.UniqueViolation as exc:
+                raise MergeRefused(
+                    "both of these parties have an open thread — if they are the same "
+                    "person, we have contacted them twice. Close one thread before "
+                    "merging, and read it first: what it says is the reason to check."
+                ) from exc
+
 
 def unmerge_party(conn: psycopg.Connection, tenant_id: str, alias_id: str) -> None:
     """Undo a merge. Two column writes, the same two that made it.
@@ -1236,13 +1453,27 @@ def unmerge_party(conn: psycopg.Connection, tenant_id: str, alias_id: str) -> No
     is a deliberate operator act and an alias is by definition not one of our own
     artists. A roster party merged by mistake comes back as a counterparty and is
     reclassified by hand — rare, visible, and better than guessing.
+
+    The thread repoint is reversed too, and `counterparty_id` is what it reverses *to* —
+    the column that never changed is how the original value is recovered without
+    journalling it anywhere.
     """
-    with conn.cursor() as cur:
-        cur.execute(
-            """UPDATE party SET party_class = 'counterparty', alias_of = NULL
-                WHERE tenant_id = %s AND id = %s AND party_class = 'alias'""",
-            (tenant_id, alias_id),
-        )
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE party SET party_class = 'counterparty', alias_of = NULL
+                    WHERE tenant_id = %s AND id = %s AND party_class = 'alias'""",
+                (tenant_id, alias_id),
+            )
+            if cur.rowcount == 0:
+                return                     # not an alias; nothing to undo
+
+            cur.execute(
+                """UPDATE thread SET canonical_party_id = counterparty_id,
+                                     updated_at = now()
+                    WHERE tenant_id = %s AND counterparty_id = %s""",
+                (tenant_id, alias_id),
+            )
 ```
 
 - [ ] **Step 4: Amend `delete_party` to clear lessons**
@@ -1271,15 +1502,15 @@ And extend the docstring's second paragraph to read:
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_merge.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_merge.py -q`
 
-Expected: PASS, 8 tests.
+Expected: PASS, 12 tests.
 
 - [ ] **Step 6: Run the whole suite**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && .venv/bin/python -m pytest tests -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
 
-Expected: **93 passed, 27 skipped** with `DATABASE_URL` unset — Task 6's 8 cluster tests are all skips in that mode.
+Expected: **93 passed, 31 skipped** with `DATABASE_URL` unset — Task 6's 12 cluster tests are all skips in that mode.
 
 - [ ] **Step 7: Commit**
 
@@ -1436,7 +1667,7 @@ class Deduplicating(unittest.TestCase):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_dedup.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_dedup.py -q`
 
 Expected: FAIL — `AttributeError: module 'rtf_platform.agents' has no attribute 'dedup_party'`
 
@@ -1569,7 +1800,7 @@ REGISTRY: dict[str, fleet.Agent] = {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_dedup.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_dedup.py -q`
 
 Expected: PASS, 6 tests.
 
@@ -1592,15 +1823,15 @@ A newly embedded party is exactly when a duplicate check is worth running, and `
 
 - [ ] **Step 6: Confirm the follow-on lead's shape matches what `fleet.complete` inserts**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && grep -n "for follow in outcome.follow_on" -A 25 rtf_platform/fleet.py`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && grep -n "for follow in outcome.follow_on" -A 25 rtf_platform/fleet.py`
 
 Check every column the `INSERT` names is a key the dict above provides or that the insert defaults. If `fleet.complete` requires a key not present — `adapter`, `platform`, `mode` — add it to the dict with the value the other agents use for a party-scoped lead. Do not change `fleet.complete`.
 
 - [ ] **Step 7: Run the whole suite**
 
-Run: `cd /home/mattricks/Code/respect-the-funk/platform/web && .venv/bin/python -m pytest tests -q`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
 
-Expected: **93 passed, 33 skipped** with `DATABASE_URL` unset. With `DATABASE_URL` set, all 33 run and pass: **126 passed, 0 skipped** from this plan's files, plus whatever the pre-existing cluster tests report.
+Expected: **93 passed, 37 skipped** with `DATABASE_URL` unset. With `DATABASE_URL` set all 37 run: **130 passed, 0 skipped**.
 
 - [ ] **Step 8: Commit**
 
@@ -1621,7 +1852,7 @@ The plan's only task with no new code. It is here because the three false claims
 - [ ] **Step 1: Run the deduplicator over the live counterparties**
 
 ```bash
-cd /home/mattricks/Code/respect-the-funk/platform/web
+cd "$(git rev-parse --show-toplevel)/platform/web"
 DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python - <<'PY'
 import os, psycopg
 from psycopg.rows import dict_row
@@ -1659,7 +1890,7 @@ In the "Where we are" table, replace the `Embeddings` and `Retrieval` rows with:
 | `party_chunk` — the document corpus | **empty.** `005` dropped `artist_chunk` and nothing has re-ingested; `chunk_semantic` indexes 0 rows |
 | Retrieval — R1 shortlist, R2 lessons | **live**, both reranked together in `agents.shortlist` |
 | Deduplication — R3 | **live**, proposes into `suggestion`; merges are reversible |
-| Counterparties, threads, outreach | counterparties live; threads and outreach not started |
+| Merge safety — §3c across aliases | **live**, `012a`: the collision index is on `canonical_party_id`, not the row |
 ```
 
 Under "Still open", replace the bullet beginning `**`party_fact.embedding` is still NULL.**` with:
@@ -1677,17 +1908,18 @@ Under "Still open", replace the bullet beginning `**`party_fact.embedding` is st
 
 - **`party_fact.embedding` is still NULL** — 4 rows, none embedded.
 
-- **The §3c collision index is not shipped, and `thread` does not exist.** An earlier
-  version of this file said a partial unique index enforced the cross-channel
-  collision. It was verified in the throwaway database and is in no migration.
-  `011_party_alias.sql` carries the requirement forward: when `thread` lands it must
-  have a denormalised `canonical_party_id` and the index must be on that, or an alias
-  and the party it aliases can each hold an open thread.
+- **The §3c collision index is shipped, and it took two migrations to stay true.**
+  `010_outreach.sql` created it on `thread (tenant_id, counterparty_id)`. `012` then
+  made an alias and the party it aliases two rows for one person — at which point an
+  index counting rows stopped enforcing a rule about people, and both could hold an
+  open thread. `012a` moved it to `canonical_party_id`. The lesson is worth keeping
+  visible: **a uniqueness guarantee is only as good as the identity it counts**, and
+  identity in this schema is now a resolved value rather than a primary key.
 ```
 
 - [ ] **Step 4: Verify no other file repeats the corrected claims**
 
-Run: `cd /home/mattricks/Code/respect-the-funk && grep -rn "856" --include="*.md" --include="*.py" . | grep -v node_modules | grep -v "/build/"`
+Run: `cd "$(git rev-parse --show-toplevel)" && grep -rn "856" --include="*.md" --include="*.py" . | grep -v node_modules | grep -v "/build/"`
 
 Fix every hit, including the architecture poster generator if it names the number.
 
@@ -1704,6 +1936,8 @@ git commit -m "docs: what the cluster actually contains, counted rather than rem
 
 **Spec coverage.** §3a `lesson` → Task 1. §6 rerank and its explainability → Tasks 2, 4. §4a `dedup_party` → Task 7. §4a-i reversible alias → Tasks 5, 6. §2a's three false claims → Task 8. §8's testing list, for the items in scope: `supersedes_id` chains → Task 3; `model` equality → Task 4; propose-never-merge → Task 7; merge round-trip, alias invisibility, one-level chains → Task 6.
 
-**Deliberately out of scope**, being steps 3–6 of spec §7 and needing `thread`: the open-thread merge conflict check, the §3c index, `thread.canonical_party_id`. All three are carried in `011_party_alias.sql`'s comment and in `platform/README.md`.
+**Pulled into scope by the revision.** `thread.canonical_party_id`, the index move, and `merge_party`'s open-thread conflict check were deferred when `thread` did not exist. It does, so they are Task 5a and Task 6, and the deferral notes that used to carry them have been deleted rather than left to read as still-true.
+
+**Not in this plan, and not deferred to a comment either** — `message.cites_lesson_ids`. Spec §3b wants a draft to name the lessons that produced it, and `message` shipped without the column while `outreach.draft()` shipped without the concept. Adding the column here would leave it permanently empty, because the only writer lives in the other branch. It belongs to whichever session next touches `draft()`, and it is recorded in the spec rather than here.
 
 **Not covered by any task, and named so it is not mistaken for covered:** the union-over-aliases read in `repo` (spec §4a-i) has no consumer until the console renders a merged party, so it is not built here. `party_chunk` repopulation is spec §7 step 6.

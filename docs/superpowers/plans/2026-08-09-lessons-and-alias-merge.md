@@ -92,7 +92,7 @@ and auditable.
 Create `platform/schema/011_lesson.sql`:
 
 ```sql
--- 010 — the lesson: the only table in this schema whose job is to make the next run
+-- 011 — the lesson: the only table in this schema whose job is to make the next run
 -- better than this one.
 --
 -- `SCOPE-RESET §1` justifies the party being the root of the spine on one claim: that
@@ -198,7 +198,10 @@ Run:
 
 ```bash
 psql "$DATABASE_URL" -c "INSERT INTO lesson (tenant_id, scope_kind, text, embedding) \
-  SELECT id, 'global', 'no model', ARRAY_FILL(0.1::FLOAT4, ARRAY[1024])::VECTOR(1024) FROM tenant LIMIT 1"
+  SELECT id, 'global', 'no model', '$(python3 -c "print('[' + ','.join(['0.1']*1024) + ']')")'::VECTOR(1024) FROM tenant LIMIT 1"
+
+`ARRAY_FILL()` does **not** exist on this CockroachDB build — verified 2026-08-09, it
+errors with `unknown function: array_fill()`. Generate the literal instead, as above.
 ```
 
 Expected: FAILS with `lesson_embedding_has_a_model`. If it succeeds, the `CHECK` is not doing its job and the index will fill with unsearchable rows.
@@ -890,7 +893,7 @@ git commit -m "platform: the shortlist reads what we learned, and says which les
 Create `platform/schema/012_party_alias.sql`:
 
 ```sql
--- 011 — a merge that can be undone.
+-- 012 — a merge that can be undone.
 --
 -- The live index already holds `Amanda`, `Amanda` again, `Amanda Goncalves`,
 -- `Amanda Gonçalves`, `Amanda Rocha da Silva` and `Petra Liina Amanda Suokorpi`. Five

@@ -204,7 +204,14 @@ def queue(conn: psycopg.Connection, tenant_id: str) -> View:
                         tuple(_trail(conn, tenant_id, r["id"]))),
                 *((Section("Last error", "quote", (r["last_error"],)),)
                   if r["last_error"] else ()),
-                Section("", "actions", ("Run now", "Release lease", "Reject", "Boost")),
+                # Run now posts; the other three are still the inert shape, and they
+                # look inert on purpose until something exists to post them to. What
+                # Run now does is bring `next_action_at` forward — see `fleet.expedite`
+                # for why that is the only thing it can honestly mean here.
+                Section("", "actions", (
+                    ("Run now", f"/queue/{r['id']}/run", "p", "post"),
+                    "Release lease", "Reject", "Boost",
+                )),
             ),
         })
 
@@ -418,6 +425,15 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
     # recording carry two main artists instead of being stored twice. So the
     # performer comes from `party_credit`, and `string_agg` because there can be
     # more than one and picking the first would quietly hide the collaborator.
+    #
+    # `t.tenant_id` is in the `GROUP BY` because the three scalar subqueries correlate
+    # on it, and a subquery's reference to an outer column does not get the
+    # group-by-the-primary-key relaxation that the select list gets — grouping by
+    # `t.id` is not enough, and the planner rejects the statement outright
+    # (`subquery uses ungrouped column "tenant_id" from outer query`). It changes no
+    # result: `t.id` is already unique, so the extra column splits no group. Do not
+    # drop it as redundant without deleting the `f.tenant_id = t.tenant_id` predicates
+    # too, and those are load-bearing — see `tests/test_tenant_scoping.py`.
     rows = _rows(conn, """
         SELECT t.id, t.title, t.slug, t.isrc, t.released_on, t.status,
                coalesce(string_agg(a.name, ', ' ORDER BY a.name), '—') AS artist_name,
@@ -435,7 +451,7 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
                                   AND c.role IN ('main_artist', 'featured')
           LEFT JOIN party a ON a.tenant_id = t.tenant_id AND a.id = c.party_id
          WHERE t.tenant_id = %s
-         GROUP BY t.id, t.title, t.slug, t.isrc, t.released_on, t.status
+         GROUP BY t.tenant_id, t.id, t.title, t.slug, t.isrc, t.released_on, t.status
          ORDER BY t.title""", (tenant_id,))
 
     out = [{

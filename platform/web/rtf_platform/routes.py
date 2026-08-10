@@ -51,7 +51,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from rtf_platform import (
-    auth, db, demo, outreach, repo, research, settings as settings_mod, statements,
+    auth, db, demo, fleet, outreach, repo, research, settings as settings_mod, statements,
 )
 from rtf_platform.domain import (
     ARTIST_STATUSES, DEFAULT_TYPE, ArtistType, Platform, ProfileMode, unrecognised,
@@ -315,14 +315,14 @@ def healthz() -> dict[str, str]:
 def _table(request: Request, principal: auth.Principal, view: demo.View,
            sel_id: str | None, kicker: str, title_key: str,
            live: bool = False, conn: psycopg.Connection | None = None,
-           tenant_id: str | None = None) -> Response:
+           tenant_id: str | None = None, error: str = "") -> Response:
     """Eleven of the thirteen views are this call. The View carries its own columns,
     rows and stats; everything else is shell."""
     sel = demo.select(view.rows, sel_id)
     return templates.TemplateResponse(
         request, "console/table.html",
         _ctx(request, principal, conn=conn, tenant_id=tenant_id,
-             here=view.key, view=view, sel=sel, live=live,
+             here=view.key, view=view, sel=sel, live=live, error=error,
              insp_kicker=kicker,
              insp_title=(sel or {}).get(title_key, "—")),
     )
@@ -496,12 +496,16 @@ def inbox(request: Request, principal: Operator, error: str = "") -> Response:
 # ------------------------------------------------------ real, from the tables
 
 def _live(request: Request, principal: auth.Principal, build, sel_id: str | None,
-          kicker: str, title_key: str) -> Response:
+          kicker: str, title_key: str, error: str = "") -> Response:
     """A view built from migration 004's tables rather than from `demo.py`.
 
     Before the tenant row exists there is nothing to scope a query by, so these render
     the view's own empty state rather than erroring — a fresh cluster should be
     browsable before it has data, same rule the roster already follows.
+
+    `error` carries a refused write back through its redirect, the same way `_cards`
+    already does for the approvals and inbox screens: rendered above the table, so the
+    operator keeps the row they were looking at instead of landing on an error page.
     """
     conn = _conn()
     tenant_id = _tenant_id(conn)
@@ -509,9 +513,9 @@ def _live(request: Request, principal: auth.Principal, build, sel_id: str | None
         empty = demo.View(key="", title="", blurb="", stats=(), cols=(), rows=(),
                           empty="Nothing here yet — save an artist first.")
         return _table(request, principal, empty, None, kicker, title_key, live=True,
-                      conn=conn, tenant_id=tenant_id)
+                      conn=conn, tenant_id=tenant_id, error=error)
     return _table(request, principal, build(conn, tenant_id), sel_id, kicker,
-                  title_key, live=True, conn=conn, tenant_id=tenant_id)
+                  title_key, live=True, conn=conn, tenant_id=tenant_id, error=error)
 
 
 #: Artists is the one console view that writes. Everything below it is the editor that
@@ -878,12 +882,45 @@ def facts(request: Request, principal: Operator, sel: str = "") -> Response:
 
 
 @router.get("/queue", response_class=HTMLResponse)
-def queue(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _live(request, principal, research.queue, sel or None, "lead", "target")
+def queue(request: Request, principal: Operator, sel: str = "",
+          error: str = "") -> Response:
+    return _live(request, principal, research.queue, sel or None, "lead", "target",
+                 error=error)
 
 
+@router.post("/queue/{lead_id}/run", response_class=HTMLResponse)
+def queue_run_now(principal: Operator, lead_id: str) -> Response:
+    """Run now: bring this lead's next action forward so the next claim takes it.
+
+    A POST from a form rather than a link, for the reason the inspector's actions block
+    gives: a GET that changes a row is a row changed by a browser prefetch.
+
+    What this does not do is run the agent. `fleet.expedite` has the argument — there is
+    no orchestrator to call, and the console holding an HTTP request open across a
+    provider fetch would be working outside the lease that makes the work restartable.
+    The lead becomes due; a worker claims it on its next pass.
+    """
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return RedirectResponse(
+            "/queue?error=" + _q("There is no tenant yet, so there is no frontier."),
+            status_code=303)
+    try:
+        fleet.expedite(conn, tenant_id, lead_id)
+    except fleet.NotExpedited as exc:
+        return RedirectResponse(f"/queue?sel={lead_id}&error={_q(str(exc))}",
+                                status_code=303)
+    return RedirectResponse(f"/queue?sel={lead_id}", status_code=303)
+
+
+#: `fleet_console`, not `fleet`, because a handler named for its view shadows the module
+#: of the same name for every line below it — and the shadow is silent until something
+#: reaches for `fleet.expedite` and gets an `AttributeError` on a function object at
+#: runtime. Named like `artists_console` and `imports_console` for the same reason.
 @router.get("/fleet", response_class=HTMLResponse)
-def fleet(request: Request, principal: Operator, sel: str = "") -> Response:
+def fleet_console(request: Request, principal: Operator, sel: str = "") -> Response:
     return _live(request, principal, research.fleet, sel or None, "agent", "agent")
 
 

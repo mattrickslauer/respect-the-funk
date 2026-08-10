@@ -101,6 +101,15 @@ class LeadFailed(RuntimeError):
         self.permanent = permanent
 
 
+class NotExpedited(RuntimeError):
+    """An operator asked for a lead to run now and it could not be re-armed.
+
+    Carries the reason as prose, because the only caller is a console button and the
+    only useful thing to do with it is show it to the person who clicked. The states
+    that reach it are in `expedite`.
+    """
+
+
 class LeaseLost(RuntimeError):
     """This worker's claim on a lead was no longer current when it tried to finish.
 
@@ -296,6 +305,86 @@ def claim(conn: psycopg.Connection, tenant_id: str, agent_name: str, *,
              "kinds": list(kinds), "batch": batch},
         )
         return list(cur.fetchall())
+
+
+def expedite(conn: psycopg.Connection, tenant_id: str, lead_id: str) -> None:
+    """Bring a lead's next action forward to now. This is what the console's Run now is.
+
+    There is nothing here to *run*. `PLATFORM-SPEC §0` is that agents do not call each
+    other, and this module is the whole implementation of it: a lead becomes work when
+    `next_action_at` has passed and a worker claims it. So the only honest meaning an
+    operator's Run now can carry is *stop waiting* — move the timestamp, and let the same
+    claim that would have taken the lead tomorrow take it on the next pass instead. A
+    console that instead reached in and executed the agent inside the HTTP request would
+    be the orchestrator this architecture does not have, holding a request open across a
+    provider call, outside the lease that makes the work restartable.
+
+    Three states reach here and all three are re-armed:
+
+      * **pending, but deferred.** A backoff or a cadence put `next_action_at` in the
+        future. This is the ordinary case and moving the timestamp is the whole of it.
+      * **failed.** Parked past `MAX_ATTEMPTS`. Returned to `pending` with `attempts`
+        cleared, for `ingest.retry_failed`'s reason: the operator clicking this is
+        asserting the cause has been removed, and carrying four strikes forward would
+        park the lead again on the first unrelated hiccup. `last_error` is deliberately
+        *not* cleared — it is the evidence of why it parked, the next run overwrites it,
+        and blanking it deletes the reason while somebody is still reading it.
+      * **done.** A finished one-shot. Re-arming it is a recheck, which is a thing an
+        operator legitimately wants from a row they are looking at; agents supersede
+        facts rather than duplicating them, so a second run is not a second truth.
+
+    The one refusal is a **live lease**, and it is a refusal rather than a no-op because
+    those are the two things this button has to stop being confused for. `claim` does not
+    move `state` off `pending` when it takes a row — the lease columns are the claim — so
+    the guard is `lease_expires_at`, exactly the predicate `claim` itself uses, and not a
+    state test that would read as stricter and behave as looser. A lead under a live lease
+    is already being worked: expediting it would change nothing a worker looks at, and
+    clearing the lease to force it would hand the same row to a second worker while the
+    first is still fetching, which is the duplication the whole module exists to prevent.
+
+    An *expired* lease is nobody's, so it is expedited — and `owner_agent` and
+    `lease_token` are left alone rather than nulled. They are what
+    `_reschedule_after_lease_loss` fences on to tell "the lease ran out with nobody
+    waiting" from "somebody else took it"; blanking them here would make a worker that is
+    still fetching conclude it had been re-claimed, and report a race that did not happen.
+
+    Raises `NotExpedited` — with the reason, in words an operator can act on — rather than
+    returning a status nobody checks. A Run now that silently declines is the bug this
+    function was written to close.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE lead
+                  SET next_action_at = now(),
+                      state = 'pending',
+                      attempts = CASE WHEN state = 'failed' THEN 0 ELSE attempts END,
+                      updated_at = now()
+                WHERE tenant_id = %s AND id = %s
+                  AND (lease_expires_at IS NULL OR lease_expires_at <= now())""",
+            (tenant_id, lead_id),
+        )
+        if cur.rowcount:
+            return
+        # Nothing moved. Two very different reasons, and the operator needs to be told
+        # which — so this reads the row back to say so. The `UPDATE` above is still the
+        # authority; this is an explanation, and if the lease lapses between the two
+        # statements the explanation is merely a moment stale, not wrong about the write.
+        cur.execute(
+            """SELECT owner_agent, lease_expires_at FROM lead
+                WHERE tenant_id = %s AND id = %s""",
+            (tenant_id, lead_id),
+        )
+        row = cur.fetchone()
+
+    if row is None:
+        raise NotExpedited(
+            f"Lead {str(lead_id)[:8]}… is not in this tenant's frontier. It has been "
+            "deleted, or it belongs to somebody else.")
+    raise NotExpedited(
+        f"{row['owner_agent'] or 'A worker'} holds a live lease on this lead until "
+        f"{row['lease_expires_at']:%H:%M:%S} — it is being worked right now. Run now "
+        "would not make it any sooner, and taking the lease away would hand the same "
+        "lead to a second worker.")
 
 
 def complete(conn: psycopg.Connection, lead: dict[str, Any], outcome: Outcome, *,

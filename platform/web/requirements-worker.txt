@@ -1,0 +1,22 @@
+# Dependencies for a fleet worker, which is not the same machine as the function.
+#
+# `requirements.txt` is vendored into the Lambda bundle and is kept small on purpose —
+# `embed.py` reaches the network with `urllib` rather than httpx for this reason, and
+# `app/pyproject.toml` records the same decision about librosa. numpy is ~20 MB unpacked
+# and an ffmpeg binary is larger still; neither belongs in a function that serves HTML.
+#
+# They belong here instead. `rtf_platform.audio` imports numpy inside its functions, so
+# importing `rtf_platform` costs the Lambda nothing, and the agent that needs it is
+# claimed by a worker drained like this:
+#
+#     pip install -r requirements-worker.txt
+#     python -m rtf_platform.ingest --drain-only --kinds analyse_recording
+#
+# That split is the fleet's design paying for itself: a heavyweight agent joins by
+# claiming leases on the same table as every other agent, and no other tier is changed
+# or even told. `ffmpeg` must also be on PATH; it is not installable from pip and is
+# checked for at the point of use, where the error can say so.
+
+-r requirements.txt
+
+numpy==2.5.2

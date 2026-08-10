@@ -29,10 +29,17 @@ classmethod that:
     rather than guess on the adapter's behalf;
   * validates `provenance` against the three values `fact_provenance`,
     `identifier_provenance` and `presence_match` — the schema's own `CHECK`
-    constraints — allow. `mode` is validated too, but only at this application
-    level, against `domain.ProfileMode`'s three values: `presence.mode` carries
-    **no `CHECK` constraint in the schema today**, so an illegal `mode` fails here
-    or nowhere — this module is the only guard, not a belt-and-braces one.
+    constraints — allow. `mode` is validated too, against `domain.ProfileMode`'s
+    three values, and as of migration `014` (`presence_mode_known`)
+    `presence.mode` carries that same `CHECK` in the schema — added `NOT VALID`
+    because 18 of 21 live rows already held the illegal `'observed'` value this
+    module would have rejected, written by SQL that bypassed this parser
+    entirely (`agents._write_find_counterparties`, fixed in the same change).
+    `NOT VALID` means those 18 pre-existing rows are grandfathered, not that the
+    constraint is inert: every write from `014` onward is checked by the
+    database regardless of whether it goes through this module. So this is now
+    a redundant, earlier gate for a `presence` row assembled through
+    `Presence.parse` — not the only guard an illegal `mode` has to get past.
     `release_type` is required to be non-empty but is **not** validated against a
     fixed set of values — see `Release`'s own docstring for why.
 

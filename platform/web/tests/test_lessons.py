@@ -308,10 +308,15 @@ class ShortlistDoesNotDuplicateOnPresence(unittest.TestCase):
             curator_id = str(cur.fetchone()["id"])
 
             for platform in ("spotify", "deezer", "youtube"):
+                # `mode` is explicit rather than left to the column default: as of
+                # migration `014`'s `presence_mode_known` CHECK, the default (`''`)
+                # is itself illegal, so a bare INSERT that used to slide through on
+                # it now fails loudly instead — correctly, but this test is about
+                # dedup, not about mode, hence the arbitrary legal value.
                 cur.execute(
                     """INSERT INTO presence (tenant_id, subject_kind, subject_id,
-                                             platform, url)
-                       VALUES (%s, 'party', %s, %s, %s)""",
+                                             platform, mode, url)
+                       VALUES (%s, 'party', %s, %s, 'unowned', %s)""",
                     (self.tenant, curator_id, platform,
                      f"https://{platform}.example/curator"),
                 )

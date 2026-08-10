@@ -8,7 +8,9 @@ failure that looks exactly like a working system with nothing to say.
 
 from __future__ import annotations
 
+import os
 import unittest
+import uuid
 
 from rtf_platform import agents, fleet
 
@@ -62,6 +64,167 @@ class Splitting(unittest.TestCase):
                 self.assertTrue(callable(agent.write), f"{kind}.write is not callable")
             else:
                 self.assertTrue(callable(agent), f"{kind} is not callable")
+
+
+HAVE_DB = bool(os.environ.get("DATABASE_URL"))
+
+
+@unittest.skipUnless(HAVE_DB, "DATABASE_URL unset — cluster tests skipped")
+class MapSourceSupersession(unittest.TestCase):
+    """`_write_map_source` marks a replaced `party_fact` row `superseded` and must set
+    `supersedes_id` on the row that replaces it in the same statement, so the two can
+    never disagree. Measured on the live cluster before this fix: 3 of 4 `party_fact`
+    rows carrying `status = 'superseded'` had nothing pointing at them — orphans,
+    because the column was never written.
+    """
+
+    def setUp(self) -> None:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        from rtf_platform import repo
+
+        self.conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True,
+                                    row_factory=dict_row)
+        self.tenant = str(uuid.uuid4())
+        with self.conn.cursor() as cur:
+            cur.execute("INSERT INTO tenant (id, slug, name) VALUES (%s, %s, %s)",
+                        (self.tenant, f"test-supersede-{self.tenant[:8]}", "supersede test"))
+        self.party = repo.create_party(self.conn, self.tenant, name="Test Act",
+                                       type_="solo")
+
+    def tearDown(self) -> None:
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM tenant WHERE id = %s", (self.tenant,))
+        self.conn.close()
+
+    def _write(self, value_text: str) -> None:
+        from rtf_platform import sources, spend
+
+        lead = {"id": str(uuid.uuid4()), "tenant_id": self.tenant,
+                "party_id": self.party["id"]}
+        gate = spend.Gate.open(self.conn, self.tenant)
+        harvest = sources.Harvest(facts=[
+            {"dimension": "genre", "value_text": value_text, "provenance": "measured"},
+        ])
+        agents._write_map_source(self.conn, lead, gate,
+                                 {"platform": "spotify", "harvest": harvest})
+
+    def _facts(self) -> list[dict]:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, value_text, status, supersedes_id FROM party_fact
+                    WHERE tenant_id = %s AND party_id = %s AND dimension = 'genre'
+                    ORDER BY created_at""",
+                (self.tenant, self.party["id"]),
+            )
+            return cur.fetchall()
+
+    def test_a_second_reading_sets_supersedes_id_on_the_new_row(self) -> None:
+        self._write("pop")
+        first = self._facts()
+        self.assertEqual(len(first), 1)
+        self.assertEqual(first[0]["status"], "live")
+        self.assertIsNone(first[0]["supersedes_id"])
+
+        self._write("rock")
+        rows = self._facts()
+        self.assertEqual(len(rows), 2, "the old reading must stay, not be overwritten")
+        by_status = {r["status"]: r for r in rows}
+        self.assertEqual(by_status["superseded"]["id"], first[0]["id"])
+        self.assertEqual(by_status["live"]["value_text"], "rock")
+        # The claim migration 010's comment made and this fix makes true: status and
+        # relationship cannot disagree because the new row names exactly what it replaced.
+        self.assertEqual(by_status["live"]["supersedes_id"], first[0]["id"],
+                         "the live row must point at the row it superseded")
+        self.assertIsNone(by_status["superseded"]["supersedes_id"])
+
+    def test_an_unchanged_reading_supersedes_nothing(self) -> None:
+        self._write("pop")
+        first = self._facts()
+        self._write("pop")
+        rows = self._facts()
+        self.assertEqual(len(rows), 1,
+                         "re-mapping the same value must not fork a second row")
+        self.assertEqual(rows[0]["id"], first[0]["id"])
+        self.assertEqual(rows[0]["status"], "live")
+
+    def test_a_chain_of_three_supersessions_links_each_to_the_one_before(self) -> None:
+        self._write("pop")
+        first = self._facts()[0]
+        self._write("rock")
+        second = next(r for r in self._facts() if r["status"] == "live")
+        self._write("jazz")
+        rows = self._facts()
+        third = next(r for r in rows if r["status"] == "live")
+        self.assertEqual(third["supersedes_id"], second["id"])
+        by_id = {r["id"]: r for r in rows}
+        self.assertEqual(by_id[second["id"]]["supersedes_id"], first["id"])
+
+
+@unittest.skipUnless(HAVE_DB, "DATABASE_URL unset — cluster tests skipped")
+class WriteFindCounterpartiesWritesALegalMode(unittest.TestCase):
+    """A discovered curator's own presence must land as `mode='owned'` — the value
+    `domain.ProfileMode` actually has three of, not the `'observed'` literal this
+    function used to write. Run against the live cluster so migration `014`'s
+    `presence_mode_known` CHECK is the thing that would catch a regression: if this
+    function ever goes back to writing an illegal mode, the INSERT below fails, not
+    just an assertion in this file.
+    """
+
+    def setUp(self) -> None:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        self.conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True,
+                                    row_factory=dict_row)
+        self.tenant = str(uuid.uuid4())
+        with self.conn.cursor() as cur:
+            cur.execute("INSERT INTO tenant (id, slug, name) VALUES (%s, %s, %s)",
+                        (self.tenant, f"test-cp-mode-{self.tenant[:8]}", "cp mode test"))
+            # `party_document.lead_id` carries a real foreign key (`ON DELETE SET
+            # NULL`, but still enforced on insert) — a synthetic UUID is not enough,
+            # a real `lead` row is needed. `scope_kind='tenant'` needs no `party_id`.
+            cur.execute(
+                """INSERT INTO lead (tenant_id, scope_kind, kind, adapter, target,
+                                     target_hash)
+                   VALUES (%s, 'tenant', 'find_counterparties', 'deezer', 'x',
+                           %s) RETURNING id""",
+                (self.tenant, f"test-cp-mode-{self.tenant}"),
+            )
+            self.lead_id = str(cur.fetchone()["id"])
+
+    def tearDown(self) -> None:
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM tenant WHERE id = %s", (self.tenant,))
+        self.conn.close()
+
+    def test_the_curators_own_presence_is_owned_not_observed(self) -> None:
+        from rtf_platform import sources, spend
+
+        lead = {"id": self.lead_id, "tenant_id": self.tenant}
+        gate = spend.Gate.open(self.conn, self.tenant)
+        harvest = sources.Harvest(
+            counterparties=[{
+                "name": "DJ Mixtape", "platform_id": "cp-1",
+                "url": "https://deezer.example/dj-mixtape",
+                "profile_text": "Curates a weekly playlist of new funk.",
+            }],
+            summary="1 curator",
+        )
+        agents._write_find_counterparties(
+            self.conn, lead, gate,
+            {"platform": "deezer", "harvest": harvest, "cap": 10})
+
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """SELECT mode FROM presence
+                    WHERE tenant_id = %s AND platform = 'deezer'""",
+                (self.tenant,),
+            )
+            row = cur.fetchone()
+        self.assertIsNotNone(row, "the curator's presence row must have been written")
+        self.assertEqual(row["mode"], "owned")
 
 
 if __name__ == "__main__":

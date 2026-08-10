@@ -1,0 +1,347 @@
+"""A lint expressed as a test: every SQL statement against a tenant-scoped table must
+carry a `tenant_id` predicate somewhere in it.
+
+Three lookups in `agents.py` and `agents.retrieve()`'s scalar subqueries used to fetch
+by bare `id`, with no `tenant_id` predicate at all. Two auditors had already reported
+that as two different things — a cross-tenant data leak, and a performance bug (it
+defeats every index whose leading column is `tenant_id`) — before anyone noticed it was
+one omission. This test is the thing that stops the next one; a docstring saying "every
+query is scoped by tenant_id" (`repo.py`'s own opening line) is exactly the kind of
+claim this whole audit exists to stop trusting.
+
+**DB-free by construction**, so it can never silently skip the way a cluster-gated test
+does when `DATABASE_URL` is unset. It parses source, not connects to anything.
+
+## What it does
+
+Walks every `.py` file under `rtf_platform/` with `Path.rglob` — not `glob`, which does
+not recurse and would silently stop covering `rtf_platform/distributors/` the moment a
+query moved there or a new subpackage appeared; an earlier census test in this project
+made exactly that mistake. For each file, finds every call that ultimately reaches
+`cursor.execute(sql, ...)` — directly, or through a same-module wrapper that only
+forwards its own `sql` parameter into `.execute()` (this codebase has two:
+`research._rows`/`_one`) — and statically resolves `sql` to text: string and f-string
+literals, and simple same-function variable accumulation (`sql = f"..."; sql += "..."`,
+the shape `repo.list_parties` builds its `WHERE` clause with).
+
+A statement is then split into independently-checked **units**: the statement's own
+text with every parenthesized `(SELECT ...)` scalar subquery stripped out, plus each
+subquery's text, recursively. This is what makes the check *mean* something rather than
+being satisfied by any `tenant_id` anywhere in a big statement — `agents.retrieve()`'s
+outer CTE carries `WHERE tenant_id = %s AND model = %s` and its two scalar subqueries
+against `party_document` did not carry the predicate at all; a whole-statement
+substring search would have missed exactly the bug this test exists to catch, because
+the sibling clause's `tenant_id` would have "covered" for the subquery's lack of one.
+Splitting into units is what makes the two independently checkable.
+
+For each unit, if it references a tenant-scoped table (`FROM`/`INTO`/`UPDATE`/`JOIN
+<table>`, matched with a word boundary so `party` cannot match inside `party_fact`) and
+does not contain the substring `tenant_id` anywhere in that unit, it fails — unless the
+exact (whitespace-normalised) unit text is in `ALLOWLIST` below, with a comment
+justifying why that specific statement is genuinely tenant-free. The allowlist is
+empty: every statement this test's first run found un-scoped got the predicate added
+rather than excused (see the commit this test landed in), and `agents._write_map_source`
+INSERTs `demo_request` and `tenant` never come up because those two tables are not in
+`TENANT_SCOPED_TABLES` — the row that has no tenant yet, and the tenant row itself,
+correctly have no `tenant_id` predicate to carry.
+
+## What would make this test itself untrustworthy, and why each is guarded against
+
+* A `.py` file that stops being discovered — guarded by `rglob`, asserted by
+  `test_the_walk_finds_every_module`.
+* A call site whose SQL text cannot be statically resolved (built some way this parser
+  does not understand) silently not being checked — guarded by raising, with the file
+  and line, rather than skipping it; see `_extract_statements`.
+* The allowlist accumulating stale entries nobody re-examines because the statement
+  they were written for no longer exists — guarded by
+  `test_allowlist_entries_are_all_still_matched`.
+"""
+
+from __future__ import annotations
+
+import ast
+import re
+import unittest
+from pathlib import Path
+from typing import Any
+
+RTF_PLATFORM = Path(__file__).resolve().parents[1] / "rtf_platform"
+
+#: Every table in `platform/schema/*.sql` that carries a `tenant_id` column — the
+#: single place this list is maintained. A table is deliberately left out only when its
+#: own `CREATE TABLE` has no `tenant_id` column: `tenant` (it IS the tenant), `demo_request`
+#: (explicitly tenant-free — see its own comment in `005_party_first.sql`/`repo.py`),
+#: `fact_basis` and `source_manifest` (neither carries the column at all). `artist`,
+#: `artist_profile`, `track` and the rest of `004_research.sql`'s pre-005 shapes are
+#: excluded too: migration `005` dropped them, so no live query can name them.
+TENANT_SCOPED_TABLES: tuple[str, ...] = (
+    "party", "party_identifier", "party_role", "party_relation", "work", "recording",
+    "release", "recording_work", "release_recording", "party_credit", "lead",
+    "party_document", "party_chunk", "party_fact", "party_metric", "agent_run",
+    "party_budget", "presence", "suggestion", "lesson", "statement_import",
+)
+
+_TABLE_RE = {t: re.compile(r"\b" + re.escape(t) + r"\b") for t in TENANT_SCOPED_TABLES}
+_REF_RE = re.compile(r"\b(?:FROM|INTO|UPDATE|JOIN)\s+([A-Za-z_][A-Za-z0-9_]*)",
+                     re.IGNORECASE)
+
+#: Statements that reference a tenant-scoped table but are genuinely tenant-free,
+#: keyed to the exact (whitespace-normalised) statement text so a change to the
+#: statement drops out of the allowlist and has to be re-justified rather than staying
+#: silently excused forever. Empty: nothing found by this test's first run stayed
+#: unscoped — see the module docstring.
+ALLOWLIST: dict[str, str] = {}
+
+
+# --------------------------------------------------------------- static SQL resolution
+
+def _literal_text(node: ast.AST | None, env: dict[str, str | None]) -> str | None:
+    """Best-effort static string value of an AST node, or `None` if it depends on
+    something this resolver does not follow (a function call, a dict lookup, ...)."""
+    if node is None:
+        return None
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, int, float)):
+        return str(node.value)
+    if isinstance(node, ast.JoinedStr):  # an f-string
+        parts: list[str] = []
+        for value in node.values:
+            if isinstance(value, ast.Constant):
+                parts.append(str(value.value))
+            elif isinstance(value, ast.FormattedValue):
+                resolved = _literal_text(value.value, env)
+                if resolved is None:
+                    return None
+                parts.append(resolved)
+            else:
+                return None
+        return "".join(parts)
+    if isinstance(node, ast.Name):
+        return env.get(node.id)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _literal_text(node.left, env)
+        right = _literal_text(node.right, env)
+        return None if left is None or right is None else left + right
+    return None
+
+
+def _gather_assigns(nodes: Any) -> list[tuple[str, str, ast.AST, int]]:
+    out = []
+    for n in nodes:
+        if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+            out.append(("assign", n.targets[0].id, n.value, n.lineno))
+        elif (isinstance(n, ast.AugAssign) and isinstance(n.target, ast.Name)
+              and isinstance(n.op, ast.Add)):
+            out.append(("aug", n.target.id, n.value, n.lineno))
+    return out
+
+
+def _build_env(assigns: list[tuple[str, str, ast.AST, int]],
+               base: dict[str, str | None] | None = None) -> dict[str, str | None]:
+    """A same-scope string environment: `sql = f"..."` then `sql += "..."`, in source
+    order, so a variable built across a few statements (`repo.list_parties`) resolves
+    the same as a single literal would. Order matters more than control flow here — an
+    `if` branch's assignment is folded in unconditionally, which over-approximates
+    (assumes every branch ran) rather than under-approximates, so a statement that
+    *sometimes* omits `tenant_id` cannot hide behind a branch that includes it."""
+    env = dict(base or {})
+    for kind, name, valnode, _ in sorted(assigns, key=lambda t: t[3]):
+        val = _literal_text(valnode, env)
+        if kind == "assign":
+            env[name] = val
+        else:
+            prev = env.get(name)
+            env[name] = None if prev is None or val is None else prev + val
+    return env
+
+
+def _find_forwarders(tree: ast.AST) -> tuple[dict[str, int], set[int]]:
+    """Functions in this module whose body immediately forwards one of their own
+    parameters into `<obj>.execute(...)` — `research._rows`/`_one`. Returns the
+    forwarding parameter's position for each such function, and the node-ids of the
+    `.execute(...)` calls that were used to detect it (so the walk below does not also
+    try, and fail, to resolve their generic parameter as if it were literal SQL)."""
+    forwarders: dict[str, int] = {}
+    internal: set[int] = set()
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        params = [a.arg for a in fn.args.args]
+        for call in ast.walk(fn):
+            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "execute" and call.args):
+                continue
+            arg0 = call.args[0]
+            if isinstance(arg0, ast.Name) and arg0.id in params:
+                forwarders[fn.name] = params.index(arg0.id)
+                internal.add(id(call))
+    return forwarders, internal
+
+
+def _extract_statements(path: Path) -> list[tuple[int, str]]:
+    """`(lineno, sql_text)` for every statement reaching `.execute()` in this file.
+    Raises with file/line detail — rather than skipping — for any call whose SQL text
+    this resolver cannot statically determine, so a future dynamic-SQL pattern fails
+    the test loudly instead of quietly falling out of coverage."""
+    tree = ast.parse(path.read_text(), filename=str(path))
+    forwarders, internal = _find_forwarders(tree)
+    fn_scopes = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
+
+    module_assigns = _gather_assigns(
+        n for n in tree.body if isinstance(n, (ast.Assign, ast.AugAssign)))
+    module_env = _build_env(module_assigns)
+    env_cache: dict[int | None, dict[str, str | None]] = {}
+
+    def env_for(scope: ast.FunctionDef | None) -> dict[str, str | None]:
+        key = id(scope) if scope else None
+        if key not in env_cache:
+            if scope is None:
+                env_cache[key] = module_env
+            else:
+                env_cache[key] = _build_env(_gather_assigns(ast.walk(scope)), base=module_env)
+        return env_cache[key]
+
+    def scope_of(node: ast.AST) -> ast.FunctionDef | None:
+        best = None
+        for fn in fn_scopes:
+            if fn.lineno <= node.lineno <= (fn.end_lineno or fn.lineno):
+                if best is None or fn.lineno > best.lineno:
+                    best = fn
+        return best
+
+    out: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = (node.func.attr if isinstance(node.func, ast.Attribute)
+                else node.func.id if isinstance(node.func, ast.Name) else None)
+
+        if name == "execute" and isinstance(node.func, ast.Attribute):
+            if id(node) in internal:
+                continue
+            arg_index = 0
+        elif name in forwarders:
+            arg_index = forwarders[name]
+        else:
+            continue
+
+        if len(node.args) <= arg_index:
+            continue
+        text = _literal_text(node.args[arg_index], env_for(scope_of(node)))
+        if text is None:
+            raise AssertionError(
+                f"{path}:{node.lineno}: this test cannot statically resolve the SQL "
+                "text passed here — it is neither a literal/f-string nor a variable "
+                "this resolver can trace. Either simplify the call so the SQL is "
+                "readable statically, or teach `_literal_text`/`_find_forwarders` the "
+                "new shape. A statement this test cannot see is a statement the "
+                "tenant-scoping guarantee no longer covers.")
+        out.append((node.lineno, text))
+    return out
+
+
+# ------------------------------------------------------------ per-statement checking
+
+def _extract_units(text: str) -> list[str]:
+    """Split `text` into independently-checkable segments: the statement's own text
+    with every `(SELECT ...)` scalar subquery removed, plus each subquery's inner text,
+    recursively. See the module docstring for why whole-statement substring search is
+    not enough."""
+    units: list[str] = []
+    pattern = re.compile(r"\(\s*SELECT\b", re.IGNORECASE)
+    i = 0
+    remainder: list[str] = []
+    last = 0
+    n = len(text)
+    while True:
+        m = pattern.search(text, i)
+        if not m:
+            break
+        start = m.start()
+        depth = 0
+        j = start
+        while j < n:
+            if text[j] == "(":
+                depth += 1
+            elif text[j] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        end = j
+        remainder.append(text[last:start])
+        last = end + 1
+        units.extend(_extract_units(text[start + 1:end]))
+        i = end + 1
+    remainder.append(text[last:])
+    units.append("".join(remainder))
+    return units
+
+
+def _violations(text: str) -> list[tuple[str, list[str]]]:
+    """`(unit, tables)` for every unit of `text` that references a tenant-scoped table
+    without a `tenant_id` predicate anywhere in that same unit."""
+    found = []
+    for unit in _extract_units(text):
+        refs = {t.lower() for t in _REF_RE.findall(unit)}
+        matched = [t for t in TENANT_SCOPED_TABLES if t in refs]
+        if matched and "tenant_id" not in unit:
+            found.append((unit, matched))
+    return found
+
+
+def _normalise(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+# ------------------------------------------------------------------------- the tests
+
+class TenantScoping(unittest.TestCase):
+
+    def test_the_walk_finds_every_module(self) -> None:
+        # `distributors/` is a subpackage `glob("*.py")` would not recurse into — the
+        # exact mistake this test's docstring warns about repeating.
+        found = {p.relative_to(RTF_PLATFORM) for p in RTF_PLATFORM.rglob("*.py")}
+        self.assertIn(Path("agents.py"), found)
+        self.assertIn(Path("fleet.py"), found)
+        self.assertIn(Path("distributors/base.py"), found,
+                      "rglob must recurse into subpackages, not just the top level")
+
+    def test_every_tenant_scoped_statement_carries_tenant_id(self) -> None:
+        used_allowlist_entries: set[str] = set()
+        failures: list[str] = []
+        checked = 0
+
+        for path in sorted(RTF_PLATFORM.rglob("*.py")):
+            for lineno, sql in _extract_statements(path):
+                checked += 1
+                for unit, tables in _violations(sql):
+                    key = _normalise(unit)
+                    if key in ALLOWLIST:
+                        used_allowlist_entries.add(key)
+                        continue
+                    rel = path.relative_to(RTF_PLATFORM)
+                    failures.append(
+                        f"{rel}:{lineno} references {tables} with no tenant_id "
+                        f"predicate:\n    {key[:200]}")
+
+        # A change to `rtf_platform/` that stops finding any `.execute()` call at all
+        # is this test silently checking nothing — fail loudly rather than pass empty.
+        self.assertGreater(checked, 50,
+                           "found suspiciously few SQL statements — is the walk broken?")
+
+        if failures:
+            self.fail(
+                f"{len(failures)} statement(s) reference a tenant-scoped table without "
+                "a tenant_id predicate:\n\n" + "\n\n".join(failures))
+
+        unused = set(ALLOWLIST) - used_allowlist_entries
+        self.assertFalse(
+            unused,
+            f"{len(unused)} allowlist entr{'y is' if len(unused) == 1 else 'ies are'} "
+            "no longer matched by any statement — the code changed and the entry is "
+            "stale; remove it rather than let it excuse something else silently: "
+            + repr(unused))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -152,6 +152,12 @@ def delete_party(conn: psycopg.Connection, tenant_id: str, party_id: str) -> boo
     probe reconciler works from presence, so a deleted artist would keep being
     fetched forever and nothing would explain why.
 
+    `lesson` is the same polymorphism for the same reason — `011_lesson.sql` scopes a
+    lesson by `scope_kind`/`scope_id`, a `STRING` with no foreign key, because a lesson
+    can be about a curator, a kind of counterparty, a channel, or everything, and only
+    the first of those is a UUID. `scope_id` is compared as text here (`party_id` is a
+    UUID; the column that holds it is not) for the same reason.
+
     Everything with a real foreign key (`party_role`, `party_identifier`,
     `party_credit`, `party_fact`, …) still cascades in the database, where it
     belongs. This function exists for the exceptions, not instead of them.
@@ -163,6 +169,12 @@ def delete_party(conn: psycopg.Connection, tenant_id: str, party_id: str) -> boo
                     WHERE tenant_id = %s AND subject_kind = 'party'
                       AND subject_id = %s""",
                 (tenant_id, party_id),
+            )
+            cur.execute(
+                """DELETE FROM lesson
+                    WHERE tenant_id = %s AND scope_kind = 'party'
+                      AND scope_id = %s""",
+                (tenant_id, str(party_id)),
             )
             cur.execute("DELETE FROM party WHERE tenant_id = %s AND id = %s",
                         (tenant_id, party_id))

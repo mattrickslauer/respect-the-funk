@@ -181,6 +181,21 @@ def retrieve_for(conn: psycopg.Connection, tenant_id: str, *,
         `lesson_by_scope`. We already know who we mean; asking the vector index to
         rediscover them would be slower and could miss one.
 
+    The general query carries an explicit `lesson@lesson_semantic` index hint — a
+    decision, not an oversight. `lesson_by_scope`, `(tenant_id, scope_kind, scope_id,
+    created_at DESC)`, is the index the *named* query above uses on purpose, and it is
+    also a tenant-prefixed secondary index on this same table: exactly the shape that
+    made `agents.shortlist()`'s R1 silently stop using `party_shortlist` after migration
+    `012` added `party_aliases_of` — a migration to `party` that `shortlist()` never
+    touches. Nothing here has yet shown `lesson_by_scope` winning this query the way
+    `party_aliases_of` won `shortlist()`'s, but the precondition — a tenant-prefixed
+    competing index on the vector-searched table — is already true today, not
+    hypothetical, so this is hinted preemptively rather than waiting for the same class
+    of regression to happen twice. `agents.retrieve()` is the counterexample: `party_chunk`
+    carries no secondary index besides its primary key and `chunk_semantic`, so there is
+    no tenant-prefixed alternative for the optimizer to ever prefer, and it is
+    deliberately left unhinted — see its docstring.
+
     Superseded rows are dropped from each result separately, so a correction retrieved
     without its predecessor still counts.
     """
@@ -189,7 +204,7 @@ def retrieve_for(conn: psycopg.Connection, tenant_id: str, *,
         cur.execute(
             """SELECT id, scope_kind, scope_id, text, valence, confidence,
                       supersedes_id, embedding <=> %s::VECTOR(1024) AS distance
-                 FROM lesson
+                 FROM lesson@lesson_semantic
                 WHERE tenant_id = %s AND model = %s
                   AND scope_kind IN ('party_kind', 'channel', 'global')
                 ORDER BY embedding <=> %s::VECTOR(1024)

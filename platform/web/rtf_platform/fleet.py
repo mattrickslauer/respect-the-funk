@@ -514,16 +514,21 @@ def _reacquire(conn: psycopg.Connection, lead: dict[str, Any], agent_name: str) 
     `owner_agent`, `lease_token` or `lease_expires_at` in between. If `_reacquire`'s check
     passed, `complete`'s later, identical check is therefore a foregone conclusion, not an
     independent verification: it cannot be the thing that discovers a lease lost during
-    `fetch`, because `_reacquire` already would have raised first. Remove `_reacquire` and
-    that discovery does not simply move later — nothing else in this module re-reads the
-    lease against a value captured at the *start* of the write phase, before the FOR
-    UPDATE lock closes the window a second worker's `claim` could otherwise land in.
-    (`complete`'s fence still matters for any caller that reaches it without going through
-    `_reacquire` first in the same transaction — today that is only `test_fleet.py`
-    calling it directly; every production path is `work_once`, which always calls
-    `_reacquire` first.) A useful side effect, not the reason this exists: a worker whose
-    lease already expired before `fetch` returned is stopped here, before it runs its
-    entire write phase — every `INSERT` an agent can produce — for nothing.
+    `fetch`, because `_reacquire` already would have raised first.
+
+    Remove `_reacquire` and correctness does not disappear: `complete`'s identical fence,
+    reading that same frozen `now()`, would still catch a lease already expired by the
+    time the transaction opened, and raising there still rolls back the whole
+    transaction — nothing an agent wrote in between becomes durable. What removal
+    actually costs is real, just not correctness. The write phase — every `INSERT` an
+    agent can produce — runs to completion first, for nothing, before `complete` finally
+    discovers the loss on the very last statement instead of the first. And the row sits
+    unlocked for the whole of that phase, reopening the narrower window `_reacquire`'s
+    `FOR UPDATE` exists to close: a second worker's `claim` landing while this one is
+    still writing. (`complete`'s fence still matters for any caller that reaches it
+    without going through `_reacquire` first in the same transaction — today that is only
+    `test_fleet.py` calling it directly; every production path is `work_once`, which
+    always calls `_reacquire` first.)
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -602,7 +607,7 @@ def _reschedule_after_lease_loss(conn: psycopg.Connection, lead: dict[str, Any],
 
 def _record_lease_lost(conn: psycopg.Connection, lead: dict[str, Any], agent_name: str,
                        gate: spend.Gate, started: float, exc: LeaseLost, *,
-                       real_error: str = "") -> None:
+                       real_error: str | None = None) -> None:
     """Record a run whose claim stopped being current, and deal with the lead.
 
     Runs in a transaction of its own — whichever transaction discovered the loss has
@@ -619,16 +624,19 @@ def _record_lease_lost(conn: psycopg.Connection, lead: dict[str, Any], agent_nam
     recording that failure* — `fail` or `_defer` raising `LeaseLost` from inside
     `work_once`'s `LeadFailed`/`SpendRefused`/generic-exception handlers, because the
     transaction that would have written it rolled back along with everything else those
-    handlers were trying to commit. Left out, only the lease-loss text survives into
-    `agent_run.error` and `lead.last_error`, and an operator reading the row to find out
-    why a lead failed sees "lease expired" instead of "document body is empty" or
-    whatever the agent actually raised — the row exists precisely so that operator does
-    not have to guess, and losing the real cause to a second, unrelated failure defeats
-    that. Folding it into the message this function records keeps it on the row that
-    survives.
+    handlers were trying to commit. `None` — not `""` — is what "there is no real error to
+    fold in" means here: this function is also reached directly from `work_once`'s own
+    `except LeaseLost`, where there is no *second*, masked error to preserve, only the
+    lease loss itself, and an empty string would be indistinguishable from that on
+    inspection. Left out, only the lease-loss text survives into `agent_run.error` and
+    `lead.last_error`, and an operator reading the row to find out why a lead failed sees
+    "lease expired" instead of "document body is empty" or whatever the agent actually
+    raised — the row exists precisely so that operator does not have to guess, and losing
+    the real cause to a second, unrelated failure defeats that. Folding it into the
+    message this function records keeps it on the row that survives.
     """
     message = (f"{real_error} — lease lost while recording this failure: {exc}"
-              if real_error else str(exc))
+              if real_error is not None else str(exc))
     with conn.transaction():
         rescheduled = _reschedule_after_lease_loss(conn, lead, agent_name, message)
         summary = ("lease lapsed with no other claimant; backed off and left on the "

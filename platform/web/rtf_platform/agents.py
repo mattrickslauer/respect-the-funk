@@ -193,6 +193,19 @@ def retrieve(conn: psycopg.Connection, tenant_id: str, query: str, *,
     subqueries against `party_document`'s primary key, which by construction return at
     most one row each, so they cannot duplicate or drop a chunk. Do not "simplify" this
     back into a join.
+
+    Deliberately **not** given an index hint, unlike `shortlist()` and
+    `lessons.retrieve_for()`'s general pass. Both of those carry one because their tables
+    (`party`, `lesson`) also carry a *second*, tenant-prefixed secondary index the
+    optimizer can decide is cheaper for a tenant with few matching rows — `party`'s
+    `party_aliases_of` is what actually did, added by a migration this function's table
+    has nothing to do with. `party_chunk` has no such alternative: only its primary key
+    (on `id` alone, not tenant-prefixed, so it cannot serve a `tenant_id`-scoped scan at
+    all) and `chunk_semantic`. There is no other index for the cost model to ever prefer,
+    so `EXPLAIN` — asserted for this query in `test_vector_plans.py` — is the whole
+    guarantee, not a supplement to a hint; a hint here would pin against a competitor
+    that cannot exist unless a future migration adds a second tenant-prefixed index to
+    `party_chunk`, at which point this reasoning, and this decision, need revisiting.
     """
     provider = embed.load()
     vectors, _ = embed.embed_batch(gate, provider, [query])
@@ -770,16 +783,27 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
         #
         # `party@party_shortlist` is an explicit index hint, added after `test_vector_plans.py`
         # caught this exact query planning *without* a `vector search` node on the live
-        # cluster despite being join-free — CockroachDB's cost-based optimizer can still
-        # prefer a narrower, tenant-scoped secondary index (`party_by_class` or the
-        # `(tenant_id, slug)` unique index) over the vector index when its statistics
-        # estimate few matching rows for a given tenant, which happens easily for a
-        # tenant with few counterparties or one whose row count the optimizer has not
-        # sampled recently. That is a second, independent way the planner can "abandon
-        # the index" beyond the join/range/subquery cases `docs/reference/COCKROACHDB-AI.md`
-        # documents — no join is involved, so the CTE shape alone does not prevent it.
-        # `migration 009` built this index so R1 always runs through it; the hint makes
-        # that the actual guarantee instead of a hope the cost model shares the intent.
+        # cluster despite being join-free. The competitor that actually won: `party_aliases_of`
+        # — `(tenant_id, alias_of)`, added by migration `012`, *after* this query was
+        # written. Nothing about this query changed; a later, unrelated migration added
+        # another tenant-prefixed index on `party`, and CockroachDB's cost-based optimizer
+        # started preferring it for a tenant with few matching rows. Any tenant-prefixed
+        # secondary index on this table is a candidate to win the same way — `party_by_class`
+        # and the `(tenant_id, slug)` unique index are two more that have — so the exposure
+        # is not specific to `party_aliases_of`, only first demonstrated by it. That is a
+        # second, independent way the planner can "abandon the index" beyond the
+        # join/range/subquery cases `docs/reference/COCKROACHDB-AI.md` documents: no join
+        # is involved, so the CTE shape alone does not prevent it, and it can be triggered
+        # by a migration to a table this function does not otherwise touch. `migration 009`
+        # built `party_shortlist` so R1 always runs through it; the hint makes that the
+        # actual guarantee instead of a hope the cost model still shares the intent after
+        # the next migration lands. Verified: reintroducing a join *inside* the CTE with
+        # this hint present does not silently plan around it — CockroachDB refuses outright
+        # (`index "party_shortlist" cannot be used for this query`), so the hint converts a
+        # silent full/alternate-index scan into a hard failure at plan time, strictly louder
+        # than before. `test_vector_plans.py` also asserts, without a database, that this
+        # CTE's body contains no `JOIN` — the guard that failure mode depends on, not on
+        # CockroachDB continuing to reject the combination.
         with conn.cursor() as cur:
             cur.execute(
                 """WITH shortlisted AS (

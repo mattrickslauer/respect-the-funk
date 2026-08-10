@@ -44,7 +44,9 @@ tests does not notice a new, uncovered query.
 from __future__ import annotations
 
 import ast
+import inspect
 import os
+import tempfile
 import unittest
 import uuid
 from dataclasses import dataclass
@@ -85,18 +87,33 @@ EXPECTED_VECTOR_QUERY_SITES: set[tuple[str, str]] = {
 }
 
 
-def _vector_query_sites() -> set[tuple[str, str]]:
-    """Every (filename, enclosing function) with a string literal containing `<=>`,
-    found by walking the AST of every module in `rtf_platform/`.
+def _vector_query_sites(root: Path = RTF_PLATFORM_DIR) -> set[tuple[str, str]]:
+    """Every (relative path, enclosing function) with a string literal containing `<=>`,
+    found by walking the AST of every module under `root`, including subpackages.
 
-    AST rather than grep so a `<=>` inside a comment or a docstring quoting the operator
-    (this file has several) cannot be mistaken for an executable query, and so the
-    enclosing function is attributed structurally rather than by "whatever def appeared
-    last" — the failure mode of a line-oriented scan once a query's SQL spans several
-    lines, which every one of these does.
+    AST rather than grep so a `<=>` inside a *comment* cannot be mistaken for an
+    executable query. It does not make the same distinction for a docstring — `ast`
+    keeps docstrings as ordinary string constants, so a `<=>` mentioned in one (as this
+    file's own module docstring does, describing the operator) is indistinguishable from
+    a real query and shows up as a phantom site. That is a known, accepted gap, not a
+    guarantee this makes: keep any `<=>` mentioned in prose here out of triple-quoted
+    string literals, or write it as `` `<=>` `` split across a concatenation, to avoid
+    tripping this scan on the codebase's own commentary.
+
+    `rglob`, not `glob` — `rtf_platform/distributors/` is a real subpackage, and a
+    `<=>` query written under it (or any future subpackage) must not go uncounted; a
+    top-level-only scan silently stops covering a whole class of file the moment code is
+    organized into a subpackage, which is exactly the kind of quiet coverage loss this
+    file exists to prevent elsewhere. The enclosing function is attributed structurally,
+    by walking AST parent pointers, rather than by "whatever def appeared last" — the
+    failure mode of a line-oriented scan once a query's SQL spans several lines, which
+    every one of these does.
     """
     sites: set[tuple[str, str]] = set()
-    for path in sorted(RTF_PLATFORM_DIR.glob("*.py")):
+    for path in sorted(root.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        relative = path.relative_to(root).as_posix()
         tree = ast.parse(path.read_text(), filename=str(path))
         parents: dict[ast.AST, ast.AST] = {}
         for parent in ast.walk(tree):
@@ -115,7 +132,7 @@ def _vector_query_sites() -> set[tuple[str, str]]:
         for node in ast.walk(tree):
             if (isinstance(node, ast.Constant) and isinstance(node.value, str)
                     and "<=>" in node.value):
-                sites.add((path.name, enclosing_function(node)))
+                sites.add((relative, enclosing_function(node)))
     return sites
 
 
@@ -137,6 +154,90 @@ class VectorQueryCensus(unittest.TestCase):
             "exactly the silently-stopped-covering-anything failure this file exists to "
             f"prevent.\n  expected: {sorted(EXPECTED_VECTOR_QUERY_SITES)}\n"
             f"  found:    {sorted(found)}")
+
+    def test_a_query_in_a_subpackage_is_detected(self) -> None:
+        """`rtf_platform/distributors/` is a real subpackage today, and it happens to be
+        empty of `<=>` queries — so the main census passing is not itself evidence that a
+        query written *inside* a subpackage would be caught. `rglob` was chosen
+        specifically over `glob` for this; prove it against a throwaway tree rather than
+        trusting the choice of method name.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "top.py").write_text("def untouched():\n    return 1\n")
+            adapters = root / "adapters"
+            adapters.mkdir()
+            (adapters / "__init__.py").write_text("")
+            (adapters / "inner.py").write_text(
+                "def search(vec):\n"
+                "    return (\n"
+                "        'SELECT id FROM t ORDER BY embedding <=> %s::VECTOR(1024)', \n"
+                "        (vec,),\n"
+                "    )\n"
+            )
+            found = _vector_query_sites(root=root)
+        self.assertEqual(
+            found, {("adapters/inner.py", "search")},
+            "a `<=>` query written under a subpackage was not found by the census")
+
+
+def _cte_body(sql: str, cte_name: str) -> str:
+    """The text between `WITH <cte_name> AS (` and its matching close paren, found by
+    depth-counting rather than a fixed-offset slice — the CTE body itself contains
+    nested parens (`VECTOR(1024)` appears four times), so a naive `index(")")` would
+    stop at the first one of those instead of the one that actually closes the CTE.
+    """
+    marker = f"WITH {cte_name} AS ("
+    start = sql.index(marker) + len(marker)
+    depth = 1
+    i = start
+    while depth > 0:
+        if sql[i] == "(":
+            depth += 1
+        elif sql[i] == ")":
+            depth -= 1
+        i += 1
+    return sql[start:i - 1]
+
+
+class ShortlistCTEHasNoJoin(unittest.TestCase):
+    """A DB-free structural guard, not gated on `DATABASE_URL` — it does not need the
+    cluster, and it exists precisely because the cluster-gated guard is not the whole
+    story here.
+
+    `agents.shortlist()`'s `@party_shortlist` index hint means CockroachDB currently
+    *refuses outright* if a `JOIN` is reintroduced inside the vector-searched CTE
+    (`index "party_shortlist" cannot be used for this query`, verified against the live
+    cluster) — a hard failure at plan time, not a silent regression to a full or
+    alternate-index scan. That is strictly louder than before the hint existed, but it is
+    a property of *this version of CockroachDB's* planner, not a property of this
+    codebase. This test is the guard that does not depend on CockroachDB continuing to
+    reject the combination: it reads `agents.shortlist`'s actual source via `inspect`,
+    extracts the literal CTE body (not a hand-copied duplicate — see `_cte_body`), and
+    asserts it contains no `JOIN`, so a join reintroduced there fails here even if some
+    future CockroachDB version quietly tolerates hint-plus-join and plans it some other
+    way.
+    """
+
+    def test_no_join_inside_the_vector_search_cte(self) -> None:
+        source = inspect.getsource(agents.shortlist)
+        tree = ast.parse(source)
+        candidates = [
+            node.value for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            and "WITH shortlisted AS" in node.value
+        ]
+        self.assertEqual(
+            len(candidates), 1,
+            "expected exactly one `WITH shortlisted AS (...)` CTE in agents.shortlist — "
+            f"found {len(candidates)}; this test needs updating to match")
+        body = _cte_body(candidates[0], "shortlisted")
+        self.assertNotIn(
+            "JOIN", body.upper(),
+            "a JOIN was added inside shortlist's vector-search CTE — this is exactly the "
+            "shape that made agents.retrieve() full-scan (see docs/reference/"
+            "COCKROACHDB-AI.md); keep the vector search alone in the CTE and pull any "
+            "other columns by scalar subquery instead, as `url` already does")
 
 
 @dataclass

@@ -1,5 +1,10 @@
 # Respect the Funk
 
+<p align="center">
+  <img src="./docs/brand/thumbnail.png" width="720"
+       alt="RemixKit — a vinyl record drawn as a radial audio spectrum, over the wordmark RemixKit and the line Respect the Funk">
+</p>
+
 > ## ⚠️ This repository is being greenfielded. Read [`docs/SCOPE-RESET.md`](./docs/SCOPE-RESET.md) first.
 >
 > The product described below — RemixKit, a media generation suite — is **now a subproject**,

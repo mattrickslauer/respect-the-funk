@@ -213,7 +213,13 @@ class SpotifySource:
             harvest.releases.append({
                 "title": album.get("name", ""),
                 "release_date": album.get("release_date", ""),
-                "kind": album.get("album_group") or album.get("album_type") or "",
+                # Spotify's own classification — `album_group` (this artist's
+                # relationship to it: album/single/appears_on/compilation) is the
+                # more specific of the two, `album_type` the fallback when it is
+                # absent. Neither is invented: if a payload carries neither,
+                # `harvested.Release.parse` raises rather than this guessing
+                # "single", because that guess is exactly the defect being fixed.
+                "release_type": album.get("album_group") or album.get("album_type") or "",
                 "spotify_id": album.get("id"),
                 "track_count": album.get("total_tracks"),
             })
@@ -287,6 +293,13 @@ class DeezerSource:
                 "value": str(candidate.get("id")),
                 "url": candidate.get("link", ""),
                 "label": candidate.get("name", ""),
+                # This is a name match against *our own* artist — accepting it means
+                # "yes, this Deezer page is theirs" — so the presence it becomes is
+                # `owned`, the same claim an operator-pasted URL carries. Stated
+                # explicitly here rather than left for `accept_suggestion` to invent,
+                # because this adapter is the only thing that knows what accepting
+                # this particular kind of suggestion means.
+                "mode": "owned",
                 # An exact string match is still a guess: two acts share a name often
                 # enough that this must never auto-accept.
                 "confidence": 0.7 if exact else 0.3,
@@ -373,7 +386,12 @@ class DeezerSource:
             harvest.releases.append({
                 "title": album.get("title", ""),
                 "release_date": album.get("release_date", ""),
-                "kind": album.get("record_type") or "single",
+                # Deezer's album resource documents `record_type` as always present
+                # (album/single/ep/compile); read straight through with no fallback.
+                # If a payload ever lacks it, `harvested.Release.parse` raises —
+                # this must not silently call an unclassified release a "single",
+                # which is the exact defect this adapter used to reproduce.
+                "release_type": album.get("record_type"),
                 "gtin": gtin,
             })
 

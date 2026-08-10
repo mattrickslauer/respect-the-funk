@@ -45,6 +45,24 @@ class StatementError(Exception):
         self.header = header
 
 
+class StatementUnparseable(StatementError):
+    """One cell could not be read as the type its column promises. A subclass of
+    `StatementError` rather than a sibling: `statements.preview()`/`load()` already
+    turn any `StatementError` into a clean `Report.refused`, and the failure mode
+    this exists to kill — a garbled quantity or earnings cell silently becoming `0`
+    and being written to `party_metric` as `measured` — deserves exactly that
+    treatment, not an unhandled exception reaching the web layer. Carries the
+    column and the raw cell, because the message a human needs is "which cell".
+    """
+
+    def __init__(self, column: str, cell: str) -> None:
+        self.column = column
+        self.cell = cell
+        super().__init__(
+            f"the {column!r} column holds {cell!r}, which is not a number a "
+            "statement can carry.")
+
+
 @dataclass(frozen=True)
 class StatementLine:
     """One reported line: a recording, on a store, in a territory, over a period.
@@ -96,24 +114,48 @@ def normalise_header(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (name or "").strip().lower()).strip()
 
 
-def _to_int(raw: str) -> int:
-    cleaned = re.sub(r"[^0-9\-]", "", raw or "")
-    try:
-        return int(cleaned)
-    except ValueError:
-        return 0
+#: A distributor spells a negative in accounting notation — `(120)` — as often as
+#: with a leading sign, and a naive digit-strip loses the parentheses along with the
+#: sign they carry.
+_PARENTHESISED = re.compile(r"^\(.*\)$")
 
 
-def _to_money(raw: str) -> Decimal:
+def _to_int(raw: str, *, column: str = "quantity") -> int:
+    """A quantity, tolerant of the thousands separators real statements use.
+
+    Raises `StatementUnparseable` rather than returning 0 on anything that is not
+    genuinely a number: `0` is a real, reportable quantity, and a cell that cannot
+    be read at all must not be indistinguishable from one that reads as zero.
+    """
+    text = (raw or "").strip()
+    negative = bool(_PARENTHESISED.match(text)) or text.startswith("-")
+    cleaned = re.sub(r"[^0-9]", "", text)
+    if not cleaned:
+        raise StatementUnparseable(column, raw)
+    value = int(cleaned)
+    return -value if negative else value
+
+
+def _to_money(raw: str, *, column: str = "earnings") -> Decimal:
     """Money as Decimal, never float. A statement summed as float drifts, and the
-    one number nobody should have to argue about is the money."""
-    cleaned = re.sub(r"[^0-9.\-]", "", raw or "")
-    if cleaned in ("", "-", ".", "-."):
-        return Decimal("0")
+    one number nobody should have to argue about is the money.
+
+    Tolerant of the formats a real export uses — a currency symbol, a thousands
+    separator, parenthesised negatives — but raises `StatementUnparseable` on
+    anything else rather than returning 0. Writing 0 for an unreadable cell is how
+    real revenue silently disappears from `party_metric` as a `measured` fact; the
+    label's own statement is exactly the file this must never happen to.
+    """
+    text = (raw or "").strip()
+    negative = bool(_PARENTHESISED.match(text)) or text.startswith("-")
+    cleaned = re.sub(r"[^0-9.]", "", text)
+    if cleaned in ("", "."):
+        raise StatementUnparseable(column, raw)
     try:
-        return Decimal(cleaned)
+        value = Decimal(cleaned)
     except InvalidOperation:
-        return Decimal("0")
+        raise StatementUnparseable(column, raw) from None
+    return -value if negative else value
 
 
 #: Formats seen in the wild. `%Y-%m` first because a statement period is usually a

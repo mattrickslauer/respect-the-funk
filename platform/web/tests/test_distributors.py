@@ -127,7 +127,14 @@ class Reading(unittest.TestCase):
 
 
 class Degradation(unittest.TestCase):
-    """A malformed cell must cost its own value, never the row and never the file."""
+    """An unparseable ISRC costs its own value, never the row and never the file — a
+    blank identifier is a real, storable answer. `quantity` and `earnings` are the
+    opposite case: `party_metric` has no way to represent "unreadable" other than a
+    number, and a silently written `0` is indistinguishable on screen from a real
+    zero. So those two refuse the whole file rather than degrade a cell — see
+    `ToInt`/`ToMoney` below and `tests/test_harvested.py` for the unit-level
+    behaviour this exercises end to end.
+    """
 
     def test_an_unparseable_isrc_leaves_the_row_readable(self) -> None:
         bad = ROW_A.replace("QZABC2500001", "not-an-isrc")
@@ -136,10 +143,28 @@ class Degradation(unittest.TestCase):
         self.assertEqual(lines[0].isrc_raw, "not-an-isrc")
         self.assertEqual(lines[0].quantity, 12043)
 
-    def test_an_unparseable_amount_is_zero_not_a_crash(self) -> None:
+    def test_an_unparseable_amount_refuses_the_whole_file(self) -> None:
+        # Previously this silently wrote Decimal("0") — indistinguishable on screen
+        # from a real zero-earnings row. `party_metric` has no "unknown" to fall
+        # back to, so this must fail loudly rather than fabricate the number.
         bad = ROW_A.replace("38.11", "n/a")
-        _, lines = distributors.parse(dk(bad))
-        self.assertEqual(lines[0].earnings, Decimal("0"))
+        with self.assertRaises(base.StatementUnparseable) as caught:
+            distributors.parse(dk(bad))
+        self.assertEqual(caught.exception.column, "earnings")
+        self.assertEqual(caught.exception.cell, "n/a")
+
+    def test_an_unparseable_amount_is_still_a_statement_error(self) -> None:
+        # So `statements.preview()`'s `except StatementError` turns this into a
+        # clean `Report.refused` rather than an unhandled exception.
+        bad = ROW_A.replace("38.11", "n/a")
+        with self.assertRaises(StatementError):
+            distributors.parse(dk(bad))
+
+    def test_an_unparseable_quantity_refuses_the_whole_file(self) -> None:
+        bad = ROW_A.replace("12043", "a lot")
+        with self.assertRaises(base.StatementUnparseable) as caught:
+            distributors.parse(dk(bad))
+        self.assertEqual(caught.exception.column, "quantity")
 
     def test_an_unparseable_period_is_none_not_today(self) -> None:
         # Defaulting to now would disguise a missing period as a fresh measurement.

@@ -17,6 +17,8 @@ from typing import Any
 
 import psycopg
 
+from rtf_platform import harvested
+
 def slugify(value: str) -> str:
     """A URL-safe key derived from the display name.
 
@@ -276,6 +278,13 @@ def accept_suggestion(conn: psycopg.Connection, tenant_id: str,
     now the accountable party, which is precisely what `SCOPE-RESET §2a`'s third
     provenance class means.
 
+    `mode` — whether accepting this means the artist owns the account — is read off
+    the suggestion via `harvested.Presence.parse`, not defaulted here. `mode='owned'`
+    is the strongest ownership claim `presence` carries; inventing it for a
+    suggestion that never said so is the same defect class as inventing `measured`
+    for a fact an adapter never labelled. The adapter that wrote the suggestion is
+    the only thing that knows what accepting it means, so it says so in the payload.
+
     One transaction, and `upsert_presence` runs inside it — so accepting also writes the
     `map_source` lead, and there is no window where a surface exists that nothing has
     been told to go and read.
@@ -301,12 +310,14 @@ def accept_suggestion(conn: psycopg.Connection, tenant_id: str,
             if not platform:
                 return False
 
+            presence = harvested.Presence.parse(payload, adapter=platform)
+
             upsert_presence(
                 conn, tenant_id, str(row["party_id"]),
-                platform=platform,
-                mode=payload.get("mode", "owned"),
-                handle=payload.get("label", ""),
-                profile_url=payload.get("url", ""),
+                platform=presence.platform,
+                mode=presence.mode,
+                handle=presence.handle,
+                profile_url=presence.profile_url,
                 match_basis="asserted",
             )
 

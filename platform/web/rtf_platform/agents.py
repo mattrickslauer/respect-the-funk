@@ -31,7 +31,7 @@ from typing import Any
 
 import psycopg
 
-from rtf_platform import embed, fleet, lessons, repo, sources, spend
+from rtf_platform import embed, fleet, harvested, lessons, repo, sources, spend
 
 #: Target chunk size in characters. ~400 tokens at four characters per token, which is
 #: large enough to carry an argument and small enough that a hit points somewhere
@@ -265,9 +265,14 @@ def _write_map_source(conn: psycopg.Connection, lead: dict[str, Any], gate: spen
 
     Three rules it does not get to break:
 
-      * **Provenance is not the adapter's opinion.** What the platform measured is
-        `measured`, what it classified is `inferred`, what a human typed is `asserted`.
-        The adapter labels each item and this writes the label through unchanged.
+      * **Provenance is not the adapter's opinion, and it is not this function's
+        either.** What the platform measured is `measured`, what it classified is
+        `inferred`, what a human typed is `asserted`. `harvested.py` is where that
+        is enforced: every raw dict is parsed into a frozen `harvested.*` record
+        before it is written, and the parse raises `harvested.HarvestInvalid` rather
+        than default a label the adapter did not supply. There is no `.get(...,
+        default)` left in this function for a missing provenance, unit or
+        release_type to hide behind.
       * **A guess is a suggestion, never a fact.** An adapter that matched by name
         returns `suggestions`, and they land in `suggestion` as `pending` for a person
         to accept. Nothing here promotes one.
@@ -283,20 +288,21 @@ def _write_map_source(conn: psycopg.Connection, lead: dict[str, Any], gate: spen
                "recordings": 0, "releases": 0, "suggestions": 0}
 
     with conn.cursor() as cur:
-        for item in harvest.identifiers:
+        for raw in harvest.identifiers:
+            item = harvested.Identifier.parse(raw, adapter=platform)
             cur.execute(
                 """INSERT INTO party_identifier
                         (tenant_id, party_id, kind, value, value_raw, provenance,
                          source_lead_id)
                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (tenant_id, kind, value) DO NOTHING""",
-                (tenant_id, party_id, item["kind"], item["value"],
-                 item.get("value_raw", item["value"]),
-                 item.get("provenance", "measured"), lead["id"]),
+                (tenant_id, party_id, item.kind, item.value, item.value_raw,
+                 item.provenance, lead["id"]),
             )
             written["identifiers"] += cur.rowcount
 
-        for fact in harvest.facts:
+        for raw in harvest.facts:
+            fact = harvested.Fact.parse(raw, adapter=platform)
             # `fact_one_live_per_dimension` is unique per (tenant, party, dimension,
             # provenance) while live, so a second genre would collide with the first.
             # Superseding rather than skipping keeps the newest reading live and the
@@ -305,8 +311,8 @@ def _write_map_source(conn: psycopg.Connection, lead: dict[str, Any], gate: spen
                 """UPDATE party_fact SET status = 'superseded'
                     WHERE tenant_id = %s AND party_id = %s AND dimension = %s
                       AND provenance = %s AND status = 'live' AND value_text != %s""",
-                (tenant_id, party_id, fact["dimension"],
-                 fact.get("provenance", "inferred"), fact["value_text"]),
+                (tenant_id, party_id, fact.dimension,
+                 fact.provenance, fact.value_text),
             )
             cur.execute(
                 """INSERT INTO party_fact
@@ -314,40 +320,38 @@ def _write_map_source(conn: psycopg.Connection, lead: dict[str, Any], gate: spen
                          confidence, source, written_by)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT DO NOTHING""",
-                (tenant_id, party_id, fact["dimension"], fact["value_text"],
-                 fact.get("provenance", "inferred"), fact.get("confidence"),
-                 platform, "map_source"),
+                (tenant_id, party_id, fact.dimension, fact.value_text,
+                 fact.provenance, fact.confidence, platform, "map_source"),
             )
             written["facts"] += cur.rowcount
 
-        for metric in harvest.metrics:
+        for raw in harvest.metrics:
+            metric = harvested.Metric.parse(raw, adapter=platform)
             cur.execute(
                 """INSERT INTO party_metric
                         (tenant_id, party_id, platform, entity_kind, metric, value,
                          unit, provenance, source)
                    VALUES (%s, %s, %s, 'party', %s, %s, %s, %s, %s)""",
-                (tenant_id, party_id, platform, metric["metric"],
-                 metric["value"], metric.get("unit", "count"),
-                 metric.get("provenance", "measured"), platform),
+                (tenant_id, party_id, platform, metric.metric,
+                 metric.value, metric.unit, metric.provenance, platform),
             )
             written["metrics"] += 1
 
-        for track in harvest.recordings:
-            title = (track.get("title") or "").strip()
-            if not title:
+        for raw in harvest.recordings:
+            track = harvested.Recording.parse(raw, adapter=platform)
+            if not track.title:
                 continue
-            isrc = (track.get("isrc") or "").strip().upper()
-            slug = repo.slugify(title)[:60] or "untitled"
-            if isrc:
-                slug = f"{slug}-{isrc.lower()}"
+            slug = repo.slugify(track.title)[:60] or "untitled"
+            if track.isrc:
+                slug = f"{slug}-{track.isrc.lower()}"
             cur.execute(
                 """INSERT INTO recording (tenant_id, slug, title, isrc, isrc_raw,
                                           duration_ms)
                    VALUES (%s, %s, %s, %s, %s, %s)
                    ON CONFLICT (tenant_id, slug) DO NOTHING
                 RETURNING id""",
-                (tenant_id, slug, title, isrc, track.get("isrc") or "",
-                 track.get("duration_ms")),
+                (tenant_id, slug, track.title, track.isrc,
+                 raw.get("isrc") or "", track.duration_ms),
             )
             row = cur.fetchone()
             if row is None:
@@ -363,27 +367,26 @@ def _write_map_source(conn: psycopg.Connection, lead: dict[str, Any], gate: spen
                 (tenant_id, party_id, row["id"]),
             )
 
-        for rel in harvest.releases:
-            title = (rel.get("title") or "").strip()
-            if not title:
+        for raw in harvest.releases:
+            rel = harvested.Release.parse(raw, adapter=platform)
+            if not rel.title:
                 continue
-            released_on = (rel.get("release_date") or "")[:10] or None
-            gtin = (rel.get("gtin") or "").strip()
+            released_on = rel.release_date[:10] or None
 
             # A GTIN is the release's real identity and the table has a unique index
             # on it. Without one — Spotify's album payload carries none — fall back
             # to title and date, and accept that a re-release on the same day looks
             # like the same row. The fallback is the weaker test, so it is only used
             # when the strong one is unavailable rather than as well as.
-            if gtin:
+            if rel.gtin:
                 cur.execute("SELECT id FROM release WHERE tenant_id = %s AND gtin = %s",
-                            (tenant_id, gtin))
+                            (tenant_id, rel.gtin))
             else:
                 cur.execute(
                     """SELECT id FROM release
                         WHERE tenant_id = %s AND title = %s
                           AND coalesce(released_on::STRING, '') = coalesce(%s, '')""",
-                    (tenant_id, title, released_on),
+                    (tenant_id, rel.title, released_on),
                 )
             if cur.fetchone():
                 continue
@@ -391,8 +394,8 @@ def _write_map_source(conn: psycopg.Connection, lead: dict[str, Any], gate: spen
                 """INSERT INTO release (tenant_id, title, gtin, gtin_raw,
                                         release_type, released_on)
                    VALUES (%s, %s, %s, %s, %s, %s)""",
-                (tenant_id, title, gtin, rel.get("gtin") or "",
-                 rel.get("kind") or "single",
+                (tenant_id, rel.title, rel.gtin, raw.get("gtin") or "",
+                 rel.release_type,
                  released_on if released_on and len(released_on) == 10 else None),
             )
             written["releases"] += 1

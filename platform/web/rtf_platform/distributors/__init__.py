@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from rtf_platform.distributors import distrokid
 from rtf_platform.distributors.base import (
-    Format, StatementError, StatementLine, normalise_header, read,
+    Format, StatementError, StatementLine, StatementUnparseable, normalise_header, read,
 )
 
 #: Every readable statement shape. Order is irrelevant — detection scores.
@@ -94,5 +94,5 @@ def parse(text: str) -> tuple[Format, list[StatementLine]]:
 
 __all__ = [
     "FORMATS", "KNOWN_DISTRIBUTORS", "Format", "StatementError", "StatementLine",
-    "detect", "parse", "read",
+    "StatementUnparseable", "detect", "parse", "read",
 ]

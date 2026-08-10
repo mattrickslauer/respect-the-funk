@@ -182,18 +182,37 @@ def retrieve(conn: psycopg.Connection, tenant_id: str, query: str, *,
     The `model` filter is not optional. Without it a cluster that has seen two embedding
     providers returns a ranking computed across incomparable vector spaces — which looks
     like a working search and is noise.
+
+    Same shape `shortlist()` uses, for the same reason: a `JOIN party_document` attached
+    to the vector-searched `party_chunk` gives the planner a second table to reason
+    about and it abandons `chunk_semantic` for a full scan — measured, not theoretical;
+    `EXPLAIN` on the joined form shows `spans: FULL SCAN` over `party_chunk@party_chunk_pkey`
+    with an index recommendation, and the query above was written exactly that way until
+    an audit caught it. The CTE runs the vector search alone, with nothing joined to it,
+    so no join can steer the planner off the index; `title` and `url` are then two scalar
+    subqueries against `party_document`'s primary key, which by construction return at
+    most one row each, so they cannot duplicate or drop a chunk. Do not "simplify" this
+    back into a join.
     """
     provider = embed.load()
     vectors, _ = embed.embed_batch(gate, provider, [query])
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT c.text, c.ordinal, d.title, d.url,
-                      c.embedding <=> %s::VECTOR(1024) AS distance
-                 FROM party_chunk c
-                 JOIN party_document d ON d.id = c.document_id
-                WHERE c.tenant_id = %s AND c.model = %s
-                ORDER BY c.embedding <=> %s::VECTOR(1024)
-                LIMIT %s""",
+            """WITH matched AS (
+                    SELECT id, document_id, text, ordinal,
+                           embedding <=> %s::VECTOR(1024) AS distance
+                      FROM party_chunk
+                     WHERE tenant_id = %s AND model = %s
+                     ORDER BY embedding <=> %s::VECTOR(1024)
+                     LIMIT %s
+                )
+                SELECT m.text, m.ordinal, m.distance,
+                       (SELECT d.title FROM party_document d
+                         WHERE d.id = m.document_id) AS title,
+                       (SELECT d.url FROM party_document d
+                         WHERE d.id = m.document_id) AS url
+                  FROM matched m
+                 ORDER BY m.distance""",
             (vectors[0].literal(), tenant_id, provider.model, vectors[0].literal(), limit),
         )
         return list(cur.fetchall())
@@ -748,12 +767,25 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
         # `ORDER BY pr.url LIMIT 1` is arbitrary but deterministic, so the same shortlist
         # renders the same surface on every load rather than whichever one the join order
         # happened to pick.
+        #
+        # `party@party_shortlist` is an explicit index hint, added after `test_vector_plans.py`
+        # caught this exact query planning *without* a `vector search` node on the live
+        # cluster despite being join-free — CockroachDB's cost-based optimizer can still
+        # prefer a narrower, tenant-scoped secondary index (`party_by_class` or the
+        # `(tenant_id, slug)` unique index) over the vector index when its statistics
+        # estimate few matching rows for a given tenant, which happens easily for a
+        # tenant with few counterparties or one whose row count the optimizer has not
+        # sampled recently. That is a second, independent way the planner can "abandon
+        # the index" beyond the join/range/subquery cases `docs/reference/COCKROACHDB-AI.md`
+        # documents — no join is involved, so the CTE shape alone does not prevent it.
+        # `migration 009` built this index so R1 always runs through it; the hint makes
+        # that the actual guarantee instead of a hope the cost model shares the intent.
         with conn.cursor() as cur:
             cur.execute(
                 """WITH shortlisted AS (
                         SELECT id, name, contact_state,
                                profile_embedding <=> %s::VECTOR(1024) AS distance
-                          FROM party
+                          FROM party@party_shortlist
                          WHERE tenant_id = %s
                            AND embedding_model = %s
                            AND party_class = 'counterparty'

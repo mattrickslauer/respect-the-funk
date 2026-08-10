@@ -145,25 +145,59 @@ def write(conn: psycopg.Connection, tenant_id: str, *, scope_kind: str, scope_id
     confidence of 50 is a caller working in percent, not noise, and clamping it to 1.0
     would hide the mistake instead of surfacing it.
     """
+    with conn.transaction():
+        return write_prepared(
+            conn, tenant_id, prepared=prepare(text, gate=gate),
+            scope_kind=scope_kind, scope_id=scope_id, text=text, valence=valence,
+            confidence=confidence, evidence=evidence, supersedes_id=supersedes_id)
+
+
+def prepare(text: str, *, gate: spend.Gate) -> dict[str, Any]:
+    """The embedding half of `write`, which is the half that touches the network.
+
+    Split out so an agent can do this in its `fetch` and the insert in its `write`, the
+    `fleet.NetworkAgent` division — otherwise the only way to record a lesson from inside
+    an agent's transaction would be to hold that transaction open across an HTTP call to
+    the embedding provider, which is the thing this codebase refuses everywhere else.
+
+    Returns what `write_prepared` needs and nothing else, so the two halves cannot drift:
+    a caller that changes the model here cannot forget to change the column there.
+    """
     provider = embed.load()
     vectors, _ = embed.embed_batch(gate, provider, [text])
+    return {
+        "literal": vectors[0].literal(),
+        "model": provider.model,
+        "model_version": getattr(provider, "model_version", ""),
+    }
 
-    with conn.transaction():
-        with conn.cursor() as cur:
-            cur.execute(
-                """INSERT INTO lesson (tenant_id, scope_kind, scope_id, text,
-                                       evidence_json, confidence, valence,
-                                       embedding, model, model_version, supersedes_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s::VECTOR(1024), %s, %s, %s)
-                RETURNING id""",
-                (tenant_id, scope_kind, scope_id, text,
-                 psycopg.types.json.Jsonb(evidence),
-                 _bounded(confidence, 0.0, 1.0, "confidence"),
-                 _bounded(valence, -1.0, 1.0, "valence"),
-                 vectors[0].literal(), provider.model,
-                 getattr(provider, "model_version", ""), supersedes_id),
-            )
-            return str(cur.fetchone()["id"])
+
+def write_prepared(conn: psycopg.Connection, tenant_id: str, *, prepared: dict[str, Any],
+                   scope_kind: str, scope_id: str, text: str, valence: float,
+                   confidence: float, evidence: dict[str, Any],
+                   supersedes_id: str | None = None) -> str:
+    """Insert a lesson whose embedding has already been computed.
+
+    Opens no transaction of its own, deliberately: it is written to be called *inside* the
+    caller's, which is what lets an agent's lesson, its `agent_run` row and its lead's
+    completion commit together. `write` supplies the transaction for callers that have
+    none.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO lesson (tenant_id, scope_kind, scope_id, text,
+                                   evidence_json, confidence, valence,
+                                   embedding, model, model_version, supersedes_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s::VECTOR(1024), %s, %s, %s)
+            RETURNING id""",
+            (tenant_id, scope_kind, scope_id, text,
+             psycopg.types.json.Jsonb(evidence),
+             _bounded(confidence, 0.0, 1.0, "confidence"),
+             _bounded(valence, -1.0, 1.0, "valence"),
+             prepared["literal"], prepared["model"],
+             prepared["model_version"], supersedes_id),
+        )
+        return str(cur.fetchone()["id"])
 
 
 def retrieve_for(conn: psycopg.Connection, tenant_id: str, *,

@@ -207,6 +207,36 @@ def advance(conn: psycopg.Connection, tenant_id: str, thread_id: str, to: str, *
                     "UPDATE party SET contact_state = %s WHERE tenant_id = %s AND id = %s",
                     ("declined" if to == "closed_lost" else "contactable",
                      tenant_id, row["counterparty_id"]))
+
+                # A closed thread is the only moment this system knows how an approach
+                # actually went, so it is the moment there is something to learn. What
+                # commits here is the *intent* to learn — a lead — and not the lesson
+                # itself, because writing the lesson means embedding its text, and an
+                # HTTP call inside this transaction would hold the `FOR UPDATE` above
+                # across the network. `agents.distil_lesson` does the network half under
+                # its own lease and the insert in its own transaction.
+                #
+                # This is `SCOPE-RESET §2a` rule 2 — processes contribute facts, they do
+                # not only consume them — and it is the rule this repository had already
+                # broken: `lessons.write` existed, was tested, and had no caller in the
+                # entire codebase, so `lesson` was read by every shortlist and written by
+                # nothing. That is precisely the write-back failure `MEMORY-SPEC §1`
+                # diagnosed and this rule was written to prevent.
+                #
+                # `ON CONFLICT DO NOTHING` against the target hash: re-closing an already
+                # closed thread is refused by the state machine above, but a thread that
+                # reaches `closed_lost` from two different callers in a race must not
+                # queue two identical lessons.
+                cur.execute(
+                    """INSERT INTO lead (tenant_id, scope_kind, party_id, kind, mode,
+                                         adapter, target, target_hash, reason, state,
+                                         next_action_at)
+                       VALUES (%s, 'party', %s, 'distil_lesson', 'internal', 'internal',
+                               %s, %s, %s, 'pending', now())
+                    ON CONFLICT DO NOTHING""",
+                    (tenant_id, row["counterparty_id"], str(thread_id),
+                     idempotency_key(thread_id, 0, f"distil:{to}"),
+                     f"thread closed {to}"))
     return was
 
 

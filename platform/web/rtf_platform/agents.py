@@ -901,6 +901,121 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
     return ranked
 
 
+#: How a closed thread's final state becomes a lesson's sign and strength.
+#:
+#: `closed_no_reply` is deliberately weaker than `closed_lost` and not merely negative:
+#: silence is not a no. It is also the outcome most likely to be *our* fault — a bad
+#: address, a pitch sent in August — so letting it demote a counterparty as hard as an
+#: explicit decline would teach the shortlist to abandon people who never heard from us.
+#:
+#: Confidence is low across the board because one thread is one observation. It is the
+#: number that should rise as outcomes repeat, via `supersedes_id`; §10 of the spec has
+#: that as future work and it is not invented here.
+_OUTCOME: dict[str, tuple[float, float, str]] = {
+    "closed_won":      (1.0, 0.45, "agreed to work with us after"),
+    "closed_lost":     (-1.0, 0.45, "declined or fell through after"),
+    "closed_no_reply": (-0.35, 0.30, "never replied to"),
+}
+
+
+def _fetch_distil_lesson(conn: psycopg.Connection, lead: dict[str, Any],
+                         gate: spend.Gate) -> dict[str, Any]:
+    """Read a closed thread and turn it into one sentence, then embed that sentence.
+
+    **The sentence is composed, not generated.** There is no language model in this
+    repository, and reaching for one here would be the wrong instinct even if there were:
+    a lesson is retrieved by similarity and then *arithmetically* reweights a shortlist,
+    so a hallucinated clause does not read as a mistake, it reads as a ranking. What can
+    be said truthfully from the thread's own columns is said, and nothing else is.
+
+    The embedding call is why this is a `NetworkAgent` — see `_write_distil_lesson`.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            # `channel` lives on `campaign`, not on `thread` — a thread inherits the
+            # channel of the campaign that opened it, and the join is inner because
+            # `thread.campaign_id` is NOT NULL: a thread without a campaign is not a
+            # state this schema can represent.
+            """SELECT t.id, t.state, t.reason, t.created_at, t.closed_at,
+                      t.campaign_id, c.channel,
+                      p.id AS party_id, p.name AS party_name,
+                      (SELECT count(*) FROM message m
+                        WHERE m.tenant_id = t.tenant_id AND m.thread_id = t.id) AS messages
+                 FROM thread t
+                 JOIN campaign c ON c.tenant_id = t.tenant_id AND c.id = t.campaign_id
+                 JOIN party p ON p.tenant_id = t.tenant_id AND p.id = t.counterparty_id
+                WHERE t.tenant_id = %s AND t.id = %s""",
+            (lead["tenant_id"], lead["target"]),
+        )
+        thread = cur.fetchone()
+
+    if thread is None:
+        raise fleet.LeadFailed("the thread this lesson is about is gone", permanent=True)
+    shape = _OUTCOME.get(thread["state"])
+    if shape is None:
+        # Reached only if `advance` queued this for a state that is not terminal, which
+        # would be a bug in `outreach.CLOSED` rather than a transient fault. Permanent, so
+        # it parks for a human instead of retrying four times against the same row.
+        raise fleet.LeadFailed(
+            f"thread is {thread['state']}, which is not an outcome to learn from",
+            permanent=True)
+
+    valence, confidence, verb = shape
+    channel = thread["channel"] or "outreach"
+    text = f"{thread['party_name']} {verb} a {channel} approach."
+    if thread["reason"]:
+        text += f" Recorded reason: {thread['reason']}."
+
+    return {
+        "prepared": lessons.prepare(text, gate=gate),
+        "text": text,
+        "party_id": str(thread["party_id"]),
+        "valence": valence,
+        "confidence": confidence,
+        "evidence": {
+            "thread_id": str(thread["id"]),
+            "campaign_id": str(thread["campaign_id"]) if thread["campaign_id"] else "",
+            "final_state": thread["state"],
+            "channel": channel,
+            "messages": int(thread["messages"]),
+            "opened_at": thread["created_at"].isoformat() if thread["created_at"] else "",
+            "closed_at": thread["closed_at"].isoformat() if thread["closed_at"] else "",
+        },
+        "tokens": embed.estimate_tokens([text]),
+    }
+
+
+def _write_distil_lesson(conn: psycopg.Connection, lead: dict[str, Any], gate: spend.Gate,
+                         prepared: dict[str, Any]) -> fleet.Outcome:
+    """Insert the lesson, in the transaction that also commits this run and the lead.
+
+    This is the sentence the submission actually rests on: the lesson, the `agent_run`
+    row and the lead's completion land together or not at all, so a lesson can never be
+    lost by a crash that still marked the work done — and the work is not done until the
+    memory is. `write_prepared` opens no transaction precisely so this holds.
+
+    Scoped to the counterparty. A thread tells us about the person we talked to; it does
+    not license a claim about the channel or about counterparties in general, and
+    `lessons.applies` would let a `channel`-scoped row touch every candidate in a
+    shortlist. Broader scopes are earned by repetition, not by one conversation.
+    """
+    lessons.write_prepared(
+        conn, lead["tenant_id"], prepared=prepared["prepared"],
+        scope_kind="party", scope_id=prepared["party_id"], text=prepared["text"],
+        valence=prepared["valence"], confidence=prepared["confidence"],
+        evidence=prepared["evidence"])
+
+    # Counted as a fact because that is what it is — something now known that was not
+    # known before — and `/runs` reads these columns to show an operator what a run did.
+    return fleet.Outcome(summary=f"learned: {prepared['text'][:80]}", facts=1, calls=1,
+                         tokens_in=prepared["tokens"])
+
+
+#: Turn a closed thread into a lesson the next shortlist can read. This is the write half
+#: of the memory loop — `shortlist` was reading `lesson` and nothing was writing it.
+distil_lesson = fleet.NetworkAgent(fetch=_fetch_distil_lesson, write=_write_distil_lesson)
+
+
 #: Which agent handles which lead kind. The fleet reads this; no agent reads it.
 REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     "embed_document": embedder,
@@ -908,4 +1023,5 @@ REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     "find_counterparties": find_counterparties,
     "profile_party": profile_party,
     "embed_party": embed_party,
+    "distil_lesson": distil_lesson,
 }

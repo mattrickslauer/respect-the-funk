@@ -1,124 +1,144 @@
-# Respect the Funk — demo video script (≤ 3:00)
+# Respect the Funk — demo video script v3 (≤ 3:00)
 
-> **Hard limit: under 3 minutes.** Judges are not required to watch past 3:00. This cut
-> lands at **~2:40** at a calm read. Full read-through in [`VOICEOVER.txt`](./VOICEOVER.txt).
+> **Hard limit: under 3 minutes.** Judges are not required to watch past 3:00. This cut is
+> **370 words — 2:50 of speech at 130 wpm, ~2:57 with the marked silences.** Full
+> read-through in [`VOICEOVER.txt`](./VOICEOVER.txt), which is the authority; the timeline
+> below quotes it verbatim.
 >
-> **Audience: CockroachDB × AWS judges.** The scored criteria are Agentic Memory Design,
-> Technical Implementation, Real-World Impact, Production Readiness, Originality — and
-> the first is the tie-breaker. So the middle third is the product and the **last third is
-> the database**, not the UI.
+> **Audience: CockroachDB × AWS judges**, watching one of ~3,000 submissions. The scored
+> criteria are Agentic Memory Design, Technical Implementation, Real-World Impact,
+> Production Readiness, Originality — and the first is the tie-breaker.
+>
+> **What changed from v2, and why.** v2 was well-built and made one structural mistake: it
+> spent 1:44 before reaching the thing no other submission can say. A judge on their
+> fortieth video decides in fifteen seconds. So v3 **opens on the kill-the-fleet demo**,
+> earns the problem afterwards, and adds the two beats v2 was missing — the **transaction
+> boundary** that is the literal answer to the brief, and **time travel over data we
+> actually destroyed**. Every claim below was re-checked against the live cluster on
+> 2026-08-10; see [`../2026-08-10-hackathon-audit.md`](../2026-08-10-hackathon-audit.md).
 
 ---
 
 ## Production approach
 
-**Founder to camera, intercut with screen capture and flat diagrams.** Three registers,
-deliberately:
+**Founder to camera, intercut with screen capture and flat diagrams.** Three registers:
 
 - `[CAM]` — founder, talking head, mid-shot. Carries the problem and the pivot lines.
   Warm, room-lit, not a studio. This is a label owner explaining their own job.
-- `[APP]` — real screen recording of the console at the deployed Function URL. Never a
-  mockup: every row on screen is a row in the cluster.
-- `[MG]` — flat 2D motion graphics on dark, for the architecture third. The one
-  deliberate stylistic break, because the judged section has to be legible.
+- `[APP]` — real screen recording of the console at the deployed Lambda Function URL.
+  Never a mockup: every row on screen is a row in the cluster.
+- `[MG]` — flat 2D motion graphics on dark, for the architecture third.
 
-**Why founder-to-camera rather than all screencast:** the problem is a *felt* one and the
-credibility is that we run a label. A voice describing spreadsheets over a screen
-recording of a dashboard is a product video; a person saying "this is my job and it's
-done in DMs" is a reason to keep watching.
+**Why open on the terminal and not the founder.** The problem is felt, and the founder
+carries it — but the *reason to keep watching* is that the first thing you see is a
+system surviving something that should break it. Hook, then earn it. The founder arrives
+at 0:13 and lands harder for having been held back.
 
-**Never say "AI".** Say what it does. The word is free and means nothing to these judges.
+**Never say "AI".** Say what it does. **Never say "Bedrock"** — the embeddings on this
+cluster are OpenAI's; the AWS surface is Lambda, and Lambda is what the submission claims.
 
 ---
 
-## Claim ledger — build to match before shooting
+## Claim ledger — verified against the cluster 2026-08-10
 
-The script is allowed to describe what the product *will* do; it is not allowed to show
-something that does not exist. Every line is one of:
+The script may describe what the product *will* do; it may not show what does not exist.
 
 | | Claim | State |
 |---|---|---|
-| ✅ | Paste a link → catalogue, ISRCs, genre, releases mapped | **built** — Deezer live; Spotify adapter waiting on credentials |
+| ✅ | Kill a worker mid-run, its lease expires, another finishes the work | **built** — `test_fleet.py`, real concurrency |
+| ✅ | Lease claiming, `FOR UPDATE SKIP LOCKED` | **built** |
+| ✅ | Agent write + `agent_run` + lead completion in **one transaction** | **built** — `194b972` |
+| ✅ | Serializable by default | **verified** — `SHOW default_transaction_isolation` |
+| ✅ | Vector similarity + business filters in **one index traversal** | **verified** — live `EXPLAIN`: `vector search`, `prefix spans` on all four filter columns |
+| ✅ | Paste a link → catalogue, ISRCs, genre, releases | **built** — Deezer live |
 | ✅ | Provenance on every fact: measured / inferred / asserted | **built** — enforced in adapters and schema |
-| ✅ | A name match becomes a question, never a contact | **built** — `suggestion`, accept/reject in the queue and inspector |
-| ✅ | Shortlist returns Deezer's Dance & EDM editor for a dance act | **built and verified** — real output, real curators |
-| ✅ | Lease claiming, `FOR UPDATE SKIP LOCKED` | **built** — proven under real concurrency in `test_fleet.py` |
-| ✅ | Kill the fleet mid-run, work resumes | **built** — lease expiry tested |
-| ✅ | Vector similarity + business filters in one query | **built** — `EXPLAIN` shows `vector search` with `prefix spans` |
-| ✅ | Serializable by default | **built** — CockroachDB default, relied on by the transactions |
-| ✅ | Scales to zero, `$0` idle | **built** — measured |
-| ⚠️ | **A changefeed wakes the next agent** | **NOT BUILT — build this before shooting.** `SHOW CHANGEFEED JOBS` returns 0. It is the single most load-bearing line in the technical third and the one thing a judge could check. |
-| ⚠️ | **"Ask what we believed an hour ago" — `AS OF SYSTEM TIME`** | **available, not surfaced.** Verified working on the cluster (75-minute GC window). Needs one console control to be showable. |
-| ⚠️ | Track-level analysis driving marketing strategy | **planned** — not in this cut. Do not imply it on screen. |
+| ✅ | A name match becomes a question, never a contact | **built and live** — 8 real `suggestion` rows, accepted/rejected/superseded |
+| ✅ | `AS OF SYSTEM TIME` — ask what we believed an hour ago | **verified live**, and now genuinely dramatic — see the 2:38 beat |
+| ✅ | Scales to zero, `$0` idle | **verified** — BASIC, `node_count: 0`; $0.0053 spent across all 52 runs ever |
+| ✅ | 239 tests, against the real cluster | **verified** — 5m58s, green |
+| 🔴 | **The shortlist returns Deezer's Dance & EDM editor** | **NOT FILMABLE TODAY.** All 18 counterparties were deleted 2026-08-10 ~04:40 UTC. Snapshot at `/home/mattricks/rtf-snapshot-2026-08-10/`. **Restore the five real editors before shooting** — audit §7.1. |
+| 🔴 | **A lesson reordered the shortlist** | **`lesson` = 0 rows.** The index exists and has never held one. **Seed this before shooting** — it is the tie-breaker criterion. |
+| ⛔ | ~~"A changefeed wakes the next agent"~~ | **CUT FROM THIS SCRIPT.** `SHOW CHANGEFEED JOBS` returns zero. It was v2's most falsifiable line. Restore it only if the job actually exists on shoot day. |
 
-**Two things to build before this is shootable: the changefeed, and a time-travel toggle
-in the console.** Everything else can be filmed today.
+**Three things gate shooting: restore the five editors, seed one real lesson, and leave
+the changefeed line out unless it is built.**
 
 ---
 
 ## Timeline
 
+Timings are computed from [`VOICEOVER.txt`](./VOICEOVER.txt) at **130 words per minute**.
+Speech totals **2:50**; the remaining **9 seconds** are the silences marked below. The two
+files must be kept in step — if you change a line here, change it there.
+
 | Time | On screen | Voiceover |
 |---|---|---|
-| **0:00–0:14** · The job | `[CAM]` Founder, mid-shot. Cut on "spreadsheets and DMs" to a two-second `[APP]` flash of an actual messy spreadsheet / DM thread. | "Signing an artist is the easy part. Getting the record heard is the job — and most labels do it in spreadsheets and DMs." |
-| **0:14–0:30** · Why it costs | `[MG]` Five release sleeves in a row, each with an identical cost bar beneath it — flat, not declining. The bars pulse once together. | "So every release starts from zero. The curator who said yes last time, the station that replied, what actually earned — none of it carries forward." |
-| **0:30–0:44** · The thesis | `[MG]` The same five bars, now stepping *down* left to right, while a line labelled **relationships · audience · lessons** rises beneath them. | "It shouldn't be that way. Release n plus one ought to be cheaper and land harder, because something accumulated. Not the music — the relationships, the audience, the lessons." |
-| **0:44–0:48** · Name | `[CAM]` Founder. Logo settles beside them. | "Respect the Funk is an operating system for that." |
-| **0:48–1:05** · Paste a link | `[APP]` **The money shot of the first half.** Artist inspector → paste a Deezer URL into *Add a surface* → save. Cut to `/tracks`: two recordings appear with real ISRCs. Cut to the artist record: releases with UPCs, genre chip. Speed-ramp the wait; do not fake it. | "You paste a link. The system maps the catalogue, pulls the ISRCs, reads the genre off the releases, and goes looking for who to take it to." |
-| **1:05–1:24** · Provenance | `[APP]` Hold on a fact row showing its provenance chip. `[MG]` overlay: three stacked labels — **measured** (a platform's own number), **inferred** (a model or a match), **asserted** (a human said so) — with a struck-through arrow from inferred → measured. Cut back to `[APP]`: a pending suggestion in the needs-you queue, **Accept** clicked, the row promotes. | "And it never guesses at you. Every fact carries how we learned it: measured, inferred, or asserted. A name match is inferred, so it never becomes a contact — it becomes one question you answer in a click." |
-| **1:24–1:40** · The shortlist | `[APP]` The shortlist for Hallow Youth. Let the real list land: **Deezer Dance & EDM Editor** at the top, distance `0.5649` visible. Highlight the top row. `[MG]` small inset: a vector field with one point nearest the query, and two filter chips — `class = counterparty`, `contact_state = contactable`. | "So who do we take this record to? For a dance act, the top answer is Deezer's Dance and EDM editor. Not a keyword match — nearest neighbour in a vector index, filtered to people we aren't already talking to." |
-| **1:40–1:44** · Pivot | `[CAM]` Founder, direct to camera. Beat of silence before the line. Then a hard cut to black for the graphics third. | "Now the part we're proud of." |
-| **1:44–1:58** · One store | `[MG]` Four labelled boxes — Postgres · vector store · Redis · queue — collapse into **one** box marked **CockroachDB**, which then splits into four *roles*: memory · state · lock · event bus. | "This runs on one database. Not Postgres plus a vector store plus Redis plus a queue. One. CockroachDB is the memory, the state, the lock and the event bus at once." |
-| **1:58–2:18** · The lease | `[MG]` Two worker glyphs reach for a row of leads; each takes a disjoint set — `FOR UPDATE SKIP LOCKED` printed in mono. Then **kill one worker** (it greys out mid-task), a countdown ring on its held row expires, and the other worker picks that row up. Nothing flashes red. | "Agents never call each other. An agent claims work with a lease — select for update, skip locked, on the work row itself. Kill the fleet mid-run: nothing is lost, nothing is stuck. The lease expires and another worker takes it. No supervisor. The database is the runtime." |
-| **2:18–2:24** · Changefeed | `[MG]` A row in `lead` changes; a green line leaves the table and lands on an **AWS Lambda** glyph, which wakes the next agent. Mono caption: `CREATE CHANGEFEED FOR TABLE lead`. | "A changefeed on that table wakes the next agent. No broker." |
-| **2:24–2:34** · Vector index | `[MG]` The `EXPLAIN` output itself, typed on: `• vector search` / `table: party@party_shortlist` / `prefix spans: [...]`. Let judges read it. | "Distributed vector indexing answers the shortlist — similarity and the business filters in one query. That is the honest reason this is one store and not four." |
-| **2:34–2:46** · The rest | `[MG]` Three quick cards: **SERIALIZABLE** (two writes, neither lost); **`AS OF SYSTEM TIME`** (the same artist page, an hour ago, no audit table); **`$0.00`** idle. | "Serializable by default. And we can ask what we believed an hour ago — as of system time, no audit table. It scales to zero: idle, this costs nothing." |
-| **2:46–2:52** · The anti-claim | `[MG]` A queue icon, a Redis icon and a vector-DB cylinder, each struck through in turn. Caption: **the memory is the coordination**. | "No queue. No Redis. No vector database bolted on the side. The memory is the coordination." |
-| **2:52–3:00** · Close | `[CAM]` Founder. Function URL visible on the laptop behind them. Logo and tagline settle. | "Respect the Funk. Release n plus one should cost less than release one." |
+| **0:00–0:10** · Cold open | `[APP]` Terminal, no titles, **two seconds of silence** while two workers claim disjoint leads and rows scroll. Then **kill one** — `^C`, its pane dies. A countdown ring on its held row expires; the surviving worker picks the row up and finishes. Nothing flashes red. Small mono caption: `FOR UPDATE SKIP LOCKED`. | "Kill half this fleet mid-run and the work still finishes. No orchestrator. No queue, no broker, no scheduler. The database is the runtime." |
+| **0:10–0:26** · The job | `[CAM]` Founder, mid-shot. **Lower-third title card carries the project name here** — it is not spoken until the close, so it has to be read. Cut on "spreadsheets and DMs" to a two-second `[APP]` flash of an actual messy spreadsheet / DM thread. | "I run a record label. Signing an artist is the easy part — getting the record heard is the job, and most labels do it in spreadsheets and DMs. So every release starts from zero." |
+| **0:26–0:37** · The thesis | `[MG]` Five release sleeves, each with an identical flat cost bar beneath. The bars then step *down* left to right while a line labelled **relationships · audience · lessons** rises beneath them. | "Release n plus one should be cheaper and land harder, because something accumulated. Not the music — the relationships, the audience, the lessons." |
+| **0:37–0:48** · Paste a link | `[APP]` Artist inspector → paste a Deezer URL into *Add a surface* → save. Cut to `/tracks`: two recordings appear with real ISRCs. Cut to the artist record: releases with UPCs, genre chip. Speed-ramp the wait; do not fake it. | "You paste a link. It maps the catalogue, pulls the ISRCs, reads the genre, and goes looking for who to take it to." |
+| **0:48–1:08** · Provenance | `[APP]` Hold on a fact row and its provenance chip. `[MG]` overlay: three stacked labels — **measured** · **inferred** · **asserted** — with a struck-through arrow from inferred → measured. Cut to `[APP]`: the real pending suggestion, *"deezer matched on name — needs a human to confirm"*, confidence `0.7`. **Accept** clicked; the row promotes. | "And it never guesses at you. Every fact carries how we learned it — measured, inferred, or asserted. An inferred fact may never overwrite a measured one. So a name match never becomes a contact — it becomes one question, answered in a click." |
+| **1:08–1:34** · The shortlist, and the lesson **← the tie-breaker beat** | `[APP]` The shortlist for Hallow Youth. Let the real list land: **Laeti — Deezer Dance & EDM Editor** at the top, distance visible. Then **the reorder**: a row lifts, and the inspector shows `applied:` naming the lesson that moved it — hold long enough to read it. `[MG]` inset: two filter chips, `party_class = counterparty` and `contact_state = contactable`, sliding *inside* the index glyph rather than sitting after it. | "So who do we take this record to? For a dance act, the top answer is Deezer's Dance and EDM editor — nearest neighbour in a vector index, filtered to people we aren't already talking to. And the order isn't fixed. It's ranked by what we learned last time, and every row says which lesson moved it." |
+| **1:34–1:37** · Pivot | `[CAM]` Founder, direct to camera. **A beat of silence before the line, and after it.** Hard cut to black. | "Now the part we're proud of." |
+| **1:37–1:49** · One store | `[MG]` Four labelled boxes — Postgres · vector store · Redis · queue — collapse into **one** box marked **CockroachDB**, which splits into four *roles*: memory · state · lock · event bus. | "One database. Not Postgres plus a vector store plus Redis plus a queue. CockroachDB is the memory, the state, the lock and the event bus at once." |
+| **1:49–2:08** · The transaction boundary **← the strongest line** | `[MG]` Three glyphs — **the agent's write** · **its run record** · **the lead marked done** — drift apart, then snap inside a single bracket labelled `BEGIN … COMMIT`. One of the three fails; the whole bracket rolls back and the lead returns to `pending`. | "Every agent's memory write, its run record, and its work being marked done all commit together. If the memory write fails, the work is not done. That's memory being integral and not supplementary — a transaction boundary, not a slogan." |
+| **2:08–2:23** · The lease, paid off | `[MG]` Callback to the cold open, now labelled: two workers, disjoint rows, `FOR UPDATE SKIP LOCKED` in mono; the killed worker's lease expires and the row moves. | "It's also why that fleet survives being killed. Agents never call each other. They claim work with a lease on the memory row, and a dead worker's lease simply expires. No supervisor." |
+| **2:23–2:42** · The index, and time travel | `[MG]` The live `EXPLAIN`, typed on: `• vector search` / `table: party@party_shortlist` / `prefix spans: […/'counterparty'/'contactable']`. Then `[APP]`: the same page an hour ago — **21 counterparties** — cut to now — **3**. Mono caption: `AS OF SYSTEM TIME '-60m'`. | "The filters live inside the vector index, not after it — similarity and business rules in one traversal. And an hour ago I deleted a bad harvest of counterparties. I can still ask what this database believed beforehand. No audit table." |
+| **2:42–2:50** · Close | `[MG]` A queue icon, a Redis icon and a vector-DB cylinder struck through in turn; caption **the memory is the coordination**. `[CAM]` Founder, Function URL on the laptop behind them. | "The memory is the coordination. Respect the Funk — release n plus one should cost less than release one." |
 
-**Runtime: ~2:40–2:55.** If it runs long, cut the provenance beat (1:05–1:24) to ~8s by
-dropping the struck-through arrow — it reaches ~2:30. Do **not** cut the lease beat; it is
-the tie-breaker criterion on screen.
+**Runtime: 2:50 of speech, ~2:57 with the marked silences.** That is deliberately close to
+the wire. If a read comes in slow, cut the struck-through arrow from the provenance beat
+(0:48–1:08) — it reaches ~2:48. Do **not** cut 1:49–2:08 or the shortlist reorder at
+1:25 — those two *are* the tie-breaker criterion on screen.
 
 ---
 
 ## Narration notes
 
-- **Say the names out loud.** "CockroachDB". "AWS Lambda". "Distributed vector indexing".
-  "Changefeed". "Serializable". "As of system time". Judges are listening for them and a
-  diagram they read is worth less than a phrase they hear.
-- **The single most important line:** *"No supervisor. The database is the runtime."* It
-  lands on the worker dying and its lease expiring. Do not rush it; leave air after.
-- **Second most important:** *"The memory is the coordination."* It is the answer to the
-  brief's one load-bearing clause — memory integral, not supplementary — and it should be
-  the last technical thing said.
+- **Say the names out loud.** "CockroachDB". "AWS Lambda". "Vector index". "Serializable".
+  "As of system time." Judges are listening for them; a diagram they read is worth less
+  than a phrase they hear.
+- **The single most important line:** *"If the memory write fails, the work is not done."*
+  It is the literal answer to the brief's one load-bearing clause — *memory as integral to
+  agent functionality, not supplementary* — and unlike a slogan it is checkable in the
+  source. Do not rush it; leave air after.
+- **Second:** *"The database is the runtime."* It opens the film and pays off at 2:26.
+  Say it the same way both times.
+- **Third:** *"The memory is the coordination."* Last technical thing said.
 - **Land "measured, inferred, or asserted" cleanly.** Three words, three beats. It is the
   most distinctive product idea and the one a judge is most likely to repeat.
-- Read **calm and slow**. The reference cut this is modelled on reads at ~130 words a
-  minute with air between lines. Cramming to fit more in is how a 2:40 script becomes an
-  unwatchable 2:40.
+- **The time-travel beat is a confession, and that is why it works.** "I deleted a bad
+  harvest" is a real operator doing real cleanup, and the recovery is the feature. Do not
+  soften it into a hypothetical — the numbers 21 and 3 are true.
+- Read **calm and slow**, ~130 words a minute, with air between lines. The cold open is
+  the one place to let the picture run ahead of the voice: say nothing for the first two
+  seconds while the workers are just working.
 - Never say "AI", "leverage", "seamless", or "powerful".
 
 ## Screen-capture shot list
 
 Capture against the deployed Function URL, signed in, with the real roster.
 
-- [ ] A genuinely messy spreadsheet / DM thread (2s, the cold-open cut)
+- [ ] **Terminal: two workers claiming disjoint leads, one killed, the work resumed** — the
+      cold open, and the single most important capture in the film
+- [ ] A genuinely messy spreadsheet / DM thread (2s)
 - [ ] Artist inspector — paste a Deezer URL into *Add a surface*, save
 - [ ] `/tracks` — two recordings with ISRCs appearing
 - [ ] Artist record — releases with UPCs and the genre chip
 - [ ] A fact row with its provenance chip visible
-- [ ] The needs-you queue — a pending suggestion, then **Accept**, then the row promoting
-- [ ] The shortlist — Deezer Dance & EDM Editor at the top with its distance
-- [ ] `/runs` — the run table with durations, token counts and cost
-- [ ] Terminal: `EXPLAIN` showing `vector search` + `prefix spans`
-- [ ] Terminal: two workers claiming disjoint leads, one killed, work resumed
+- [ ] The needs-you queue — the real pending suggestion, then **Accept**, then the promote
+- [ ] **The shortlist with Laeti — Deezer Dance & EDM Editor at the top** *(blocked: restore)*
+- [ ] **The shortlist reordering, inspector showing `applied:`** *(blocked: seed a lesson)*
+- [ ] Terminal: live `EXPLAIN` showing `vector search` + `prefix spans`
+- [ ] `[APP]` the same page at `AS OF SYSTEM TIME '-60m'` — 21 rows — cut to now — 3 rows
+- [ ] `/runs` — durations, token counts, cost *(clear or explain the 14 failed runs first)*
 
 ## Submission checklist this video is part of
 
 - [x] Public repository, Apache-2.0, licence auto-detected
 - [x] Pre-existing code disclosed in `NOTICE`
-- [x] Functional demo URL
+- [x] Functional demo URL — Lambda Function URL
 - [ ] **This video, under 3:00, on YouTube, public**
-- [ ] Documentation naming the CockroachDB and AWS tools used and how
+- [ ] **One page naming the CockroachDB and AWS tools used and how** — scored, and
+      currently scattered across `PLATFORM-SPEC.md` and `reference/`
 - [x] Architectural diagram (optional) — generated

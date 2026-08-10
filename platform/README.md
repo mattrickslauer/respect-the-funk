@@ -25,7 +25,9 @@ The platform described by [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md) and
 | `artist.type` — band, dj, singer, orchestra, composer, … | **live** |
 | Landing page at `/` + `demo_request` capture | **live** — the console is gated behind sign-in |
 | Roster CRUD at `/roster` — list, search, add, edit, delete | **works locally**, not yet deployed |
-| Console — thirteen views at `/`, `/facts`, `/fleet`, … | **wireframe**, buttons inert |
+| Console — thirteen views at `/`, `/facts`, `/fleet`, … | **live**, every view reads the cluster |
+| Outreach — `campaign`, `thread`, `message`, `outbox` | **live**, migration 010 |
+| The send gate at `/approvals` — approve, reject, queue | **live**; nothing claims the outbox, so nothing sends |
 | The fleet — lease claiming, backoff, follow-on leads, `agent_run` | **live** in `web/rtf_platform/fleet.py` |
 | Vector indexes on `party_chunk` and `party_fact` | **live**, cosine, prefix-filtered |
 | Embeddings — 856 chunks over 17 documents | **live**, via the OpenAI adapter |
@@ -34,22 +36,46 @@ The platform described by [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md) and
 
 A table arrives when something needs it, not because `PLATFORM-SPEC §2` lists it.
 
-## The console is a wireframe, and says so
+## The console was a wireframe, and is not any more
 
 Thirteen views in three panes — a rail with a scope switcher, a list, and a persistent
-inspector. Every screen carries a `wireframe` marker and every button is inert. The data
-comes from [`web/rtf_platform/demo.py`](web/rtf_platform/demo.py).
+inspector. **Every one of them now reads the cluster**, and the fixtures they were built
+against have been deleted rather than left beside the queries that replaced them.
 
-**Why a wireframe rather than the real thing:** the tables behind these views do not
-exist, and a layout, an information hierarchy and an inspector cannot be judged from a
-spec. Building the screens first also settles what the queries have to return, which is
-cheaper than discovering it after the migration.
+The wireframe was built first on purpose: the tables did not exist, and a layout, an
+information hierarchy and an inspector cannot be judged from a spec. Building the screens
+first also settled what the queries had to return, which is cheaper than discovering it
+after the migration.
+
+**The bet paid.** The promise at the time was that when a table landed the fixture would
+become a query and the templates would not change. Migration 010 landed the last four
+tables, and not one line of `console/table.html`, `approvals.html` or `inbox.html` moved
+to accommodate them. `demo.py` went from 1,583 lines to 166: the block vocabulary, the
+nav, and the row selector — the parts that were never fiction. The deleted fixtures are
+worth reading as a design record and are one command away:
+`git show 14073d9:platform/web/rtf_platform/demo.py`.
+
+**Live is not the same as finished, and the views say which.** A screen that reads a real
+table it has no writer for is still telling the truth, provided it says so:
+
+| View | What is real | What is absent |
+|---|---|---|
+| `/fleet` | `agent_manifest` cross-referenced against `agents.REGISTRY` | three declared agents have no implementation — they render `declared`, not `idle` |
+| `/campaigns`, `/threads` | full state machine, created and driven from the console | no Scout, so an operator opens threads by hand |
+| `/approvals` | the gate: approve writes the message and outbox rows in one transaction | no Sender claims the outbox, so nothing is sent |
+| `/inbox` | `message` and its query | no inbound adapter, so the table is legitimately empty |
+
+An empty `/inbox` that explains it has no adapter beats three invented replies. The
+fixture version could not tell an operator the integration was missing; this one cannot
+avoid telling them.
 
 **Why the inspector is persistent rather than a drawer.** Every object in this product
 has a *why* — a fact stands on evidence, a lead exists because another lead found it, a
 draft cites lessons. The third pane is that surface, and it renders from one partial for
 all thirteen views, so a fact, a lead, an agent, a budget and a failed run all get the
-same treatment. Adding a view costs a fixture and a route, not a screen.
+same treatment. Adding a view costs a builder and a route, not a screen — and the
+inspector is now also where an operator *acts*, so a control is a `post` action in a
+`Section` rather than a bespoke form.
 
 | | |
 |---|---|
@@ -58,16 +84,18 @@ same treatment. Adding a view costs a fixture and a route, not a screen.
 | **Campaigns** | `/campaigns` · `/threads` |
 | **System** | `/fleet` · `/queue` · `/runs` · `/budgets` |
 
-`/artists` is the seam: **live rows from the cluster, wireframe columns.** That is
-deliberate — it shows exactly where the real substrate currently stops, rather than
-letting the fixture hide it.
+**The console is also where outreach is created**, because a live view of a table nobody
+can fill is a wireframe with a real query behind it, not a built screen. So `/campaigns`
+creates a campaign, its inspector opens threads one counterparty at a time, a thread's
+inspector writes the pitch, and `/approvals` gates it. That loop is the Scout, the
+Drafter and the human gate with a person doing the first two — which is the right order:
+the screen that governs an agent should work before the agent does, or there is nothing
+to govern it with on the day it turns on.
 
-**Nothing in `demo.py` is a real person, outlet or quote.** Artist names come from the
-live roster because that costs nothing and makes the screens legible; every counterparty,
-publication, handle and quotation hanging off them is invented. The *shapes* are not
-invented — column names, provenance classes, lead kinds, thread states, lease fields and
-budget units are the ones in the specs, so when a table lands the fixture becomes a
-`repo` call and the templates do not change.
+One decision worth keeping visible: opening a thread is **one button per counterparty**,
+not one for the batch. Opening a thread takes somebody off the market for every other
+campaign — that is `§3c`'s unique index — and a bulk control would make that consequence
+invisible at exactly the moment it is incurred.
 
 ## Running it
 
@@ -183,7 +211,8 @@ form, because `maxlength` is a hint to a browser rather than a constraint on a P
 cluster becomes a working one through the UI rather than a script somebody must
 remember to run.
 
-**The CSS is structural on purpose.** This is the wireframe stage: hierarchy, state and
+**The CSS is still structural on purpose.** The screens are live, the visual design is
+not the point yet: hierarchy, state and
 the light/dark split are settled; colour and character are deliberately left for a
 design pass.
 
@@ -223,7 +252,13 @@ comes up, not as a plan.
   the industry's four layers — party, work, recording, release — per
   `docs/superpowers/specs/2026-08-08-party-first-identity-design.md`. `005` is
   destructive by design and `schema/apply.py` re-checks that the tables it drops are
-  empty before running. Six console views read the party schema; five remain fixtures.
+  empty before running. `010_outreach.sql` added `campaign`, `thread`, `message` and
+  `outbox` — `PLATFORM-SPEC §2d`, party-first — with `§3c`'s partial unique index, and
+  seeded `agent_manifest` for the five agents in `agents.REGISTRY` plus the three that
+  are declared and unwritten. **All thirteen console views now read the cluster; no
+  fixtures remain.** The index was checked in both directions against the real cluster:
+  a second campaign's thread on the same counterparty is refused, and closing the first
+  releases them.
 - **`party_fact.embedding` is still NULL.** `party_chunk.embedding` is not: 856 chunks
   across 17 documents carry real vectors, written by the fleet.
 
@@ -274,6 +309,31 @@ comes up, not as a plan.
   `reserved_concurrent_executions = 10`; not acceptable once the address is public. The
   cheapest real fix is a per-IP limit at the edge, which the current no-API-Gateway
   topology does not have a place for — so it is a topology decision, not a code one.
+- **Nothing sends, and the outbox is the proof.** `approve` writes the `message` row and
+  the `outbox` row in one transaction per `§3b`, and no Sender claims from `outbox`
+  because no mail provider is wired. A row sitting there in `pending` is a send that is
+  fully prepared and has not happened. The gate is therefore genuinely load-bearing —
+  and the button says "Approve & queue" rather than "Approve & send", because labelling
+  it for what the product will eventually do is the difference between a gate and a lie.
+  Deliverability was already called out as a time sink with low judging value in
+  `PLATFORM-SPEC §10` risk 1; this is that decision, made visible on the screen.
+- **The Drafter, Sender and Inbox agents are declared and unwritten.** They have
+  `agent_manifest` rows with `enabled = false`, and `/fleet` renders an agent with a
+  manifest and no implementation as `declared` rather than `idle` — one is a switch, the
+  other is unwritten work, and they must not look alike. Meanwhile the operator does
+  those jobs by hand through the console, which is deliberate: a governing screen should
+  work before the thing it governs.
+- **`/inbox` reads a real table nothing writes to.** `outreach.record_reply` is the
+  writer and the tests drive it; what is missing is an inbound adapter to call it. The
+  empty state says exactly that. Resisting a fixture here matters more than elsewhere —
+  three invented replies would leave an operator with no way to discover the integration
+  does not exist.
+- **`agent_run` attributes work to the claiming worker, not the agent kind.** The CLI
+  claims as one worker (`ingest-cli`) and dispatches to whichever agent the lead's kind
+  selects, so all 68 runs on the cluster carry that name and every manifest row reads
+  zero. `/fleet` lists unmanifested workers rather than dropping them, so the runs are
+  visible somewhere — but per-agent rates are not measurable until `work_once` records
+  the dispatched kind alongside the claimant.
 - **Demo requests have no operator surface.** They land in `demo_request` and can only be
   read with SQL. A `/requests` view is a route and a fixture-free table read, but nothing
   reminds the operator a lead arrived, so a request could sit unseen indefinitely.

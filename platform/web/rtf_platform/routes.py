@@ -8,15 +8,22 @@ anything. Server-rendered Jinja + htmx, matching `app/remixkit/ui/routes.py` —
 reasoning, same component boundaries, so a later React front end would find the seams
 already cut.
 
-**The console** (everything else) is the wireframe: three panes, thirteen views, driven
-by `demo.py`. Buttons are inert. Every view is marked so on screen. It exists because a
-layout, an information hierarchy and an inspector have to be judged before the tables
-behind them are built, and judging them from a spec does not work.
+**The console** (everything else) is three panes and thirteen views, and every one of
+them now reads the cluster. `research.py` builds them; `demo.py` is the block vocabulary
+they are described with, and no longer carries any data.
 
-The seam between the two is one line per view: a route hands the template a `View`. When
-a table lands, the fixture becomes a `repo` call and the template does not change. The
-`/artists` view already does this halfway — live rows, wireframe columns — which is the
-honest way to show where the substrate currently stops.
+The seam held. When a table landed the fixture became a query and the template did not
+change — not one line of `console/table.html`, `approvals.html` or `inbox.html` moved to
+accommodate the last five. That was the whole bet of building the screens first, and it
+is worth stating plainly now that it has been collected.
+
+**What is real and what is absent are different questions.** Every view is live; not
+every agent behind one exists. `/approvals` reads real drafts and the gate genuinely
+prepares a send, and nothing claims the outbox because no provider is wired. `/inbox`
+reads a real table that no inbound adapter fills. Those gaps are rendered as themselves —
+an empty state that says what is missing beats a fixture that hides it, because an
+operator looking at three invented replies has no way to learn the integration does not
+exist.
 
 **The console is private.** Four routes are public — `/` (the landing page), `/signin`,
 `POST /demo` and `/healthz` — and everything else is behind `require_operator`, which
@@ -34,6 +41,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import quote_plus
 
 import psycopg
 from fastapi import (
@@ -43,7 +51,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from rtf_platform import (
-    auth, db, demo, repo, research, settings as settings_mod, statements,
+    auth, db, demo, outreach, repo, research, settings as settings_mod, statements,
 )
 from rtf_platform.domain import (
     ARTIST_STATUSES, DEFAULT_TYPE, ArtistType, Platform, ProfileMode, unrecognised,
@@ -152,7 +160,92 @@ templates.env.globals["chip_tone"] = _chip_tone
 templates.env.globals["prov_abbr"] = _prov_abbr
 
 
-def _ctx(request: Request, principal: auth.Principal, **extra: Any) -> dict[str, Any]:
+def _q(text: str) -> str:
+    """A message safe to carry back in a redirect's query string."""
+    return quote_plus(text[:300])
+
+
+def _thread_of(conn: psycopg.Connection, tenant_id: str | None,
+               message_id: str) -> str | None:
+    """The thread a draft belongs to, or None if it is not an unsent outbound draft.
+
+    The action routes take a message id because that is what the operator selected, but
+    every write in `outreach` is scoped by thread. Resolving it here — rather than
+    trusting a hidden form field — means a posted id that has already been approved,
+    belongs to another tenant or does not exist all end up in the same place: a message
+    on the approvals screen, not a traceback.
+    """
+    if tenant_id is None:
+        return None
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT thread_id FROM message WHERE tenant_id = %s AND id = %s "
+            "AND direction = 'outbound' AND sent_at IS NULL",
+            (tenant_id, message_id))
+        row = cur.fetchone()
+    return str(row["thread_id"]) if row else None
+
+
+def _nav(conn: psycopg.Connection | None, tenant_id: str | None
+         ) -> tuple[tuple[str, tuple[tuple[str, str, str, str], ...]], ...]:
+    """`demo.NAV` with the badges replaced by counts from the tables.
+
+    The badges were the last fixtures in the shell — `approvals` read "3" on every page
+    of a console with nothing waiting. A badge that is always the same number is worse
+    than no badge: it trains the operator to ignore the one signal whose entire job is
+    to be noticed on a page they were not visiting.
+
+    One query for four numbers, because these render on every console page and a cluster
+    that scales to zero charges for each round trip.
+    """
+    if conn is None or tenant_id is None:
+        return tuple((group, tuple((k, label, href, "") for k, label, href, _ in items))
+                     for group, items in demo.NAV)
+    try:
+        counts = outreach.counts(conn, tenant_id)
+        parked = _one_count(conn,
+                            "SELECT count(*) AS n FROM lead WHERE tenant_id = %s "
+                            "AND state = 'failed'", (tenant_id,))
+        pending = _one_count(conn,
+                             "SELECT count(*) AS n FROM suggestion WHERE tenant_id = %s "
+                             "AND state = 'pending'", (tenant_id,))
+    except psycopg.OperationalError:
+        # A dead socket is not worth failing a page render for, and the rail still draws
+        # without numbers on it.
+        #
+        # Deliberately *not* `psycopg.Error`. That catches `ProgrammingError` too, and a
+        # mistyped column would then render blank badges forever instead of erroring —
+        # which is exactly what happened while this was being written: `suggestion` has a
+        # `state` column, not `status`, and the broad except turned a bug into a silently
+        # empty rail. A badge that is always absent is indistinguishable from a badge
+        # whose count is legitimately zero, so nothing would ever have surfaced it.
+        return tuple((group, tuple((k, label, href, "") for k, label, href, _ in items))
+                     for group, items in demo.NAV)
+
+    live = {
+        "today":     pending + parked,
+        "approvals": counts.get("awaiting_human", 0),
+        "inbox":     counts.get("inbound", 0),
+        "campaigns": counts.get("running", 0),
+        "threads":   counts.get("open_threads", 0),
+        "runs":      parked,
+    }
+    return tuple(
+        (group, tuple(
+            (key, label, href, str(live[key]) if live.get(key) else "")
+            for key, label, href, _ in items))
+        for group, items in demo.NAV)
+
+
+def _one_count(conn: psycopg.Connection, sql: str, params: tuple[Any, ...]) -> int:
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        return int((cur.fetchone() or {}).get("n", 0))
+
+
+def _ctx(request: Request, principal: auth.Principal, *,
+         conn: psycopg.Connection | None = None, tenant_id: str | None = None,
+         **extra: Any) -> dict[str, Any]:
     return {
         "request": request,
         "principal": principal,
@@ -162,7 +255,7 @@ def _ctx(request: Request, principal: auth.Principal, **extra: Any) -> dict[str,
         # Stored value -> what a human reads. A row whose type is absent here is
         # rendered as its raw value rather than blanked.
         "type_labels": {t.value: t.label for t in ArtistType},
-        "nav": demo.NAV,
+        "nav": _nav(conn, tenant_id),
         "scopes": demo.SCOPES,
         "here": None,
         "insp_kicker": "",
@@ -172,6 +265,10 @@ def _ctx(request: Request, principal: auth.Principal, **extra: Any) -> dict[str,
         # False unless a route says otherwise. A view that forgets to declare itself
         # reads as wireframe, which is the direction that cannot mislead.
         "live": False,
+        # A refused write, carried back through the redirect. Rendered above the table
+        # rather than as an error page, so the operator keeps their place.
+        "error": "",
+        "stats": (),
         **extra,
     }
 
@@ -217,13 +314,15 @@ def healthz() -> dict[str, str]:
 
 def _table(request: Request, principal: auth.Principal, view: demo.View,
            sel_id: str | None, kicker: str, title_key: str,
-           live: bool = False) -> Response:
-    """Nine of the thirteen views are this call. The View carries its own columns,
+           live: bool = False, conn: psycopg.Connection | None = None,
+           tenant_id: str | None = None) -> Response:
+    """Eleven of the thirteen views are this call. The View carries its own columns,
     rows and stats; everything else is shell."""
     sel = demo.select(view.rows, sel_id)
     return templates.TemplateResponse(
         request, "console/table.html",
-        _ctx(request, principal, here=view.key, view=view, sel=sel, live=live,
+        _ctx(request, principal, conn=conn, tenant_id=tenant_id,
+             here=view.key, view=view, sel=sel, live=live,
              insp_kicker=kicker,
              insp_title=(sel or {}).get(title_key, "—")),
     )
@@ -265,7 +364,8 @@ def home(request: Request, principal: Principal, sel: str = "") -> Response:
     row = demo.select(items, sel or None)
     return templates.TemplateResponse(
         request, "console/today.html",
-        _ctx(request, principal, here="today", items=items, sel=row, quiet=quiet,
+        _ctx(request, principal, conn=conn, tenant_id=tenant_id,
+             here="today", items=items, sel=row, quiet=quiet, live=True,
              insp_kicker=(row or {}).get("kind", ""),
              insp_title=(row or {}).get("head", "—")),
     )
@@ -305,24 +405,92 @@ def demo_request(
     return _landing(request, principal, sent=email.strip())
 
 
-@router.get("/approvals", response_class=HTMLResponse)
-def approvals(request: Request, principal: Operator, sel: str = "") -> Response:
-    row = demo.select(demo.APPROVALS, sel or None)
+#: The two screens that are a reading surface rather than a table. Both take the same
+#: shape — a list of cards, a selected one rendered in full, and the inspector — so they
+#: share a loader and differ only in which builder and template they name.
+def _cards(request: Request, principal: auth.Principal, *, here: str, template: str,
+           build, key: str, kicker: str, error: str = "") -> Response:
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    rows, stats = ([], ()) if tenant_id is None else build(conn, tenant_id)
+    sel_id = request.query_params.get("sel", "")
+    row = demo.select(rows, sel_id or None)
     return templates.TemplateResponse(
-        request, "console/approvals.html",
-        _ctx(request, principal, here="approvals", drafts=demo.APPROVALS, sel=row,
-             insp_kicker="draft", insp_title=(row or {}).get("who", "—")),
+        request, template,
+        _ctx(request, principal, conn=conn, tenant_id=tenant_id, here=here, live=True,
+             stats=stats, error=error, **{key: rows},
+             sel=row, insp_kicker=kicker, insp_title=(row or {}).get("who", "—")),
     )
+
+
+@router.get("/approvals", response_class=HTMLResponse)
+def approvals(request: Request, principal: Operator, error: str = "") -> Response:
+    """The send gate, live from `thread` and `message`.
+
+    Empty is the normal state and it means the fleet is not blocked on anybody, which is
+    what the screen says rather than showing three invented pitches.
+    """
+    return _cards(request, principal, here="approvals", template="console/approvals.html",
+                  build=research.approvals, key="drafts", kicker="draft", error=error)
+
+
+@router.post("/approvals/{message_id}/approve", response_class=HTMLResponse)
+def approvals_approve(request: Request, principal: Operator, message_id: str) -> Response:
+    """Prepare the send. This is the irreversible half of the product and it is a POST
+    from a form, never a link — see the note in the inspector's actions block."""
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    thread_id = _thread_of(conn, tenant_id, message_id)
+    if thread_id is None:
+        return RedirectResponse("/approvals?error=That+draft+is+no+longer+waiting.",
+                                status_code=303)
+    try:
+        outreach.approve(conn, tenant_id, thread_id, message_id,
+                         approver=principal.subject)
+    except psycopg.errors.UniqueViolation:
+        # A double-click lands here, and it is `UNIQUE (message_id)` on `outbox` doing
+        # its job rather than a fault: the first click already queued it, and the second
+        # one was refused instead of queueing a second copy. Reported as that fact — the
+        # driver's message names a constraint, which tells an operator nothing and tells
+        # anyone else more about the schema than they should get from a form post.
+        return RedirectResponse(
+            "/approvals?error=" + _q("Already queued — the first click prepared the "
+                                     "send, and the database refused a second copy."),
+            status_code=303)
+    except outreach.TransitionRefused as exc:
+        return RedirectResponse(f"/approvals?error={_q(str(exc))}", status_code=303)
+    return RedirectResponse("/approvals", status_code=303)
+
+
+@router.post("/approvals/{message_id}/reject", response_class=HTMLResponse)
+def approvals_reject(request: Request, principal: Operator, message_id: str) -> Response:
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    thread_id = _thread_of(conn, tenant_id, message_id)
+    if thread_id is None:
+        return RedirectResponse("/approvals?error=That+draft+is+no+longer+waiting.",
+                                status_code=303)
+    try:
+        outreach.reject(conn, tenant_id, thread_id, message_id,
+                        reason=f"rejected by {principal.subject}")
+    except outreach.TransitionRefused as exc:
+        return RedirectResponse(f"/approvals?error={_q(str(exc))}", status_code=303)
+    return RedirectResponse("/approvals", status_code=303)
 
 
 @router.get("/inbox", response_class=HTMLResponse)
-def inbox(request: Request, principal: Operator, sel: str = "") -> Response:
-    row = demo.select(demo.INBOX, sel or None)
-    return templates.TemplateResponse(
-        request, "console/inbox.html",
-        _ctx(request, principal, here="inbox", messages=demo.INBOX, sel=row,
-             insp_kicker="reply", insp_title=(row or {}).get("who", "—")),
-    )
+def inbox(request: Request, principal: Operator, error: str = "") -> Response:
+    """Replies, live from `message`.
+
+    Nothing writes inbound messages yet — there is no mail provider — so this reads a
+    real table that is legitimately empty. `outreach.record_reply` is the writer and the
+    tests drive it; what is missing is the thing that would call it, and the empty state
+    says exactly that rather than inventing three replies to fill the screen.
+    """
+    return _cards(request, principal, here="inbox", template="console/inbox.html",
+                  build=research.inbox, key="messages", kicker="reply", error=error)
 
 
 # ------------------------------------------------------ real, from the tables
@@ -340,9 +508,10 @@ def _live(request: Request, principal: auth.Principal, build, sel_id: str | None
     if tenant_id is None:
         empty = demo.View(key="", title="", blurb="", stats=(), cols=(), rows=(),
                           empty="Nothing here yet — save an artist first.")
-        return _table(request, principal, empty, None, kicker, title_key, live=True)
+        return _table(request, principal, empty, None, kicker, title_key, live=True,
+                      conn=conn, tenant_id=tenant_id)
     return _table(request, principal, build(conn, tenant_id), sel_id, kicker,
-                  title_key, live=True)
+                  title_key, live=True, conn=conn, tenant_id=tenant_id)
 
 
 #: Artists is the one console view that writes. Everything below it is the editor that
@@ -715,7 +884,24 @@ def queue(request: Request, principal: Operator, sel: str = "") -> Response:
 
 @router.get("/fleet", response_class=HTMLResponse)
 def fleet(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _table(request, principal, demo.FLEET, sel or None, "agent", "agent")
+    return _live(request, principal, research.fleet, sel or None, "agent", "agent")
+
+
+@router.post("/fleet/{kind}/toggle", response_class=HTMLResponse)
+def fleet_toggle(principal: Operator, kind: str) -> Response:
+    """Turn an agent off, or back on.
+
+    An UPDATE rather than a deploy, which combined with the lease is a clean drain: the
+    agent stops claiming, finishes whatever it is holding, and goes quiet. Nothing is
+    killed mid-flight, so there is no orphaned lease to wait out.
+    """
+    _require_write(principal)
+    conn = _conn()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE agent_manifest SET enabled = NOT enabled, updated_at = now() "
+            "WHERE kind = %s", (kind,))
+    return RedirectResponse(f"/fleet?sel={kind}", status_code=303)
 
 
 @router.get("/budgets", response_class=HTMLResponse)
@@ -734,9 +920,140 @@ def counterparties(request: Request, principal: Operator, sel: str = "") -> Resp
                  "counterparty", "who")
 
 
+#: What an operator can move a thread to by hand, and what the button says. Only the
+#: forward edges the fleet would otherwise take — closing has its own controls, and
+#: `queued` is absent because reaching it means writing an outbox row, which is
+#: `approve`'s job and no button's.
+_THREAD_STEPS: dict[str, tuple[str, str]] = {
+    "discovered":  ("shortlisted", "Shortlist"),
+    "shortlisted": ("approved", "Approve the approach"),
+    "queued":      ("sent", "Mark sent"),
+    "sent":        ("awaiting_reply", "Awaiting reply"),
+    "replied":     ("negotiating", "Negotiating"),
+    "negotiating": ("agreed", "Agreed"),
+    "agreed":      ("delivered", "Delivered"),
+    "delivered":   ("verified", "Verified"),
+}
+
+
+def _threads_page(request: Request, principal: auth.Principal, *, sel: str = "",
+                  error: str = "", form: dict[str, str] | None = None,
+                  status_code: int = 200) -> Response:
+    """The Threads view, with the thread's own controls in the inspector.
+
+    A selected thread gets whichever of three things its state allows: the one forward
+    step, the draft form, and the closing controls. Offering only the legal move means
+    the state machine is visible as a shape rather than as a list of errors — you cannot
+    press the button that would be refused, because it is not drawn.
+    """
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        view = demo.View(key="threads", title="Threads", blurb="", stats=(), cols=(),
+                         rows=(), empty="Nothing here yet — save an artist first.")
+        sel_row: dict[str, Any] | None = None
+    else:
+        view = research.threads(conn, tenant_id)
+        sel_row = demo.select(view.rows, sel or None)
+        if sel_row is not None:
+            state = sel_row["state"]
+            extra: list[demo.Section] = []
+            step = _THREAD_STEPS.get(state)
+            if step:
+                to, label = step
+                extra.append(demo.Section("Next step", "actions", (
+                    (label, f"/threads/{sel_row['id']}/advance/{to}", "p", "post"),)))
+            # `approved` is where a draft becomes possible and `awaiting_human` is where
+            # a redraft does. Both write through the same function.
+            if state in ("approved", "drafted", "awaiting_human"):
+                extra.append(research.draft_form_section(
+                    str(sel_row["id"]), form=form, error=error))
+            sel_row = dict(sel_row)
+            sel_row["insp"] = sel_row["insp"] + tuple(extra)
+
+    return templates.TemplateResponse(
+        request, "console/table.html",
+        _ctx(request, principal, conn=conn, tenant_id=tenant_id,
+             here="threads", view=view, sel=sel_row, live=True,
+             error=error if not form else "",
+             insp_kicker="thread", insp_title=(sel_row or {}).get("who", "—")),
+        status_code=status_code,
+    )
+
+
 @router.get("/threads", response_class=HTMLResponse)
-def threads(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _table(request, principal, demo.THREADS, sel or None, "thread", "who")
+def threads(request: Request, principal: Operator, sel: str = "",
+            error: str = "") -> Response:
+    return _threads_page(request, principal, sel=sel, error=error)
+
+
+@router.post("/threads/{thread_id}/advance/{to}", response_class=HTMLResponse)
+def threads_advance(principal: Operator, thread_id: str, to: str) -> Response:
+    """One forward step, refused if the machine does not allow it.
+
+    The route validates against `ALLOWED` rather than against `_THREAD_STEPS`, because
+    the button set is a UI convenience and the state machine is the rule — a posted URL
+    should meet the same gate a fleet worker does.
+    """
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    try:
+        outreach.advance(conn, tenant_id, thread_id, to,
+                         reason=f"moved by {principal.subject}")
+    except outreach.TransitionRefused as exc:
+        return RedirectResponse(f"/threads?sel={thread_id}&error={_q(str(exc))}",
+                                status_code=303)
+    return RedirectResponse(f"/threads?sel={thread_id}", status_code=303)
+
+
+@router.post("/threads/{thread_id}/draft", response_class=HTMLResponse)
+def threads_draft(request: Request, principal: Operator, thread_id: str,
+                  subject: Annotated[str, Form()] = "",
+                  body: Annotated[str, Form()] = "") -> Response:
+    """Write the pitch by hand — the Drafter's job, done by a person.
+
+    It writes the same `message` row the agent would and lands on the same gate, so the
+    approvals screen is exercised by real drafts. When the Drafter is written it
+    replaces this and nothing downstream changes.
+    """
+    _require_write(principal)
+    typed = {"subject": subject, "body": body}
+    if not subject.strip() or not body.strip():
+        return _threads_page(request, principal, sel=thread_id, form=typed,
+                             error="A draft needs a subject and a body.",
+                             status_code=400)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    try:
+        outreach.draft(conn, tenant_id, thread_id, subject=subject, body=body)
+    except outreach.TransitionRefused as exc:
+        return _threads_page(request, principal, sel=thread_id, form=typed,
+                             error=str(exc), status_code=400)
+    return RedirectResponse("/approvals", status_code=303)
+
+
+@router.post("/threads/{thread_id}/close/{outcome}", response_class=HTMLResponse)
+def threads_close(principal: Operator, thread_id: str, outcome: str) -> Response:
+    """Close a conversation, which also releases the counterparty.
+
+    Both halves happen in `outreach.advance`: the thread leaves the partial unique index
+    and `party.contact_state` follows it in the same transaction. Closing here is
+    therefore the only way the shortlist gets somebody back, and doing it by hand in SQL
+    would leave the two disagreeing.
+    """
+    _require_write(principal)
+    if outcome not in outreach.CLOSED:
+        raise HTTPException(status_code=400, detail=f"{outcome!r} is not a closing state.")
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    try:
+        outreach.advance(conn, tenant_id, thread_id, outcome,
+                         reason=f"closed by {principal.subject}")
+    except outreach.TransitionRefused as exc:
+        return RedirectResponse(f"/threads?sel={thread_id}&error={_q(str(exc))}",
+                                status_code=303)
+    return RedirectResponse(f"/threads?sel={thread_id}", status_code=303)
 
 
 @router.get("/tracks", response_class=HTMLResponse)
@@ -744,9 +1061,148 @@ def tracks(request: Request, principal: Operator, sel: str = "") -> Response:
     return _live(request, principal, research.tracks, sel or None, "track", "title")
 
 
+def _campaigns_page(request: Request, principal: auth.Principal, *, sel: str = "",
+                    error: str = "", form: dict[str, str] | None = None,
+                    status_code: int = 200) -> Response:
+    """The Campaigns view, plus whichever editor state the inspector is in.
+
+    The selected campaign's inspector carries the shortlist — every contactable
+    counterparty, each with a button that opens a thread. That list is the operator
+    doing the Scout's job, and it is deliberately one decision per person rather than a
+    single "shortlist everything": opening a thread takes somebody off the market for
+    every other campaign, and a bulk button makes that consequence invisible.
+    """
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    creating = sel == "new"
+
+    if tenant_id is None:
+        view = demo.View(key="campaigns", title="Campaigns", blurb="", stats=(), cols=(),
+                         rows=(), empty="Add an artist first — a campaign hangs off one.")
+        sel_row: dict[str, Any] | None = None
+    else:
+        view = research.campaigns(conn, tenant_id)
+        if creating:
+            sel_row = {"id": "new", "name": "New campaign",
+                       "insp": research.new_campaign_sections(
+                           conn, tenant_id, form=form, error=error)}
+        else:
+            sel_row = demo.select(view.rows, sel or None)
+            if sel_row is not None:
+                candidates = research.shortlist_candidates(conn, tenant_id)
+                sel_row = dict(sel_row)
+                sel_row["insp"] = sel_row["insp"] + (
+                    demo.Section(
+                        "Contactable — open a thread", "editlist",
+                        tuple((c["name"], (c["roles"] or "no role recorded")
+                               + ("" if c["searchable"] else " · not embedded"),
+                               (("Open thread",
+                                 f"/campaigns/{sel_row['id']}/thread/{c['id']}", "p"),))
+                              for c in candidates)),
+                    demo.Section("Note", "note", (
+                        "Everyone here is contactable, which means no other campaign holds "
+                        "an open thread with them — that is the partial unique index read "
+                        "back through party.contact_state. Opening one takes them off this "
+                        "list for every campaign at once, so it is one button per person "
+                        "rather than one for the batch.",
+                    )) if candidates else demo.Section("Nobody contactable", "note", (
+                        "Every known counterparty is already in a thread, declined or "
+                        "unusable. Prospecting finds more — map a source for an artist and "
+                        "run it.",
+                    )),
+                )
+
+    return templates.TemplateResponse(
+        request, "console/table.html",
+        _ctx(request, principal, conn=conn, tenant_id=tenant_id,
+             here="campaigns", view=view, sel=sel_row, live=True,
+             insp_kicker="campaign",
+             insp_title=(sel_row or {}).get("name", "—"),
+             insp_new=None if creating else ("/campaigns?sel=new", "New campaign")),
+        status_code=status_code,
+    )
+
+
 @router.get("/campaigns", response_class=HTMLResponse)
-def campaigns(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _table(request, principal, demo.CAMPAIGNS, sel or None, "campaign", "name")
+def campaigns(request: Request, principal: Operator, sel: str = "",
+              error: str = "") -> Response:
+    return _campaigns_page(request, principal, sel=sel, error=error)
+
+
+@router.post("/campaigns", response_class=HTMLResponse)
+def campaigns_create(request: Request, principal: Operator,
+                     name: Annotated[str, Form()] = "",
+                     party_id: Annotated[str, Form()] = "",
+                     recording_id: Annotated[str, Form()] = "",
+                     channel: Annotated[str, Form()] = "curator",
+                     goal: Annotated[str, Form()] = "") -> Response:
+    _require_write(principal)
+    typed = {"name": name, "party_id": party_id, "recording_id": recording_id,
+             "channel": channel, "goal": goal}
+    if not name.strip():
+        return _campaigns_page(request, principal, sel="new", form=typed,
+                               error="A campaign needs a name.", status_code=400)
+    if channel not in {c for c, _ in research.CHANNELS}:
+        # The select offers only known values, so anything else is a crafted post —
+        # rejected rather than coerced, the same rule `_validated_type` follows.
+        return _campaigns_page(request, principal, sel="new", form=typed,
+                               error=f"{channel!r} is not a supported channel.",
+                               status_code=400)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return _campaigns_page(request, principal, sel="new", form=typed,
+                               error="Add an artist before creating a campaign.",
+                               status_code=400)
+    row = outreach.create_campaign(conn, tenant_id, party_id=party_id, name=name,
+                                   channel=channel, goal=goal,
+                                   recording_id=recording_id or None)
+    return RedirectResponse(f"/campaigns?sel={row['id']}", status_code=303)
+
+
+@router.post("/campaigns/{campaign_id}/thread/{counterparty_id}",
+             response_class=HTMLResponse)
+def campaigns_open_thread(principal: Operator, campaign_id: str,
+                          counterparty_id: str) -> Response:
+    """Open a conversation with one counterparty.
+
+    A `UniqueViolation` here is the §3c collision — somebody else got to them between
+    the page rendering and the button being pressed — and it is reported as the fact it
+    is rather than as an error, because nothing is wrong: the database did exactly what
+    it was built to do.
+    """
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    try:
+        outreach.open_thread(conn, tenant_id, campaign_id=campaign_id,
+                             counterparty_id=counterparty_id)
+    except psycopg.errors.UniqueViolation:
+        return RedirectResponse(
+            f"/campaigns?sel={campaign_id}&error="
+            + _q("Somebody already has an open thread with them — one open thread per "
+                 "counterparty, across every campaign."),
+            status_code=303)
+    return RedirectResponse(f"/campaigns?sel={campaign_id}", status_code=303)
+
+
+@router.post("/campaigns/{campaign_id}/state/{state}", response_class=HTMLResponse)
+def campaigns_set_state(principal: Operator, campaign_id: str, state: str) -> Response:
+    """Run, pause or close a campaign.
+
+    `running` is the state in which the fleet may open threads against it, so starting
+    one is a deliberate act with a button behind it rather than a side effect of
+    creating it — the same shape as the send gate, one step earlier and much cheaper to
+    get wrong.
+    """
+    _require_write(principal)
+    if state not in ("draft", "running", "paused", "done"):
+        raise HTTPException(status_code=400, detail=f"{state!r} is not a campaign state.")
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is not None:
+        outreach.set_campaign_state(conn, tenant_id, campaign_id, state)
+    return RedirectResponse(f"/campaigns?sel={campaign_id}", status_code=303)
 
 
 # ---------------------------------------------------------------------- auth

@@ -5,10 +5,16 @@ The promise `demo.py` made was that when a table landed, the fixture would becom
 returns a `demo.View` — same columns, same chips, same inspector sections — so the
 switch is a route edit and nothing below it moves.
 
-Six views are real now: artists, tracks, facts, queue, runs, budgets. Counterparties,
-threads, campaigns, approvals and inbox stay on fixtures because their tables do not
-exist, and the nav marks which is which. Mixing them is the honest arrangement — it
-shows exactly where the substrate stops rather than letting a fixture hide it.
+All thirteen are real now. The last five — fleet, campaigns, threads, approvals and
+inbox — arrived with migration 010, which built the outreach tables `PLATFORM-SPEC §2d`
+specified. There are no fixtures left anywhere in the console.
+
+That does not mean every agent behind a view exists. The distinction the nav badge used
+to draw between "live" and "wireframe" now has to be drawn inside each view instead, and
+it is: `/fleet` marks an agent `declared` when it has a manifest and no implementation,
+`/approvals` says the send it prepares is claimed by nobody, and `/inbox` says its table
+has no adapter writing into it. A screen that is honest about its own gaps is worth more
+than one that is uniformly green.
 
 **Empty is a real answer here.** A view with no rows says what would create some,
 because an empty table and a broken query look identical otherwise, and the operator
@@ -17,6 +23,7 @@ should be able to tell without opening a log.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -1056,3 +1063,782 @@ def artists(conn: psycopg.Connection, tenant_id: str, *,
         rows=tuple(out),
         empty="No artists yet — add one from the roster form.",
     )
+
+
+# ===========================================================================
+# Outreach — the four views migration 010 turned real, and the fleet.
+#
+# These were the last fixtures. `demo.py` promised that when the tables landed the
+# fixture would become a query and the templates would not change, and that is what
+# happened here: not one line of `console/table.html`, `approvals.html` or `inbox.html`
+# moved to accommodate them.
+#
+# The numbers are small and real. A fixture showed 48 open threads because a dense
+# screen is easier to judge; these show what is actually in the cluster, which today is
+# nearly nothing. That is the correct reading and the empty states say what would
+# change it.
+# ===========================================================================
+
+def _since(value: Any) -> str:
+    """Coarse relative age — `4m`, `3h`, `2d`.
+
+    Coarse on purpose. The operator question these answer is "is this stale", and a
+    thread that has been waiting eleven hours and one that has been waiting twelve
+    demand the same action, so the extra precision would be noise dressed as detail.
+    """
+    if value is None:
+        return "—"
+    delta = datetime.now(timezone.utc) - value
+    seconds = int(delta.total_seconds())
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86400}d"
+
+
+def _pct(part: int, whole: int) -> int:
+    return round(100 * part / whole) if whole else 0
+
+
+# ---------------------------------------------------------------------- fleet
+
+#: What each state means on the fleet screen, kept next to the code that assigns it
+#: because "idle" and "off" look similar in a table and mean opposite things — one is
+#: waiting for work and one will never take any.
+_FLEET_STATE_NOTE = {
+    "working":   "holding a lease right now",
+    "idle":      "enabled, nothing claimed",
+    "off":       "disabled — an UPDATE, not a deploy",
+    "declared":  "a manifest with no implementation behind it",
+}
+
+
+def fleet(conn: psycopg.Connection, tenant_id: str) -> View:
+    """The fleet, from `agent_manifest` cross-referenced against the running code.
+
+    Three facts are joined here and each is worth being able to see separately:
+
+      * what the database says should exist — `agent_manifest`
+      * what the deployed code can actually run — `agents.REGISTRY`
+      * what has actually happened — `agent_run` and the live leases on `lead`
+
+    The second is the one a fixture could never show. An agent row with `enabled = true`
+    and no implementation is not an idle agent, it is a promise; it renders as `declared`
+    so the two cannot be confused. This is the same reason `/artists` was built as live
+    rows with wireframe columns — showing where the substrate stops beats hiding it.
+
+    **Runs are attributed to the worker that claimed the lead, not to the agent function
+    it dispatched to.** Every `agent_run` row on this cluster today says `ingest-cli`,
+    because the CLI claims as one worker and then calls whichever agent the lead's kind
+    selects. So a manifest row can legitimately show zero runs while its code has run
+    many times. Rather than silently dropping those rows, any `agent_kind` with runs and
+    no manifest is listed too, marked `unmanifested`.
+    """
+    # Deliberately imported here rather than at module scope: `agents` imports the
+    # embedding adapters, and a console page should not fail to render because an
+    # optional provider SDK is missing from the bundle.
+    try:
+        from rtf_platform.agents import REGISTRY
+        implemented = set(REGISTRY)
+    except Exception:  # noqa: BLE001 — an unimportable registry is a fact to display
+        implemented = set()
+
+    manifests = _rows(conn, """
+        SELECT kind, work_table, claim_state, scope_kinds, adapters, writes,
+               batch_size, per_artist_cap, lease_seconds, max_attempts,
+               requires_human, enabled, updated_at
+          FROM agent_manifest
+         ORDER BY enabled DESC, kind""", ())
+
+    runs = {r["agent_kind"]: r for r in _rows(conn, """
+        SELECT agent_kind,
+               count(*) AS total,
+               count(*) FILTER (WHERE started_at > now() - INTERVAL '1 hour') AS last_hour,
+               count(*) FILTER (WHERE state = 'failed') AS errors,
+               count(*) FILTER (WHERE state = 'refused') AS refused,
+               max(started_at) AS last_run,
+               sum(cost_micro_usd) AS cost_micro
+          FROM agent_run
+         WHERE tenant_id = %s
+         GROUP BY agent_kind""", (tenant_id,))}
+
+    leases = {r["owner_agent"]: r["n"] for r in _rows(conn, """
+        SELECT owner_agent, count(*) AS n
+          FROM lead
+         WHERE tenant_id = %s AND owner_agent IS NOT NULL
+           AND lease_expires_at > now()
+         GROUP BY owner_agent""", (tenant_id,))}
+
+    # Work waiting per table, so "idle" can be read as "idle with nothing to do" rather
+    # than "idle with a backlog", which are very different bugs.
+    waiting = {
+        "lead": _one(conn, "SELECT count(*) AS n FROM lead WHERE tenant_id = %s "
+                           "AND state = 'pending' AND next_action_at <= now()",
+                     (tenant_id,)).get("n", 0),
+        "thread": _one(conn, "SELECT count(*) AS n FROM thread WHERE tenant_id = %s "
+                             "AND state = 'approved'", (tenant_id,)).get("n", 0),
+        "outbox": _one(conn, "SELECT count(*) AS n FROM outbox WHERE tenant_id = %s "
+                             "AND state = 'pending'", (tenant_id,)).get("n", 0),
+        "message": _one(conn, "SELECT count(*) AS n FROM message WHERE tenant_id = %s "
+                              "AND direction = 'inbound' AND intent = ''",
+                        (tenant_id,)).get("n", 0),
+    }
+
+    out: list[dict[str, Any]] = []
+    for m in manifests:
+        kind = m["kind"]
+        run = runs.get(kind, {})
+        held = leases.get(kind, 0)
+        has_code = kind in implemented
+        queued = waiting.get(m["work_table"], 0)
+
+        if not m["enabled"]:
+            state = "off"
+        elif not has_code:
+            state = "declared"
+        elif held:
+            state = "working"
+        else:
+            state = "idle"
+
+        errors = int(run.get("errors") or 0)
+        total = int(run.get("total") or 0)
+        cost = Decimal(int(run.get("cost_micro") or 0)) / Decimal(1_000_000)
+
+        out.append({
+            "id": kind, "agent": kind, "state": state, "leased": str(held),
+            # The bar reads as "how much of this agent's batch is in flight", which is
+            # the only ratio on this row that is bounded and therefore meaningful.
+            "bar": _bar(_pct(held, m["batch_size"] or 1)),
+            "work": m["work_table"], "scope": ",".join(m["scope_kinds"] or []) or "—",
+            "rate": str(int(run.get("last_hour") or 0)),
+            "spark": "▁▁▁▁▁▁▁", "errors": str(errors),
+            "insp": (
+                Section("Manifest", "kv", (
+                    ("kind", kind), ("work_table", m["work_table"]),
+                    ("claim_state", m["claim_state"]),
+                    ("scope_kinds", ", ".join(m["scope_kinds"] or []) or "—"),
+                    ("adapters", ", ".join(m["adapters"] or []) or "none"),
+                    ("writes", ", ".join(m["writes"] or []) or "nothing"),
+                    ("batch_size", str(m["batch_size"])),
+                    ("per_artist_cap", str(m["per_artist_cap"])),
+                    ("lease_seconds", str(m["lease_seconds"])),
+                    ("max_attempts", str(m["max_attempts"])),
+                    ("requires_human", "true" if m["requires_human"] else "false"),
+                    ("enabled", "true" if m["enabled"] else "false"),
+                )),
+                Section("Right now", "kv", (
+                    ("state", f"{state} — {_FLEET_STATE_NOTE[state]}"),
+                    ("implementation", "in agents.REGISTRY" if has_code
+                     else "none — the manifest is ahead of the code"),
+                    ("leases held", str(held)),
+                    ("work waiting in " + m["work_table"], str(queued)),
+                    ("runs recorded", str(total)),
+                    ("runs last hour", str(int(run.get("last_hour") or 0))),
+                    ("failed", str(errors)),
+                    ("refused by the gate", str(int(run.get("refused") or 0))),
+                    ("last run", _since(run.get("last_run"))),
+                    ("est. cost to date", f"${cost:.4f}"),
+                )),
+                Section("Attribution", "note", (
+                    "Runs are recorded against the worker that claimed the lead, and the CLI "
+                    "claims as one worker for every agent kind. So zero runs here means zero "
+                    "runs under this name — not that the code has never executed. The "
+                    "unmanifested rows below the fold are where those runs actually landed.",
+                )) if total == 0 and has_code else Section("", "note", ()),
+                # Turning an agent off is an UPDATE, not a deploy — which combined with
+                # the lease is a clean drain: it stops claiming, finishes what it holds,
+                # and goes quiet. That is why this is one button and not a release.
+                Section("", "actions", (
+                    (("Disable", f"/fleet/{kind}/toggle", "d", "post") if m["enabled"]
+                     else ("Enable", f"/fleet/{kind}/toggle", "p", "post")),
+                    ("Runs", "/runs", ""),
+                    ("Queue", "/queue", ""),
+                )),
+            ),
+        })
+
+    # Anything that has run but has no manifest. Listed rather than dropped: a worker
+    # nobody declared is exactly the thing you want to find out about from the screen
+    # that claims to show the fleet.
+    for kind, run in sorted(runs.items()):
+        if any(m["kind"] == kind for m in manifests):
+            continue
+        errors = int(run.get("errors") or 0)
+        cost = Decimal(int(run.get("cost_micro") or 0)) / Decimal(1_000_000)
+        out.append({
+            "id": kind, "agent": kind, "state": "unmanifested", "leased": "0",
+            "bar": _bar(0), "work": "—", "scope": "—",
+            "rate": str(int(run.get("last_hour") or 0)),
+            "spark": "▁▁▁▁▁▁▁", "errors": str(errors),
+            "insp": (
+                Section("Unmanifested worker", "kv", (
+                    ("name", kind), ("runs recorded", str(int(run.get("total") or 0))),
+                    ("failed", str(errors)),
+                    ("refused by the gate", str(int(run.get("refused") or 0))),
+                    ("last run", _since(run.get("last_run"))),
+                    ("est. cost to date", f"${cost:.4f}"),
+                )),
+                Section("Note", "note", (
+                    "This name has agent_run rows and no row in agent_manifest, so nothing "
+                    "describes what it claims, what it may write or whether it is allowed to "
+                    "run. `ingest-cli` is the expected one — it is the CLI worker, which "
+                    "claims leads under its own name and dispatches to whichever agent the "
+                    "lead's kind selects. A name here that is not the CLI is worth chasing.",
+                )),
+                Section("", "actions", (("Runs", "/runs", ""),)),
+            ),
+        })
+
+    enabled = sum(1 for r in out if r["state"] in ("working", "idle"))
+    return View(
+        key="fleet", title="Fleet",
+        blurb="No orchestrator. Each agent claims work by lease, acts, writes back, and "
+              "that write is what wakes the next one. Live from agent_manifest, "
+              "cross-referenced against the code that is actually deployed.",
+        stats=(("declared", str(len(manifests)), ""),
+               ("runnable", str(enabled), _bar(_pct(enabled, len(manifests) or 1))),
+               ("working", str(sum(1 for r in out if r["state"] == "working")), ""),
+               ("off", str(sum(1 for r in out if r["state"] == "off")), ""),
+               ("leads waiting", str(waiting["lead"]), "")),
+        cols=(Col("agent", "Agent", "b", "16%"), Col("state", "State", "chip", "12%"),
+              Col("leased", "Leased", "num", "7%"), Col("bar", "", "bar", "11%"),
+              Col("work", "Claims from", "mono", "14%"),
+              Col("scope", "Scope", "mono", "16%"), Col("rate", "1h", "num", "7%"),
+              Col("errors", "Err", "num", "6%")),
+        rows=tuple(out),
+        empty="No agents declared. Migration 010 seeds the manifest.",
+    )
+
+
+# ------------------------------------------------------------------ campaigns
+
+def campaigns(conn: psycopg.Connection, tenant_id: str) -> View:
+    """One track, one channel, one goal — and the funnel underneath it.
+
+    Every count here is derived from `thread` and `message` rather than stored on the
+    campaign. A denormalised counter would need maintaining in every transition and
+    would be wrong the first time one was missed, and this table is small enough that
+    counting is free. When it is not, the fix is a materialised view, not a column
+    somebody has to remember to increment.
+    """
+    rows = _rows(conn, """
+        SELECT c.id, c.name, c.channel, c.state, c.goal,
+               c.started_at, c.created_at,
+               p.name AS artist,
+               r.title AS track,
+               (SELECT count(*) FROM thread t WHERE t.campaign_id = c.id) AS threads,
+               (SELECT count(*) FROM thread t WHERE t.campaign_id = c.id
+                 AND t.state NOT IN ('closed_won','closed_lost','closed_no_reply')) AS open_threads,
+               (SELECT count(*) FROM thread t WHERE t.campaign_id = c.id
+                 AND t.state = 'awaiting_human') AS awaiting,
+               (SELECT count(*) FROM message m JOIN thread t ON t.id = m.thread_id
+                 WHERE t.campaign_id = c.id AND m.direction = 'outbound'
+                   AND m.sent_at IS NOT NULL) AS sent,
+               (SELECT count(*) FROM outbox o JOIN thread t ON t.id = o.thread_id
+                 WHERE t.campaign_id = c.id AND o.state = 'pending') AS queued,
+               (SELECT count(*) FROM message m JOIN thread t ON t.id = m.thread_id
+                 WHERE t.campaign_id = c.id AND m.direction = 'inbound') AS replied,
+               (SELECT count(*) FROM thread t WHERE t.campaign_id = c.id
+                 AND t.state IN ('agreed','delivered','verified','closed_won')) AS agreed,
+               (SELECT count(*) FROM thread t WHERE t.campaign_id = c.id
+                 AND t.state IN ('delivered','verified','closed_won')) AS delivered
+          FROM campaign c
+          JOIN party p ON p.id = c.party_id
+          LEFT JOIN recording r ON r.id = c.recording_id
+         WHERE c.tenant_id = %s
+         ORDER BY c.created_at DESC
+         LIMIT %s""", (tenant_id, LIMIT))
+
+    out = []
+    for r in rows:
+        threads, sent = int(r["threads"]), int(r["sent"])
+        out.append({
+            "id": str(r["id"]), "name": r["name"], "artist": r["artist"],
+            "channel": r["channel"], "state": r["state"],
+            "bar": _bar(_pct(int(r["agreed"]), threads or 1)),
+            "sent": str(sent), "replied": str(r["replied"]),
+            "agreed": str(r["agreed"]), "delivered": str(r["delivered"]),
+            "insp": (
+                Section("Campaign", "kv", (
+                    ("name", r["name"]), ("artist", r["artist"]),
+                    ("track", r["track"] or "— artist-level, no single recording"),
+                    ("channel", r["channel"]), ("goal", r["goal"] or "not stated"),
+                    ("state", r["state"]),
+                    ("started", _since(r["started_at"]) + " ago" if r["started_at"]
+                     else "not started — it opens no threads until it runs"),
+                    ("created", _since(r["created_at"]) + " ago"),
+                )),
+                Section("Funnel", "kv", (
+                    ("threads", str(threads)),
+                    ("open", str(r["open_threads"])),
+                    ("waiting on you", str(r["awaiting"])),
+                    ("queued to send", str(r["queued"])),
+                    ("sent", str(sent)),
+                    ("replies in", str(r["replied"])),
+                    ("agreed", str(r["agreed"])),
+                    ("delivered", str(r["delivered"])),
+                )),
+                Section("Note", "note", (
+                    "Sent counts messages the provider actually accepted, and nothing has a "
+                    "provider yet — so a campaign can be running, have drafts approved and "
+                    "queued, and still read zero sent. That gap is the send gate doing its "
+                    "job, not a stalled campaign.",
+                )) if r["queued"] and not sent else Section("", "note", ()),
+                Section("", "actions", (
+                    ("Threads", "/threads", ""),
+                    (("Pause", f"/campaigns/{r['id']}/state/paused", "", "post")
+                     if r["state"] == "running"
+                     else ("Run", f"/campaigns/{r['id']}/state/running", "p", "post")),
+                    ("Close", f"/campaigns/{r['id']}/state/done", "d", "post"),
+                )),
+            ),
+        })
+
+    running = sum(1 for r in rows if r["state"] == "running")
+    return View(
+        key="campaigns", title="Campaigns",
+        blurb="One track, one channel, one goal. Channels run in parallel because a "
+              "channel is a column rather than a code path. Live from campaign.",
+        stats=(("campaigns", str(len(out)), ""),
+               ("running", str(running), _bar(_pct(running, len(out) or 1))),
+               ("threads", str(sum(int(r["threads"]) for r in rows)), ""),
+               ("agreed", str(sum(int(r["agreed"]) for r in rows)), ""),
+               ("waiting on you", str(sum(int(r["awaiting"]) for r in rows)), "")),
+        cols=(Col("name", "Campaign", "b", "24%"), Col("artist", "Artist", "", "16%"),
+              Col("channel", "Channel", "chip", "10%"),
+              Col("state", "State", "chip", "12%"), Col("bar", "", "bar", "12%"),
+              Col("sent", "Sent", "num", "7%"), Col("replied", "Repl", "num", "7%"),
+              Col("agreed", "Agr", "num", "6%"), Col("delivered", "Deliv", "num", "6%")),
+        rows=tuple(out),
+        empty="No campaigns yet. A campaign is one artist, one channel and one goal — "
+              "start one from an artist, then it can open threads.",
+    )
+
+
+# -------------------------------------------------------------------- threads
+
+def threads(conn: psycopg.Connection, tenant_id: str) -> View:
+    """Every conversation and where it stands.
+
+    The `open` stat counts exactly the rows inside `one_open_thread_per_counterparty`,
+    which is what makes it more than a number: it is how many counterparties are
+    currently locked, and therefore how much of the shortlist is unavailable to any
+    other campaign.
+    """
+    rows = _rows(conn, """
+        SELECT t.id, t.state, t.reason, t.created_at, t.updated_at, t.closed_at,
+               t.owner_agent, t.lease_expires_at, t.attempts, t.last_error,
+               cp.name AS who, cp.contact_state,
+               c.name AS campaign, c.channel,
+               p.name AS artist, r.title AS track,
+               (SELECT count(*) FROM message m WHERE m.thread_id = t.id) AS messages,
+               (SELECT max(m.created_at) FROM message m WHERE m.thread_id = t.id) AS last_message,
+               (SELECT count(*) FROM outbox o WHERE o.thread_id = t.id
+                 AND o.state = 'pending') AS queued
+          FROM thread t
+          JOIN party cp ON cp.id = t.counterparty_id
+          JOIN campaign c ON c.id = t.campaign_id
+          JOIN party p ON p.id = c.party_id
+          LEFT JOIN recording r ON r.id = c.recording_id
+         WHERE t.tenant_id = %s
+         ORDER BY (t.state = 'awaiting_human') DESC, t.updated_at DESC
+         LIMIT %s""", (tenant_id, LIMIT))
+
+    # Where each state sits on the fourteen-step walk, so the bar reads as progress
+    # rather than as a second copy of the state chip.
+    order = ["discovered", "shortlisted", "approved", "drafted", "awaiting_human",
+             "queued", "sent", "awaiting_reply", "replied", "negotiating", "agreed",
+             "delivered", "verified"]
+
+    out = []
+    for r in rows:
+        state = r["state"]
+        progress = 100 if state == "closed_won" else (
+            0 if state in ("closed_lost", "closed_no_reply")
+            else _pct(order.index(state) + 1 if state in order else 0, len(order)))
+        out.append({
+            "id": str(r["id"]), "who": r["who"], "channel": r["channel"],
+            "artist": r["artist"], "track": r["track"] or "—",
+            "state": state, "bar": _bar(progress),
+            "age": _since(r["created_at"]), "last": _since(r["updated_at"]),
+            "insp": (
+                Section("Thread", "kv", (
+                    ("counterparty", r["who"]), ("campaign", r["campaign"]),
+                    ("artist", r["artist"]), ("track", r["track"] or "—"),
+                    ("channel", r["channel"]), ("state", state),
+                    ("why", r["reason"] or "no reason recorded"),
+                    ("opened", _since(r["created_at"]) + " ago"),
+                    ("last moved", _since(r["updated_at"]) + " ago"),
+                    ("closed", _since(r["closed_at"]) + " ago" if r["closed_at"] else "—"),
+                )),
+                Section("Lock", "kv", (
+                    ("holds the counterparty", "yes" if state not in
+                     ("closed_won", "closed_lost", "closed_no_reply") else "no — released"),
+                    ("contact_state", r["contact_state"]),
+                    ("leased by", r["owner_agent"] or "nobody"),
+                    ("lease expires", _since(r["lease_expires_at"]) if r["lease_expires_at"]
+                     else "—"),
+                    ("attempts", str(r["attempts"])),
+                    ("last error", r["last_error"] or "none"),
+                )),
+                Section("Traffic", "kv", (
+                    ("messages", str(r["messages"])),
+                    ("last message", _since(r["last_message"]) + " ago"
+                     if r["last_message"] else "none yet"),
+                    ("queued to send", str(r["queued"])),
+                )),
+                Section("Note", "note", (
+                    "While this thread is open the database refuses any other campaign a "
+                    "thread with the same counterparty — that is the partial unique index in "
+                    "§3c, not a check in application code. Closing it releases them.",
+                )),
+                # Closing is offered on every open thread and on no closed one, because
+                # `advance` would refuse the second and a button that only ever errors is
+                # worse than an absent one.
+                Section("", "actions", (
+                    (("Close won", f"/threads/{r['id']}/close/closed_won", "", "post"),
+                     ("Close lost", f"/threads/{r['id']}/close/closed_lost", "d", "post"),
+                     ("No reply", f"/threads/{r['id']}/close/closed_no_reply", "d", "post"))
+                    if state not in ("closed_won", "closed_lost", "closed_no_reply")
+                    else (("Campaigns", "/campaigns", ""),)
+                )),
+            ),
+        })
+
+    open_n = sum(1 for r in rows if r["state"] not in
+                 ("closed_won", "closed_lost", "closed_no_reply"))
+    return View(
+        key="threads", title="Threads",
+        blurb="Every conversation, and where it stands. One open thread per counterparty "
+              "across the whole label — enforced by the database, not by convention.",
+        stats=(("threads", str(len(out)), ""),
+               ("open", str(open_n), _bar(_pct(open_n, len(out) or 1))),
+               ("awaiting you", str(sum(1 for r in rows if r["state"] == "awaiting_human")), ""),
+               ("agreed", str(sum(1 for r in rows if r["state"] in
+                                  ("agreed", "delivered", "verified", "closed_won"))), ""),
+               ("closed", str(len(out) - open_n), "")),
+        cols=(Col("who", "Counterparty", "b", "20%"),
+              Col("channel", "Channel", "chip", "9%"), Col("artist", "Artist", "", "14%"),
+              Col("track", "Track", "", "12%"), Col("state", "State", "chip", "15%"),
+              Col("bar", "", "bar", "10%"), Col("age", "Age", "mono", "6%"),
+              Col("last", "Last", "mono", "8%")),
+        rows=tuple(out),
+        empty="No threads. A campaign opens one per counterparty it decides to approach, "
+              "and the database allows exactly one open thread per counterparty.",
+    )
+
+
+# ------------------------------------------------------------------ approvals
+
+def approvals(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]],
+                                                                 tuple[tuple[str, str, str], ...]]:
+    """The send gate: every draft sitting on `awaiting_human`, and what it drew on.
+
+    Returns cards rather than a `View` because this screen is a reading surface, not a
+    table — the whole argument for it is that you cannot judge a pitch from a row, and a
+    row is what a `View` renders.
+
+    The draft selected is the newest unsent outbound message on the thread. A rejected
+    draft stays in `message` and a redraft is a second row, so "newest" is what
+    distinguishes the current pitch from the history of what was refused.
+    """
+    rows = _rows(conn, """
+        SELECT t.id AS thread_id, t.state, t.updated_at,
+               m.id AS message_id, m.subject, m.body, m.created_at, m.channel,
+               m.idempotency_key,
+               cp.name AS who, c.name AS campaign, c.channel AS campaign_channel,
+               p.name AS artist, r.title AS track,
+               (SELECT count(*) FROM message x WHERE x.thread_id = t.id
+                 AND x.direction = 'outbound') AS drafts
+          FROM thread t
+          JOIN party cp ON cp.id = t.counterparty_id
+          JOIN campaign c ON c.id = t.campaign_id
+          JOIN party p ON p.id = c.party_id
+          LEFT JOIN recording r ON r.id = c.recording_id
+          JOIN LATERAL (
+                SELECT id, subject, body, created_at, channel, idempotency_key
+                  FROM message
+                 WHERE thread_id = t.id AND direction = 'outbound' AND sent_at IS NULL
+                 ORDER BY created_at DESC
+                 LIMIT 1) m ON true
+         WHERE t.tenant_id = %s AND t.state = 'awaiting_human'
+         ORDER BY m.created_at
+         LIMIT %s""", (tenant_id, LIMIT))
+
+    out = []
+    for r in rows:
+        # What the draft could have stood on. Shown as what exists rather than as what
+        # the drafter actually read, because nothing records the latter yet and claiming
+        # otherwise would be the drift failure this product is most exposed to.
+        # `status = 'live'` matters: a superseded fact is one the system has already
+        # replaced, and showing it as something a pitch stands on would be quoting a
+        # retracted claim back at the operator approving the send.
+        basis = _rows(conn, """
+            SELECT dimension, value_text, provenance, confidence
+              FROM party_fact
+             WHERE tenant_id = %s AND status = 'live' AND party_id = (
+                   SELECT c.party_id FROM campaign c
+                     JOIN thread t ON t.campaign_id = c.id WHERE t.id = %s)
+             ORDER BY confidence DESC NULLS LAST
+             LIMIT 6""", (tenant_id, r["thread_id"]))
+
+        out.append({
+            "id": str(r["message_id"]), "thread_id": str(r["thread_id"]),
+            "who": r["who"], "channel": r["campaign_channel"],
+            "artist": r["artist"], "track": r["track"] or "—",
+            "waiting": _since(r["created_at"]),
+            "subject": r["subject"] or "(no subject)",
+            "body": r["body"],
+            "insp": (
+                Section("Draft", "kv", (
+                    ("counterparty", r["who"]), ("campaign", r["campaign"]),
+                    ("artist", r["artist"]), ("track", r["track"] or "—"),
+                    ("channel", r["channel"]), ("state", r["state"]),
+                    ("written", _since(r["created_at"]) + " ago"),
+                    ("draft", f"{r['drafts']} on this thread"),
+                    ("idempotency key", r["idempotency_key"][:28] + "…"),
+                )),
+                Section("What it could stand on", "chain", tuple(
+                    (0, "fact",
+                     f"{b['dimension']} = {b['value_text']} · {b['provenance']}",
+                     "party_fact" + (f" · {b['confidence']:.2f}"
+                                     if b["confidence"] is not None else " · no confidence"))
+                    for b in basis) or ((0, "fact", "nothing recorded for this artist",
+                                         "party_fact"),)),
+                Section("Checks", "kv", (
+                    ("open thread elsewhere", "none — the index guarantees it"),
+                    ("approved by", "nobody yet"),
+                    ("what approving does", "writes the outbox row, moves the thread to "
+                                            "queued, and sends nothing"),
+                )),
+                Section("Note", "note", (
+                    "Approving prepares the send in one transaction — the message is stamped, "
+                    "the outbox row is written, the thread moves. Nothing claims the outbox, "
+                    "so no mail leaves. That is the honest state of this build and it is "
+                    "visible here rather than behind a button that pretends.",
+                )),
+                Section("", "actions", (
+                    ("Approve", f"/approvals/{r['message_id']}/approve", "p", "post"),
+                    ("Reject", f"/approvals/{r['message_id']}/reject", "d", "post"),
+                    ("Thread", f"/threads?sel={r['thread_id']}", ""),
+                )),
+            ),
+        })
+
+    oldest = _since(rows[0]["created_at"]) if rows else "—"
+    queued = _one(conn, "SELECT count(*) AS n FROM outbox WHERE tenant_id = %s "
+                        "AND state = 'pending'", (tenant_id,)).get("n", 0)
+    stats = (("waiting", str(len(out)), ""),
+             ("oldest", oldest, ""),
+             ("queued, unsent", str(queued), ""),
+             ("sender", "not wired", ""),
+             ("sends today", "0", ""))
+    return out, stats
+
+
+# ---------------------------------------------------------------------- inbox
+
+#: How a classified intent reads on the card, and what it implies. Kept as a table
+#: because the classifier writes the left column and a person reads the right one, and
+#: the mapping is a product decision rather than a model output.
+_INTENT_LABEL = {
+    "interested":    ("interested", "needs you"),
+    "declined":      ("declined", "handled"),
+    "question":      ("asked a question", "needs you"),
+    "out_of_office": ("out of office", "handled"),
+    "unsubscribe":   ("asked to stop", "needs you"),
+    "bounce":        ("bounced", "needs you"),
+    "unclear":       ("unclear", "needs you"),
+    "":              ("unclassified", "needs you"),
+}
+
+
+def inbox(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]],
+                                                             tuple[tuple[str, str, str], ...]]:
+    """Replies, newest first.
+
+    **Nothing writes inbound messages yet.** There is no mail provider and no inbound
+    adapter, so this reads a real table that is legitimately empty, and the empty state
+    says so. That is a better answer than a fixture: an operator who sees three invented
+    replies has no way to learn that the integration is missing.
+
+    `outreach.record_reply` is the writer, and it works — the tests drive it. What is
+    absent is the thing that would call it.
+    """
+    rows = _rows(conn, """
+        SELECT m.id, m.subject, m.body, m.intent, m.confidence, m.received_at,
+               m.channel, m.thread_id,
+               t.state AS thread_state,
+               cp.name AS who, p.name AS artist, c.name AS campaign
+          FROM message m
+          JOIN thread t ON t.id = m.thread_id
+          JOIN party cp ON cp.id = t.counterparty_id
+          JOIN campaign c ON c.id = t.campaign_id
+          JOIN party p ON p.id = c.party_id
+         WHERE m.tenant_id = %s AND m.direction = 'inbound'
+         ORDER BY m.received_at DESC
+         LIMIT %s""", (tenant_id, LIMIT))
+
+    out = []
+    for r in rows:
+        label, state = _INTENT_LABEL.get(r["intent"], ("unclassified", "needs you"))
+        body = (r["body"] or "").strip()
+        out.append({
+            "id": str(r["id"]), "thread_id": str(r["thread_id"]),
+            "who": r["who"], "artist": r["artist"], "intent": label, "state": state,
+            "when": _since(r["received_at"]) + " ago",
+            "preview": body[:180] + ("…" if len(body) > 180 else ""),
+            "insp": (
+                Section("Message", "kv", (
+                    ("from", r["who"]), ("artist", r["artist"]),
+                    ("campaign", r["campaign"]), ("channel", r["channel"]),
+                    ("received", _since(r["received_at"]) + " ago"),
+                    ("classified", label),
+                    ("confidence", f"{r['confidence']:.2f}" if r["confidence"]
+                     else "— not classified"),
+                    ("thread state", r["thread_state"]),
+                )),
+                Section("Full reply", "quote", (body or "(empty)",)),
+                Section("", "actions", (
+                    ("Open thread", f"/threads?sel={r['thread_id']}", ""),)),
+            ),
+        })
+
+    needs = sum(1 for r in out if r["state"] == "needs you")
+    stats = (("replies", str(len(out)), ""),
+             ("needs you", str(needs), _bar(_pct(needs, len(out) or 1))),
+             ("classified", str(sum(1 for r in rows if r["intent"])), ""),
+             ("inbound adapter", "not wired", ""),
+             ("threads awaiting reply",
+              str(_one(conn, "SELECT count(*) AS n FROM thread WHERE tenant_id = %s "
+                             "AND state = 'awaiting_reply'", (tenant_id,)).get("n", 0)), ""))
+    return out, stats
+
+
+# ---------------------------------------------- creating outreach by hand
+#
+# A live view of a table nobody can fill is not a built screen — it is a wireframe with
+# a real query behind it. These are the surfaces that let an operator produce the rows,
+# so the whole loop (campaign → threads → draft → gate → queued) runs without SQL.
+#
+# The drafter, the sender and the inbox agents would each remove one of these. Until
+# they exist the operator is the fleet, which is the correct order: the screen that
+# governs an agent should work before the agent does, or there is nothing to govern it
+# with on the day it turns on.
+
+#: `campaign.campaign_channel_known`. Duplicated from the CHECK on purpose — the closed
+#: set has to be readable without a connection, and the constraint is what enforces it.
+CHANNELS: tuple[tuple[str, str], ...] = (
+    ("curator", "Curator — playlists and programmers"),
+    ("ugc", "UGC — creators and short video"),
+    ("press", "Press — writers and outlets"),
+    ("radio", "Radio — stations and shows"),
+    ("sync", "Sync — supervisors and libraries"),
+)
+
+
+def new_campaign_sections(conn: psycopg.Connection, tenant_id: str, *,
+                          form: dict[str, str] | None = None,
+                          error: str = "") -> tuple[Section, ...]:
+    """The inspector at `?sel=new`, offering only what exists.
+
+    The artist select is the live roster and the recording select is the live catalogue,
+    so a campaign cannot be created against something that is not there. That is worth
+    more than a free-text field here: the whole value of a campaign row is the join it
+    carries, and a typo'd name would produce a campaign that joins to nothing and
+    renders as blank columns.
+    """
+    form = form or {}
+    artists = _rows(conn, """
+        SELECT id, name FROM party
+         WHERE tenant_id = %s AND party_class = 'roster' AND status = 'active'
+         ORDER BY name""", (tenant_id,))
+    recordings = _rows(conn, """
+        SELECT id, title FROM recording WHERE tenant_id = %s ORDER BY title""",
+        (tenant_id,))
+
+    if not artists:
+        return (
+            Section("No artists", "note", (
+                "A campaign belongs to an artist and the roster is empty. Add one from "
+                "Artists first — the campaign has nowhere to hang otherwise.",)),
+            Section("", "actions", (("Artists", "/artists", "p"),)),
+        )
+
+    return (
+        Section("New campaign", "form", (
+            Field("name", "Name", "text", form.get("name", ""), required=True,
+                  placeholder="Cold Open — curators",
+                  hint="What you will recognise it by in a list of thirty."),
+            Field("party_id", "Artist", "select", form.get("party_id", ""),
+                  _flat(tuple((str(a["id"]), a["name"]) for a in artists)),
+                  hint="Lessons accumulate on the artist and are inherited by every "
+                       "release, which is why the campaign hangs here."),
+            Field("recording_id", "Recording", "select", form.get("recording_id", ""),
+                  _flat((("", "— none: an artist-level push"),)
+                        + tuple((str(r["id"]), r["title"]) for r in recordings)),
+                  hint="Optional. A profile feature or a residency announcement is a "
+                       "real campaign with no single recording behind it."),
+            Field("channel", "Channel", "select", form.get("channel", "curator"),
+                  _flat(CHANNELS),
+                  hint="Channels run in parallel because a channel is a column rather "
+                       "than a code path."),
+            Field("goal", "Goal", "text", form.get("goal", ""),
+                  placeholder="playlist adds on editorial-adjacent lists",
+                  hint="Free text. Read by a person, not parsed."),
+        ), action="/campaigns", submit="Create campaign", error=error),
+        Section("", "actions", (("Cancel", "/campaigns", ""),)),
+        Section("What happens next", "note", (
+            "It is created in `draft` and opens no threads. Running it is a second, "
+            "deliberate act — the same shape as the send gate, one step earlier.",
+        )),
+    )
+
+
+def shortlist_candidates(conn: psycopg.Connection, tenant_id: str,
+                         limit: int = 25) -> list[dict[str, Any]]:
+    """Counterparties this campaign could open a thread with.
+
+    `contact_state = 'contactable'` is the whole filter, and it is the denormalised
+    mirror of the partial unique index — so this returns exactly the people no other
+    campaign is currently talking to. Migration 009 argued that column into existence
+    for the accelerated vector search; it earns its keep again here, in plain SQL, for
+    the same reason.
+
+    Ordered by whether they can be searched at all, because a counterparty with no
+    embedding is invisible to R1 and is therefore the one a human most needs to see.
+    """
+    return _rows(conn, """
+        SELECT p.id, p.name, p.contact_state,
+               (p.profile_embedding IS NOT NULL) AS searchable,
+               (SELECT string_agg(r.role, ', ') FROM party_role r
+                 WHERE r.party_id = p.id) AS roles
+          FROM party p
+         WHERE p.tenant_id = %s AND p.party_class = 'counterparty'
+           AND p.contact_state = 'contactable'
+         ORDER BY (p.profile_embedding IS NOT NULL) DESC, p.name
+         LIMIT %s""", (tenant_id, limit))
+
+
+def draft_form_section(thread_id: str, *, form: dict[str, str] | None = None,
+                       error: str = "") -> Section:
+    """Write the pitch by hand, in the inspector, on the thread it belongs to.
+
+    This is the Drafter's job done by a person. It writes the same `message` row the
+    agent would, moves the thread through the same states, and lands on the same gate —
+    so the approvals screen is exercised by real drafts rather than by a fixture, and
+    the day the Drafter is written it replaces this and nothing downstream changes.
+    """
+    form = form or {}
+    return Section("Write the pitch", "form", (
+        Field("subject", "Subject", "text", form.get("subject", ""), required=True,
+              placeholder="Cold Open — thought it might suit the list"),
+        Field("body", "Body", "textarea", form.get("body", ""), required=True,
+              placeholder="Short, specific, and easy to say no to.",
+              hint="Goes to the approvals screen, not to anybody. Approving queues it; "
+                   "nothing sends it."),
+    ), action=f"/threads/{thread_id}/draft", submit="Save draft", error=error)

@@ -11,11 +11,9 @@
 
 {% block stats %}
   <div class="stats">
-    <div class="stat">unhandled<b>1</b></div>
-    <div class="stat">reply rate<b>19%</b><i>████░░░░░░</i></div>
-    <div class="stat">agreed<b>12</b></div>
-    <div class="stat">declined<b>6</b></div>
-    <div class="stat">suppressed<b>1</b></div>
+    {% for label, value, extra in stats %}
+      <div class="stat">{{ label }}<b>{{ value }}</b>{% if extra %}<i>{{ extra }}</i>{% endif %}</div>
+    {% endfor %}
   </div>
 {% endblock %}
 
@@ -38,12 +36,19 @@
         <p class="meta">{{ sel.artist }} · {{ sel.intent }} · {{ sel.when }}</p>
         <div class="body">{{ sel.preview }}</div>
         <div class="acts" style="padding-left:0; margin-top:1.1rem">
-          <button type="button" class="b p">Draft reply</button>
-          <button type="button" class="b">Open thread</button>
-          <button type="button" class="b">Mark handled</button>
+          <a class="b p" href="/threads?sel={{ sel.thread_id }}">Open thread</a>
         </div>
       {% else %}
-        <div class="empty">Nothing to read.</div>
+        {# The honest empty state. `message` is a real table and this query is real; what
+           is missing is the thing that would write an inbound row. Saying so beats three
+           invented replies, which would leave an operator with no way to discover that
+           the integration does not exist. #}
+        <div class="empty">
+          {% if messages %}Pick a reply to read it.
+          {% else %}No replies. `message` is real and this query is real — what is missing
+          is an inbound adapter to write rows into it. Nothing here is a fixture standing
+          in for one.{% endif %}
+        </div>
       {% endif %}
     </div>
   </div>

@@ -16,6 +16,9 @@
 {% endblock %}
 
 {% block centre %}
+  {# A refused write comes back above the table the operator was already looking at,
+     with their selection intact. An error page would cost them the row. #}
+  {% if error %}<p class="ederr" style="margin:0 .9rem .6rem">{{ error }}</p>{% endif %}
   <div class="scroll">
     <table>
       <thead>

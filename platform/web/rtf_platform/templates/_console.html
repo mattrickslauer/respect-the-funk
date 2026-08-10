@@ -220,12 +220,20 @@
       display:block; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
       color:var(--faint); margin-bottom:.15rem;
     }
-    .edf input, .edf select {
+    .edf input, .edf select, .edf textarea {
       width:100%; font:inherit; font-size:11.5px; padding:.28rem .4rem;
       border:1px solid var(--line2); border-radius:var(--r);
       background:var(--bg); color:var(--ink);
     }
-    .edf input:focus, .edf select:focus { outline:2px solid var(--selink); outline-offset:-1px; }
+    /* Prose, so it gets the reading face and room rather than the control face. The
+       pitch is judged on how it reads, and a body squeezed into a control-sized box
+       is judged on something else. */
+    .edf textarea {
+      font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+      font-size:12px; line-height:1.55;
+      resize:vertical; min-height:7rem;
+    }
+    .edf input:focus, .edf select:focus, .edf textarea:focus { outline:2px solid var(--selink); outline-offset:-1px; }
     .edh { display:block; font-size:10px; color:var(--faint); margin-top:.15rem; line-height:1.4; }
     .ederr {
       font-size:11px; color:var(--err); border:1px solid var(--err); border-radius:var(--r);

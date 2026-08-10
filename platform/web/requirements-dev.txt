@@ -1,7 +1,16 @@
 # Everything in the deployed function, plus a server to run it locally.
 # uvicorn is deliberately not in requirements.txt: Lambda invokes the ASGI app
 # through Mangum and never runs a server, so shipping one only grows the bundle.
+#
+# boto3 is here for the same reason and not the same one. It IS used by the deployed
+# function — `storage.py` signs S3 upload URLs with it — but AWS ships the SDK inside
+# the Python managed runtimes, so vendoring it would add ~90MB of botocore service JSON
+# to a bundle whose whole design is a small zip, to shadow a copy that is already there.
+# A laptop has no such copy, hence this line. The consequence is stated in storage.py:
+# the deployed version is whatever the runtime provides and is therefore the one pin in
+# this project that is not ours to make.
 
 -r requirements.txt
 
 uvicorn[standard]==0.41.0
+boto3==1.43.68

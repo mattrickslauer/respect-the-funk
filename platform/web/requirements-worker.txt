@@ -20,3 +20,8 @@
 -r requirements.txt
 
 numpy==2.5.2
+
+# A worker fetches masters from S3 with a presigned URL it signs itself, so unlike the
+# console it is not running inside a Lambda with the SDK already present. See
+# `requirements-dev.txt` for why this is absent from `requirements.txt`.
+boto3==1.43.68

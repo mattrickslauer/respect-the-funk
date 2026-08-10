@@ -539,13 +539,25 @@ def _safe_back(back: str, fallback: str = "/") -> str:
 @router.post("/suggestions/{suggestion_id}/accept")
 def suggestion_accept(principal: Operator, suggestion_id: str,
                       back: str = "/") -> Response:
-    """Confirm a match. Writes the surface and queues the mapping in one transaction."""
+    """Confirm a match. Writes the surface and queues the mapping in one transaction.
+
+    `repo.SuggestionUnacceptable` — a payload `harvested.Presence.parse` rejects, or
+    a suggestion `kind` with no accept path — becomes a `400` naming the reason,
+    the same idiom every other rejected write in this file uses (see
+    `artists_create`/`artists_update`). The alternative is not raising and instead
+    quietly doing nothing: this endpoint has no page of its own to re-render with
+    an inline error, but a silent no-op on a broken accept is worse than a plain
+    `400` — an operator clicking Accept needs to know it did not work and why.
+    """
     _require_write(principal)
     conn = _conn()
     tenant_id = _tenant_id(conn)
     if tenant_id is not None:
-        repo.accept_suggestion(conn, tenant_id, suggestion_id,
-                               by=principal.subject or "operator")
+        try:
+            repo.accept_suggestion(conn, tenant_id, suggestion_id,
+                                   by=principal.subject or "operator")
+        except repo.SuggestionUnacceptable as exc:
+            raise HTTPException(status_code=400, detail=exc.reason) from exc
     return RedirectResponse(_safe_back(back), status_code=303)
 
 

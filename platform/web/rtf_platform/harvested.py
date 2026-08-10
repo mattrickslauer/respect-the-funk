@@ -14,15 +14,27 @@ carries one. This module is where that discipline is enforced rather than hoped 
 Each item an adapter can emit gets a frozen dataclass and a `parse(raw, *, adapter)`
 classmethod that:
 
-  * requires every field the database requires, raising `HarvestInvalid(adapter,
-    field, raw)` — naming the adapter and the field — when one is absent;
+  * requires every identity field (`kind`/`value`, `dimension`/`value_text`,
+    `metric`/`value`, `platform`) and every trust-class label (`provenance`,
+    `unit`, `release_type`, `mode`) — the fields a caller cannot safely guess on
+    the adapter's behalf — raising `HarvestInvalid(adapter, field, raw)`, naming
+    the adapter and the field, when one is absent. This is **not** the same claim
+    as "every `NOT NULL` column". `recording.title` and `release.title` are `NOT
+    NULL` in the schema, but a blank title is a real "the platform gave nothing"
+    answer, not a missing label — `Recording`/`Release.parse` accept `""` there,
+    and the write side skips a blank title, exactly as it always has;
   * never defaults a label. `provenance`, `unit`, `release_type` and `mode` are
     required on every item that carries one. An adapter that cannot say what it
     measured has produced an item this system cannot store, and `parse` raises
     rather than guess on the adapter's behalf;
-  * validates `provenance` (and `mode`, for a `Presence`) against the values the
-    schema's own `CHECK` constraints allow, so an illegal label fails here rather
-    than at the `INSERT`.
+  * validates `provenance` against the three values `fact_provenance`,
+    `identifier_provenance` and `presence_match` — the schema's own `CHECK`
+    constraints — allow. `mode` is validated too, but only at this application
+    level, against `domain.ProfileMode`'s three values: `presence.mode` carries
+    **no `CHECK` constraint in the schema today**, so an illegal `mode` fails here
+    or nowhere — this module is the only guard, not a belt-and-braces one.
+    `release_type` is required to be non-empty but is **not** validated against a
+    fixed set of values — see `Release`'s own docstring for why.
 
 Why a dataclass and not a validated dict: a validated dict is still a dict at the
 next call site, and the next author will `.get()` it anyway. These are types — once
@@ -82,9 +94,12 @@ def _provenance(raw: dict[str, Any], *, adapter: str) -> str:
 
 @dataclass(frozen=True)
 class Identifier:
-    """One row of `party_identifier`. `value_raw` is the one field allowed to fall
-    back — to `value` itself, which is not a guess: an identifier with no distinct
-    raw spelling to keep is honestly represented by repeating the canonical one."""
+    """One row of `party_identifier`. `value_raw` is the one field on *this* class
+    allowed to fall back — to `value` itself, which is not a guess: an identifier
+    with no distinct raw spelling to keep is honestly represented by repeating the
+    canonical one. (`Release.gtin`/`release_date` and `Presence.handle`/
+    `profile_url` fall back too, for the same reason — real, optional data with no
+    trust class of its own, not a label being guessed.)"""
 
     kind: str
     value: str
@@ -176,10 +191,16 @@ class Recording:
 
 @dataclass(frozen=True)
 class Release:
-    """One row of `release`. `release_type` is a label exactly like `provenance`:
-    `single`/`album`/`ep` decides how the catalogue reads, and a release the
-    adapter could not classify is not honestly a single by default — it is a
-    release this system cannot store yet."""
+    """One row of `release`. `release_type` is required for the same reason
+    `provenance` is: a release the adapter could not classify is not honestly a
+    single by default — it is a release this system cannot store yet.
+
+    Unlike `provenance`/`mode`, `release_type` is **not** validated against a
+    fixed set of values here. Real distributors disagree on their own vocabulary
+    — Spotify's `album`/`single`/`compilation`/`appears_on` vs. Deezer's
+    `album`/`single`/`ep`/`compile` — and enumerating one distributor's spelling
+    as canonical would reject another's honest, real answer. The requirement is
+    only that the adapter says *something*, not that it says one of a closed list."""
 
     title: str
     release_type: str

@@ -100,6 +100,15 @@ class Format:
     delimiter: str
     required: frozenset[str]
     columns: dict[str, str]
+    #: What `earnings` is denominated in when the file carries no per-row currency
+    #: column of its own — required, not defaulted. DistroKid's BANK breakdown has
+    #: no currency column at all, but its own file names the one it exports
+    #: (`Earnings (USD)`): that is the format stating its currency explicitly, the
+    #: same way an adapter states `release_type` — not this reader guessing `"USD"`
+    #: for any format that happens not to map one. A format whose export can carry
+    #: more than one currency should map a real `"currency"` column in `columns`
+    #: instead; `read()` prefers a per-row value over this when one is present.
+    currency: str
     #: Per-field converters, applied to the raw cell. Anything absent falls through
     #: to the default for that field.
     convert: dict[str, Callable[[str], object]] = field(default_factory=dict)
@@ -229,6 +238,10 @@ def read(text: str, fmt: Format) -> Iterator[StatementLine]:
             period_end=end,
             quantity=_to_int(cell(row, "quantity")),
             earnings=_to_money(cell(row, "earnings")),
-            currency=(cell(row, "currency") or "USD").upper()[:3],
+            # A per-row column wins when the format maps one; otherwise this is
+            # `fmt.currency` — the format's own stated denomination, not a guess
+            # made here. `fmt.currency` is a required field, so there is no third,
+            # unlabelled case.
+            currency=(cell(row, "currency") or fmt.currency).upper()[:3],
             row_number=number,
         )

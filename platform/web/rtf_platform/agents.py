@@ -368,9 +368,16 @@ def _write_map_source(conn: psycopg.Connection, lead: dict[str, Any], gate: spen
             )
 
         for raw in harvest.releases:
-            rel = harvested.Release.parse(raw, adapter=platform)
-            if not rel.title:
+            # A blank title is skipped before it ever reaches `Release.parse`, the
+            # same order `Recording` already uses — a release the platform
+            # returned with no title is junk to drop, not a reason to demand
+            # `release_type` from an item that was never going to be written
+            # anyway. Checked here rather than in `harvested.py` because whether
+            # a blank title is "nothing to store" or "something to reject" is a
+            # write-side decision, not the parser's to make.
+            if not (raw.get("title") or "").strip():
                 continue
+            rel = harvested.Release.parse(raw, adapter=platform)
             released_on = rel.release_date[:10] or None
 
             # A GTIN is the release's real identity and the table has a unique index

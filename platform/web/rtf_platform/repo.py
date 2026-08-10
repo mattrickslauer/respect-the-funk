@@ -268,6 +268,31 @@ def upsert_presence(
 
 # ------------------------------------------------------------------ suggestions
 
+class SuggestionUnacceptable(ValueError):
+    """A suggestion cannot be promoted as it stands. Raised rather than defaulting
+    the missing field (that is the exact bug this replaced) and rather than letting
+    `harvested.HarvestInvalid` — an internal parsing detail — reach the console as
+    an unhandled 500. Carries `suggestion_id` and an operator-readable `reason`, so
+    the route that catches this has a message worth showing rather than a stack
+    trace.
+
+    Two things raise it: a suggestion `kind` this function has no accept path for
+    (only `presence` is handled today — a future `merge`-kind suggestion from the
+    lessons plan must not be blindly parsed as a `Presence` and fail on fields it
+    was never going to carry), and a `presence`-kind suggestion whose payload
+    predates a field `Presence.parse` now requires — measured on the live cluster
+    at the time this was written: 0 of 8 existing `suggestion` rows carry a `mode`
+    key, because they were written before `mode` became required. None were
+    `pending`, so nothing was actively broken, but the next one written by an
+    out-of-date adapter, or read back after a schema change, would have been.
+    """
+
+    def __init__(self, suggestion_id: str, reason: str) -> None:
+        self.suggestion_id = suggestion_id
+        self.reason = reason
+        super().__init__(f"suggestion {suggestion_id}: {reason}")
+
+
 def accept_suggestion(conn: psycopg.Connection, tenant_id: str,
                       suggestion_id: str, *, by: str = "operator") -> bool:
     """Promote an inferred match to an asserted surface, and queue the mapping.
@@ -284,6 +309,13 @@ def accept_suggestion(conn: psycopg.Connection, tenant_id: str,
     suggestion that never said so is the same defect class as inventing `measured`
     for a fact an adapter never labelled. The adapter that wrote the suggestion is
     the only thing that knows what accepting it means, so it says so in the payload.
+
+    Only `kind == 'presence'` is handled — every suggestion this codebase writes
+    today. Any other kind, and a `presence`-kind payload that fails to parse (an
+    old row written before a field became required, most likely `mode`), raises
+    `SuggestionUnacceptable` rather than either defaulting the missing field or
+    letting the parser's `HarvestInvalid` reach the caller as an unhandled
+    exception — see that class's docstring.
 
     One transaction, and `upsert_presence` runs inside it — so accepting also writes the
     `map_source` lead, and there is no window where a surface exists that nothing has
@@ -306,11 +338,24 @@ def accept_suggestion(conn: psycopg.Connection, tenant_id: str,
                 return False
 
             payload = row["payload"] or {}
+            kind = payload.get("kind", "")
+            if kind != "presence":
+                raise SuggestionUnacceptable(
+                    suggestion_id,
+                    f"a {kind or 'unlabelled'} suggestion has no accept path yet")
+
             platform = payload.get("platform", "")
             if not platform:
                 return False
 
-            presence = harvested.Presence.parse(payload, adapter=platform)
+            try:
+                presence = harvested.Presence.parse(payload, adapter=platform)
+            except harvested.HarvestInvalid as exc:
+                raise SuggestionUnacceptable(
+                    suggestion_id,
+                    f"this suggestion is missing {exc.field!r} and cannot be "
+                    "accepted automatically — it was written before that field "
+                    "became required") from exc
 
             upsert_presence(
                 conn, tenant_id, str(row["party_id"]),

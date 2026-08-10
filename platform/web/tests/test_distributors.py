@@ -173,6 +173,29 @@ class Degradation(unittest.TestCase):
         self.assertIsNone(lines[0].period_start)
 
 
+class Currency(unittest.TestCase):
+    """DistroKid's BANK breakdown has no currency column at all — every line used
+    to be silently stamped `"USD"` by the reader, the same defect class as `unit`
+    defaulting to `"count"`. Fixed by making `Format.currency` a required field the
+    format states explicitly (DistroKid's own header names it: `Earnings (USD)`),
+    with a real per-row `"currency"` column, when a format maps one, taking
+    priority."""
+
+    def test_a_format_with_no_currency_column_reports_its_own_stated_currency(self) -> None:
+        _, lines = distributors.parse(dk(ROW_A))
+        self.assertEqual(lines[0].currency, "USD")
+        self.assertEqual(CURRENT.currency, "USD")
+
+    def test_currency_is_a_required_field_not_a_default(self) -> None:
+        # `Format` has no fallback for `currency` — omitting it is a TypeError at
+        # construction, the same way a `Format` with no `key` would be.
+        with self.assertRaises(TypeError):
+            base.Format(  # type: ignore[call-arg]
+                key="x", distributor="x", label="x", delimiter="\t",
+                required=frozenset(), columns={},
+            )
+
+
 class Helpers(unittest.TestCase):
     def test_month_bounds_handles_december(self) -> None:
         self.assertEqual(base.month_bounds(date(2026, 12, 9)),

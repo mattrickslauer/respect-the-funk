@@ -277,7 +277,8 @@ def claim(conn: psycopg.Connection, tenant_id: str, agent_name: str, *,
                    lease_token = gen_random_uuid(),
                    lease_expires_at = now() + (%(lease)s || ' seconds')::INTERVAL,
                    updated_at = now()
-             WHERE id IN (
+             WHERE tenant_id = %(tenant)s
+               AND id IN (
                    SELECT id FROM lead
                     WHERE tenant_id = %(tenant)s
                       AND state = 'pending'

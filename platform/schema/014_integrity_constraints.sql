@@ -60,10 +60,36 @@ ALTER TABLE lesson ADD CONSTRAINT lesson_no_self_supersede
 -- asked for that, and it is not this migration's call to make unattended on a shared,
 -- live cluster. So, matching the precedent migration `009` already set for this same
 -- situation (`party_embedding_has_a_model ... NOT VALID`): the constraint is added
--- `NOT VALID`, which enforces it on every write from this point forward and does not
--- touch, check, or block on the 18 rows already there. They stay exactly as they are —
--- readable, unflagged by `VALIDATE CONSTRAINT`, a cleanup for whoever owns that decision
--- — until someone deliberately backfills or retires them.
+-- `NOT VALID`. What that precisely buys, verified against this cluster rather than
+-- assumed:
+--
+--   * The `ALTER TABLE` itself does not scan or touch the 18 rows — confirmed: it ran
+--     in under a second against a table it would otherwise have had to reject.
+--   * Every `INSERT`, and every `UPDATE` that assigns `mode` a value — including
+--     re-asserting the same illegal one — is checked from this point on, on every row,
+--     grandfathered or not. Verified: `UPDATE presence SET mode = 'observed' WHERE id =
+--     <one of the 18>` now fails `CheckViolation`.
+--   * An `UPDATE` that does **not** touch `mode` is *not* re-checked, even against a
+--     row already violating the constraint — CockroachDB does not re-validate a
+--     `NOT VALID` CHECK for columns absent from the `SET` list. Verified directly
+--     against five of the 18 rows, using `_write_map_source`'s own statement shape
+--     (`UPDATE presence SET checked_at = now(), state = 'present' WHERE tenant_id = %s
+--     AND subject_kind = 'party' AND subject_id = %s AND platform = %s`): it succeeds
+--     on all five. So the probe reconciler's own write path — the thing that runs
+--     against these rows the most — is not newly broken by this migration for any of
+--     the 18, contrary to what the shape of the situation might suggest.
+--   * `ALTER TABLE presence VALIDATE CONSTRAINT presence_mode_known` **does** fail
+--     against the 18 — verified: it raises `CheckViolation` naming the first offending
+--     row and leaves the constraint exactly as `NOT VALID` as before the attempt (a
+--     failed `VALIDATE CONSTRAINT` is transactional; nothing about the schema or the
+--     data changes). That is the tool that would flag them, on demand, whenever
+--     somebody is ready to look — not a passive state they already sit in.
+--
+-- They stay exactly as they are — readable, not coerced, a cleanup for whoever owns
+-- that decision — until someone deliberately backfills or retires them. See `015_
+-- backfill_observed_mode.sql`, written alongside this migration and **not applied**:
+-- it updates the 18 rows and then runs `VALIDATE CONSTRAINT`, so the grandfathering can
+-- end in one command whenever that call gets made, rather than lingering by default.
 --
 -- The write that produced all 18 (`agents._write_find_counterparties`) is fixed in the
 -- same commit as this migration to write `'owned'` instead: the party discovered is the

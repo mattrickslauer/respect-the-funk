@@ -1,5 +1,6 @@
 """A lint expressed as a test: every SQL statement against a tenant-scoped table must
-carry a `tenant_id` predicate somewhere in it.
+carry a `tenant_id` equality predicate — in a `WHERE`/`ON`/column-list position, not
+merely as a substring of the statement.
 
 Three lookups in `agents.py` and `agents.retrieve()`'s scalar subqueries used to fetch
 by bare `id`, with no `tenant_id` predicate at all. Two auditors had already reported
@@ -34,13 +35,46 @@ substring search would have missed exactly the bug this test exists to catch, be
 the sibling clause's `tenant_id` would have "covered" for the subquery's lack of one.
 Splitting into units is what makes the two independently checkable.
 
-For each unit, if it references a tenant-scoped table (`FROM`/`INTO`/`UPDATE`/`JOIN
-<table>`, matched with a word boundary so `party` cannot match inside `party_fact`) and
-does not contain the substring `tenant_id` anywhere in that unit, it fails — unless the
+For each unit, every reference to a tenant-scoped table (`FROM`/`INTO`/`UPDATE`/`JOIN
+<table>`, matched with a word boundary so `party` cannot match inside `party_fact`) is
+checked in the **zone that actually governs it**, not the unit as a whole:
+
+  * a `JOIN <table> ON ...` reference is checked in its own `ON ...` clause — the text
+    from right after the table name up to the next `JOIN`/`WHERE`/`GROUP BY`/`ORDER
+    BY`/`LIMIT`/`RETURNING`/`HAVING`/`FOR UPDATE`/`ON CONFLICT`;
+  * a primary `FROM`/`UPDATE` table is checked in the statement's own `WHERE` clause
+    (from `WHERE` to the next such boundary; no `WHERE` at all is an automatic
+    violation);
+  * an `INSERT INTO <table> (...)` is checked in its own column list (from the table
+    name to `VALUES`).
+
+**This is the fix for the exact hole this test shipped with the first time**: an
+earlier version of this check looked for the substring `tenant_id` anywhere in a unit,
+which a plain `SELECT id, tenant_id, ... FROM party_document WHERE id = %s` satisfies
+by having `tenant_id` in its *select list* — one of the three lookups this test exists
+to catch would have sailed through it. The zone-based check above only credits
+`tenant_id` where it functions as a predicate. It also catches a second blind spot the
+substring version had: `JOIN other_tenant_table ON x = y` with no `tenant_id` in that
+`ON` clause used to pass whenever the *outer* statement had an unrelated `WHERE
+tenant_id = %s` elsewhere — satisfying the substring test while leaving that specific
+join to scan across every tenant's rows of the joined table. Splitting into per-subquery
+units (below) and now per-reference zones (above) is what makes each reference
+independently checkable rather than any one of them able to borrow scoping it does not
+carry.
+
+A statement is split into independently-checked **units** first: the statement's own
+text with every parenthesized `(SELECT ...)` scalar subquery stripped out, plus each
+subquery's text, recursively — the same reasoning as above, one level up: a scalar
+subquery's own zone-check must not be satisfiable by a sibling clause's `tenant_id`
+either. `agents.retrieve()`'s pre-fix bug is the canonical example: the outer CTE
+carried `WHERE tenant_id = %s AND model = %s` and its two scalar subqueries against
+`party_document` did not carry the predicate at all.
+
+If a unit's reference fails its zone check, the whole statement fails — unless the
 exact (whitespace-normalised) unit text is in `ALLOWLIST` below, with a comment
 justifying why that specific statement is genuinely tenant-free. The allowlist is
-empty: every statement this test's first run found un-scoped got the predicate added
-rather than excused (see the commit this test landed in), and `agents._write_map_source`
+empty: every statement this test's runs found un-scoped got the predicate added rather
+than excused (see the commits this test landed in), and `agents._write_map_source`
 INSERTs `demo_request` and `tenant` never come up because those two tables are not in
 `TENANT_SCOPED_TABLES` — the row that has no tenant yet, and the tenant row itself,
 correctly have no `tenant_id` predicate to carry.
@@ -50,11 +84,13 @@ correctly have no `tenant_id` predicate to carry.
 * A `.py` file that stops being discovered — guarded by `rglob`, asserted by
   `test_the_walk_finds_every_module`.
 * A call site whose SQL text cannot be statically resolved (built some way this parser
-  does not understand) silently not being checked — guarded by raising, with the file
-  and line, rather than skipping it; see `_extract_statements`.
+  does not understand), or reached with too few positional arguments for this
+  resolver's `arg_index` to be meaningful — both raise, with the file and line, rather
+  than being silently skipped; see `_extract_statements`. Neither case exists in the
+  codebase today; this is what stops one appearing tomorrow uncovered.
 * The allowlist accumulating stale entries nobody re-examines because the statement
-  they were written for no longer exists — guarded by
-  `test_allowlist_entries_are_all_still_matched`.
+  they were written for no longer exists — guarded by the "unused allowlist entries"
+  assertion in `test_every_tenant_scoped_statement_carries_tenant_id`.
 """
 
 from __future__ import annotations
@@ -81,9 +117,23 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     "party_budget", "presence", "suggestion", "lesson", "statement_import",
 )
 
-_TABLE_RE = {t: re.compile(r"\b" + re.escape(t) + r"\b") for t in TENANT_SCOPED_TABLES}
-_REF_RE = re.compile(r"\b(?:FROM|INTO|UPDATE|JOIN)\s+([A-Za-z_][A-Za-z0-9_]*)",
+#: A reference to a table, tagged with which keyword introduced it — the keyword is
+#: what decides which zone of the statement governs its `tenant_id` check below.
+_REF_RE = re.compile(r"\b(FROM|INTO|UPDATE|JOIN)\s+([A-Za-z_][A-Za-z0-9_]*)",
                      re.IGNORECASE)
+
+#: Clause-boundary keywords. A `JOIN`'s own governing zone ends at the next one of
+#: these (most commonly the next `JOIN` or the statement's `WHERE`); the primary
+#: `FROM`/`UPDATE` table's zone is bounded by `WHERE` on one side and the next of these
+#: on the other; an `INSERT`'s zone is bounded by `VALUES`.
+_BOUNDARY_RE = re.compile(
+    r"\b(JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|LIMIT|RETURNING|HAVING|FOR\s+UPDATE|"
+    r"ON\s+CONFLICT|VALUES)\b", re.IGNORECASE)
+
+_JOIN_ZONE_ENDERS = {"JOIN", "WHERE", "GROUP BY", "ORDER BY", "LIMIT", "RETURNING",
+                     "HAVING", "FOR UPDATE", "ON CONFLICT"}
+_WHERE_ZONE_ENDERS = {"GROUP BY", "ORDER BY", "LIMIT", "RETURNING", "HAVING",
+                      "FOR UPDATE"}
 
 #: Statements that reference a tenant-scoped table but are genuinely tenant-free,
 #: keyed to the exact (whitespace-normalised) statement text so a change to the
@@ -225,7 +275,17 @@ def _extract_statements(path: Path) -> list[tuple[int, str]]:
             continue
 
         if len(node.args) <= arg_index:
-            continue
+            # A call reaching `.execute`/a known forwarder with fewer positional args
+            # than the SQL parameter's position — e.g. the SQL passed by keyword, or a
+            # same-named function that is not actually the forwarder this resolver
+            # detected. No such call exists today; raising rather than skipping is what
+            # keeps that true instead of merely documenting it.
+            raise AssertionError(
+                f"{path}:{node.lineno}: this call reaches position {arg_index} for its "
+                f"SQL argument but was only given {len(node.args)} positional "
+                "argument(s) — this resolver cannot tell whether SQL text is even "
+                "involved. Pass the SQL positionally, or teach this resolver the new "
+                "call shape.")
         text = _literal_text(node.args[arg_index], env_for(scope_of(node)))
         if text is None:
             raise AssertionError(
@@ -277,15 +337,49 @@ def _extract_units(text: str) -> list[str]:
     return units
 
 
-def _violations(text: str) -> list[tuple[str, list[str]]]:
-    """`(unit, tables)` for every unit of `text` that references a tenant-scoped table
-    without a `tenant_id` predicate anywhere in that same unit."""
+def _next_boundary(unit: str, start: int, enders: set[str]) -> int:
+    """Position of the next boundary keyword in `enders`, or end-of-string."""
+    for m in _BOUNDARY_RE.finditer(unit, start):
+        label = " ".join(m.group(1).upper().split())
+        if label in enders:
+            return m.start()
+    return len(unit)
+
+
+def _zone(unit: str, keyword: str, ref_end: int, where_pos: int | None) -> str:
+    """The text that governs one table reference's `tenant_id` check.
+
+    `JOIN`: its own `ON ...` clause — from right after the table name to the next
+    clause boundary. `FROM`/`UPDATE`: the statement's own `WHERE` clause — a join
+    elsewhere in the same statement must not be able to lend its `ON`-clause
+    `tenant_id` to the primary table, nor may the primary table's `WHERE` lend
+    `tenant_id` back to a join that lacks its own. `INTO`: the column list up to
+    `VALUES`."""
+    if keyword == "JOIN":
+        return unit[ref_end:_next_boundary(unit, ref_end, _JOIN_ZONE_ENDERS)]
+    if keyword == "INTO":
+        return unit[ref_end:_next_boundary(unit, ref_end, {"VALUES"})]
+    # FROM / UPDATE — governed by the statement's own WHERE, not by any JOIN's ON.
+    if where_pos is None:
+        return ""
+    return unit[where_pos:_next_boundary(unit, where_pos, _WHERE_ZONE_ENDERS)]
+
+
+def _violations(text: str) -> list[tuple[str, str, str]]:
+    """`(unit, keyword, table)` for every table reference in `text` whose governing
+    zone (see `_zone`) does not carry a `tenant_id` predicate."""
     found = []
     for unit in _extract_units(text):
-        refs = {t.lower() for t in _REF_RE.findall(unit)}
-        matched = [t for t in TENANT_SCOPED_TABLES if t in refs]
-        if matched and "tenant_id" not in unit:
-            found.append((unit, matched))
+        where_match = re.search(r"\bWHERE\b", unit, re.IGNORECASE)
+        where_pos = where_match.start() if where_match else None
+        for m in _REF_RE.finditer(unit):
+            keyword = m.group(1).upper()
+            table = m.group(2).lower()
+            if table not in TENANT_SCOPED_TABLES:
+                continue
+            zone = _zone(unit, keyword, m.end(), where_pos)
+            if "tenant_id" not in zone:
+                found.append((unit, keyword, table))
     return found
 
 
@@ -314,15 +408,15 @@ class TenantScoping(unittest.TestCase):
         for path in sorted(RTF_PLATFORM.rglob("*.py")):
             for lineno, sql in _extract_statements(path):
                 checked += 1
-                for unit, tables in _violations(sql):
+                for unit, keyword, table in _violations(sql):
                     key = _normalise(unit)
                     if key in ALLOWLIST:
                         used_allowlist_entries.add(key)
                         continue
                     rel = path.relative_to(RTF_PLATFORM)
                     failures.append(
-                        f"{rel}:{lineno} references {tables} with no tenant_id "
-                        f"predicate:\n    {key[:200]}")
+                        f"{rel}:{lineno} {keyword} {table} has no tenant_id predicate "
+                        f"in its governing clause:\n    {key[:200]}")
 
         # A change to `rtf_platform/` that stops finding any `.execute()` call at all
         # is this test silently checking nothing — fail loudly rather than pass empty.

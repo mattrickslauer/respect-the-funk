@@ -58,7 +58,7 @@ def facts(conn: psycopg.Connection, tenant_id: str) -> View:
                f.source, f.written_by, f.observed_at, f.model, f.supersedes_id,
                a.name AS artist_name
           FROM party_fact f
-          LEFT JOIN party a ON a.id = f.party_id
+          LEFT JOIN party a ON a.tenant_id = f.tenant_id AND a.id = f.party_id
          WHERE f.tenant_id = %s
          ORDER BY f.observed_at DESC
          LIMIT %s""", (tenant_id, LIMIT))
@@ -155,7 +155,7 @@ def queue(conn: psycopg.Connection, tenant_id: str) -> View:
                l.last_error, l.cadence_seconds, l.scope_kind, l.reason,
                l.parent_lead_id, a.name AS artist_name
           FROM lead l
-          LEFT JOIN party a ON a.id = l.party_id
+          LEFT JOIN party a ON a.tenant_id = l.tenant_id AND a.id = l.party_id
          WHERE l.tenant_id = %s
          ORDER BY (l.state = 'pending') DESC, l.score DESC, l.next_action_at
          LIMIT %s""", (tenant_id, LIMIT))
@@ -256,7 +256,7 @@ def runs(conn: psycopg.Connection, tenant_id: str) -> View:
                r.cost_micro_usd, r.refused_json, r.duration_ms, r.started_at,
                a.name AS artist_name
           FROM agent_run r
-          LEFT JOIN party a ON a.id = r.party_id
+          LEFT JOIN party a ON a.tenant_id = r.tenant_id AND a.id = r.party_id
          WHERE r.tenant_id = %s
          ORDER BY r.started_at DESC LIMIT %s""", (tenant_id, LIMIT))
 
@@ -348,8 +348,9 @@ def budgets(conn: psycopg.Connection, tenant_id: str) -> View:
                  WHERE l.tenant_id = a.tenant_id AND l.party_id = a.id
                    AND l.state = 'pending') AS pending
           FROM party a
-          JOIN party_role pr ON pr.party_id = a.id AND pr.role = 'roster_artist'
-          LEFT JOIN party_budget b ON b.party_id = a.id
+          JOIN party_role pr ON pr.tenant_id = a.tenant_id AND pr.party_id = a.id
+                             AND pr.role = 'roster_artist'
+          LEFT JOIN party_budget b ON b.tenant_id = a.tenant_id AND b.party_id = a.id
          WHERE a.tenant_id = %s ORDER BY a.name""", (tenant_id,))
 
     out = []
@@ -421,10 +422,11 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
                  WHERE pr.tenant_id = t.tenant_id AND pr.subject_kind = 'recording'
                    AND pr.subject_id = t.id AND pr.state = 'present')           AS places
           FROM recording t
-          LEFT JOIN party_credit c ON c.subject_kind = 'recording'
+          LEFT JOIN party_credit c ON c.tenant_id = t.tenant_id
+                                  AND c.subject_kind = 'recording'
                                   AND c.subject_id = t.id
                                   AND c.role IN ('main_artist', 'featured')
-          LEFT JOIN party a ON a.id = c.party_id
+          LEFT JOIN party a ON a.tenant_id = t.tenant_id AND a.id = c.party_id
          WHERE t.tenant_id = %s
          GROUP BY t.id, t.title, t.slug, t.isrc, t.released_on, t.status
          ORDER BY t.title""", (tenant_id,))
@@ -756,7 +758,7 @@ def pending_suggestions(conn: psycopg.Connection, tenant_id: str,
         SELECT s.id, s.party_id, s.kind, s.payload, s.confidence, s.rationale,
                p.name AS party_name, p.slug AS party_slug
           FROM suggestion s
-          JOIN party p ON p.id = s.party_id
+          JOIN party p ON p.tenant_id = s.tenant_id AND p.id = s.party_id
          WHERE {where}
          ORDER BY p.name, s.confidence DESC, s.created_at
          LIMIT {LIMIT}""", params)
@@ -938,7 +940,7 @@ def today(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]
 
     parked = _rows(conn, """
         SELECT l.id, l.kind, l.platform, l.last_error, l.attempts, p.name AS party_name
-          FROM lead l LEFT JOIN party p ON p.id = l.party_id
+          FROM lead l LEFT JOIN party p ON p.tenant_id = l.tenant_id AND p.id = l.party_id
          WHERE l.tenant_id = %s AND l.state = 'failed'
          ORDER BY l.updated_at DESC LIMIT 20""", (tenant_id,))
     for row in parked:

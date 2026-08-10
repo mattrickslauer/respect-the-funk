@@ -163,7 +163,8 @@ def _roster_by_name(conn: psycopg.Connection, tenant_id: str) -> dict[str, str]:
     with conn.cursor() as cur:
         cur.execute(
             """SELECT p.id, p.name FROM party p
-                 JOIN party_role r ON r.party_id = p.id AND r.role = 'roster_artist'
+                 JOIN party_role r ON r.tenant_id = p.tenant_id AND r.party_id = p.id
+                                   AND r.role = 'roster_artist'
                 WHERE p.tenant_id = %s""",
             (tenant_id,),
         )

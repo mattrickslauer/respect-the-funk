@@ -77,7 +77,7 @@ def list_parties(conn: psycopg.Connection, tenant_id: str, query: str = "",
     sql = f"SELECT {_PARTY_COLUMNS_P} FROM party p"
     params: list[Any] = []
     if role:
-        sql += " JOIN party_role r ON r.party_id = p.id AND r.role = %s"
+        sql += " JOIN party_role r ON r.tenant_id = p.tenant_id AND r.party_id = p.id AND r.role = %s"
         params.append(role)
     sql += " WHERE p.tenant_id = %s"
     params.append(tenant_id)

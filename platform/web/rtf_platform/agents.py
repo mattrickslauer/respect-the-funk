@@ -656,7 +656,8 @@ def profile_party(conn: psycopg.Connection, lead: dict[str, Any],
 
         cur.execute(
             """SELECT r.title, r.isrc FROM recording r
-                 JOIN party_credit c ON c.subject_id = r.id AND c.subject_kind = 'recording'
+                 JOIN party_credit c ON c.tenant_id = r.tenant_id AND c.subject_id = r.id
+                                     AND c.subject_kind = 'recording'
                 WHERE c.tenant_id = %s AND c.party_id = %s ORDER BY r.title""",
             (tenant_id, party_id),
         )

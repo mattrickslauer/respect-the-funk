@@ -641,6 +641,44 @@ class Claiming(unittest.TestCase):
         self.assertEqual(fleet.claim(self.conn, self.tenant, "solo", kinds=["probe"]), [],
                          "a parked lead was still claimable")
 
+    def test_a_lease_lost_while_recording_a_failure_does_not_erase_the_real_error(self):
+        """The agent's real error must survive even when recording it loses the race.
+
+        `LeadFailed` is raised by `fetch`, same as `_lease_burner`, but `fetch` also
+        expires the lease first — so by the time `work_once`'s `except LeadFailed`
+        handler tries to run `fail`, the lease is already gone, `fail`'s fence raises
+        `LeaseLost`, and the `record_run` that carried the agent's real message rolls
+        back with it. Before this fix, only the lease-loss text survived into
+        `agent_run.error` and `lead.last_error` — an operator reading the row to find out
+        why this lead failed would see "lease expired" and never learn it was actually
+        "document body is empty".
+        """
+        lead_id = self._lead()
+
+        def fetch(conn, lead, gate):
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE lead SET lease_expires_at = now() - INTERVAL '1 minute' "
+                    "WHERE id = %s", (lead_id,))
+            raise fleet.LeadFailed("document body is empty", permanent=True)
+
+        def write(conn, lead, gate, prepared):
+            raise AssertionError("write must never run — fetch already raised")
+
+        fleet.work_once(self.conn, self.tenant, "solo",
+                        fleet.NetworkAgent(fetch=fetch, write=write), kinds=["probe"])
+
+        row = self._state(lead_id)
+        self.assertIn("document body is empty", row["last_error"],
+                      "the real cause of the failure was lost behind the lease-loss text")
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT state, error FROM agent_run WHERE lead_id = %s", (lead_id,))
+            run = cur.fetchone()
+        self.assertEqual(run["state"], "lease_lost")
+        self.assertIn("document body is empty", run["error"],
+                      "agent_run.error should still say what the agent actually raised")
+
     # ------------------------------------------ two workers, one name, one lead
 
     def test_two_workers_sharing_a_name_cannot_both_pass_the_fence(self):

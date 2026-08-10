@@ -503,21 +503,27 @@ def _reacquire(conn: psycopg.Connection, lead: dict[str, Any], agent_name: str) 
     """Re-validate ownership of a lead, and lock its row, before the write phase touches
     anything.
 
-    Not required for the correctness `complete`'s own fence already provides — that
-    fence, checked at the end of the same transaction `_reacquire` opens, is what
-    actually stops a lease-losing worker's writes from becoming durable: raising there
-    rolls back the *whole* transaction, including everything the write phase already did.
-    This check exists for a narrower, still-real reason. Without it, a worker whose lease
-    already expired before `fetch` returned still runs its entire write phase — every
-    `INSERT` an agent can produce — only to discover the loss and roll all of it back on
-    the very last statement. That is real, wasted database work, every single time it
-    happens. `FOR UPDATE` also takes a row lock that makes `claim`'s `FOR UPDATE SKIP
-    LOCKED` skip this row for as long as this transaction holds it open, which closes the
-    much narrower window — the write phase only, typically milliseconds — during which a
-    second worker could claim it while this one is still writing. The long pole, the
-    network fetch, already ran with no transaction and no lock at all, by design, and
-    nothing here changes that: a lease lost *during* `fetch` is caught here, at the start
-    of the very next statement, not prevented.
+    This is the check that actually enforces the lease on the `work_once` path —
+    `complete`'s fence does not, even though it carries the identical condition.
+    CockroachDB's `now()` is fixed for the life of a transaction (verified against this
+    cluster: two `SELECT now()` calls issued two seconds apart inside one transaction
+    return the same value), and `complete` runs later in the *same* transaction
+    `_reacquire` opens. So by the time `complete`'s `lease_expires_at > now()` runs, it is
+    reading the identical clock reading `_reacquire` already read, against a row
+    `_reacquire`'s `FOR UPDATE` has held locked ever since — nothing could have changed
+    `owner_agent`, `lease_token` or `lease_expires_at` in between. If `_reacquire`'s check
+    passed, `complete`'s later, identical check is therefore a foregone conclusion, not an
+    independent verification: it cannot be the thing that discovers a lease lost during
+    `fetch`, because `_reacquire` already would have raised first. Remove `_reacquire` and
+    that discovery does not simply move later — nothing else in this module re-reads the
+    lease against a value captured at the *start* of the write phase, before the FOR
+    UPDATE lock closes the window a second worker's `claim` could otherwise land in.
+    (`complete`'s fence still matters for any caller that reaches it without going through
+    `_reacquire` first in the same transaction — today that is only `test_fleet.py`
+    calling it directly; every production path is `work_once`, which always calls
+    `_reacquire` first.) A useful side effect, not the reason this exists: a worker whose
+    lease already expired before `fetch` returned is stopped here, before it runs its
+    entire write phase — every `INSERT` an agent can produce — for nothing.
     """
     with conn.cursor() as cur:
         cur.execute(
@@ -595,7 +601,8 @@ def _reschedule_after_lease_loss(conn: psycopg.Connection, lead: dict[str, Any],
 
 
 def _record_lease_lost(conn: psycopg.Connection, lead: dict[str, Any], agent_name: str,
-                       gate: spend.Gate, started: float, exc: LeaseLost) -> None:
+                       gate: spend.Gate, started: float, exc: LeaseLost, *,
+                       real_error: str = "") -> None:
     """Record a run whose claim stopped being current, and deal with the lead.
 
     Runs in a transaction of its own — whichever transaction discovered the loss has
@@ -607,15 +614,29 @@ def _record_lease_lost(conn: psycopg.Connection, lead: dict[str, Any], agent_nam
     discovered, and it must land in `agent_run` regardless: `spend.spent_today` sums that
     column, and a ceiling that only sees the runs that happened to finish is a ceiling
     the next retry can quietly walk through.
+
+    `real_error` is the agent's own error, when this lease loss was discovered *while
+    recording that failure* — `fail` or `_defer` raising `LeaseLost` from inside
+    `work_once`'s `LeadFailed`/`SpendRefused`/generic-exception handlers, because the
+    transaction that would have written it rolled back along with everything else those
+    handlers were trying to commit. Left out, only the lease-loss text survives into
+    `agent_run.error` and `lead.last_error`, and an operator reading the row to find out
+    why a lead failed sees "lease expired" instead of "document body is empty" or
+    whatever the agent actually raised — the row exists precisely so that operator does
+    not have to guess, and losing the real cause to a second, unrelated failure defeats
+    that. Folding it into the message this function records keeps it on the row that
+    survives.
     """
+    message = (f"{real_error} — lease lost while recording this failure: {exc}"
+              if real_error else str(exc))
     with conn.transaction():
-        rescheduled = _reschedule_after_lease_loss(conn, lead, agent_name, str(exc))
+        rescheduled = _reschedule_after_lease_loss(conn, lead, agent_name, message)
         summary = ("lease lapsed with no other claimant; backed off and left on the "
                    "frontier" if rescheduled else
                    "another claim holds this lead now; left untouched")
         record_run(conn, lead, agent_name,
                    Outcome(summary=summary, cost_usd=gate.incurred_usd), gate,
-                   state="lease_lost", error=str(exc), started=started)
+                   state="lease_lost", error=message, started=started)
 
 
 def work_once(conn: psycopg.Connection, tenant_id: str, agent_name: str,
@@ -691,7 +712,11 @@ def work_once(conn: psycopg.Connection, tenant_id: str, agent_name: str,
                     fail(conn, lead, str(exc), agent_name=agent_name,
                         permanent=exc.permanent)
             except LeaseLost as lost:
-                _record_lease_lost(conn, lead, agent_name, gate, started, lost)
+                # `fail`'s own fence lost the race, so the `record_run` two lines above
+                # rolled back with it and the agent's real error (`exc`) would otherwise
+                # vanish behind the lease-loss text — see `_record_lease_lost`.
+                _record_lease_lost(conn, lead, agent_name, gate, started, lost,
+                                   real_error=str(exc))
         except spend.SpendRefused as exc:
             # Not a failure of the work — a decision not to pay for it. Reschedule
             # rather than counting it against `attempts`, because raising the ceiling
@@ -702,7 +727,8 @@ def work_once(conn: psycopg.Connection, tenant_id: str, agent_name: str,
                                gate, state="refused", error=str(exc), started=started)
                     _defer(conn, lead, agent_name=agent_name)
             except LeaseLost as lost:
-                _record_lease_lost(conn, lead, agent_name, gate, started, lost)
+                _record_lease_lost(conn, lead, agent_name, gate, started, lost,
+                                   real_error=str(exc))
         except Exception as exc:  # noqa: BLE001 — an agent must not take the fleet down
             try:
                 with conn.transaction():
@@ -710,7 +736,8 @@ def work_once(conn: psycopg.Connection, tenant_id: str, agent_name: str,
                                gate, state="error", error=repr(exc), started=started)
                     fail(conn, lead, repr(exc), agent_name=agent_name)
             except LeaseLost as lost:
-                _record_lease_lost(conn, lead, agent_name, gate, started, lost)
+                _record_lease_lost(conn, lead, agent_name, gate, started, lost,
+                                   real_error=repr(exc))
     return len(leads)
 
 

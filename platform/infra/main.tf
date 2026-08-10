@@ -88,11 +88,159 @@ resource "aws_iam_role" "console" {
   assume_role_policy = data.aws_iam_policy_document.assume.json
 }
 
-# Logs and nothing else. The console talks to CockroachDB, not to AWS services,
-# so there is no S3, no SQS and no Bedrock grant to make here yet.
 resource "aws_iam_role_policy_attachment" "logs" {
   role       = aws_iam_role.console.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# The console signs presigned URLs, and a presigned URL carries the *signer's*
+# authority — it is not a capability the bucket grants to the URL holder. So the
+# permissions below are exactly what an upload and a playback need, and the browser
+# never holds credentials of its own.
+#
+# s3:ListBucket is here for a reason that is not listing. Without it, S3 answers a
+# HEAD for a missing key with 403 instead of 404, because it will not confirm or deny
+# the existence of an object to a principal that cannot enumerate the bucket. That
+# would make `storage.head` unable to distinguish "the upload never finished" from
+# "the IAM policy is wrong" — a misconfiguration reported to operators as their own
+# mistake, forever. See that function's docstring.
+data "aws_iam_policy_document" "masters" {
+  statement {
+    actions   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.masters.arn}/*"]
+  }
+  statement {
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.masters.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "masters" {
+  name   = "${local.name}-masters"
+  role   = aws_iam_role.console.id
+  policy = data.aws_iam_policy_document.masters.json
+}
+
+# ---------------------------------------------------------------------- masters
+#
+# The first resource in this stack that is not free at idle. Everything above is
+# priced per invocation and costs nothing when nobody visits; a bucket is priced per
+# GB-month and costs the same whether or not anyone ever plays a master. At
+# $0.023/GB/month, the current roster — two albums — is a rounding error, and it is
+# still worth naming the change of kind rather than letting the first non-zero line
+# on a bill be a surprise.
+#
+# S3 is also the second qualifying AWS service in the CockroachDB × AWS hackathon
+# submission, where today there is only Lambda. That is a consequence and not the
+# reason: masters need somewhere to live regardless.
+
+resource "aws_s3_bucket" "masters" {
+  # Bucket names are globally unique across every AWS account, so this can collide
+  # with a stranger's. That surfaces as `BucketAlreadyExists` at apply time — loud,
+  # immediate, and fixed by changing `env` or this suffix. An account-id suffix would
+  # prevent it at the cost of an unreadable name in every console listing and log
+  # line; a failure this legible does not need preventing.
+  bucket = "${local.name}-masters"
+
+  tags = { Component = "masters" }
+}
+
+# Masters are unreleased audio. Nothing about this bucket is public, and the account
+# level setting is not assumed to be on — this is per-bucket and explicit, because a
+# public masters bucket is the single worst outcome available here and it is usually
+# reached by inheriting a default rather than by anyone choosing it.
+resource "aws_s3_bucket_public_access_block" "masters" {
+  bucket                  = aws_s3_bucket.masters.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# SSE-S3 is applied by default on new buckets, which is exactly why it is written out
+# here: a default is a thing that can change, and `terraform plan` showing a drift on
+# an explicit resource is how that would be noticed. SSE-KMS would add $1/month for
+# the key plus a request charge, and buys nothing this threat model needs — the
+# objects are already unreachable without a signature from the console's role.
+resource "aws_s3_bucket_server_side_encryption_configuration" "masters" {
+  bucket = aws_s3_bucket.masters.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# Versioning, because the delete path here is genuinely lossy in a way nothing else
+# in this stack is. `assets.delete` removes a row and hands the caller an object key;
+# a mistaken click deletes the only copy of a master the label may not have elsewhere.
+# Noncurrent versions expire after 30 days (below), so this buys a month of undo
+# rather than an unbounded archive.
+resource "aws_s3_bucket_versioning" "masters" {
+  bucket = aws_s3_bucket.masters.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "masters" {
+  bucket = aws_s3_bucket.masters.id
+
+  # The rule that pays for itself. A browser PUT of a 90MB master that dies partway
+  # leaves an incomplete multipart upload: invisible in every listing, and billed for
+  # its parts indefinitely. This is the single most common way an S3 bill grows
+  # without a corresponding object, and seven days is longer than any upload here.
+  rule {
+    id     = "abort-incomplete-uploads"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+
+  # The undo window described above. Thirty days of noncurrent versions, then gone —
+  # long enough that a deletion noticed at the next monthly statement is still
+  # recoverable, short enough that superseded masters do not accumulate forever.
+  rule {
+    id     = "expire-old-versions"
+    status = "Enabled"
+    filter {}
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.masters]
+}
+
+# CORS, without which the whole presigned design silently does not work in a browser.
+#
+# The PUT goes from the page to `bucket.s3.amazonaws.com`, which is a different origin
+# from the Function URL. The browser sends a preflight OPTIONS first, and S3 answers
+# it from this configuration and not from the presigned signature — so a correctly
+# signed URL fails with an opaque CORS error that names neither S3 nor the missing
+# rule. It reads like broken JavaScript.
+#
+# `ETag` is exposed because it is the one response header the uploader reads back.
+resource "aws_s3_bucket_cors_configuration" "masters" {
+  bucket = aws_s3_bucket.masters.id
+
+  cors_rule {
+    allowed_methods = ["PUT", "GET", "HEAD"]
+    allowed_origins = [
+      # The console itself. `function_url` carries a trailing slash and an Origin
+      # header never does, so an untrimmed value matches nothing at all.
+      trimsuffix(aws_lambda_function_url.console.function_url, "/"),
+      # `dev.sh`, so the upload path can be exercised before it is deployed. This is
+      # the one origin here that is not ours, and it is bounded: an attacker who can
+      # serve from a victim's localhost:8000 already has the machine.
+      "http://localhost:8000",
+    ]
+    allowed_headers = ["*"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
+  }
 }
 
 # --------------------------------------------------------------------- compute
@@ -138,6 +286,11 @@ resource "aws_lambda_function" "console" {
       DATABASE_URL         = var.database_url
       PLATFORM_ADMIN_TOKEN = var.admin_token
       PLATFORM_TENANT_SLUG = var.tenant_slug
+      # Empty is a legitimate state in a checkout that has never applied this stack,
+      # and `settings.storage_configured` reports it. Here it is always set, so the
+      # console offers uploads. AWS_REGION is provided by the runtime itself, which
+      # is why `settings.load` reads it and no region is passed here.
+      PLATFORM_MASTERS_BUCKET = aws_s3_bucket.masters.bucket
     }
   }
 

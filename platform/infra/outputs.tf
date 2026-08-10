@@ -10,3 +10,8 @@ output "function_name" {
 output "log_group" {
   value = aws_cloudwatch_log_group.console.name
 }
+
+output "masters_bucket" {
+  value       = aws_s3_bucket.masters.bucket
+  description = "Where masters live. Set PLATFORM_MASTERS_BUCKET to this for a local console or worker; the deployed function gets it from its own environment."
+}

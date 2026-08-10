@@ -292,8 +292,9 @@ def approve(conn: psycopg.Connection, tenant_id: str, thread_id: str, message_id
                 raise TransitionRefused(thread_id, "no unsent draft", "queued")
 
             cur.execute(
-                "UPDATE message SET approved_by = %s, approved_at = now() WHERE id = %s",
-                (approver, message_id))
+                """UPDATE message SET approved_by = %s, approved_at = now()
+                    WHERE tenant_id = %s AND id = %s""",
+                (approver, tenant_id, message_id))
             cur.execute(
                 """INSERT INTO outbox (tenant_id, thread_id, message_id, kind, payload_json)
                    VALUES (%s, %s, %s, %s, %s)

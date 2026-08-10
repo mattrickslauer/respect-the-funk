@@ -1330,25 +1330,36 @@ def campaigns(conn: psycopg.Connection, tenant_id: str) -> View:
                c.started_at, c.created_at,
                p.name AS artist,
                r.title AS track,
-               (SELECT count(*) FROM thread t WHERE t.campaign_id = c.id) AS threads,
-               (SELECT count(*) FROM thread t WHERE t.campaign_id = c.id
+               (SELECT count(*) FROM thread t
+                 WHERE t.tenant_id = c.tenant_id AND t.campaign_id = c.id) AS threads,
+               (SELECT count(*) FROM thread t
+                 WHERE t.tenant_id = c.tenant_id AND t.campaign_id = c.id
                  AND t.state NOT IN ('closed_won','closed_lost','closed_no_reply')) AS open_threads,
-               (SELECT count(*) FROM thread t WHERE t.campaign_id = c.id
+               (SELECT count(*) FROM thread t
+                 WHERE t.tenant_id = c.tenant_id AND t.campaign_id = c.id
                  AND t.state = 'awaiting_human') AS awaiting,
-               (SELECT count(*) FROM message m JOIN thread t ON t.id = m.thread_id
-                 WHERE t.campaign_id = c.id AND m.direction = 'outbound'
+               (SELECT count(*) FROM message m
+                  JOIN thread t ON t.tenant_id = m.tenant_id AND t.id = m.thread_id
+                 WHERE m.tenant_id = c.tenant_id AND t.campaign_id = c.id
+                   AND m.direction = 'outbound'
                    AND m.sent_at IS NOT NULL) AS sent,
-               (SELECT count(*) FROM outbox o JOIN thread t ON t.id = o.thread_id
-                 WHERE t.campaign_id = c.id AND o.state = 'pending') AS queued,
-               (SELECT count(*) FROM message m JOIN thread t ON t.id = m.thread_id
-                 WHERE t.campaign_id = c.id AND m.direction = 'inbound') AS replied,
-               (SELECT count(*) FROM thread t WHERE t.campaign_id = c.id
+               (SELECT count(*) FROM outbox o
+                  JOIN thread t ON t.tenant_id = o.tenant_id AND t.id = o.thread_id
+                 WHERE o.tenant_id = c.tenant_id AND t.campaign_id = c.id
+                   AND o.state = 'pending') AS queued,
+               (SELECT count(*) FROM message m
+                  JOIN thread t ON t.tenant_id = m.tenant_id AND t.id = m.thread_id
+                 WHERE m.tenant_id = c.tenant_id AND t.campaign_id = c.id
+                   AND m.direction = 'inbound') AS replied,
+               (SELECT count(*) FROM thread t
+                 WHERE t.tenant_id = c.tenant_id AND t.campaign_id = c.id
                  AND t.state IN ('agreed','delivered','verified','closed_won')) AS agreed,
-               (SELECT count(*) FROM thread t WHERE t.campaign_id = c.id
+               (SELECT count(*) FROM thread t
+                 WHERE t.tenant_id = c.tenant_id AND t.campaign_id = c.id
                  AND t.state IN ('delivered','verified','closed_won')) AS delivered
           FROM campaign c
-          JOIN party p ON p.id = c.party_id
-          LEFT JOIN recording r ON r.id = c.recording_id
+          JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id
+          LEFT JOIN recording r ON r.tenant_id = c.tenant_id AND r.id = c.recording_id
          WHERE c.tenant_id = %s
          ORDER BY c.created_at DESC
          LIMIT %s""", (tenant_id, LIMIT))
@@ -1435,15 +1446,18 @@ def threads(conn: psycopg.Connection, tenant_id: str) -> View:
                cp.name AS who, cp.contact_state,
                c.name AS campaign, c.channel,
                p.name AS artist, r.title AS track,
-               (SELECT count(*) FROM message m WHERE m.thread_id = t.id) AS messages,
-               (SELECT max(m.created_at) FROM message m WHERE m.thread_id = t.id) AS last_message,
-               (SELECT count(*) FROM outbox o WHERE o.thread_id = t.id
+               (SELECT count(*) FROM message m
+                 WHERE m.tenant_id = t.tenant_id AND m.thread_id = t.id) AS messages,
+               (SELECT max(m.created_at) FROM message m
+                 WHERE m.tenant_id = t.tenant_id AND m.thread_id = t.id) AS last_message,
+               (SELECT count(*) FROM outbox o
+                 WHERE o.tenant_id = t.tenant_id AND o.thread_id = t.id
                  AND o.state = 'pending') AS queued
           FROM thread t
-          JOIN party cp ON cp.id = t.counterparty_id
-          JOIN campaign c ON c.id = t.campaign_id
-          JOIN party p ON p.id = c.party_id
-          LEFT JOIN recording r ON r.id = c.recording_id
+          JOIN party cp ON cp.tenant_id = t.tenant_id AND cp.id = t.counterparty_id
+          JOIN campaign c ON c.tenant_id = t.tenant_id AND c.id = t.campaign_id
+          JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id
+          LEFT JOIN recording r ON r.tenant_id = c.tenant_id AND r.id = c.recording_id
          WHERE t.tenant_id = %s
          ORDER BY (t.state = 'awaiting_human') DESC, t.updated_at DESC
          LIMIT %s""", (tenant_id, LIMIT))
@@ -1552,17 +1566,19 @@ def approvals(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, 
                m.idempotency_key,
                cp.name AS who, c.name AS campaign, c.channel AS campaign_channel,
                p.name AS artist, r.title AS track,
-               (SELECT count(*) FROM message x WHERE x.thread_id = t.id
+               (SELECT count(*) FROM message x
+                 WHERE x.tenant_id = t.tenant_id AND x.thread_id = t.id
                  AND x.direction = 'outbound') AS drafts
           FROM thread t
-          JOIN party cp ON cp.id = t.counterparty_id
-          JOIN campaign c ON c.id = t.campaign_id
-          JOIN party p ON p.id = c.party_id
-          LEFT JOIN recording r ON r.id = c.recording_id
+          JOIN party cp ON cp.tenant_id = t.tenant_id AND cp.id = t.counterparty_id
+          JOIN campaign c ON c.tenant_id = t.tenant_id AND c.id = t.campaign_id
+          JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id
+          LEFT JOIN recording r ON r.tenant_id = c.tenant_id AND r.id = c.recording_id
           JOIN LATERAL (
                 SELECT id, subject, body, created_at, channel, idempotency_key
                   FROM message
-                 WHERE thread_id = t.id AND direction = 'outbound' AND sent_at IS NULL
+                 WHERE tenant_id = t.tenant_id AND thread_id = t.id
+                   AND direction = 'outbound' AND sent_at IS NULL
                  ORDER BY created_at DESC
                  LIMIT 1) m ON true
          WHERE t.tenant_id = %s AND t.state = 'awaiting_human'
@@ -1582,9 +1598,11 @@ def approvals(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, 
               FROM party_fact
              WHERE tenant_id = %s AND status = 'live' AND party_id = (
                    SELECT c.party_id FROM campaign c
-                     JOIN thread t ON t.campaign_id = c.id WHERE t.id = %s)
+                     JOIN thread t ON t.tenant_id = c.tenant_id
+                                  AND t.campaign_id = c.id
+                    WHERE c.tenant_id = %s AND t.id = %s)
              ORDER BY confidence DESC NULLS LAST
-             LIMIT 6""", (tenant_id, r["thread_id"]))
+             LIMIT 6""", (tenant_id, tenant_id, r["thread_id"]))
 
         out.append({
             "id": str(r["message_id"]), "thread_id": str(r["thread_id"]),
@@ -1675,10 +1693,10 @@ def inbox(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]
                t.state AS thread_state,
                cp.name AS who, p.name AS artist, c.name AS campaign
           FROM message m
-          JOIN thread t ON t.id = m.thread_id
-          JOIN party cp ON cp.id = t.counterparty_id
-          JOIN campaign c ON c.id = t.campaign_id
-          JOIN party p ON p.id = c.party_id
+          JOIN thread t ON t.tenant_id = m.tenant_id AND t.id = m.thread_id
+          JOIN party cp ON cp.tenant_id = t.tenant_id AND cp.id = t.counterparty_id
+          JOIN campaign c ON c.tenant_id = t.tenant_id AND c.id = t.campaign_id
+          JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id
          WHERE m.tenant_id = %s AND m.direction = 'inbound'
          ORDER BY m.received_at DESC
          LIMIT %s""", (tenant_id, LIMIT))
@@ -1816,7 +1834,7 @@ def shortlist_candidates(conn: psycopg.Connection, tenant_id: str,
         SELECT p.id, p.name, p.contact_state,
                (p.profile_embedding IS NOT NULL) AS searchable,
                (SELECT string_agg(r.role, ', ') FROM party_role r
-                 WHERE r.party_id = p.id) AS roles
+                 WHERE r.tenant_id = p.tenant_id AND r.party_id = p.id) AS roles
           FROM party p
          WHERE p.tenant_id = %s AND p.party_class = 'counterparty'
            AND p.contact_state = 'contactable'

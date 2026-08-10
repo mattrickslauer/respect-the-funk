@@ -120,6 +120,13 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     "release", "recording_work", "release_recording", "party_credit", "lead",
     "party_document", "party_chunk", "party_fact", "party_metric", "agent_run",
     "party_budget", "presence", "suggestion", "lesson", "statement_import",
+    # 010's four. They were absent when this list was first written because the branch
+    # that added this test did not contain `010_outreach.sql` — so for one merge the
+    # lint silently did not cover the newest tables in the schema, which is the exact
+    # failure mode it exists to prevent. Verified against `010_outreach.sql`: all four
+    # carry `tenant_id NOT NULL`. `fact_basis`, `agent_manifest` and `source_manifest`
+    # stay out because their own `CREATE TABLE` genuinely has no such column.
+    "campaign", "thread", "message", "outbox",
 )
 
 #: A reference to a table, tagged with which keyword introduced it — the keyword is

@@ -17,6 +17,8 @@ from typing import Any
 
 import psycopg
 
+from rtf_platform import harvested
+
 def slugify(value: str) -> str:
     """A URL-safe key derived from the display name.
 
@@ -75,7 +77,7 @@ def list_parties(conn: psycopg.Connection, tenant_id: str, query: str = "",
     sql = f"SELECT {_PARTY_COLUMNS_P} FROM party p"
     params: list[Any] = []
     if role:
-        sql += " JOIN party_role r ON r.party_id = p.id AND r.role = %s"
+        sql += " JOIN party_role r ON r.tenant_id = p.tenant_id AND r.party_id = p.id AND r.role = %s"
         params.append(role)
     sql += " WHERE p.tenant_id = %s"
     params.append(tenant_id)
@@ -150,6 +152,12 @@ def delete_party(conn: psycopg.Connection, tenant_id: str, party_id: str) -> boo
     probe reconciler works from presence, so a deleted artist would keep being
     fetched forever and nothing would explain why.
 
+    `lesson` is the same polymorphism for the same reason — `011_lesson.sql` scopes a
+    lesson by `scope_kind`/`scope_id`, a `STRING` with no foreign key, because a lesson
+    can be about a curator, a kind of counterparty, a channel, or everything, and only
+    the first of those is a UUID. `scope_id` is compared as text here (`party_id` is a
+    UUID; the column that holds it is not) for the same reason.
+
     Everything with a real foreign key (`party_role`, `party_identifier`,
     `party_credit`, `party_fact`, …) still cascades in the database, where it
     belongs. This function exists for the exceptions, not instead of them.
@@ -161,6 +169,12 @@ def delete_party(conn: psycopg.Connection, tenant_id: str, party_id: str) -> boo
                     WHERE tenant_id = %s AND subject_kind = 'party'
                       AND subject_id = %s""",
                 (tenant_id, party_id),
+            )
+            cur.execute(
+                """DELETE FROM lesson
+                    WHERE tenant_id = %s AND scope_kind = 'party'
+                      AND scope_id = %s""",
+                (tenant_id, str(party_id)),
             )
             cur.execute("DELETE FROM party WHERE tenant_id = %s AND id = %s",
                         (tenant_id, party_id))
@@ -266,6 +280,31 @@ def upsert_presence(
 
 # ------------------------------------------------------------------ suggestions
 
+class SuggestionUnacceptable(ValueError):
+    """A suggestion cannot be promoted as it stands. Raised rather than defaulting
+    the missing field (that is the exact bug this replaced) and rather than letting
+    `harvested.HarvestInvalid` — an internal parsing detail — reach the console as
+    an unhandled 500. Carries `suggestion_id` and an operator-readable `reason`, so
+    the route that catches this has a message worth showing rather than a stack
+    trace.
+
+    Two things raise it: a suggestion `kind` this function has no accept path for
+    (only `presence` is handled today — a future `merge`-kind suggestion from the
+    lessons plan must not be blindly parsed as a `Presence` and fail on fields it
+    was never going to carry), and a `presence`-kind suggestion whose payload
+    predates a field `Presence.parse` now requires — measured on the live cluster
+    at the time this was written: 0 of 8 existing `suggestion` rows carry a `mode`
+    key, because they were written before `mode` became required. None were
+    `pending`, so nothing was actively broken, but the next one written by an
+    out-of-date adapter, or read back after a schema change, would have been.
+    """
+
+    def __init__(self, suggestion_id: str, reason: str) -> None:
+        self.suggestion_id = suggestion_id
+        self.reason = reason
+        super().__init__(f"suggestion {suggestion_id}: {reason}")
+
+
 def accept_suggestion(conn: psycopg.Connection, tenant_id: str,
                       suggestion_id: str, *, by: str = "operator") -> bool:
     """Promote an inferred match to an asserted surface, and queue the mapping.
@@ -275,6 +314,20 @@ def accept_suggestion(conn: psycopg.Connection, tenant_id: str,
     name, and a person clicking Accept is the thing that makes it `asserted`. They are
     now the accountable party, which is precisely what `SCOPE-RESET §2a`'s third
     provenance class means.
+
+    `mode` — whether accepting this means the artist owns the account — is read off
+    the suggestion via `harvested.Presence.parse`, not defaulted here. `mode='owned'`
+    is the strongest ownership claim `presence` carries; inventing it for a
+    suggestion that never said so is the same defect class as inventing `measured`
+    for a fact an adapter never labelled. The adapter that wrote the suggestion is
+    the only thing that knows what accepting it means, so it says so in the payload.
+
+    Only `kind == 'presence'` is handled — every suggestion this codebase writes
+    today. Any other kind, and a `presence`-kind payload that fails to parse (an
+    old row written before a field became required, most likely `mode`), raises
+    `SuggestionUnacceptable` rather than either defaulting the missing field or
+    letting the parser's `HarvestInvalid` reach the caller as an unhandled
+    exception — see that class's docstring.
 
     One transaction, and `upsert_presence` runs inside it — so accepting also writes the
     `map_source` lead, and there is no window where a surface exists that nothing has
@@ -297,16 +350,31 @@ def accept_suggestion(conn: psycopg.Connection, tenant_id: str,
                 return False
 
             payload = row["payload"] or {}
+            kind = payload.get("kind", "")
+            if kind != "presence":
+                raise SuggestionUnacceptable(
+                    suggestion_id,
+                    f"a {kind or 'unlabelled'} suggestion has no accept path yet")
+
             platform = payload.get("platform", "")
             if not platform:
                 return False
 
+            try:
+                presence = harvested.Presence.parse(payload, adapter=platform)
+            except harvested.HarvestInvalid as exc:
+                raise SuggestionUnacceptable(
+                    suggestion_id,
+                    f"this suggestion is missing {exc.field!r} and cannot be "
+                    "accepted automatically — it was written before that field "
+                    "became required") from exc
+
             upsert_presence(
                 conn, tenant_id, str(row["party_id"]),
-                platform=platform,
-                mode=payload.get("mode", "owned"),
-                handle=payload.get("label", ""),
-                profile_url=payload.get("url", ""),
+                platform=presence.platform,
+                mode=presence.mode,
+                handle=presence.handle,
+                profile_url=presence.profile_url,
                 match_basis="asserted",
             )
 

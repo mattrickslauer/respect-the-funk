@@ -35,6 +35,12 @@ CURRENT = Format(
     label="DistroKid — BANK breakdown (TSV)",
     delimiter="\t",
     required=frozenset({"sale month", "store", "isrc", "quantity"}),
+    # The BANK breakdown has no currency column at all — DistroKid states the
+    # denomination in the header itself, "Earnings (USD)", and pays every
+    # territory converted to USD on this export. Stated here explicitly rather
+    # than guessed by the reader; a future format whose file actually varies by
+    # row should map a real "currency" column in `columns` instead.
+    currency="USD",
     columns={
         "period": "Sale Month",
         "store": "Store",

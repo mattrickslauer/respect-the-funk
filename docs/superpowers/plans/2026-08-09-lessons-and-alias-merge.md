@@ -92,7 +92,7 @@ and auditable.
 Create `platform/schema/011_lesson.sql`:
 
 ```sql
--- 010 — the lesson: the only table in this schema whose job is to make the next run
+-- 011 — the lesson: the only table in this schema whose job is to make the next run
 -- better than this one.
 --
 -- `SCOPE-RESET §1` justifies the party being the root of the spine on one claim: that
@@ -198,7 +198,10 @@ Run:
 
 ```bash
 psql "$DATABASE_URL" -c "INSERT INTO lesson (tenant_id, scope_kind, text, embedding) \
-  SELECT id, 'global', 'no model', ARRAY_FILL(0.1::FLOAT4, ARRAY[1024])::VECTOR(1024) FROM tenant LIMIT 1"
+  SELECT id, 'global', 'no model', '$(python3 -c "print('[' + ','.join(['0.1']*1024) + ']')")'::VECTOR(1024) FROM tenant LIMIT 1"
+
+`ARRAY_FILL()` does **not** exist on this CockroachDB build — verified 2026-08-09, it
+errors with `unknown function: array_fill()`. Generate the literal instead, as above.
 ```
 
 Expected: FAILS with `lesson_embedding_has_a_model`. If it succeeds, the `CHECK` is not doing its job and the index will fill with unsearchable rows.
@@ -767,6 +770,127 @@ Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep
 
 Expected: PASS, 19 tests.
 
+- [ ] **Step 4a: Make `applied` carry the sign, not just the magnitude**
+
+Task 2 shipped `rerank` reporting `abs(shift)`. That was wrong in the spec and it becomes load-bearing here: this task makes `applied` the inspector's evidence trail, and a reader who cannot tell whether a lesson *helped* or *hurt* a candidate has a trail that explains nothing. Magnitude without direction is not an explanation.
+
+In `platform/web/rtf_platform/lessons.py`, in `rerank`, change:
+
+```python
+            shifts.append({"lesson_id": str(lesson["id"]),
+                           "text": lesson["text"],
+                           "shift": abs(shift)})
+```
+
+to:
+
+```python
+            shifts.append({"lesson_id": str(lesson["id"]),
+                           "text": lesson["text"],
+                           # Signed. A consumer rendering this has to be able to say
+                           # "sank by 0.05 — ghosted twice" rather than only "0.05".
+                           # Positive lifted the candidate, negative sank it.
+                           "shift": shift})
+```
+
+Then fix the one Task 2 test that asserted the magnitude, in `platform/web/tests/test_lessons.py`:
+
+```python
+        self.assertAlmostEqual(applied[0]["shift"], -0.05,
+                               msg="a discouraging lesson reports a negative shift")
+```
+
+And add this test to the `Rerank` class:
+
+```python
+    def test_shift_sign_says_which_way_the_lesson_pushed(self):
+        # The inspector renders this. Magnitude alone cannot distinguish "we like them
+        # because they replied" from "we avoid them because they did not".
+        good = lessons.rerank([candidate("a", 0.5)],
+                              [lesson("party", "a", 1.0)], weight=0.05)
+        bad = lessons.rerank([candidate("a", 0.5)],
+                             [lesson("party", "a", -1.0)], weight=0.05)
+        self.assertGreater(good[0]["applied"][0]["shift"], 0)
+        self.assertLess(bad[0]["applied"][0]["shift"], 0)
+```
+
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
+
+Expected: PASS, 17 tests (16 from Tasks 2–3, plus this one).
+
+- [ ] **Step 4b: Absorb float noise, refuse a misunderstanding**
+
+Task 3's `write()` clamps `confidence` and `valence` into range. The justification was float noise — a ratio landing at `1.0000001` should not lose the whole lesson. That reasoning holds and the clamp stays. But the same line silently turns `confidence=50` into `1.0`, and a caller that has misunderstood the scale then looks exactly like a caller that is very sure. The two cases need separating.
+
+Add to `platform/web/rtf_platform/lessons.py`, beside `LESSON_WEIGHT`:
+
+```python
+#: How far outside its legal range a number may stray before `write` calls it a bug
+#: rather than rounding. A ratio that lands at 1.0000001 is arithmetic and gets clamped;
+#: a confidence of 50 is a caller working in percent, and storing 1.0 for it hides the
+#: mistake until somebody asks why every lesson is maximally confident.
+CLAMP_EPSILON = 1e-6
+```
+
+Add this helper below `applies()`:
+
+```python
+def _bounded(value: float, low: float, high: float, name: str) -> float:
+    """Clamp rounding error into range; refuse anything further out.
+
+    The distinction this draws is the whole point: absorbing noise keeps a good lesson,
+    and absorbing a scale error keeps a wrong one forever.
+    """
+    number = float(value)
+    if number < low - CLAMP_EPSILON or number > high + CLAMP_EPSILON:
+        raise ValueError(
+            f"{name}={number} is outside [{low}, {high}] by more than rounding error")
+    return max(low, min(high, number))
+```
+
+Then in `write()`, replace the two inline clamps:
+
+```python
+                 max(0.0, min(1.0, float(confidence))),
+                 max(-1.0, min(1.0, float(valence))),
+```
+
+with:
+
+```python
+                 _bounded(confidence, 0.0, 1.0, "confidence"),
+                 _bounded(valence, -1.0, 1.0, "valence"),
+```
+
+Add this test class to `platform/web/tests/test_lessons.py`:
+
+```python
+class Bounds(unittest.TestCase):
+    """Rounding error is absorbed; a misunderstanding is refused."""
+
+    def test_float_noise_is_clamped(self):
+        self.assertEqual(lessons._bounded(1.0000001, 0.0, 1.0, "confidence"), 1.0)
+        self.assertEqual(lessons._bounded(-1.0000001, -1.0, 1.0, "valence"), -1.0)
+
+    def test_a_value_in_range_is_unchanged(self):
+        self.assertEqual(lessons._bounded(0.5, 0.0, 1.0, "confidence"), 0.5)
+
+    def test_a_scale_error_is_refused_rather_than_flattened(self):
+        # A caller working in percent must not silently become "maximally confident".
+        with self.assertRaises(ValueError) as caught:
+            lessons._bounded(50, 0.0, 1.0, "confidence")
+        self.assertIn("confidence=50", str(caught.exception))
+
+    def test_the_bound_names_itself_in_the_error(self):
+        with self.assertRaises(ValueError) as caught:
+            lessons._bounded(-3, -1.0, 1.0, "valence")
+        self.assertIn("valence", str(caught.exception))
+```
+
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
+
+Expected: PASS, 21 tests (16 from Tasks 2–3, plus Step 4a's 1, plus these 4).
+
 - [ ] **Step 5: Wire the rerank into `shortlist`**
 
 In `platform/web/rtf_platform/agents.py`, add to the imports:
@@ -845,7 +969,7 @@ Update the `shortlist` docstring by appending this paragraph before the closing 
 
 Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
 
-Expected: PASS. **93 passed, 19 skipped** — the 77-test baseline plus the 16 offline tests from Tasks 2–3, with Task 4's 3 cluster tests joining the 16 already-skipped ones.
+Expected: PASS. **98 passed, 19 skipped** — the 77-test baseline, plus 16 offline tests from Tasks 2–3, plus Step 4a's 1 and Step 4b's 4, with Task 4's 3 cluster tests joining the 16 already-skipped ones.
 
 - [ ] **Step 7: Verify R1 still uses the index after the change**
 
@@ -890,7 +1014,7 @@ git commit -m "platform: the shortlist reads what we learned, and says which les
 Create `platform/schema/012_party_alias.sql`:
 
 ```sql
--- 011 — a merge that can be undone.
+-- 012 — a merge that can be undone.
 --
 -- The live index already holds `Amanda`, `Amanda` again, `Amanda Goncalves`,
 -- `Amanda Gonçalves`, `Amanda Rocha da Silva` and `Petra Liina Amanda Suokorpi`. Five
@@ -1510,7 +1634,7 @@ Expected: PASS, 12 tests.
 
 Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
 
-Expected: **93 passed, 31 skipped** with `DATABASE_URL` unset — Task 6's 12 cluster tests are all skips in that mode.
+Expected: **98 passed, 31 skipped** with `DATABASE_URL` unset — Task 6's 12 cluster tests are all skips in that mode.
 
 - [ ] **Step 7: Commit**
 
@@ -1622,7 +1746,12 @@ class Deduplicating(unittest.TestCase):
                         (self.tenant,))
             self.assertEqual(cur.fetchone()["n"], 0,
                              "dedup_party must propose, never merge")
-        self.assertIsNotNone(other)
+            cur.execute("""SELECT party_class, alias_of FROM party WHERE id = %s""",
+                        (other,))
+            row = cur.fetchone()
+        self.assertEqual(row["party_class"], "counterparty",
+                         "the near-duplicate must be left exactly as it was found")
+        self.assertIsNone(row["alias_of"])
 
     def test_a_distant_party_produces_nothing(self):
         from rtf_platform import agents, spend
@@ -1831,7 +1960,7 @@ Check every column the `INSERT` names is a key the dict above provides or that t
 
 Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
 
-Expected: **93 passed, 37 skipped** with `DATABASE_URL` unset. With `DATABASE_URL` set all 37 run: **130 passed, 0 skipped**.
+Expected: **98 passed, 37 skipped** with `DATABASE_URL` unset. With `DATABASE_URL` set all 37 run: **135 passed, 0 skipped**.
 
 - [ ] **Step 8: Commit**
 

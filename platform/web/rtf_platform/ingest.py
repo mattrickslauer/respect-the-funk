@@ -255,7 +255,8 @@ def retry_failed(conn: psycopg.Connection, tenant_id: str) -> int:
         cur.execute(
             """UPDATE lead
                   SET state = 'pending', attempts = 0, owner_agent = NULL,
-                      lease_expires_at = NULL, next_action_at = now(), updated_at = now()
+                      lease_expires_at = NULL, lease_token = NULL,
+                      next_action_at = now(), updated_at = now()
                 WHERE tenant_id = %s AND state = 'failed'""",
             (tenant_id,),
         )

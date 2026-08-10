@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 import unittest
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from rtf_platform import fleet, spend
@@ -150,7 +151,8 @@ class Claiming(unittest.TestCase):
     def test_completing_a_one_shot_lead_marks_it_done_and_clears_the_lease(self):
         lead_id = self._lead()
         lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
-        fleet.complete(self.conn, lead, fleet.Outcome(summary="did the thing"))
+        fleet.complete(self.conn, lead, fleet.Outcome(summary="did the thing"),
+                      agent_name="a")
         row = self._state(lead_id)
         self.assertEqual(row["state"], "done")
         self.assertIsNone(row["owner_agent"])
@@ -160,7 +162,7 @@ class Claiming(unittest.TestCase):
         """One nullable column is the difference between a crawler and a frontier."""
         lead_id = self._lead(cadence_seconds=900)
         lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
-        fleet.complete(self.conn, lead, fleet.Outcome())
+        fleet.complete(self.conn, lead, fleet.Outcome(), agent_name="a")
         row = self._state(lead_id)
         self.assertEqual(row["state"], "pending")
         self.assertIsNone(row["owner_agent"])
@@ -174,7 +176,7 @@ class Claiming(unittest.TestCase):
         fleet.complete(self.conn, lead, fleet.Outcome(follow_on=[
             {"kind": "downstream", "target_hash": child_hash, "target": "x",
              "adapter": "test", "reason": "because the parent said so"},
-        ]))
+        ]), agent_name="a")
         with self.conn.cursor() as cur:
             cur.execute("SELECT * FROM lead WHERE target_hash = %s", (child_hash,))
             child = cur.fetchone()
@@ -190,17 +192,46 @@ class Claiming(unittest.TestCase):
             lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
             fleet.complete(self.conn, lead, fleet.Outcome(follow_on=[
                 {"kind": "downstream", "target_hash": shared, "target": "x"},
-            ]))
+            ]), agent_name="a")
         with self.conn.cursor() as cur:
             cur.execute("SELECT count(*) AS n FROM lead WHERE target_hash = %s", (shared,))
             self.assertEqual(cur.fetchone()["n"], 1)
+
+    def test_completing_with_an_expired_lease_raises_instead_of_marking_it_done(self):
+        """The fence `complete`, `fail` and `_defer` share: a worker whose lease already
+        expired must not be able to silently finish a lead it no longer owns — that
+        silent no-op is exactly how the measured bug produced `agent_run` rows nobody
+        could explain and duplicate `party_metric` rows behind them.
+        """
+        lead_id = self._lead()
+        lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
+        with self.conn.cursor() as cur:
+            cur.execute("UPDATE lead SET lease_expires_at = now() - INTERVAL '1 minute' "
+                        "WHERE id = %s", (lead_id,))
+        with self.assertRaises(fleet.LeaseLost):
+            fleet.complete(self.conn, lead, fleet.Outcome(), agent_name="a")
+        row = self._state(lead_id)
+        self.assertNotEqual(row["state"], "done",
+                            "an expired lease must not be able to complete the lead")
+
+    def test_failing_with_an_expired_lease_raises_instead_of_touching_it(self):
+        lead_id = self._lead()
+        lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
+        with self.conn.cursor() as cur:
+            cur.execute("UPDATE lead SET lease_expires_at = now() - INTERVAL '1 minute' "
+                        "WHERE id = %s", (lead_id,))
+        with self.assertRaises(fleet.LeaseLost):
+            fleet.fail(self.conn, lead, "provider said 503", agent_name="a")
+        row = self._state(lead_id)
+        self.assertEqual(row["attempts"], 0,
+                         "an expired lease must not be able to record a failure either")
 
     # ---------------------------------------------------------------------- failure
 
     def test_failure_backs_off_and_stays_pending(self):
         lead_id = self._lead()
         lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
-        fleet.fail(self.conn, lead, "provider said 503")
+        fleet.fail(self.conn, lead, "provider said 503", agent_name="a")
         row = self._state(lead_id)
         self.assertEqual(row["state"], "pending")
         self.assertEqual(row["attempts"], 1)
@@ -211,7 +242,7 @@ class Claiming(unittest.TestCase):
     def test_a_permanent_failure_parks_immediately(self):
         lead_id = self._lead()
         lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
-        fleet.fail(self.conn, lead, "malformed target", permanent=True)
+        fleet.fail(self.conn, lead, "malformed target", agent_name="a", permanent=True)
         self.assertEqual(self._state(lead_id)["state"], "failed")
 
     def test_a_poisoned_lead_parks_rather_than_retrying_forever(self):
@@ -219,7 +250,20 @@ class Claiming(unittest.TestCase):
         lead = dict(fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0])
         for attempt in range(fleet.MAX_ATTEMPTS):
             lead["attempts"] = attempt
-            fleet.fail(self.conn, lead, "always throws")
+            # `fail` clears the claim on every non-parked call (it puts the lead back to
+            # `pending`, unowned, for backoff), so calling it again on the same captured
+            # `lead` — deliberately skipping the backoff-delayed re-claim, to exercise
+            # just the parking-threshold logic — needs the claim re-established each
+            # time: the name, the lease *and* the token, or the fence sees a lead this
+            # claim no longer holds and raises `LeaseLost` instead of the parking
+            # behaviour under test.
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE lead SET owner_agent = 'a', lease_token = %s, "
+                    "lease_expires_at = now() + INTERVAL '120 seconds' WHERE id = %s",
+                    (lead["lease_token"], lead_id),
+                )
+            fleet.fail(self.conn, lead, "always throws", agent_name="a")
         self.assertEqual(self._state(lead_id)["state"], "failed")
 
     # ------------------------------------------------------------------- the loop
@@ -237,6 +281,191 @@ class Claiming(unittest.TestCase):
             cur.execute("SELECT count(*) AS n FROM agent_run WHERE tenant_id = %s "
                         "AND state = 'ok'", (self.tenant,))
             self.assertEqual(cur.fetchone()["n"], 2)
+
+    def test_a_network_agents_successful_write_commits_with_completion(self):
+        """`fleet.NetworkAgent` is the shape a real agent that calls out to a source
+        adapter or an embedding provider uses. `fetch` does the network I/O; `write`
+        does the database writes and runs inside `work_once`'s transaction alongside
+        `record_run` and `complete`, exactly like a plain `Agent`.
+        """
+        lead_id = self._lead()
+
+        def fetch(conn, lead, gate):
+            return {"value": 42}
+
+        def write(conn, lead, gate, prepared):
+            return fleet.Outcome(summary=f"wrote {prepared['value']}", facts=1)
+
+        worked = fleet.work_once(self.conn, self.tenant, "prober",
+                                 fleet.NetworkAgent(fetch=fetch, write=write),
+                                 kinds=["probe"])
+        self.assertEqual(worked, 1)
+        self.assertEqual(self._state(lead_id)["state"], "done")
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT state, facts FROM agent_run WHERE lead_id = %s", (lead_id,))
+            run = cur.fetchone()
+        self.assertEqual(run["state"], "ok")
+        self.assertEqual(run["facts"], 1)
+
+    def test_a_network_agents_fetch_runs_outside_the_transaction_its_write_runs_inside(self):
+        """The reason `NetworkAgent` exists: a slow network call must never sit inside the
+        transaction that also writes `agent_run` and completes the lead. Prove both
+        halves — whatever `fetch` writes on its own is durable even when `write` later
+        fails, because `fetch` ran with no transaction open; whatever `write` does rolls
+        back together with its own failure, because it runs inside `work_once`'s
+        transaction.
+        """
+        lead_id = self._lead()
+        fetch_marker = str(uuid.uuid4())
+        write_marker = str(uuid.uuid4())
+
+        def fetch(conn, lead, gate):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO lead (tenant_id, scope_kind, kind, adapter, target,
+                                         target_hash, next_action_at)
+                       VALUES (%s, 'tenant', 'marker', 'test', %s, %s, now())""",
+                    (self.tenant, fetch_marker, fetch_marker),
+                )
+            return {"ok": True}
+
+        def write(conn, lead, gate, prepared):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO lead (tenant_id, scope_kind, kind, adapter, target,
+                                         target_hash, next_action_at)
+                       VALUES (%s, 'tenant', 'marker', 'test', %s, %s, now())""",
+                    (self.tenant, write_marker, write_marker),
+                )
+            raise fleet.LeadFailed("write blew up after its own insert")
+
+        agent = fleet.NetworkAgent(fetch=fetch, write=write)
+        fleet.work_once(self.conn, self.tenant, "prober", agent, kinds=["probe"])
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM lead WHERE target_hash = %s",
+                        (fetch_marker,))
+            self.assertEqual(
+                cur.fetchone()["n"], 1,
+                "fetch's own write should survive — it ran with no transaction open")
+            cur.execute("SELECT count(*) AS n FROM lead WHERE target_hash = %s",
+                        (write_marker,))
+            self.assertEqual(
+                cur.fetchone()["n"], 0,
+                "write's insert should have rolled back with its own failure")
+
+        self.assertEqual(self._state(lead_id)["state"], "pending")
+
+    def test_completes_refusal_rolls_back_whatever_was_written_before_it(self):
+        """The scenario the shared transaction exists for, reduced to the two statements
+        that matter: something is written, then `complete` refuses, and the write must go
+        with it. Pre-`194b972` the connection was in autocommit and those were two
+        commits, so the write survived a refusal that was itself a silent no-op.
+
+        This drives `complete` directly rather than through `work_once`, because the
+        route `work_once` would take to reach the same point no longer exists. A second
+        worker cannot steal the lead mid-write-phase: `_reacquire` holds
+        `SELECT … FOR UPDATE` on the row for the whole phase, so a second connection
+        trying it would block on our lock while we block on its reply — a hang, not a
+        race. And the clock cannot run out mid-phase either, because CockroachDB's `now()`
+        is the *transaction's* timestamp, so `complete` and `_reacquire` read the same
+        instant by construction. What is left to prove is the rollback itself, and a
+        stale token proves it without needing either.
+        """
+        lead_id = self._lead()
+        lead = dict(fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0])
+        marker_hash = str(uuid.uuid4())
+        # A token from a claim that is no longer the current one. `complete` must refuse
+        # on it however live the lease looks.
+        lead["lease_token"] = str(uuid.uuid4())
+
+        with self.assertRaises(fleet.LeaseLost):
+            with self.conn.transaction():
+                with self.conn.cursor() as cur:
+                    cur.execute(
+                        """INSERT INTO lead (tenant_id, scope_kind, kind, adapter, target,
+                                             target_hash, next_action_at)
+                           VALUES (%s, 'tenant', 'marker', 'test', %s, %s, now())""",
+                        (self.tenant, marker_hash, marker_hash),
+                    )
+                fleet.complete(self.conn, lead, fleet.Outcome(summary="stale claim"),
+                               agent_name="a")
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM lead WHERE target_hash = %s",
+                        (marker_hash,))
+            self.assertEqual(
+                cur.fetchone()["n"], 0,
+                "the write should have rolled back with `complete`'s refusal")
+        self.assertEqual(self._state(lead_id)["state"], "pending",
+                         "a stale claim marked the lead done anyway")
+
+    def test_a_lease_lost_to_a_second_worker_writes_nothing_and_leaves_the_lead_alone(self):
+        """The contended half. A second worker claims the lead while the first is still
+        fetching — the window where the first holds no lock on the row, which is the only
+        window in which this can happen at all now that `_reacquire` locks the row for the
+        write phase.
+
+        Nothing of the first worker's lands, and — the part the uncontended path gets
+        wrong if you are not careful — the lead is left exactly as the second worker set
+        it. Backing it off here would clear a live lease out from under a run that is
+        going fine.
+        """
+        import psycopg
+        from psycopg.rows import dict_row
+
+        lead_id = self._lead()
+        marker_hash = str(uuid.uuid4())
+        other = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True,
+                                row_factory=dict_row)
+
+        def fetch(conn, lead, gate):
+            with other.cursor() as cur:
+                cur.execute(
+                    "UPDATE lead SET owner_agent = 'someone-else', "
+                    "lease_token = gen_random_uuid(), "
+                    "lease_expires_at = now() + INTERVAL '120 seconds' WHERE id = %s",
+                    (lead_id,),
+                )
+            return {"stale": True}
+
+        def write(conn, lead, gate, prepared):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO lead (tenant_id, scope_kind, kind, adapter, target,
+                                         target_hash, next_action_at)
+                       VALUES (%s, 'tenant', 'marker', 'test', %s, %s, now())""",
+                    (self.tenant, marker_hash, marker_hash),
+                )
+            return fleet.Outcome(summary="should never land")
+
+        try:
+            fleet.work_once(self.conn, self.tenant, "prober",
+                            fleet.NetworkAgent(fetch=fetch, write=write),
+                            kinds=["probe"])
+        finally:
+            other.close()
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM lead WHERE target_hash = %s",
+                        (marker_hash,))
+            self.assertEqual(cur.fetchone()["n"], 0,
+                             "a worker that had lost its lead still wrote for it")
+
+        row = self._state(lead_id)
+        self.assertEqual(row["owner_agent"], "someone-else",
+                         "the lead must be left exactly as the new owner set it")
+        self.assertEqual(row["attempts"], 0,
+                         "the loser of the race charged an attempt to the winner's lead")
+        self.assertEqual(row["state"], "pending")
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT state, summary FROM agent_run WHERE lead_id = %s",
+                        (lead_id,))
+            runs = cur.fetchall()
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["state"], "lease_lost")
+        self.assertIn("another claim holds", runs[0]["summary"])
 
     def test_one_bad_lead_does_not_stop_the_batch(self):
         good = self._lead()
@@ -268,6 +497,47 @@ class Claiming(unittest.TestCase):
             cur.execute("SELECT state FROM agent_run WHERE lead_id = %s", (lead_id,))
             self.assertEqual(cur.fetchone()["state"], "refused")
 
+    def test_an_agents_write_rolls_back_with_its_failure(self):
+        """The property this fix exists for. `db.py` opens the connection in autocommit,
+        so an agent's write and the failure that follows it are two separate commits
+        unless `work_once` puts them in the same transaction. Measured on the live
+        cluster as three `agent_run` rows with `state = 'ok'` for one lead before it
+        reached `done`, and three duplicate `party_metric` rows alongside them — a crash
+        (or here, a raise) between the write and the lead's completion left the write
+        durable and the lead still claimable, so the next worker ran it again.
+
+        A fake agent that writes a row and then raises reproduces the same shape without
+        needing an actual crash: on the current, unfixed code the row survives the
+        failure, because the write already committed by the time `LeadFailed` is raised.
+        """
+        lead_id = self._lead()
+        marker_hash = str(uuid.uuid4())
+
+        def bad_agent(conn, lead, gate):
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO lead (tenant_id, scope_kind, kind, adapter, target,
+                                         target_hash, next_action_at)
+                       VALUES (%s, 'tenant', 'marker', 'test', %s, %s, now())""",
+                    (self.tenant, marker_hash, marker_hash),
+                )
+            raise fleet.LeadFailed("wrote something, then blew up")
+
+        fleet.work_once(self.conn, self.tenant, "prober", bad_agent, kinds=["probe"])
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM lead WHERE target_hash = %s",
+                        (marker_hash,))
+            self.assertEqual(
+                cur.fetchone()["n"], 0,
+                "the agent's write survived a failure it should have rolled back with")
+
+        row = self._state(lead_id)
+        self.assertEqual(row["state"], "pending",
+                         "a failed lead must be claimable again or parked, "
+                         "not stuck as though nothing happened")
+        self.assertEqual(row["attempts"], 1)
+
     def test_an_unexpected_exception_is_contained(self):
         lead_id = self._lead()
 
@@ -282,6 +552,232 @@ class Claiming(unittest.TestCase):
             run = cur.fetchone()
         self.assertEqual(run["state"], "error")
         self.assertIn("ZeroDivisionError", run["error"])
+
+    # ------------------------------------------------- losing a lease to nobody
+
+    def _lease_burner(self, lead_id: str):
+        """An agent whose fetch outlives its own lease, with no second worker involved.
+
+        Stands in for the real thing: `embed_batch` and the source adapters make one HTTP
+        call that can run twenty or thirty seconds, and `claim` stamps one deadline across
+        a whole `BATCH = 5`. Expiring the lease from inside `fetch` reproduces that in a
+        millisecond and without a network.
+        """
+        def fetch(conn, lead, gate):
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE lead SET lease_expires_at = now() - INTERVAL '1 minute' "
+                    "WHERE id = %s", (lead_id,))
+            return {"fetched": True}
+
+        def write(conn, lead, gate, prepared):
+            return fleet.Outcome(summary="came back to a lease that had run out")
+
+        return fleet.NetworkAgent(fetch=fetch, write=write)
+
+    def test_a_lease_lost_to_nobody_backs_off_instead_of_spinning(self):
+        """The failure the ownership fence introduced, and the reason for this round.
+
+        On the no-contender path the fence raises `LeaseLost` and the first version of
+        the handler deliberately did not touch the lead: `state` stayed `pending`,
+        `next_action_at` stayed in the past, `attempts` stayed put and no backoff was
+        applied. `ingest.drain` loops while `work_once` returns non-zero and `work_once`
+        returns `len(leads)`, so the same lead is re-claimed and re-fetched immediately,
+        forever, paying the embedding or HTTP provider on every pass — and `MAX_ATTEMPTS`
+        never parks it because `fail` is never reached. Silent duplication traded for a
+        money-burning livelock.
+
+        Nobody else claims this lead at any point. The row is still ours, and the only
+        correct thing to do with it is what `fail` would do.
+        """
+        lead_id = self._lead()
+        fleet.work_once(self.conn, self.tenant, "solo",
+                        self._lease_burner(lead_id), kinds=["probe"])
+
+        row = self._state(lead_id)
+        self.assertEqual(row["state"], "pending",
+                         "an uncontended lease loss is a retry, not a completion")
+        self.assertEqual(row["attempts"], 1,
+                         "the lease loss did not count as an attempt — nothing will ever "
+                         "park this lead")
+        self.assertIsNone(row["owner_agent"], "the lost lease was not released")
+        self.assertIsNone(row["lease_token"], "the stale claim token was left on the row")
+        self.assertEqual(
+            fleet.claim(self.conn, self.tenant, "solo", kinds=["probe"]), [],
+            "the lead is immediately re-claimable — this is the livelock, and the next "
+            "pass pays the provider again")
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT state, summary FROM agent_run WHERE lead_id = %s",
+                        (lead_id,))
+            run = cur.fetchone()
+        self.assertEqual(run["state"], "lease_lost")
+        self.assertIn("no other claimant", run["summary"],
+                      "the run does not say which kind of lease loss this was")
+
+    def test_repeated_lease_loss_parks_the_lead_rather_than_spinning(self):
+        """Backoff alone would still retry forever, just more slowly. `MAX_ATTEMPTS` has
+        to engage on this path exactly as it does for any other repeated failure.
+
+        `next_action_at` is dragged back to now between rounds — that is standing in for
+        the backoff elapsing, not routing around it; the previous assertion already
+        proved the backoff is applied.
+        """
+        lead_id = self._lead()
+        agent = self._lease_burner(lead_id)
+        for _ in range(fleet.MAX_ATTEMPTS):
+            with self.conn.cursor() as cur:
+                cur.execute("UPDATE lead SET next_action_at = now() WHERE id = %s",
+                            (lead_id,))
+            worked = fleet.work_once(self.conn, self.tenant, "solo", agent,
+                                     kinds=["probe"])
+            self.assertEqual(worked, 1, "the lead stopped being picked up mid-way")
+
+        row = self._state(lead_id)
+        self.assertEqual(row["state"], "failed",
+                         "a lead that repeatedly outlives its lease must park for a "
+                         "human, not retry until the spend ceiling stops it")
+        self.assertEqual(row["attempts"], fleet.MAX_ATTEMPTS)
+        self.assertEqual(fleet.claim(self.conn, self.tenant, "solo", kinds=["probe"]), [],
+                         "a parked lead was still claimable")
+
+    def test_a_lease_lost_while_recording_a_failure_does_not_erase_the_real_error(self):
+        """The agent's real error must survive even when recording it loses the race.
+
+        `LeadFailed` is raised by `fetch`, same as `_lease_burner`, but `fetch` also
+        expires the lease first — so by the time `work_once`'s `except LeadFailed`
+        handler tries to run `fail`, the lease is already gone, `fail`'s fence raises
+        `LeaseLost`, and the `record_run` that carried the agent's real message rolls
+        back with it. Before this fix, only the lease-loss text survived into
+        `agent_run.error` and `lead.last_error` — an operator reading the row to find out
+        why this lead failed would see "lease expired" and never learn it was actually
+        "document body is empty".
+        """
+        lead_id = self._lead()
+
+        def fetch(conn, lead, gate):
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE lead SET lease_expires_at = now() - INTERVAL '1 minute' "
+                    "WHERE id = %s", (lead_id,))
+            raise fleet.LeadFailed("document body is empty", permanent=True)
+
+        def write(conn, lead, gate, prepared):
+            raise AssertionError("write must never run — fetch already raised")
+
+        fleet.work_once(self.conn, self.tenant, "solo",
+                        fleet.NetworkAgent(fetch=fetch, write=write), kinds=["probe"])
+
+        row = self._state(lead_id)
+        self.assertIn("document body is empty", row["last_error"],
+                      "the real cause of the failure was lost behind the lease-loss text")
+
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT state, error FROM agent_run WHERE lead_id = %s", (lead_id,))
+            run = cur.fetchone()
+        self.assertEqual(run["state"], "lease_lost")
+        self.assertIn("document body is empty", run["error"],
+                      "agent_run.error should still say what the agent actually raised")
+
+    # ------------------------------------------ two workers, one name, one lead
+
+    def test_two_workers_sharing_a_name_cannot_both_pass_the_fence(self):
+        """`owner_agent` is a worker *name*, and `ingest.py`'s CLI default for it is the
+        constant `"ingest-cli"`. Two drains started from two terminals are both called
+        that, so a fence on the name plus a live lease cannot tell them apart: the first
+        worker's `complete` matches on the *second* worker's fresh lease and both write.
+        That is the duplication the fence was added to stop, surviving through it.
+
+        `claim` mints a `lease_token` per claim (migration 013), so the stale claim is
+        distinguishable from the live one even though the two share every other column.
+        """
+        import psycopg
+        from psycopg.rows import dict_row
+
+        name = "ingest-cli"
+        lead_id = self._lead()
+        other = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True,
+                                row_factory=dict_row)
+        try:
+            first = fleet.claim(self.conn, self.tenant, name, kinds=["probe"])[0]
+            # The first worker is still fetching when its lease runs out.
+            with self.conn.cursor() as cur:
+                cur.execute("UPDATE lead SET lease_expires_at = now() - INTERVAL '1 min' "
+                            "WHERE id = %s", (lead_id,))
+            # A second drain, under the same name, legitimately picks the lead back up.
+            second = fleet.claim(other, self.tenant, name, kinds=["probe"])[0]
+            self.assertEqual(str(second["id"]), lead_id, "the re-claim did not happen")
+
+            # The first worker comes back and tries to finish. It must not be able to.
+            with self.assertRaises(fleet.LeaseLost):
+                fleet.complete(self.conn, first, fleet.Outcome(summary="stale"),
+                               agent_name=name)
+            self.assertNotEqual(
+                self._state(lead_id)["state"], "done",
+                "a stale claim completed a lead the live claim under the same name owns")
+            self.assertNotEqual(first["lease_token"], second["lease_token"],
+                                "two claims of one lead produced the same token")
+
+            # And the live claim is unharmed by the loser's attempt.
+            fleet.complete(other, second, fleet.Outcome(summary="live"), agent_name=name)
+        finally:
+            other.close()
+
+        row = self._state(lead_id)
+        self.assertEqual(row["state"], "done")
+        self.assertIsNone(row["lease_token"])
+
+    def test_a_lead_dict_with_no_lease_token_is_refused_rather_than_defaulted(self):
+        """No fallbacks. A token of `NULL` would fence against nothing and read as a lost
+        lease; no token at all would reopen the hole. Neither is a default worth having.
+        """
+        lead_id = self._lead()
+        lead = dict(fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0])
+        del lead["lease_token"]
+        with self.assertRaises(ValueError):
+            fleet.complete(self.conn, lead, fleet.Outcome(), agent_name="a")
+        self.assertEqual(self._state(lead_id)["state"], "pending")
+
+    # ------------------------------------------------- the batch's shared deadline
+
+    def test_each_lead_gets_its_lease_measured_from_its_own_turn(self):
+        """`claim` stamps one `lease_expires_at` across the whole batch in one `UPDATE`,
+        and `work_once` then works those leads one at a time. At twenty or thirty seconds
+        of HTTP per fetch, the last lead of a `BATCH = 5` pass would start on a deadline
+        that was set four fetches ago. `renew`, called at the top of each lead's turn,
+        is what stops the shared deadline from being the thing that decides.
+        """
+        lead_id = self._lead()
+        lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE lead SET lease_expires_at = now() - INTERVAL '1 minute' "
+                "WHERE id = %s", (lead_id,))
+
+        # Uncontended: the token still matches, so this claim is still current and the
+        # lapsed deadline is renewable rather than fatal.
+        fleet.renew(self.conn, lead, "a")
+        row = self._state(lead_id)
+        self.assertGreater(row["lease_expires_at"], datetime.now(timezone.utc),
+                           "an uncontended lapsed lease was not renewed")
+        self.assertEqual(str(row["lease_token"]), str(lead["lease_token"]),
+                         "renewing rotated the token, breaking the fence's identity")
+        # …and the renewal is enough for the claim to finish normally.
+        fleet.complete(self.conn, lead, fleet.Outcome(), agent_name="a")
+        self.assertEqual(self._state(lead_id)["state"], "done")
+
+    def test_renewing_a_lead_another_claim_took_is_refused(self):
+        lead_id = self._lead()
+        lead = fleet.claim(self.conn, self.tenant, "a", kinds=["probe"])[0]
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE lead SET lease_expires_at = now() - INTERVAL '1 minute' "
+                "WHERE id = %s", (lead_id,))
+        fleet.claim(self.conn, self.tenant, "b", kinds=["probe"])
+        with self.assertRaises(fleet.LeaseLost):
+            fleet.renew(self.conn, lead, "a")
+        self.assertEqual(self._state(lead_id)["owner_agent"], "b",
+                         "a stale claim's renewal disturbed the live one")
 
 
 if __name__ == "__main__":

@@ -94,6 +94,7 @@ CREATE TABLE lesson (
     text          STRING NOT NULL,
     evidence_json JSONB NOT NULL DEFAULT '{}',
     confidence    FLOAT NOT NULL DEFAULT 0.5,
+    valence       FLOAT NOT NULL DEFAULT 0,   -- -1 discouraging … +1 encouraging
     embedding     VECTOR(1024),
     model         STRING NOT NULL DEFAULT '',
     model_version STRING NOT NULL DEFAULT '',
@@ -128,6 +129,12 @@ stays readable, because *why we used to believe this* is itself evidence.
 **`hit_count` is not telemetry.** It is how an operator sees which lessons are earning
 their place and which are noise the Analyst should retire. A lesson that has never been
 retrieved in fifty drafts is a candidate for supersession.
+
+**`valence` is stored, not derived.** `confidence` says how sure we are; it does not say
+which way the lesson points. §6's rerank needs a signed term, and inferring the sign from
+`text` at query time would put a model call inside the hottest query in the system, which
+§6 rules out. A lesson writer states the direction once, at write time, where it is cheap
+and auditable.
 
 **`scope_id` is a `STRING`, not a `UUID`, and carries no foreign key.** It holds a party
 UUID when `scope_kind = 'party'` and a bare token (`'curator'`, `'radio'`) otherwise.

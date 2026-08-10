@@ -442,16 +442,39 @@ class DeezerSource:
         """
         harvest = Harvest()
 
-        # Style, not name. Searching playlists for an unsigned artist's *name* does not
-        # merely return nothing — it returns the wrong thing, because Deezer falls back
-        # to fuzzy matching and a search for "Amanda Kurt" surfaces every curator called
-        # Amanda. That noise then gets embedded and ranked, and a shortlist quietly fills
-        # with people whose only connection to the artist is a first name.
+        # Style, not name, and **no fallback to the name**. Searching playlists for an
+        # unsigned artist's name does not merely return nothing — it returns the wrong
+        # thing, because Deezer falls back to fuzzy matching and a search for "Amanda
+        # Kurt" surfaces every curator called Amanda. That noise then gets embedded and
+        # ranked, and a shortlist quietly fills with people whose only connection to the
+        # artist is a first name. It is not a hypothetical: of the eighteen
+        # counterparties this harvest put on the cluster, thirteen were Amandas, and
+        # deleting them is what emptied the shortlist entirely.
         #
-        # So the name is a *fallback*, used only when we know nothing about how the
-        # record sounds — never alongside genre terms that are actually about the music.
-        vibe = [t for t in terms if t]
-        names = vibe or [artist_name]
+        # This used to read `names = vibe or [artist_name]`, described as a fallback for
+        # when we know nothing about how the record sounds. That is precisely the case
+        # where it does the most damage, and a fallback that fires exactly when it is
+        # least trustworthy is not a safety net — it is a way of turning "we have no
+        # idea" into a confident list of strangers. Knowing nothing is a state to report,
+        # not to paper over.
+        #
+        # So: no style terms, no search. `analyse_recording` is what produces them from
+        # the audio when a platform's genre labels are thin, and `SCOPE-RESET §2a`'s
+        # provenance classes are what keep a measured tempo distinct from a guessed
+        # genre once it has.
+        # Stripped, not merely truthy: `party_fact.value_text` is a free-text column and
+        # a whitespace-only genre is as empty as an absent one. `if t` alone keeps `" "`,
+        # which searches Deezer for a space and returns its generic catalogue — the same
+        # class of confident nonsense the name fallback produced, arriving by a different
+        # door.
+        names = [t.strip() for t in terms if t and t.strip()]
+        if not names:
+            raise SourceUnavailable(
+                f"no style terms for {artist_name}, so there is nothing to search "
+                "playlists for. Searching by artist name returns curators who share a "
+                "first name, not curators who play this kind of record. Measure the "
+                "audio or assert a genre, then run this again.",
+                permanent=True)
 
         if deezer_id:
             try:

@@ -229,3 +229,57 @@ class WriteFindCounterpartiesWritesALegalMode(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DiscoveryRefusesToSearchByName(unittest.TestCase):
+    """`DeezerSource.discover_counterparties` must not fall back to the artist's name.
+
+    Offline: the refusal happens before any network call, which is itself the property
+    worth having — an adapter that reaches a provider only to throw the answer away has
+    already spent the call.
+
+    Deezer fuzzy-matches, so a playlist search for "Amanda Kurt" returns every curator
+    called Amanda, and those get embedded and ranked like any other candidate. Of the
+    eighteen counterparties this harvest put on the live cluster, thirteen were Amandas.
+
+    The fallback fired precisely when the system knew least about the record, which is
+    the worst possible moment to become confident. Knowing nothing is a state to report.
+    """
+
+    def _source(self):
+        from rtf_platform import sources
+        return sources.DeezerSource()
+
+    def test_no_style_terms_refuses_rather_than_searching_the_name(self):
+        from rtf_platform import sources
+
+        with self.assertRaises(sources.SourceUnavailable) as caught:
+            self._source().discover_counterparties("Amanda Kurt", "123", terms=[])
+        self.assertIn("style terms", str(caught.exception))
+
+    def test_blank_terms_count_as_no_terms(self):
+        """`party_fact` can hold an empty `value_text`; a list of empty strings is not a
+        vocabulary, and filtering it away must reach the same refusal rather than
+        searching for the empty string."""
+        from rtf_platform import sources
+
+        with self.assertRaises(sources.SourceUnavailable):
+            self._source().discover_counterparties("Amanda Kurt", "123", terms=["", " "])
+
+    def test_the_refusal_is_permanent_so_the_fleet_stops_retrying(self):
+        """Retrying cannot conjure a genre fact. The lead should park for a human, not
+        burn four attempts and a provider call each time."""
+        from rtf_platform import sources
+
+        with self.assertRaises(sources.SourceUnavailable) as caught:
+            self._source().discover_counterparties("Amanda Kurt", "123", terms=[])
+        self.assertTrue(caught.exception.permanent)
+
+    def test_the_message_says_what_would_fix_it(self):
+        from rtf_platform import sources
+
+        with self.assertRaises(sources.SourceUnavailable) as caught:
+            self._source().discover_counterparties("Amanda Kurt", "123", terms=[])
+        message = str(caught.exception).lower()
+        self.assertTrue("measure" in message or "assert" in message,
+                        "the refusal does not tell an operator how to clear it")

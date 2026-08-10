@@ -41,12 +41,17 @@ checked in the **zone that actually governs it**, not the unit as a whole:
 
   * a `JOIN <table> ON ...` reference is checked in its own `ON ...` clause — the text
     from right after the table name up to the next `JOIN`/`WHERE`/`GROUP BY`/`ORDER
-    BY`/`LIMIT`/`RETURNING`/`HAVING`/`FOR UPDATE`/`ON CONFLICT`;
-  * a primary `FROM`/`UPDATE` table is checked in the statement's own `WHERE` clause
-    (from `WHERE` to the next such boundary; no `WHERE` at all is an automatic
-    violation);
+    BY`/`LIMIT`/`RETURNING`/`HAVING`/`FOR UPDATE`/`ON CONFLICT` — for a `tenant_id`
+    **equality** comparison (`_has_tenant_equality`), not merely a mention of the word:
+    `tenant_id IS NOT NULL` or `tenant_id != %s` both put `tenant_id` in the zone and
+    scope nothing, and neither satisfies this check;
+  * a primary `FROM`/`UPDATE` table is checked the same way, in the statement's own
+    `WHERE` clause (from `WHERE` to the next such boundary; no `WHERE` at all is an
+    automatic violation);
   * an `INSERT INTO <table> (...)` is checked in its own column list (from the table
-    name to `VALUES`).
+    name to `VALUES`) for the **presence** of `tenant_id`, not an equality comparison —
+    a column list has no operators to compare with; `tenant_id` naming a column *is*
+    the claim that this INSERT writes one.
 
 **This is the fix for the exact hole this test shipped with the first time**: an
 earlier version of this check looked for the substring `tenant_id` anywhere in a unit,
@@ -365,9 +370,32 @@ def _zone(unit: str, keyword: str, ref_end: int, where_pos: int | None) -> str:
     return unit[where_pos:_next_boundary(unit, where_pos, _WHERE_ZONE_ENDERS)]
 
 
+#: `tenant_id` immediately followed by a bare `=` (not `==`) — the forward direction of
+#: an equality comparison, `tenant_id = <anything>` including `tenant_id = ANY(%s)`.
+_EQ_FORWARD_RE = re.compile(r"\btenant_id\b\s*=(?!=)")
+#: The reversed direction, `<anything> = tenant_id`. The lookbehind excludes `!=`,
+#: `<=`, `>=` and `==` — none of those are a bare `=` immediately before `tenant_id`.
+_EQ_REVERSE_RE = re.compile(r"(?<![!<>=])=\s*\btenant_id\b")
+
+
+def _has_tenant_equality(zone: str) -> bool:
+    """Whether `zone` compares `tenant_id` for equality against something — not just
+    mentions it. `tenant_id IS NOT NULL`, `tenant_id != %s` and `tenant_id > %s` all
+    contain the word `tenant_id` and scope nothing; none of them satisfy this, because
+    neither regex's `=` requirement is met (`IS`/`IN`/`<`/`>` are not `=`, and `!=`/`<=`/
+    `>=` are excluded by the lookbehind on the reversed check)."""
+    return bool(_EQ_FORWARD_RE.search(zone) or _EQ_REVERSE_RE.search(zone))
+
+
 def _violations(text: str) -> list[tuple[str, str, str]]:
     """`(unit, keyword, table)` for every table reference in `text` whose governing
-    zone (see `_zone`) does not carry a `tenant_id` predicate."""
+    zone (see `_zone`) does not carry a `tenant_id` predicate. `JOIN`/`FROM`/`UPDATE`
+    zones require an *equality* comparison (`_has_tenant_equality`) — a zone can
+    mention `tenant_id` in a comparison that scopes nothing at all (`tenant_id IS NOT
+    NULL` passes exactly one predicate: that the column has ever been set, which it
+    always has) and that must not pass this check. `INTO`'s zone is a column list, not
+    a comparison — `tenant_id` appearing there at all is what "this INSERT writes a
+    tenant" means, so it is checked by simple presence instead."""
     found = []
     for unit in _extract_units(text):
         where_match = re.search(r"\bWHERE\b", unit, re.IGNORECASE)
@@ -378,7 +406,9 @@ def _violations(text: str) -> list[tuple[str, str, str]]:
             if table not in TENANT_SCOPED_TABLES:
                 continue
             zone = _zone(unit, keyword, m.end(), where_pos)
-            if "tenant_id" not in zone:
+            ok = (re.search(r"\btenant_id\b", zone) if keyword == "INTO"
+                  else _has_tenant_equality(zone))
+            if not ok:
                 found.append((unit, keyword, table))
     return found
 

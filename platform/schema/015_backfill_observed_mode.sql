@@ -17,8 +17,9 @@
 --
 -- So `'observed'` is the only illegal value on the cluster, and 18 is the whole
 -- backfill. `agents._write_find_counterparties` — the sole writer of that value — was
--- fixed to write `'owned'` in the same commit as `014`, so this is a one-time cleanup
--- of rows written before that fix, not an ongoing gap.
+-- fixed to write `'owned'` in commit `eaed4fe`, one commit before `014`'s CHECK landed
+-- (`7325a88`) — not the same commit — so this is a one-time cleanup of rows written
+-- before that fix, not an ongoing gap.
 --
 -- Guarded twice, deliberately redundant:
 --   * the `UPDATE`'s own `WHERE mode = 'observed'` means it is mechanically incapable of
@@ -26,8 +27,9 @@
 --     time this actually runs;
 --   * `VALIDATE CONSTRAINT` immediately after is what turns "we backfilled the rows we
 --     knew about" into "the database itself confirms none are left" — if some other
---     illegal value had appeared on the cluster since `014` landed (it should not have,
---     `014`'s CHECK went live at the same time as the code fix), this is what would catch
+--     illegal value had appeared on the cluster since the code fix landed (it should
+--     not have — the write path has produced only `'owned'` since `eaed4fe`, and
+--     `014`'s CHECK has covered every write since `7325a88`), this is what would catch
 --     it, loudly, rather than declaring victory on the strength of one UPDATE's rowcount.
 --
 -- `owned`, not a case-by-case value per row: every one of the 18 came from

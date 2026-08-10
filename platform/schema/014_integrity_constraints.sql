@@ -87,12 +87,14 @@ ALTER TABLE lesson ADD CONSTRAINT lesson_no_self_supersede
 --
 -- They stay exactly as they are — readable, not coerced, a cleanup for whoever owns
 -- that decision — until someone deliberately backfills or retires them. See `015_
--- backfill_observed_mode.sql`, written alongside this migration and **not applied**:
--- it updates the 18 rows and then runs `VALIDATE CONSTRAINT`, so the grandfathering can
--- end in one command whenever that call gets made, rather than lingering by default.
+-- backfill_observed_mode.sql` (commit `6ee9aa1`, one commit after this migration, not
+-- alongside it) and **not applied**: it updates the 18 rows and then runs `VALIDATE
+-- CONSTRAINT`, so the grandfathering can end in one command whenever that call gets
+-- made, rather than lingering by default.
 --
--- The write that produced all 18 (`agents._write_find_counterparties`) is fixed in the
--- same commit as this migration to write `'owned'` instead: the party discovered is the
+-- The write that produced all 18 (`agents._write_find_counterparties`) was fixed to
+-- write `'owned'` instead in commit `eaed4fe` — the commit immediately before this
+-- migration landed (`7325a88`), not the same one: the party discovered is the
 -- account's own party, in exactly the sense an artist's own Spotify page is `'owned'`,
 -- not a fourth mode this system decided it needed.
 --

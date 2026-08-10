@@ -98,10 +98,12 @@ def _fetch_embed_document(conn: psycopg.Connection, lead: dict[str, Any],
     an embedding provider over the network, so nothing here may run inside a transaction.
     """
     document_id = lead["target"]
+    tenant_id = lead["tenant_id"]
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, tenant_id, party_id, title, body FROM party_document WHERE id = %s",
-            (document_id,),
+            """SELECT id, tenant_id, party_id, title, body FROM party_document
+                WHERE tenant_id = %s AND id = %s""",
+            (tenant_id, document_id),
         )
         doc = cur.fetchone()
 
@@ -142,7 +144,8 @@ def _write_embed_document(conn: psycopg.Connection, lead: dict[str, Any],
         # Replace rather than append: re-embedding a document with a different model
         # must not leave the old model's chunks behind, because a retrieval filtered
         # to one model would then silently see a partial document.
-        cur.execute("DELETE FROM party_chunk WHERE document_id = %s", (doc["id"],))
+        cur.execute("DELETE FROM party_chunk WHERE tenant_id = %s AND document_id = %s",
+                    (doc["tenant_id"], doc["id"]))
         for ordinal, (text, vector) in enumerate(zip(chunks, vectors)):
             cur.execute(
                 """INSERT INTO party_chunk (tenant_id, party_id, document_id, ordinal,
@@ -221,12 +224,13 @@ def retrieve(conn: psycopg.Connection, tenant_id: str, query: str, *,
                 )
                 SELECT m.text, m.ordinal, m.distance,
                        (SELECT d.title FROM party_document d
-                         WHERE d.id = m.document_id) AS title,
+                         WHERE d.tenant_id = %s AND d.id = m.document_id) AS title,
                        (SELECT d.url FROM party_document d
-                         WHERE d.id = m.document_id) AS url
+                         WHERE d.tenant_id = %s AND d.id = m.document_id) AS url
                   FROM matched m
                  ORDER BY m.distance""",
-            (vectors[0].literal(), tenant_id, provider.model, vectors[0].literal(), limit),
+            (vectors[0].literal(), tenant_id, provider.model, vectors[0].literal(), limit,
+             tenant_id, tenant_id),
         )
         return list(cur.fetchall())
 
@@ -306,22 +310,40 @@ def _write_map_source(conn: psycopg.Connection, lead: dict[str, Any], gate: spen
             # `fact_one_live_per_dimension` is unique per (tenant, party, dimension,
             # provenance) while live, so a second genre would collide with the first.
             # Superseding rather than skipping keeps the newest reading live and the
-            # history intact, which is what `supersedes_id` is for.
+            # history intact, which is what `supersedes_id` is for — and it has to be
+            # *set*, not just implied by `status`, or `lessons.heads()`'s `party_fact`
+            # analogue has no edge to resolve a chain from. Found by id first, rather
+            # than a blind `UPDATE … WHERE status = 'live'`, so the row the new one
+            # names in `supersedes_id` is exactly the row the UPDATE below flips —
+            # status and relationship cannot disagree because they come from the same
+            # read.
             cur.execute(
-                """UPDATE party_fact SET status = 'superseded'
+                """SELECT id, value_text FROM party_fact
                     WHERE tenant_id = %s AND party_id = %s AND dimension = %s
-                      AND provenance = %s AND status = 'live' AND value_text != %s""",
-                (tenant_id, party_id, fact.dimension,
-                 fact.provenance, fact.value_text),
+                      AND provenance = %s AND status = 'live'""",
+                (tenant_id, party_id, fact.dimension, fact.provenance),
             )
+            live = cur.fetchone()
+            if live is not None and live["value_text"] == fact.value_text:
+                # Unchanged reading — nothing superseded, nothing new to write.
+                continue
+            supersedes_id = None
+            if live is not None:
+                cur.execute(
+                    """UPDATE party_fact SET status = 'superseded'
+                        WHERE tenant_id = %s AND id = %s AND status = 'live'""",
+                    (tenant_id, live["id"]),
+                )
+                supersedes_id = live["id"]
             cur.execute(
                 """INSERT INTO party_fact
                         (tenant_id, party_id, dimension, value_text, provenance,
-                         confidence, source, written_by)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                         confidence, source, written_by, supersedes_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT DO NOTHING""",
                 (tenant_id, party_id, fact.dimension, fact.value_text,
-                 fact.provenance, fact.confidence, platform, "map_source"),
+                 fact.provenance, fact.confidence, platform, "map_source",
+                 supersedes_id),
             )
             written["facts"] += cur.rowcount
 
@@ -471,7 +493,8 @@ def _fetch_find_counterparties(conn: psycopg.Connection, lead: dict[str, Any],
     tenant_id = lead["tenant_id"]
 
     with conn.cursor() as cur:
-        cur.execute("SELECT name FROM party WHERE id = %s", (party_id,))
+        cur.execute("SELECT name FROM party WHERE tenant_id = %s AND id = %s",
+                    (tenant_id, party_id))
         row = cur.fetchone()
         if row is None:
             raise fleet.LeadFailed("the artist is gone", permanent=True)
@@ -546,11 +569,22 @@ def _write_find_counterparties(conn: psycopg.Connection, lead: dict[str, Any],
                    VALUES (%s, %s, %s) ON CONFLICT DO NOTHING""",
                 (tenant_id, cp_id, cp.get("role", "curator")),
             )
+            # `mode='owned'`, not a fourth "observed" value that never belonged to
+            # `domain.ProfileMode`. This *is* the curator's own account — discovery
+            # found it because it is the surface that made this party exist in the
+            # first place, exactly the same relationship an artist has to their own
+            # Spotify page. `match_basis='measured'` already carries the "an
+            # algorithm found this, nobody asserted it" distinction; `mode` answers
+            # a different question (who runs the account), and the answer here is
+            # always "they do." Measured live 2026-08-09, before this fix: 18 of 21
+            # `presence` rows carried the illegal `'observed'` value this line used
+            # to write — see migration `014`'s `presence_mode_known` CHECK, added
+            # `NOT VALID` so those 18 pre-existing rows are not silently rewritten.
             cur.execute(
                 """INSERT INTO presence (tenant_id, subject_kind, subject_id, platform,
                                          mode, handle, url, state, match_basis,
                                          confidence)
-                   VALUES (%s, 'party', %s, %s, 'observed', %s, %s, 'present',
+                   VALUES (%s, 'party', %s, %s, 'owned', %s, %s, 'present',
                            'measured', 1.0)
                    ON CONFLICT (tenant_id, subject_kind, subject_id, platform)
                    DO NOTHING""",
@@ -614,7 +648,8 @@ def profile_party(conn: psycopg.Connection, lead: dict[str, Any],
     tenant_id = lead["tenant_id"]
 
     with conn.cursor() as cur:
-        cur.execute("SELECT name, artist_type, kind FROM party WHERE id = %s", (party_id,))
+        cur.execute("SELECT name, artist_type, kind FROM party WHERE tenant_id = %s AND id = %s",
+                    (tenant_id, party_id))
         party = cur.fetchone()
         if party is None:
             raise fleet.LeadFailed("the party is gone", permanent=True)
@@ -829,12 +864,13 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
                     )
                     SELECT s.id, s.name, s.contact_state, s.distance,
                            (SELECT pr.url FROM presence pr
-                             WHERE pr.subject_kind = 'party' AND pr.subject_id = s.id
+                             WHERE pr.tenant_id = %s AND pr.subject_kind = 'party'
+                               AND pr.subject_id = s.id
                              ORDER BY pr.url LIMIT 1) AS url
                       FROM shortlisted s
                      ORDER BY s.distance""",
                 (artist["vec"], tenant_id, artist["embedding_model"], artist["vec"],
-                 SHORTLIST_CANDIDATES),
+                 SHORTLIST_CANDIDATES, tenant_id),
             )
             candidates = [dict(row) for row in cur.fetchall()]
 
@@ -856,8 +892,9 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
         if spent:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE lesson SET hit_count = hit_count + 1 WHERE id = ANY(%s)",
-                    (list(spent),),
+                    "UPDATE lesson SET hit_count = hit_count + 1 "
+                    "WHERE tenant_id = %s AND id = ANY(%s)",
+                    (tenant_id, list(spent)),
                 )
 
     return ranked

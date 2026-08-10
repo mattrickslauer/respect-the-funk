@@ -234,8 +234,10 @@ def renew(conn: psycopg.Connection, lead: dict[str, Any], agent_name: str, *,
             """UPDATE lead
                   SET lease_expires_at = now() + (%s || ' seconds')::INTERVAL,
                       updated_at = now()
-                WHERE id = %s AND owner_agent = %s AND lease_token = %s""",
-            (str(lease_seconds), lead["id"], agent_name, lease_token(lead)),
+                WHERE tenant_id = %s AND id = %s AND owner_agent = %s
+                  AND lease_token = %s""",
+            (str(lease_seconds), lead["tenant_id"], lead["id"], agent_name,
+             lease_token(lead)),
         )
         if cur.rowcount == 0:
             raise LeaseLost(
@@ -328,9 +330,10 @@ def complete(conn: psycopg.Connection, lead: dict[str, Any], outcome: Outcome, *
                               attempts = 0, last_error = '',
                               next_action_at = now() + (%s || ' seconds')::INTERVAL,
                               updated_at = now()
-                        WHERE id = %s AND owner_agent = %s AND lease_token = %s
-                          AND lease_expires_at > now()""",
-                    (str(lead["cadence_seconds"]), lead["id"], agent_name, token),
+                        WHERE tenant_id = %s AND id = %s AND owner_agent = %s
+                          AND lease_token = %s AND lease_expires_at > now()""",
+                    (str(lead["cadence_seconds"]), lead["tenant_id"], lead["id"],
+                     agent_name, token),
                 )
             else:
                 cur.execute(
@@ -338,9 +341,9 @@ def complete(conn: psycopg.Connection, lead: dict[str, Any], outcome: Outcome, *
                           SET state = 'done', owner_agent = NULL,
                               lease_expires_at = NULL, lease_token = NULL,
                               last_error = '', updated_at = now()
-                        WHERE id = %s AND owner_agent = %s AND lease_token = %s
-                          AND lease_expires_at > now()""",
-                    (lead["id"], agent_name, token),
+                        WHERE tenant_id = %s AND id = %s AND owner_agent = %s
+                          AND lease_token = %s AND lease_expires_at > now()""",
+                    (lead["tenant_id"], lead["id"], agent_name, token),
                 )
             if cur.rowcount == 0:
                 raise LeaseLost(
@@ -372,9 +375,9 @@ def fail(conn: psycopg.Connection, lead: dict[str, Any], error: str,
                       SET state = 'failed', owner_agent = NULL, lease_expires_at = NULL,
                           lease_token = NULL, attempts = %s, last_error = %s,
                           updated_at = now()
-                    WHERE id = %s AND owner_agent = %s AND lease_token = %s
-                      AND lease_expires_at > now()""",
-                (attempts, error[:1000], lead["id"], agent_name, token),
+                    WHERE tenant_id = %s AND id = %s AND owner_agent = %s
+                      AND lease_token = %s AND lease_expires_at > now()""",
+                (attempts, error[:1000], lead["tenant_id"], lead["id"], agent_name, token),
             )
         else:
             cur.execute(
@@ -383,10 +386,10 @@ def fail(conn: psycopg.Connection, lead: dict[str, Any], error: str,
                           lease_token = NULL, attempts = %s, last_error = %s,
                           next_action_at = now() + (%s || ' seconds')::INTERVAL,
                           updated_at = now()
-                    WHERE id = %s AND owner_agent = %s AND lease_token = %s
-                      AND lease_expires_at > now()""",
-                (attempts, error[:1000], str(backoff_seconds(attempts)), lead["id"],
-                 agent_name, token),
+                    WHERE tenant_id = %s AND id = %s AND owner_agent = %s
+                      AND lease_token = %s AND lease_expires_at > now()""",
+                (attempts, error[:1000], str(backoff_seconds(attempts)), lead["tenant_id"],
+                 lead["id"], agent_name, token),
             )
         if cur.rowcount == 0:
             raise LeaseLost(
@@ -533,10 +536,10 @@ def _reacquire(conn: psycopg.Connection, lead: dict[str, Any], agent_name: str) 
     with conn.cursor() as cur:
         cur.execute(
             """SELECT 1 FROM lead
-                WHERE id = %s AND owner_agent = %s AND lease_token = %s
-                  AND lease_expires_at > now()
+                WHERE tenant_id = %s AND id = %s AND owner_agent = %s
+                  AND lease_token = %s AND lease_expires_at > now()
                 FOR UPDATE""",
-            (lead["id"], agent_name, lease_token(lead)),
+            (lead["tenant_id"], lead["id"], agent_name, lease_token(lead)),
         )
         if cur.fetchone() is None:
             raise LeaseLost(
@@ -586,9 +589,9 @@ def _reschedule_after_lease_loss(conn: psycopg.Connection, lead: dict[str, Any],
                       SET state = 'failed', owner_agent = NULL, lease_expires_at = NULL,
                           lease_token = NULL, attempts = %s, last_error = %s,
                           updated_at = now()
-                    WHERE id = %s AND owner_agent = %s AND lease_token = %s
-                      AND lease_expires_at <= now()""",
-                (attempts, error[:1000], lead["id"], agent_name, token),
+                    WHERE tenant_id = %s AND id = %s AND owner_agent = %s
+                      AND lease_token = %s AND lease_expires_at <= now()""",
+                (attempts, error[:1000], lead["tenant_id"], lead["id"], agent_name, token),
             )
         else:
             cur.execute(
@@ -597,10 +600,10 @@ def _reschedule_after_lease_loss(conn: psycopg.Connection, lead: dict[str, Any],
                           lease_token = NULL, attempts = %s, last_error = %s,
                           next_action_at = now() + (%s || ' seconds')::INTERVAL,
                           updated_at = now()
-                    WHERE id = %s AND owner_agent = %s AND lease_token = %s
-                      AND lease_expires_at <= now()""",
-                (attempts, error[:1000], str(backoff_seconds(attempts)), lead["id"],
-                 agent_name, token),
+                    WHERE tenant_id = %s AND id = %s AND owner_agent = %s
+                      AND lease_token = %s AND lease_expires_at <= now()""",
+                (attempts, error[:1000], str(backoff_seconds(attempts)), lead["tenant_id"],
+                 lead["id"], agent_name, token),
             )
         return cur.rowcount > 0
 
@@ -761,9 +764,9 @@ def _defer(conn: psycopg.Connection, lead: dict[str, Any], *, agent_name: str) -
                   SET state = 'pending', owner_agent = NULL, lease_expires_at = NULL,
                       lease_token = NULL,
                       next_action_at = now() + INTERVAL '10 minutes', updated_at = now()
-                WHERE id = %s AND owner_agent = %s AND lease_token = %s
-                  AND lease_expires_at > now()""",
-            (lead["id"], agent_name, lease_token(lead)),
+                WHERE tenant_id = %s AND id = %s AND owner_agent = %s
+                  AND lease_token = %s AND lease_expires_at > now()""",
+            (lead["tenant_id"], lead["id"], agent_name, lease_token(lead)),
         )
         if cur.rowcount == 0:
             raise LeaseLost(

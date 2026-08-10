@@ -194,7 +194,7 @@ def queue(conn: psycopg.Connection, tenant_id: str) -> View:
                 )),
                 Section("Target", "quote", (r["target"],)),
                 Section("Why we are looking here", "chain",
-                        tuple(_trail(conn, r["id"]))),
+                        tuple(_trail(conn, tenant_id, r["id"]))),
                 *((Section("Last error", "quote", (r["last_error"],)),)
                   if r["last_error"] else ()),
                 Section("", "actions", ("Run now", "Release lease", "Reject", "Boost")),
@@ -219,22 +219,30 @@ def queue(conn: psycopg.Connection, tenant_id: str) -> View:
     )
 
 
-def _trail(conn: psycopg.Connection, lead_id: Any) -> list[tuple]:
+def _trail(conn: psycopg.Connection, tenant_id: str, lead_id: Any) -> list[tuple]:
     """The attention trail — a recursive walk up `parent_lead_id`.
 
     This is the query that answers *why were we even looking here?* for any document,
     fact or contact the system holds. It is the provenance record and, for a
     counterparty, the compliance artifact at the same time.
+
+    `tenant_id` is carried into the anchor *and* the recursive leg — not just the
+    anchor — because `parent_lead_id` is a bare `UUID` with no tenant predicate of its
+    own, so an unscoped recursive leg would happily walk into another tenant's `lead`
+    row if two tenants' parent chains ever collided on an id (they cannot today, `lead`
+    is keyed by a random UUID, but the walk should not depend on that for its scoping).
     """
     rows = _rows(conn, """
         WITH RECURSIVE up(id, parent_lead_id, kind, target, depth, hop) AS (
-            SELECT id, parent_lead_id, kind, target, depth, 0 FROM lead WHERE id = %s
+            SELECT id, parent_lead_id, kind, target, depth, 0
+              FROM lead WHERE tenant_id = %s AND id = %s
             UNION ALL
             SELECT l.id, l.parent_lead_id, l.kind, l.target, l.depth, up.hop + 1
               FROM lead l JOIN up ON l.id = up.parent_lead_id
-             WHERE up.hop < 8
+             WHERE l.tenant_id = %s AND up.hop < 8
         )
-        SELECT kind, target, depth, hop FROM up ORDER BY hop""", (lead_id,))
+        SELECT kind, target, depth, hop FROM up ORDER BY hop""",
+        (tenant_id, lead_id, tenant_id))
     return [(r["hop"], r["kind"], f"{r['target'][:70]} · depth {r['depth']}", "lead")
             for r in rows] or [(0, "seed", "no parent — this is a seed", "")]
 
@@ -329,13 +337,16 @@ def budgets(conn: psycopg.Connection, tenant_id: str) -> View:
                coalesce(b.max_depth, 3)               AS max_depth,
                coalesce(b.max_leads_per_run, 25)      AS max_leads,
                (SELECT coalesce(sum(tokens_in + tokens_out), 0) FROM agent_run r
-                 WHERE r.party_id = a.id AND r.started_at > now() - INTERVAL '1 hour')
+                 WHERE r.tenant_id = a.tenant_id AND r.party_id = a.id
+                   AND r.started_at > now() - INTERVAL '1 hour')
                  AS spent,
                (SELECT coalesce(sum(cost_micro_usd), 0) FROM agent_run r
-                 WHERE r.party_id = a.id AND r.started_at > now() - INTERVAL '24 hours')
+                 WHERE r.tenant_id = a.tenant_id AND r.party_id = a.id
+                   AND r.started_at > now() - INTERVAL '24 hours')
                  AS micro,
                (SELECT count(*) FROM lead l
-                 WHERE l.party_id = a.id AND l.state = 'pending') AS pending
+                 WHERE l.tenant_id = a.tenant_id AND l.party_id = a.id
+                   AND l.state = 'pending') AS pending
           FROM party a
           JOIN party_role pr ON pr.party_id = a.id AND pr.role = 'roster_artist'
           LEFT JOIN party_budget b ON b.party_id = a.id
@@ -402,11 +413,13 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
     rows = _rows(conn, """
         SELECT t.id, t.title, t.slug, t.isrc, t.released_on, t.status,
                coalesce(string_agg(a.name, ', ' ORDER BY a.name), '—') AS artist_name,
-               (SELECT count(*) FROM party_fact f WHERE f.recording_id = t.id) AS facts,
-               (SELECT count(*) FROM lead l WHERE l.recording_id = t.id)       AS leads,
+               (SELECT count(*) FROM party_fact f
+                 WHERE f.tenant_id = t.tenant_id AND f.recording_id = t.id)     AS facts,
+               (SELECT count(*) FROM lead l
+                 WHERE l.tenant_id = t.tenant_id AND l.recording_id = t.id)     AS leads,
                (SELECT count(*) FROM presence pr
-                 WHERE pr.subject_kind = 'recording' AND pr.subject_id = t.id
-                   AND pr.state = 'present')                                   AS places
+                 WHERE pr.tenant_id = t.tenant_id AND pr.subject_kind = 'recording'
+                   AND pr.subject_id = t.id AND pr.state = 'present')           AS places
           FROM recording t
           LEFT JOIN party_credit c ON c.subject_kind = 'recording'
                                   AND c.subject_id = t.id
@@ -808,13 +821,15 @@ def counterparties(conn: psycopg.Connection, tenant_id: str) -> View:
                (p.profile_embedding IS NOT NULL) AS searchable,
                pr.platform, pr.url,
                (SELECT count(*) FROM party_role r
-                 WHERE r.party_id = p.id) AS roles,
+                 WHERE r.tenant_id = p.tenant_id AND r.party_id = p.id) AS roles,
                (SELECT string_agg(r.role, ', ') FROM party_role r
-                 WHERE r.party_id = p.id) AS role_list,
+                 WHERE r.tenant_id = p.tenant_id AND r.party_id = p.id) AS role_list,
                (SELECT d.body FROM party_document d
-                 WHERE d.party_id = p.id ORDER BY d.fetched_at DESC LIMIT 1) AS profile
+                 WHERE d.tenant_id = p.tenant_id AND d.party_id = p.id
+                 ORDER BY d.fetched_at DESC LIMIT 1) AS profile
           FROM party p
-          LEFT JOIN presence pr ON pr.subject_kind = 'party' AND pr.subject_id = p.id
+          LEFT JOIN presence pr ON pr.tenant_id = p.tenant_id
+                                AND pr.subject_kind = 'party' AND pr.subject_id = p.id
          WHERE p.tenant_id = %s AND p.party_class = 'counterparty'
          ORDER BY p.name
          LIMIT %s""", (tenant_id, LIMIT))
@@ -975,17 +990,22 @@ def artists(conn: psycopg.Connection, tenant_id: str, *,
         SELECT a.id, a.name, a.artist_type AS type, a.slug, a.kind, a.status,
                a.created_at,
                (SELECT count(*) FROM party_credit c
-                 WHERE c.party_id = a.id AND c.subject_kind = 'recording')    AS tracks,
-               (SELECT count(*) FROM party_fact f  WHERE f.party_id = a.id
-                  AND f.status = 'live')                                      AS facts,
-               (SELECT count(*) FROM lead l         WHERE l.party_id = a.id
-                  AND l.state = 'pending')                                    AS pending,
+                 WHERE c.tenant_id = a.tenant_id AND c.party_id = a.id
+                   AND c.subject_kind = 'recording')                          AS tracks,
+               (SELECT count(*) FROM party_fact f
+                 WHERE f.tenant_id = a.tenant_id AND f.party_id = a.id
+                   AND f.status = 'live')                                     AS facts,
+               (SELECT count(*) FROM lead l
+                 WHERE l.tenant_id = a.tenant_id AND l.party_id = a.id
+                   AND l.state = 'pending')                                   AS pending,
                (SELECT count(*) FROM presence p
-                 WHERE p.subject_kind = 'party' AND p.subject_id = a.id
-                   AND p.mode <> 'absent')                                    AS profiles,
-               (SELECT count(*) FROM party_document d WHERE d.party_id = a.id) AS docs
+                 WHERE p.tenant_id = a.tenant_id AND p.subject_kind = 'party'
+                   AND p.subject_id = a.id AND p.mode <> 'absent')             AS profiles,
+               (SELECT count(*) FROM party_document d
+                 WHERE d.tenant_id = a.tenant_id AND d.party_id = a.id)        AS docs
           FROM party a
-          JOIN party_role r ON r.party_id = a.id AND r.role = 'roster_artist'
+          JOIN party_role r ON r.tenant_id = a.tenant_id AND r.party_id = a.id
+                            AND r.role = 'roster_artist'
          WHERE a.tenant_id = %s ORDER BY a.name""", (tenant_id,))
 
     out = []

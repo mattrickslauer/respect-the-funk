@@ -1,7 +1,7 @@
 ---
 title: "Masters on the spine, and classifying a record instead of guessing at it"
 subtitle: "Why counterparty discovery for a new artist is cold-start blocked, what was built today, the two approaches that failed validation, and the design for storing masters once so that analysis, delivery, radio servicing and RemixKit all read the same file."
-status: "DESIGN — not built. The findings in §1–§3 are measured. §4 onward is a proposal and nothing in it has been implemented."
+status: "PARTLY BUILT. §1–§3 are measured findings. §4 was a proposal and is now built — see §6, added after the fact. The classifier container of §3b is still unbuilt, and the bucket of §4b is written in Terraform but not applied."
 date: "2026-08-10"
 ---
 
@@ -210,13 +210,58 @@ Lambda nor the classifier Lambda ever proxies a master.
 
 ---
 
+## 6. What was built, and the two things §4 got wrong
+
+Added after §4 was implemented, so the record shows what survived contact.
+
+**Built** (`4ace501`, `7b9371e`, and the commit carrying this section):
+
+| | |
+|---|---|
+| Migration 016 | `recording_asset`, applied and verified against the live cluster — all thirteen constraints refuse what they claim to |
+| Migration 017 | `analyse_recording` and `distil_lesson` in `agent_manifest` |
+| `storage.py` | the `Storage` Protocol and the S3 adapter, presigned both ways |
+| `assets.py` | claim / confirm / current / delete, and `queue_analysis` |
+| `routes.py` | three masters routes, and the uploader in `_inspector.html` |
+| `platform/infra` | bucket, CORS, versioning, lifecycle, IAM — **written, not applied** |
+| `agents.analyse_recording` | downloads the master, verifies its hash, measures it, writes facts with `fact_basis` edges |
+
+**Two things §4 got wrong**, both found by tests rather than by review:
+
+1. **`assets.delete`'s reference count was dead code.** It counted rows sharing
+   `(kind, content_hash)` — which `asset_one_row_per_file` already makes unique, so it
+   could only ever count zero. It reads like a safety check and was not one. It counts
+   `object_key` now, which has no unique index and which a backfill or an importer
+   adopting existing objects genuinely can point two rows at. Caught by the test that
+   tried to construct the state it guarded and could not.
+2. **§4a's "every derived fact names the asset" needed no new column and no new
+   plumbing, but it did need somebody to actually run it.** `fact_basis` had zero rows
+   on this cluster before `analyse_recording`; the design asserted the table was
+   sufficient without exercising it. It is, and it renders in the console's provenance
+   walk with no template change — but that was a claim, not a finding, until the test
+   above.
+
+**What the classifier still needs.** §3b's container is not built. The seam it plugs
+into now exists: `analyse_recording` already downloads the master, verifies it, and
+writes facts through `_supersede_recording_fact`, so adding Discogs-EffNet is one more
+dimension written by the same function rather than a new agent. What remains is the
+container image, the Lambda in Terraform, and — per §3a, which is the whole reason to
+insist — reference tracks in its test suite. A genre classifier without them is
+unfalsifiable, and §3a is the proof: a mismatched mel front end classified Metallica and
+Coltrane as Electronic while emitting confident labels the whole way.
+
+---
+
 ## 5. What is true today
 
 - Discovery refuses rather than searching by name (`77722c6`), so the Amanda failure
   cannot recur — and until style terms exist for an artist, it produces nothing at all.
   **That is the current state for Hallow Youth: `find_counterparties` will refuse.**
 - `audio.py` can supply those terms from a preview for unambiguous tempi, and abstains
-  otherwise. It has not been wired to an agent.
+  otherwise. **It is now wired to an agent** — `analyse_recording`, which reads the
+  master rather than the preview and labels every fact with the asset it listened to.
+  Nothing has run it against a real record, because no master has been uploaded: the
+  bucket is written in Terraform and not applied.
 - The memory loop closed separately (`fde8688`): a thread reaching a terminal state queues
   a `distil_lesson` lead, and the lesson commits with the run record and the lead. `lesson`
   is still **0 rows** on the cluster because no thread has been worked end to end.

@@ -133,6 +133,139 @@
               {% endfor %}
             </ul>
 
+          {% elif s.kind == 'upload' %}
+            {# The one place in this console that is not a form post and a redirect.
+
+               It cannot be. A master is 50–100MB and a form post sends it here, and
+               here is a Lambda with a 6MB synchronous payload cap — so the upload does
+               not fail slowly, it fails at the platform with an error that names
+               nothing in this repo. The browser talks to S3 directly instead, and the
+               page reloads at the end, which is the same proof a redirect gives.
+
+               Three round trips: claim a row and get a signed URL, PUT the bytes to
+               the bucket, tell the console it finished. The third is checked against
+               the bucket rather than believed — see `assets.confirm`. #}
+            <form class="ed" id="upform" data-claim="{{ s.action }}">
+              <p class="ederr" id="uperr" hidden></p>
+              {% if s.note %}<p class="ednote">{{ s.note }}</p>{% endif %}
+              <div class="edf">
+                <label for="up-kind">Kind</label>
+                <select id="up-kind" name="kind">
+                  {% for value, label in s.items %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="edf">
+                <label for="up-file">File</label>
+                <input type="file" id="up-file" name="file" accept="audio/*" required>
+              </div>
+              <button type="submit" class="b p" id="upbtn">{{ s.submit }}</button>
+              <p class="ednote" id="upstat" hidden></p>
+            </form>
+            <script>
+            (function () {
+              var form = document.getElementById('upform');
+              var err = document.getElementById('uperr');
+              var stat = document.getElementById('upstat');
+              var btn = document.getElementById('upbtn');
+
+              function say(m) { stat.hidden = false; stat.textContent = m; }
+              function fail(m) {
+                err.hidden = false; err.textContent = m;
+                stat.hidden = true; btn.disabled = false;
+              }
+
+              // Hex, because that is what the column stores and what `object_key`
+              // interpolates. Base64 would be shorter and would not survive being
+              // pasted into a WHERE clause by someone debugging.
+              function hex(buf) {
+                return Array.prototype.map.call(new Uint8Array(buf), function (b) {
+                  return ('0' + b.toString(16)).slice(-2);
+                }).join('');
+              }
+
+              async function post(url, body) {
+                var res = await fetch(url, {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify(body || {})
+                });
+                try { return await res.json(); }
+                catch (e) { return {error: 'the console answered ' + res.status + '.'}; }
+              }
+
+              form.addEventListener('submit', async function (ev) {
+                ev.preventDefault();
+                err.hidden = true;
+                var file = document.getElementById('up-file').files[0];
+                if (!file) { return fail('Pick a file first.'); }
+
+                // crypto.subtle exists only in a secure context. The Function URL is
+                // HTTPS and dev.sh serves localhost, both of which qualify — so this
+                // fires only if the console is ever served over plain HTTP from a
+                // real host, and it says which of the two it needs.
+                if (!window.crypto || !window.crypto.subtle) {
+                  return fail('This browser will not hash the file: crypto.subtle ' +
+                              'needs a secure context (https, or localhost).');
+                }
+                btn.disabled = true;
+
+                var mb = (file.size / 1048576).toFixed(1);
+                say('Hashing ' + mb + ' MB…');
+                var digest;
+                try {
+                  digest = hex(await crypto.subtle.digest('SHA-256',
+                                                          await file.arrayBuffer()));
+                } catch (e) {
+                  return fail('Could not read that file: ' + e.message);
+                }
+
+                say('Claiming a row…');
+                var claim = await post(form.dataset.claim, {
+                  kind: document.getElementById('up-kind').value,
+                  content_hash: digest,
+                  mime: file.type,
+                  size: file.size,
+                  label: ''
+                });
+                if (claim.error) { return fail(claim.error); }
+
+                // Already stored means these exact bytes are already in the bucket
+                // under this kind. Re-uploading would overwrite an object with an
+                // identical one, so it is skipped rather than done pointlessly.
+                if (claim.state === 'stored') {
+                  say('Those bytes are already stored. Nothing to upload.');
+                  return window.location.reload();
+                }
+
+                say('Uploading ' + mb + ' MB to S3…');
+                var put;
+                try {
+                  put = await fetch(claim.url, {
+                    method: 'PUT',
+                    // Must match exactly what was signed, or S3 rejects the PUT with
+                    // SignatureDoesNotMatch — ContentType is part of the signature.
+                    headers: {'Content-Type': file.type},
+                    body: file
+                  });
+                } catch (e) {
+                  return fail('The upload could not reach the bucket. If this is a ' +
+                              'CORS error, the bucket needs this page’s origin ' +
+                              'in aws_s3_bucket_cors_configuration.');
+                }
+                if (!put.ok) {
+                  return fail('The bucket refused the upload (' + put.status + ').');
+                }
+
+                say('Confirming…');
+                var done = await post(claim.confirm, {});
+                if (done.error) { return fail(done.error); }
+                window.location.reload();
+              });
+            })();
+            </script>
+
           {% elif s.kind == 'actions' %}
             {# Three shapes, and the difference between them is whether the button does
                anything:

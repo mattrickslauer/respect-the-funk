@@ -235,6 +235,33 @@ class S3Storage:
         self._client.delete_object(Bucket=self.bucket, Key=key)
 
 
+#: One adapter per (bucket, region), because constructing a boto3 client is not free —
+#: it parses botocore's service model for S3, which is tens of milliseconds and would
+#: otherwise be paid on every request that renders a track. Keyed rather than a single
+#: global so a test can point at a different bucket without poisoning the next caller.
+_ADAPTERS: dict[tuple[str, str], "S3Storage"] = {}
+
+
+def load(bucket: str, region: str) -> Storage:
+    """The configured adapter, or `StorageUnconfigured` if there is not one.
+
+    The raise is the feature. A `load()` that returned a no-op adapter when no bucket
+    is set would give the console an upload form that accepts a file and drops it, and
+    the operator would find out when the classifier had nothing to listen to — days
+    later, in a different part of the system. `settings.storage_configured` is what
+    callers check to decide whether to offer the form at all.
+    """
+    if not bucket:
+        raise StorageUnconfigured(
+            "PLATFORM_MASTERS_BUCKET is not set, so there is nowhere to put a master. "
+            "Run `terraform apply` in platform/infra — it creates the bucket and sets "
+            "the variable on the deployed console — then export it locally too.")
+    key = (bucket, region)
+    if key not in _ADAPTERS:
+        _ADAPTERS[key] = S3Storage(bucket, region)
+    return _ADAPTERS[key]
+
+
 def _client(region: str):
     """The boto3 S3 client, imported at the point of use.
 

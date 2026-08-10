@@ -174,10 +174,28 @@ class ProvenanceShape(unittest.TestCase):
     def test_the_measured_and_inferred_keys_do_not_overlap(self):
         import inspect
 
-        source = inspect.getsource(audio.measure)
+        # `_facts`, not `measure`: both entry points delegate the dict to it, so this is
+        # where the split has to hold. Reading `measure` would now read a one-line
+        # delegation and pass vacuously.
+        source = inspect.getsource(audio._facts)
         measured_block = source.split('"measured"')[1].split('"inferred"')[0]
         self.assertNotIn("style_terms", measured_block)
         self.assertNotIn("bpm_confidence", measured_block)
+
+    def test_measuring_a_file_demands_to_be_told_what_it_listened_to(self):
+        """`basis` has no default on `measure_file`. A measurement that forgets its
+        source is the thing this whole design is arranged to prevent — 125 BPM off a
+        master and 125 BPM off a thirty-second excerpt are the same number and different
+        claims."""
+        import inspect
+
+        signature = inspect.signature(audio.measure_file)
+        self.assertIs(signature.parameters["basis"].default, inspect.Parameter.empty)
+
+    def test_the_preview_path_still_labels_itself(self):
+        import inspect
+
+        self.assertIn('basis="deezer_preview_30s"', inspect.getsource(audio.measure))
 
 
 if __name__ == "__main__":

@@ -114,6 +114,88 @@ def decode(data: bytes) -> Any:
     return samples
 
 
+def decode_file(path: str) -> Any:
+    """The same conversion, for a file on disk rather than bytes in memory.
+
+    `decode` pipes through stdin and says why: nothing to clean up on a worker that may
+    be killed mid-lease. That reasoning holds for a 30-second preview and inverts for a
+    master. A preview is ~500 KB; a 24-bit/96 kHz master is 200 MB, and `subprocess.run`
+    with `input=` holds the whole thing in the parent process while ffmpeg holds its own
+    copy in the pipe. The temporary file is the *smaller* footprint, and the caller
+    already has one — it streamed the download to disk so it could hash the bytes on the
+    way past.
+
+    ffmpeg is given the path directly, so it seeks rather than buffers, and a corrupt
+    header fails immediately instead of after a 200 MB transfer into a pipe.
+    """
+    import numpy as np
+
+    try:
+        done = subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", path, "-ac", "1", "-ar", str(SR),
+             "-f", "f32le", "pipe:1"],
+            capture_output=True, check=True, timeout=300)
+    except FileNotFoundError as exc:
+        raise Unmeasurable("ffmpeg is not on PATH — this agent needs a worker, "
+                           "not the web Lambda") from exc
+    except subprocess.CalledProcessError as exc:
+        raise Unmeasurable(f"ffmpeg refused the audio: "
+                           f"{exc.stderr.decode('utf-8', 'replace')[:200]}") from exc
+    except subprocess.TimeoutExpired as exc:
+        # Five minutes rather than `decode`'s sixty seconds. A master is two orders of
+        # magnitude larger than a preview and decoding is linear in its length.
+        raise Unmeasurable("ffmpeg did not finish within 300s") from exc
+
+    samples = np.frombuffer(done.stdout, dtype=np.float32)
+    if len(samples) < SR * 5:
+        raise Unmeasurable(
+            f"{len(samples) / SR:.1f}s of audio is not enough to measure a tempo")
+    return samples
+
+
+def probe(path: str) -> dict[str, int]:
+    """The file's own sample rate, channel count and duration, from ffprobe.
+
+    Deliberately **not** derived from what `decode_file` returns. That array is mono at
+    22050 Hz because this module asked for it — reporting those numbers as the asset's
+    shape would record our own resampling settings as a measurement of the master, which
+    is a fact about this code masquerading as a fact about the record.
+
+    ffprobe ships with ffmpeg, so this adds no dependency the module did not already
+    have. Raises rather than returning partial values: a caller writing `sample_rate`
+    into `recording_asset` needs all three or none, and NULL already means "nothing has
+    opened this file".
+    """
+    import json
+
+    try:
+        done = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0",
+             "-show_entries", "stream=sample_rate,channels:format=duration",
+             "-of", "json", path],
+            capture_output=True, check=True, timeout=60)
+    except FileNotFoundError as exc:
+        raise Unmeasurable("ffprobe is not on PATH — it ships with ffmpeg, so this is "
+                           "a partial install rather than a missing package") from exc
+    except subprocess.CalledProcessError as exc:
+        raise Unmeasurable(f"ffprobe refused the audio: "
+                           f"{exc.stderr.decode('utf-8', 'replace')[:200]}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise Unmeasurable("ffprobe did not finish within 60s") from exc
+
+    try:
+        parsed = json.loads(done.stdout)
+        stream = parsed["streams"][0]
+        return {
+            "sample_rate": int(stream["sample_rate"]),
+            "channels": int(stream["channels"]),
+            "duration_ms": int(float(parsed["format"]["duration"]) * 1000),
+        }
+    except (KeyError, IndexError, ValueError, TypeError) as exc:
+        raise Unmeasurable(
+            "ffprobe found no audio stream to describe in that file") from exc
+
+
 def onset_envelope(x: Any) -> Any:
     """Half-wave-rectified spectral flux, per frame.
 
@@ -305,7 +387,26 @@ def measure(data: bytes) -> dict[str, Any]:
     so a caller cannot write a style term as `measured` by accident. `harvested.py` exists
     because callers did exactly that with `.get("provenance", "measured")`.
     """
-    samples = decode(data)
+    return _facts(decode(data), basis="deezer_preview_30s")
+
+
+def measure_file(path: str, *, basis: str) -> dict[str, Any]:
+    """The same measurements, taken from a whole file, saying what file it was.
+
+    `basis` has no default and that is the point. The one thing this module must never
+    do is let a measurement forget what it listened to: 125 BPM off a master and 125 BPM
+    off a thirty-second excerpt are the same number and different claims, and only the
+    first can be extended with the section map, energy curve and hook window that
+    `SCOPE-RESET §2` asks for. `analyse_recording` passes the asset id, so the fact it
+    writes can point at the exact object through `fact_basis`.
+    """
+    return _facts(decode_file(path), basis=basis)
+
+
+def _facts(samples: Any, *, basis: str) -> dict[str, Any]:
+    """Shared by both entry points. The provenance split lives here, and
+    `tests/test_audio.py::ProvenanceShape` reads this function's source to check that a
+    style term can never be reached from the `measured` key."""
     env = onset_envelope(samples)
     bpm, confidence, rivals = tempo(env)
     centroid = brightness(samples)
@@ -327,5 +428,5 @@ def measure(data: bytes) -> dict[str, Any]:
         # Named so a fact written from this can say what it listened to. A measurement
         # taken from a thirty-second preview is a different claim from one taken off the
         # master, and a row that cannot tell them apart will eventually be asked to.
-        "basis": "deezer_preview_30s",
+        "basis": basis,
     }

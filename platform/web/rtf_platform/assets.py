@@ -222,9 +222,14 @@ def confirm(conn: psycopg.Connection, store: storage.Storage, tenant_id: str,
 
 def get(conn: psycopg.Connection, tenant_id: str, asset_id: str) -> dict[str, Any] | None:
     with conn.cursor() as cur:
+        # `sample_rate`, `channels` and `duration_ms` are in the list because
+        # `record_shape` writes them and a getter that cannot read back what a sibling
+        # writes is a trap — the caller gets a `KeyError` that reads like a missing
+        # column rather than a short SELECT.
         cur.execute(
             """SELECT id, recording_id, kind, label, bucket, object_key, content_hash,
-                      mime, bytes, state, uploaded_at, supersedes_id
+                      mime, bytes, state, uploaded_at, uploaded_by, supersedes_id,
+                      sample_rate, channels, duration_ms
                  FROM recording_asset
                 WHERE tenant_id = %s AND id = %s""", (tenant_id, asset_id))
         row = cur.fetchone()
@@ -322,6 +327,52 @@ def delete(conn: psycopg.Connection, tenant_id: str, asset_id: str) -> str | Non
         still_referenced = cur.fetchone()["n"] > 0
 
     return None if still_referenced else row["object_key"]
+
+
+def queue_analysis(conn: psycopg.Connection, tenant_id: str, recording_id: str,
+                   asset_id: str) -> bool:
+    """Queue `analyse_recording` for a freshly stored asset. Returns whether it landed.
+
+    This is what makes uploading a file the *only* action an operator takes. It is the
+    same move `outreach.advance` makes when a thread closes — write a lead, and let
+    whoever handles that kind claim it. No caller here names an agent; the lead names a
+    kind and `agents.REGISTRY` decides the rest.
+
+    Two constraints in `lead` shape this:
+
+      * `lead_scope_shape` requires a `recording`-scoped lead to carry a party as well
+        as a recording. The party is whoever is credited as the main artist, which is
+        also the right answer for budgets — analysis is spent against the artist whose
+        record it is. A recording with no credit yet cannot be scoped, so nothing is
+        queued and this returns False rather than inventing an owner.
+      * `UNIQUE (tenant_id, target_hash)` makes this idempotent. The hash is over the
+        asset id, so re-confirming an upload does not queue a second analysis — and a
+        *remastered* track is a different asset, so it does. That is exactly the
+        boundary wanted: one analysis per distinct file, forever.
+    """
+    import hashlib
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT c.party_id FROM party_credit c
+                WHERE c.tenant_id = %s AND c.subject_kind = 'recording'
+                  AND c.subject_id = %s AND c.role IN ('main_artist', 'featured')
+                ORDER BY c.role LIMIT 1""",
+            (tenant_id, recording_id))
+        credit = cur.fetchone()
+        if credit is None:
+            return False
+
+        target_hash = hashlib.sha256(f"analyse_recording:{asset_id}".encode()).hexdigest()
+        cur.execute(
+            """INSERT INTO lead (tenant_id, scope_kind, party_id, recording_id, kind,
+                                 adapter, target, target_hash, reason, score)
+               VALUES (%s, 'recording', %s, %s, 'analyse_recording', 's3', %s, %s,
+                       'a master was uploaded and nothing has listened to it yet', 0.8)
+               ON CONFLICT (tenant_id, target_hash) DO NOTHING
+            RETURNING id""",
+            (tenant_id, credit["party_id"], recording_id, asset_id, target_hash))
+        return cur.fetchone() is not None
 
 
 def _bucket_name() -> str:

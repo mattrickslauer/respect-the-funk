@@ -31,7 +31,9 @@ from typing import Any
 
 import psycopg
 
-from rtf_platform import embed, fleet, harvested, lessons, repo, sources, spend
+from rtf_platform import (
+    embed, fleet, harvested, lessons, repo, settings as settings_mod, sources, spend,
+)
 
 #: Target chunk size in characters. ~400 tokens at four characters per token, which is
 #: large enough to carry an argument and small enough that a hit points somewhere
@@ -1016,6 +1018,246 @@ def _write_distil_lesson(conn: psycopg.Connection, lead: dict[str, Any], gate: s
 distil_lesson = fleet.NetworkAgent(fetch=_fetch_distil_lesson, write=_write_distil_lesson)
 
 
+# ------------------------------------------------------------ analyse_recording
+#
+# The agent the masters work exists for. Everything above measures somebody else's
+# metadata; this one listens to the record.
+#
+# It is a `NetworkAgent` for the usual reason and one extra. The usual: it fetches
+# tens of megabytes over HTTP and must not do that inside the transaction that writes
+# `agent_run` and completes the lead. The extra: it is the first agent here whose fetch
+# writes to the local filesystem, and the temporary file is removed in a `finally` that
+# runs before `write` is ever called — so a worker killed mid-lease leaks a file in
+# /tmp at worst, and the lease brings the lead back for someone else to fetch again.
+#
+# **This agent does not run in the web Lambda.** It needs ffmpeg on PATH and numpy,
+# neither of which is in the function's bundle, and `requirements-worker.txt` exists to
+# say so. Drain it with:
+#
+#     python -m rtf_platform.ingest --drain-only --kinds analyse_recording
+
+#: Read the master in chunks rather than in one call. A 200MB master read with a bare
+#: `.read()` is 200MB resident in a worker that may be sharing a machine with others.
+_DOWNLOAD_CHUNK = 1024 * 1024
+
+
+def _fetch_analyse_recording(conn: psycopg.Connection, lead: dict[str, Any],
+                             gate: spend.Gate) -> dict[str, Any]:
+    """Download the master, check it is the file we were promised, and listen to it.
+
+    No spend is recorded and none is gated. Every other network agent here calls a
+    metered provider; this one calls S3 with a URL it signed itself, and the cost is
+    egress measured in cents per gigabyte rather than tokens. Charging a token budget
+    for it would put a number in `agent_run` that means nothing.
+
+    The hash check is the part worth reading. `assets.confirm` verifies that an object
+    exists and that its size matches what the browser promised, and deliberately stops
+    there — checking the digest would mean downloading the file into a Lambda, which is
+    exactly what that design avoids. This agent downloads the file anyway, so hashing
+    the stream on its way past costs one `hashlib` update per chunk. That is where an
+    `asserted` content hash becomes a `measured` one, and where a corrupted object gets
+    caught by something other than a human noticing the track sounds wrong.
+    """
+    import hashlib
+    import os
+    import tempfile
+    import urllib.error
+    import urllib.request
+
+    from rtf_platform import assets, audio, storage
+
+    tenant_id = lead["tenant_id"]
+    asset_id = lead["target"]
+
+    asset = assets.get(conn, tenant_id, asset_id)
+    if asset is None:
+        raise fleet.LeadFailed("the asset this lead is about is gone", permanent=True)
+    if asset["state"] != "stored":
+        # Queued before the upload was confirmed, or the confirm failed. Not permanent:
+        # the operator may still finish the upload, and the lead's backoff is the right
+        # amount of patience for that.
+        raise fleet.LeadFailed(f"asset {asset_id} is {asset['state']}, not stored")
+
+    cfg = settings_mod.load()
+    try:
+        store = storage.load(cfg.masters_bucket, cfg.region)
+    except storage.StorageUnconfigured as exc:
+        # A worker with no bucket configured cannot do this job and will not be able to
+        # on the next attempt either. Park it rather than burn four retries.
+        raise fleet.LeadFailed(str(exc), permanent=True) from exc
+
+    url = store.presign_get(asset["object_key"])
+    digest = hashlib.sha256()
+    size = 0
+    path = ""
+
+    try:
+        handle = tempfile.NamedTemporaryFile(suffix=".audio", delete=False)
+        path = handle.name
+        try:
+            with urllib.request.urlopen(url, timeout=120) as response:
+                while chunk := response.read(_DOWNLOAD_CHUNK):
+                    size += len(chunk)
+                    if size > assets.MAX_ASSET_BYTES:
+                        raise fleet.LeadFailed(
+                            f"the object at {asset['object_key']} is larger than the "
+                            f"{assets.MAX_ASSET_BYTES} byte ceiling", permanent=True)
+                    digest.update(chunk)
+                    handle.write(chunk)
+        finally:
+            handle.close()
+
+        measured_hash = digest.hexdigest()
+        if measured_hash != asset["content_hash"]:
+            # The bytes in the bucket are not the bytes that were uploaded. Permanent
+            # because retrying downloads the same wrong object, and loud because every
+            # fact already measured from this asset is now suspect.
+            raise fleet.LeadFailed(
+                f"the object at {asset['object_key']} hashes to {measured_hash[:16]}… "
+                f"and the row says {asset['content_hash'][:16]}…. Something replaced "
+                f"the object, or the upload was never the file it claimed to be.",
+                permanent=True)
+
+        try:
+            shape = audio.probe(path)
+            facts = audio.measure_file(path, basis=f"recording_asset:{asset_id}")
+        except audio.Unmeasurable as exc:
+            # ffmpeg missing is a worker that was drained without its dependencies, and
+            # that is not permanent — it is fixed by installing them and draining again.
+            # A file ffmpeg refuses is permanent: the object will not improve.
+            raise fleet.LeadFailed(str(exc),
+                                   permanent="ffmpeg" not in str(exc)) from exc
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                # A leaked temp file is not worth failing a lead that otherwise
+                # succeeded, and /tmp is swept by the machine.
+                pass
+
+    return {
+        "asset_id": asset_id,
+        "recording_id": str(asset["recording_id"]),
+        "shape": shape,
+        "facts": facts,
+        "bytes": size,
+    }
+
+
+#: `party_fact.dimension` → which half of `audio.measure`'s return it comes from. The
+#: table is the whole point of the split: a style term is `inferred` from a tempo band
+#: and a BPM is `measured` off the file, and nothing here can write one as the other
+#: because the provenance travels with the dimension rather than with the caller.
+_AUDIO_DIMENSIONS: tuple[tuple[str, str, str], ...] = (
+    ("bpm", "measured", "bpm"),
+    ("brightness_hz", "measured", "brightness_hz"),
+    ("bpm_confidence", "inferred", "bpm_confidence"),
+)
+
+
+def _write_analyse_recording(conn: psycopg.Connection, lead: dict[str, Any],
+                             gate: spend.Gate, prepared: dict[str, Any]) -> fleet.Outcome:
+    """Write the shape, the facts, and the basis edges that say what was listened to.
+
+    Every fact here supersedes rather than overwrites, per `SCOPE-RESET §2a` rule 1. A
+    remastered track measured again does not erase what the previous master measured —
+    "why did we think it was 84 BPM in March" is a question with a right answer, and the
+    answer is the row.
+
+    The `fact_basis` edge is the reason migration 016 declined to add
+    `party_fact.asset_id`. These are the first rows `fact_basis` has ever held on this
+    cluster, and they render in the console's provenance walk with no template change.
+    """
+    from rtf_platform import assets
+
+    tenant_id = lead["tenant_id"]
+    recording_id = prepared["recording_id"]
+    asset_id = prepared["asset_id"]
+    shape = prepared["shape"]
+    facts = prepared["facts"]
+
+    assets.record_shape(conn, tenant_id, asset_id, **shape)
+
+    values: dict[str, Any] = {**facts["measured"], **facts["inferred"]}
+    written = 0
+
+    for dimension, provenance, key in _AUDIO_DIMENSIONS:
+        written += _supersede_recording_fact(
+            conn, tenant_id, recording_id, asset_id,
+            dimension=dimension, provenance=provenance,
+            value=str(values[key]), basis=facts["basis"])
+
+    # Style terms are a list and are written as one row, not one row per term: they are
+    # a single inference from a single tempo band, and splitting them would let a
+    # shortlist count "house" and "melodic house" as two independent pieces of evidence
+    # for the same claim. Empty is not written at all — `audio.style_terms` abstains on
+    # an ambiguous tempo, and an empty row would record that abstention as a finding.
+    terms = facts["inferred"]["style_terms"]
+    if terms:
+        written += _supersede_recording_fact(
+            conn, tenant_id, recording_id, asset_id,
+            dimension="style_terms", provenance="inferred",
+            value=", ".join(terms), basis=facts["basis"])
+
+    rivals = facts["inferred"]["tempo_rivals"]
+    summary = (f"measured {values['bpm']} BPM off the master"
+               + (f", abstained on style — rivals at {rivals}" if rivals and not terms
+                  else ""))
+    return fleet.Outcome(summary=summary[:200], facts=written)
+
+
+def _supersede_recording_fact(conn: psycopg.Connection, tenant_id: str,
+                              recording_id: str, asset_id: str, *, dimension: str,
+                              provenance: str, value: str, basis: str) -> int:
+    """One measured claim about a recording, replacing whatever it replaced.
+
+    Returns 1 always — the count is returned rather than assumed so `Outcome.facts`
+    stays honest if this ever grows a path that writes nothing.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id FROM party_fact
+                WHERE tenant_id = %s AND recording_id = %s AND dimension = %s
+                  AND provenance = %s AND status = 'live'
+                ORDER BY observed_at DESC LIMIT 1""",
+            (tenant_id, recording_id, dimension, provenance))
+        previous = cur.fetchone()
+
+        if previous is not None:
+            cur.execute(
+                """UPDATE party_fact SET status = 'superseded'
+                    WHERE tenant_id = %s AND id = %s""",
+                (tenant_id, previous["id"]))
+
+        cur.execute(
+            """INSERT INTO party_fact
+                   (tenant_id, recording_id, dimension, value_text, provenance,
+                    status, source, supersedes_id, written_by)
+               VALUES (%s, %s, %s, %s, %s, 'live', %s, %s, 'analyse_recording')
+            RETURNING id""",
+            (tenant_id, recording_id, dimension, value, provenance, basis,
+             previous["id"] if previous else None))
+        fact_id = cur.fetchone()["id"]
+
+        # The edge migration 016 chose over a new column. `fact_basis` is polymorphic
+        # and already rendered by `research._basis`, so this shows up in the console's
+        # provenance walk without a template change.
+        cur.execute(
+            """INSERT INTO fact_basis (subject_kind, subject_id, basis_kind, basis_id)
+               VALUES ('fact', %s, 'recording_asset', %s)
+               ON CONFLICT DO NOTHING""",
+            (fact_id, asset_id))
+    return 1
+
+
+#: Listen to the master and write what can be measured from it. Queued by
+#: `routes.masters_confirm` the moment an upload is confirmed, so uploading a file is
+#: the only action an operator takes — the analysis follows from the row.
+analyse_recording = fleet.NetworkAgent(fetch=_fetch_analyse_recording,
+                                       write=_write_analyse_recording)
+
+
 #: Which agent handles which lead kind. The fleet reads this; no agent reads it.
 REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     "embed_document": embedder,
@@ -1024,4 +1266,5 @@ REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     "profile_party": profile_party,
     "embed_party": embed_party,
     "distil_lesson": distil_lesson,
+    "analyse_recording": analyse_recording,
 }

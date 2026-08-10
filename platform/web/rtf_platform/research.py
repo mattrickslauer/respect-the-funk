@@ -420,6 +420,87 @@ def budgets(conn: psycopg.Connection, tenant_id: str) -> View:
 
 # -------------------------------------------------------------------- tracks
 
+def _mb(value: Any) -> str:
+    """Bytes as megabytes, or an em dash. NULL is a real answer here — see
+    `recording_asset.bytes` — and rendering it as 0 MB would claim an empty file."""
+    if not value:
+        return "—"
+    return f"{int(value) / (1024 * 1024):.1f} MB"
+
+
+def _audio_cell(assets: list[dict[str, Any]]) -> str:
+    """One word for "can anything listen to this track yet".
+
+    `master` is what the classifier and every `SCOPE-RESET §2` measurement need; a
+    stored instrumental is better than nothing but cannot answer the same questions, so
+    it is named rather than counted as audio. `pending` is deliberately visible: a
+    signed-but-never-finished upload should look different from no upload at all,
+    because the fix for the two is different.
+    """
+    stored = {a["kind"] for a in assets if a["state"] == "stored"}
+    if "master" in stored:
+        return "master"
+    if stored:
+        return sorted(stored)[0]
+    if any(a["state"] == "pending" for a in assets):
+        return "pending"
+    return "none"
+
+
+def _masters_sections(recording_id: str,
+                      assets: list[dict[str, Any]]) -> tuple[Section, ...]:
+    """The masters panel: what is held, and the form that adds to it.
+
+    The form is only offered when there is somewhere for it to put a file. A console
+    that renders an upload control against an unconfigured bucket is worse than one that
+    says the feature is off — the operator spends a 90MB upload finding out.
+    """
+    from rtf_platform import assets as assets_mod, settings as settings_mod
+
+    sections: list[Section] = []
+
+    if assets:
+        sections.append(Section("Audio held", "editlist", tuple(
+            (
+                a["kind"] + (f" · {a['label']}" if a["label"] else ""),
+                " · ".join(filter(None, (
+                    _mb(a["bytes"]),
+                    a["state"] if a["state"] != "stored" else "",
+                    _ago(a, "uploaded_at") if a["uploaded_at"] else "not uploaded",
+                    f"{a['sample_rate']} Hz" if a["sample_rate"] else "",
+                ))),
+                f"/tracks/{recording_id}/masters/{a['id']}/delete",
+            )
+            for a in assets)))
+
+    has_master = any(a["kind"] == "master" and a["state"] == "stored" for a in assets)
+    if not has_master:
+        sections.append(Section("No master yet", "note", (
+            "Every measured fact about a recording — key, sections, energy, the hook "
+            "window — needs the whole file. A 30-second preview carries tempo and "
+            "almost nothing else, which is why `audio.py` refuses to report the rest.",
+        )))
+
+    if not settings_mod.load().storage_configured:
+        sections.append(Section("Uploads are not configured", "note", (
+            "PLATFORM_MASTERS_BUCKET is unset, so there is nowhere to put a master. "
+            "Run terraform apply in platform/infra — it creates the bucket and sets "
+            "the variable on the deployed console.",
+        )))
+        return tuple(sections)
+
+    sections.append(Section(
+        "Upload", "upload",
+        items=tuple((kind, kind.replace("_", " ")) for kind in assets_mod.UPLOADABLE_KINDS),
+        action=f"/tracks/{recording_id}/masters",
+        submit="Upload",
+        note=f"Up to {assets_mod.MAX_ASSET_BYTES // (1024 * 1024)} MB. WAV, AIFF, "
+             f"FLAC, MP3, M4A, AAC or OGG. The file goes from this page straight to "
+             f"S3 — it does not pass through the console.",
+    ))
+    return tuple(sections)
+
+
 def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
     # A recording is not owned by an artist — credits are, which is what lets one
     # recording carry two main artists instead of being stored twice. So the
@@ -454,10 +535,23 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
          GROUP BY t.tenant_id, t.id, t.title, t.slug, t.isrc, t.released_on, t.status
          ORDER BY t.title""", (tenant_id,))
 
+    # Every asset for the tenant in one query, grouped in Python, rather than one query
+    # per row. Thirteen views render the same way and none of them fans out per row —
+    # the table is the unit of work here, not the record.
+    by_recording: dict[str, list[dict[str, Any]]] = {}
+    for asset in _rows(conn, """
+            SELECT id, recording_id, kind, label, bytes, mime, state, uploaded_at,
+                   uploaded_by, duration_ms, sample_rate
+              FROM recording_asset
+             WHERE tenant_id = %s
+             ORDER BY kind, created_at DESC""", (tenant_id,)):
+        by_recording.setdefault(str(asset["recording_id"]), []).append(asset)
+
     out = [{
         "id": str(r["id"]), "title": r["title"], "artist": r["artist_name"],
         "state": r["status"], "bpm": "—", "key": "—",
         "campaigns": str(r["leads"]), "streams": str(r["places"]),
+        "audio": _audio_cell(by_recording.get(str(r["id"]), [])),
         "spark": "▁▁▁▁▁▁▁",
         "insp": (
             Section("Recording", "kv", (
@@ -467,26 +561,26 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
                 ("status", r["status"]), ("facts", str(r["facts"])),
                 ("leads", str(r["leads"])), ("platforms", str(r["places"])),
             )),
-            Section("Not analysed yet", "note", (
-                "Measured facts — bpm, key, hook window — come from analysing the master "
-                "once. Nothing downstream can query them until that runs.",
-            )),
+            *_masters_sections(str(r["id"]), by_recording.get(str(r["id"]), [])),
             Section("", "actions", ("Analyse", "Seed frontier", "Edit")),
         ),
     } for r in rows]
 
+    with_master = sum(1 for r in out if r["audio"] == "master")
     return View(
         key="tracks", title="Tracks",
         blurb="Recordings — the masters, identified by ISRC. Credits decide who they "
               "belong to, so a collaboration is one row. Live from recording.",
-        stats=(("tracks", str(len(out)), ""), ("analysed", "0", ""),
+        stats=(("tracks", str(len(out)), ""),
+               ("with a master", str(with_master), ""),
+               ("analysed", "0", ""),
                ("with leads", str(sum(1 for r in out if r["campaigns"] != "0")), ""),
-               ("facts", str(sum(int(r["insp"][0].items[5][1]) for r in out)), ""),
-               ("shown", str(len(out)), "")),
-        cols=(Col("title", "Track", "b", "24%"), Col("artist", "Artist", "", "20%"),
-              Col("state", "Status", "chip", "12%"), Col("bpm", "BPM", "num", "8%"),
-              Col("key", "Key", "mono", "10%"), Col("campaigns", "Leads", "num", "8%"),
-              Col("streams", "On", "num", "9%"), Col("spark", "", "spark", "9%")),
+               ("facts", str(sum(int(r["insp"][0].items[5][1]) for r in out)), "")),
+        cols=(Col("title", "Track", "b", "22%"), Col("artist", "Artist", "", "18%"),
+              Col("state", "Status", "chip", "11%"), Col("audio", "Audio", "chip", "11%"),
+              Col("bpm", "BPM", "num", "7%"), Col("key", "Key", "mono", "9%"),
+              Col("campaigns", "Leads", "num", "7%"), Col("streams", "On", "num", "8%"),
+              Col("spark", "", "spark", "7%")),
         rows=tuple(out),
         empty="No recordings yet. One arrives with an ISRC, and the ISRC is what "
               "places it on every platform.",

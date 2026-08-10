@@ -12,9 +12,9 @@ The platform described by [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md) and
 
 | | |
 |---|---|
-| `schema/` | Migrations, applied in order. Seven so far. |
+| `schema/` | Migrations, applied in order. Seventeen so far. |
 | `web/` | The console and the fleet — FastAPI + Jinja + htmx, the same shape as `app/remixkit/ui/`. |
-| `infra/` | Terraform. Lambda + Function URL, and nothing else that costs money. |
+| `infra/` | Terraform. Lambda + Function URL, and the masters bucket — the one resource here that is not free at idle. |
 | `bin/` | Setup that has to touch a vendor account: `ccloud-mcp-setup.sh`. |
 
 ## Where we are
@@ -32,6 +32,9 @@ The platform described by [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md) and
 | Vector indexes on `party_chunk` and `party_fact` | **live**, cosine, prefix-filtered |
 | Embeddings — 856 chunks over 17 documents | **live**, via the OpenAI adapter |
 | Retrieval — R2 semantic search over the corpus | **live**, `python -m rtf_platform.ingest --search "…"` |
+| Masters — `recording_asset`, S3, presigned upload, `/tracks` inspector | **built**, migration 016; the bucket is written in Terraform and **not applied**, so uploads report themselves unconfigured |
+| `analyse_recording` — reads the master, verifies its hash, writes facts | **built**, drained by a worker (`--kinds analyse_recording`), never yet run against a real master |
+| Genre classification — Discogs-EffNet in a container | not built. See `docs/2026-08-10-masters-and-classification.md` §3a for the front end that failed reference-track validation, and why the container is the fix |
 | Counterparties, threads, outreach | not started |
 
 A table arrives when something needs it, not because `PLATFORM-SPEC §2` lists it.

@@ -47,7 +47,7 @@ import psycopg
 from fastapi import (
     APIRouter, Cookie, Depends, File, Form, HTTPException, Request, UploadFile,
 )
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from rtf_platform import (
@@ -138,6 +138,10 @@ _TONES: dict[str, str] = {
     "needs you": "err", "unsubscribed": "err", "off": "err", "unanalysed": "err",
     "idle": "info", "launch": "info", "holdout": "info", "replied": "info",
     "declined": "info",
+    # The Tracks audio column. `none` is an error tone rather than a neutral one on
+    # purpose: a recording with no master cannot be measured, serviced, or classified,
+    # so it is a blocked record and not merely an empty field.
+    "master": "ok", "none": "err", "instrumental": "info", "radio_edit": "info",
 }
 
 
@@ -1094,8 +1098,182 @@ def threads_close(principal: Operator, thread_id: str, outcome: str) -> Response
 
 
 @router.get("/tracks", response_class=HTMLResponse)
-def tracks(request: Request, principal: Operator, sel: str = "") -> Response:
-    return _live(request, principal, research.tracks, sel or None, "track", "title")
+def tracks(request: Request, principal: Operator, sel: str = "",
+           error: str = "") -> Response:
+    return _live(request, principal, research.tracks, sel or None, "track", "title",
+                 error)
+
+
+# ------------------------------------------------------------------- masters
+#
+# Three routes for one upload, because the bytes do not come here. The browser hashes
+# the file, asks for a signed URL, PUTs to S3 directly, and then tells us it finished —
+# and that last claim is checked against the bucket rather than believed.
+#
+# The two JSON routes are the only JSON in this console; everything else posts a form
+# and gets a redirect, deliberately (see `_inspector.html`: an editor that swaps a
+# fragment gives the operator no way to tell a saved record from a rendered one). An
+# upload cannot work that way. A form POST would send the bytes here, and here is a
+# Lambda with a 6MB synchronous payload cap — a 90MB master does not fail slowly, it
+# fails at the platform with a `RequestEntityTooLarge` that names nothing in this repo.
+# So the exchange is JSON and the page reloads at the end, which is the same proof a
+# redirect gives.
+
+
+def _store() -> Any:
+    """The masters adapter, or a raise naming what to configure.
+
+    Read per request rather than captured in `SETTINGS` at import: the bucket can be
+    created after the console is already running, and `storage.load` caches the boto3
+    client so this costs a dict lookup.
+    """
+    from rtf_platform import storage
+
+    cfg = settings_mod.load()
+    return storage.load(cfg.masters_bucket, cfg.region)
+
+
+def _recording_exists(conn: psycopg.Connection, tenant_id: str,
+                      recording_id: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM recording WHERE tenant_id = %s AND id = %s",
+                    (tenant_id, recording_id))
+        return cur.fetchone() is not None
+
+
+def _refused(message: str, status: int = 400) -> Response:
+    return JSONResponse({"error": message}, status_code=status)
+
+
+@router.post("/tracks/{recording_id}/masters")
+async def masters_claim(request: Request, principal: Operator,
+                        recording_id: str) -> Response:
+    """Reserve a row and hand back a signed PUT URL.
+
+    Everything checkable is checked here, before a URL exists: the kind, the MIME type,
+    the size. Refusing after the bytes have been transferred is not refusing — the
+    upload has already been paid for in the operator's time and the account's bandwidth.
+    """
+    from rtf_platform import assets, storage
+
+    _require_write(principal)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 - a malformed body is a client bug, not a crash
+        return _refused("that request body was not JSON.")
+
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return _refused("there is no tenant yet — save an artist first.")
+    if not _recording_exists(conn, tenant_id, recording_id):
+        return _refused("no such recording.", status=404)
+
+    try:
+        store = _store()
+        row, is_new = assets.claim(
+            conn, tenant_id, recording_id,
+            kind=str(body.get("kind", "")),
+            content_hash=str(body.get("content_hash", "")),
+            mime=str(body.get("mime", "")),
+            size=int(body.get("size") or 0),
+            uploaded_by=principal.subject,
+            label=str(body.get("label", ""))[:200],
+        )
+    except storage.StorageUnconfigured as exc:
+        return _refused(str(exc), status=503)
+    except assets.AssetConflict as exc:
+        # 409 specifically: the request is well-formed and collides with existing
+        # state. The message names the other recording, because the operator's actual
+        # mistake is almost always the file they picked.
+        return _refused(str(exc), status=409)
+    except assets.AssetRefused as exc:
+        # 400: the request itself is wrong — an unsupported type, an empty file, a size
+        # over the ceiling. Nothing about the stored state would make it acceptable.
+        return _refused(str(exc), status=400)
+    except (TypeError, ValueError):
+        return _refused("that upload description was malformed.")
+
+    asset_id = str(row["id"])
+    payload = {
+        "asset_id": asset_id,
+        "state": row["state"],
+        "key": row["object_key"],
+        "is_new": is_new,
+        "confirm": f"/tracks/{recording_id}/masters/{asset_id}/confirm",
+    }
+    # A row that is already `stored` needs no PUT at all — the operator picked a file
+    # that is already here. Signing a URL anyway would invite a pointless 90MB upload
+    # that overwrites an object with identical bytes.
+    if row["state"] != "stored":
+        payload["url"] = store.presign_put(row["object_key"],
+                                           content_type=row["mime"])
+    return JSONResponse(payload)
+
+
+@router.post("/tracks/{recording_id}/masters/{asset_id}/confirm")
+def masters_confirm(principal: Operator, recording_id: str, asset_id: str) -> Response:
+    """Ask the bucket what arrived, and promote the row if it agrees.
+
+    The browser saying its PUT succeeded is not evidence: a tab closed mid-transfer
+    reports nothing, and S3 will happily keep the 60MB it received of a 90MB file. This
+    is the sentence that checks.
+    """
+    from rtf_platform import assets, storage
+
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return _refused("there is no tenant yet.")
+
+    try:
+        row = assets.confirm(conn, _store(), tenant_id, asset_id)
+    except storage.StorageUnconfigured as exc:
+        return _refused(str(exc), status=503)
+    except assets.AssetRefused as exc:
+        return _refused(str(exc), status=409)
+
+    queued = assets.queue_analysis(conn, tenant_id, recording_id, asset_id)
+    return JSONResponse({"asset_id": str(row["id"]), "state": row["state"],
+                         "bytes": row["bytes"], "analysis_queued": queued})
+
+
+@router.post("/tracks/{recording_id}/masters/{asset_id}/delete")
+def masters_delete(principal: Operator, recording_id: str, asset_id: str) -> Response:
+    """Drop the row, and the object with it when nothing else points at those bytes.
+
+    A form POST and a redirect, unlike its two siblings, because no bytes move through
+    here — this is an ordinary console write and it should behave like one.
+
+    The object is deleted second and its failure is deliberately not fatal to the row.
+    The bucket has versioning with a 30-day noncurrent expiry, so a delete that half
+    happens leaves recoverable bytes and no row, which is the recoverable direction. The
+    reverse — row gone from the table's point of view but still billed and still
+    listed — is the one that rots.
+    """
+    from rtf_platform import assets, storage
+
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return RedirectResponse(f"/tracks?sel={recording_id}", status_code=303)
+
+    orphaned_key = assets.delete(conn, tenant_id, asset_id)
+    error = ""
+    if orphaned_key:
+        try:
+            _store().delete(orphaned_key)
+        except storage.StorageUnconfigured:
+            error = ("the row is gone but the object could not be deleted — no bucket "
+                     "is configured, so nothing here can reach it.")
+        except Exception as exc:  # noqa: BLE001 - the message is the product
+            error = (f"the row is gone but the object is still in the bucket: {exc}. "
+                     f"Key: {orphaned_key}")
+
+    suffix = f"&error={_q(error)}" if error else ""
+    return RedirectResponse(f"/tracks?sel={recording_id}{suffix}", status_code=303)
 
 
 def _campaigns_page(request: Request, principal: auth.Principal, *, sel: str = "",

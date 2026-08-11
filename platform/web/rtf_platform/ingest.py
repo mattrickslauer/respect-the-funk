@@ -263,36 +263,49 @@ def retry_failed(conn: psycopg.Connection, tenant_id: str) -> int:
         return cur.rowcount
 
 
-def reanalyse(conn: psycopg.Connection, tenant_id: str, slug: str = "") -> int:
-    """Return completed `analyse_recording` leads to the frontier so masters are re-read.
+def requeue(conn: psycopg.Connection, tenant_id: str, kind: str,
+            slug: str = "") -> int:
+    """Return completed leads of one kind to the frontier, so their agent runs again.
 
-    The other hand-crank, and it exists for a reason `--retry-failed` does not cover:
-    those leads did not fail. They succeeded, against a pipeline that has since got
-    better — a classifier deployed where there was none, a floor retuned, a bug fixed.
-    `assets.queue_analysis` is idempotent on `(tenant_id, target_hash)` over the asset
-    id, deliberately, so that re-confirming an upload cannot queue a second analysis.
-    The cost of that guarantee is that nothing re-queues one either, and without this
-    the only way to re-read a master is to delete rows by hand.
+    The hand-crank `--retry-failed` does not cover, and the distinction is the point:
+    those leads did not fail. They **succeeded**, against a pipeline that has since got
+    better — a classifier deployed where there was none, a floor retuned, style terms
+    that were two coarse words and are now four specific ones.
 
-    Facts are superseded rather than overwritten when the lead runs again, so the
-    previous reading stays readable — which is the whole reason re-running is safe to
-    offer as a flag rather than a migration.
+    Every producer of leads in this system dedupes on `(tenant_id, target_hash)`, on
+    purpose: `assets.queue_analysis` must not queue a second analysis when an upload is
+    re-confirmed, and `--prospect` must not queue a second discovery every time it is
+    run. The cost of that guarantee is that nothing re-queues one either. Both failure
+    modes are silent — the command reports "queued 0" and everything looks fine — so
+    this exists to make the re-run explicit rather than a hand-written DELETE.
 
-    `slug` narrows it to one recording. Empty means every stored master in the tenant,
-    which is what you want after deploying a classifier for the first time.
+    Safe as a flag rather than a migration because the agents supersede rather than
+    overwrite: `analyse_recording` supersedes its facts, and discovery writes
+    suggestions a human still approves. The earlier reading stays readable.
+
+    `slug` narrows to one subject — a recording for `analyse_recording`, a party for
+    the discovery kinds — because after deploying a classifier you want every master,
+    and while debugging one track you emphatically do not.
     """
     with conn.cursor() as cur:
         cur.execute(
             """UPDATE lead SET state = 'pending', attempts = 0, owner_agent = NULL,
                       lease_expires_at = NULL, lease_token = NULL,
                       next_action_at = now(), updated_at = now()
-                WHERE tenant_id = %s AND kind = 'analyse_recording'
-                  AND (%s = '' OR recording_id IN (
-                        SELECT id FROM recording
-                         WHERE tenant_id = %s AND slug = %s))""",
-            (tenant_id, slug, tenant_id, slug),
+                WHERE tenant_id = %s AND kind = %s AND state != 'pending'
+                  AND (%s = ''
+                       OR recording_id IN (SELECT id FROM recording
+                                            WHERE tenant_id = %s AND slug = %s)
+                       OR party_id IN (SELECT id FROM party
+                                        WHERE tenant_id = %s AND slug = %s))""",
+            (tenant_id, kind, slug, tenant_id, slug, tenant_id, slug),
         )
         return cur.rowcount
+
+
+def reanalyse(conn: psycopg.Connection, tenant_id: str, slug: str = "") -> int:
+    """`requeue` for the common case: re-read every stored master."""
+    return requeue(conn, tenant_id, "analyse_recording", slug)
 
 
 def main() -> int:
@@ -309,6 +322,9 @@ def main() -> int:
                         metavar="SLUG",
                         help="re-read stored masters (optionally one recording slug) "
                              "after the analysis pipeline has changed")
+    parser.add_argument("--requeue", metavar="KIND[:SLUG]",
+                        help="return completed leads of one kind to the frontier, e.g. "
+                             "find_counterparties, or find_counterparties:hallow-youth")
     parser.add_argument("--discover", action="store_true",
                         help="search every enabled keyless source for every artist")
     parser.add_argument("--prospect", action="store_true",
@@ -351,6 +367,14 @@ def main() -> int:
             retried = retry_failed(conn, tenant_id)
             print(f"returned {retried} parked lead(s) to the frontier")
 
+        if args.requeue:
+            kind, _, only = args.requeue.partition(":")
+            if kind not in agents.REGISTRY:
+                sys.exit(f"{kind!r} is not an agent kind. Known: "
+                         f"{', '.join(sorted(agents.REGISTRY))}")
+            moved = requeue(conn, tenant_id, kind, only)
+            print(f"re-queued {moved} {kind} lead(s) for {only or 'every subject'}")
+
         if args.reanalyse is not None:
             requeued = reanalyse(conn, tenant_id, args.reanalyse)
             scope = args.reanalyse or "every recording"
@@ -372,7 +396,8 @@ def main() -> int:
             print(f"queued {queued} profiling / prospecting lead(s)")
 
         if (args.paths or args.drain_only or args.seed_sources or args.retry_failed
-                or args.discover or args.prospect or args.reanalyse is not None):
+                or args.discover or args.prospect or args.reanalyse is not None
+                or args.requeue):
             print("draining the frontier")
             kinds = args.kinds.split(",") if args.kinds else None
             total = drain(conn, tenant_id, worker_name=args.worker, kinds=kinds)

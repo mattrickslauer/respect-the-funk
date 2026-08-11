@@ -291,6 +291,22 @@ resource "aws_lambda_function" "console" {
       # console offers uploads. AWS_REGION is provided by the runtime itself, which
       # is why `settings.load` reads it and no region is passed here.
       PLATFORM_MASTERS_BUCKET = aws_s3_bucket.masters.bucket
+
+      # The console does not invoke the classifier — `analyse_recording` runs in a
+      # worker, not in this function. It is set here so the console can *report* the
+      # difference between "this track has no genre because nothing has listened to
+      # it" and "because no classifier is deployed", which `settings.classifier_
+      # configured` is for. A track with no genre and no explanation sends an operator
+      # looking for a bug in the upload.
+      #
+      # Conditional because the classifier itself is `count`-gated on an image
+      # existing. Referencing [0] unconditionally would fail to plan on a fresh
+      # checkout, which is the state this whole stack is meant to apply cleanly from.
+      PLATFORM_CLASSIFIER_FUNCTION = (
+        length(aws_lambda_function.classifier) > 0
+        ? aws_lambda_function.classifier[0].function_name
+        : ""
+      )
     }
   }
 

@@ -563,7 +563,23 @@ def record_run(conn: psycopg.Connection, lead: dict[str, Any], agent_name: str,
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                        %s, %s, %s, now())""",
             (
-                lead["tenant_id"], lead.get("party_id"), agent_name, lead["id"], state,
+                # `agent_kind` is the kind of work, taken from the lead — NOT
+                # `agent_name`, which is the *worker* identity (`ingest-cli`,
+                # `masters-cli`) that `work_once` is handed for lease ownership.
+                #
+                # It was `agent_name` until this line changed, and the effect was not
+                # cosmetic. `research.fleet` cross-references `agent_manifest.kind`
+                # against this column to decide whether an agent is running, declared,
+                # or code-with-no-manifest — so every real agent showed zero runs, and
+                # every worker name showed up in the "has agent_run rows and no row in
+                # agent_manifest" branch, which reads as an anomaly. The console was
+                # reporting the shell script that started the drain as if it were an
+                # agent, and reporting `analyse_recording` as if it had never run.
+                #
+                # The worker is not lost: `lead.owner_agent` holds it, which is the
+                # column the lease actually fences on.
+                lead["tenant_id"], lead.get("party_id"), lead.get("kind") or agent_name,
+                lead["id"], state,
                 outcome.summary[:1000], error[:1000], lead.get("adapter", ""),
                 outcome.calls, outcome.documents, outcome.facts, outcome.metrics,
                 len(outcome.follow_on), outcome.dropped,

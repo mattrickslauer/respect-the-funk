@@ -137,6 +137,19 @@ class AnalyseRecording(unittest.TestCase):
 
     def setUp(self) -> None:
         os.environ["PLATFORM_MASTERS_BUCKET"] = BUCKET
+        # Unset for every test in this class, and restored in tearDown.
+        #
+        # This is not tidiness. `.env` now exports PLATFORM_CLASSIFIER_FUNCTION so a
+        # worker can reach the deployed classifier, and a developer who sources it
+        # before running the suite was silently making these tests **invoke the
+        # production Lambda** — which then 404s trying to download a synthetic fixture
+        # from the real bucket. Two of the three errors in the first run after that
+        # variable was added were exactly this.
+        #
+        # A test that reaches production is a test that costs money, depends on a
+        # deploy, and fails for reasons that have nothing to do with the code under
+        # test. Tests that want a classifier stub `agents._classify` instead.
+        self._saved_classifier = os.environ.pop("PLATFORM_CLASSIFIER_FUNCTION", None)
         _Serve.payload = self.audio_bytes
         self.hash = hashlib.sha256(self.audio_bytes).hexdigest()
 
@@ -168,6 +181,8 @@ class AnalyseRecording(unittest.TestCase):
             cur.execute("DELETE FROM tenant WHERE id = %s", (self.tenant,))
         self.conn.close()
         os.environ.pop("PLATFORM_MASTERS_BUCKET", None)
+        if self._saved_classifier is not None:
+            os.environ["PLATFORM_CLASSIFIER_FUNCTION"] = self._saved_classifier
 
     # ------------------------------------------------------------------ fixtures
 

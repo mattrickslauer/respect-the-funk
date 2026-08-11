@@ -782,3 +782,52 @@ class Claiming(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AgentRunNamesTheWork(unittest.TestCase):
+    """`agent_run.agent_kind` must hold the kind of work, not the worker's name.
+
+    `work_once` takes an `agent_name` that is the *worker* identity — `ingest-cli`,
+    `masters-cli`, whatever `--worker` was set to — because that is what the lease
+    fences on. `record_run` used to write that string into a column called
+    `agent_kind`, and the effect was not cosmetic: `research.fleet` cross-references
+    `agent_manifest.kind` against this column to decide whether an agent is running,
+    merely declared, or code with no manifest row. With worker names in it, every real
+    agent showed zero runs and every worker name appeared in the anomaly branch — the
+    console reporting the shell invocation as though it were an agent.
+
+    Source-level, because the alternative is a cluster round trip to assert one
+    argument position, and the bug was always visible in the argument list.
+    """
+
+    def test_record_run_takes_the_kind_from_the_lead(self) -> None:
+        import inspect
+
+        from rtf_platform import fleet
+
+        source = inspect.getsource(fleet.record_run)
+        params = source.split("VALUES")[1]
+        self.assertIn('lead.get("kind")', params,
+                      "agent_kind is not being taken from the lead")
+
+    def test_the_worker_name_is_only_a_last_resort(self) -> None:
+        """`agent_name` may remain as a fallback for a lead with no kind, but it must
+        not be what the column normally receives.
+
+        Comment lines are stripped before comparing, which the first version of this
+        test did not do — and it failed against a correct fix, because the comment
+        explaining *why* `agent_name` is wrong contains the word `agent_name` earlier in
+        the source than the expression does. A source-reading test has to read the code
+        and not the prose around it.
+        """
+        import inspect
+
+        from rtf_platform import fleet
+
+        params = "\n".join(
+            line for line in inspect.getsource(fleet.record_run).split("VALUES")[1].splitlines()
+            if not line.strip().startswith("#"))
+
+        self.assertIn('lead.get("kind")', params)
+        self.assertLess(params.index('lead.get("kind")'), params.index("agent_name"),
+                        "the worker name is being preferred over the lead's kind")

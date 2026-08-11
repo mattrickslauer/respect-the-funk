@@ -420,6 +420,9 @@ def budgets(conn: psycopg.Connection, tenant_id: str) -> View:
 
 # -------------------------------------------------------------------- tracks
 
+from rtf_platform import settings as settings_mod
+
+
 def _mb(value: Any) -> str:
     """Bytes as megabytes, or an em dash. NULL is a real answer here — see
     `recording_asset.bytes` — and rendering it as 0 MB would claim an empty file."""
@@ -447,15 +450,30 @@ def _audio_cell(assets: list[dict[str, Any]]) -> str:
     return "none"
 
 
+def _measured_section(facts: dict[str, str]) -> tuple[Section, ...]:
+    """What listening to the master established. Absent entirely when nothing has.
+
+    Rendered from `party_fact` rather than recomputed, so what an operator reads is the
+    row a shortlist would read — and `style_terms` in particular, because that is the
+    value counterparty discovery actually searches playlists with.
+    """
+    if not facts:
+        return ()
+    items = [(k, facts[k]) for k in ("bpm", "genre", "style", "style_terms")
+             if facts.get(k)]
+    return (Section("Measured from the master", "kv", tuple(items)),) if items else ()
+
+
 def _masters_sections(recording_id: str,
-                      assets: list[dict[str, Any]]) -> tuple[Section, ...]:
+                      assets: list[dict[str, Any]],
+                      facts: dict[str, str] | None = None) -> tuple[Section, ...]:
     """The masters panel: what is held, and the form that adds to it.
 
     The form is only offered when there is somewhere for it to put a file. A console
     that renders an upload control against an unconfigured bucket is worse than one that
     says the feature is off — the operator spends a 90MB upload finding out.
     """
-    from rtf_platform import assets as assets_mod, settings as settings_mod
+    from rtf_platform import assets as assets_mod
 
     sections: list[Section] = []
 
@@ -473,7 +491,26 @@ def _masters_sections(recording_id: str,
             )
             for a in assets)))
 
+    facts = facts or {}
     has_master = any(a["kind"] == "master" and a["state"] == "stored" for a in assets)
+
+    # A master that has been listened to and still has no genre means one of two very
+    # different things, and a track showing neither sends an operator hunting for a bug
+    # in the upload. Say which.
+    if has_master and not facts.get("genre"):
+        if not settings_mod.load().classifier_configured:
+            sections.append(Section("No genre: no classifier", "note", (
+                "PLATFORM_CLASSIFIER_FUNCTION is unset, so analyse_recording measures "
+                "tempo and deliberately writes no genre rather than passing "
+                "tempo-band guesses off as a model's answer.",
+            )))
+        elif facts:
+            sections.append(Section("No genre: nothing recognised", "note", (
+                "The classifier ran and nothing cleared its confidence floor. A 400-way "
+                "sigmoid always has a best answer; reporting one this weak would be "
+                "laundering noise into a label.",
+            )))
+
     if not has_master:
         sections.append(Section("No master yet", "note", (
             "Every measured fact about a recording — key, sections, energy, the hook "
@@ -538,6 +575,19 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
     # Every asset for the tenant in one query, grouped in Python, rather than one query
     # per row. Thirteen views render the same way and none of them fans out per row —
     # the table is the unit of work here, not the record.
+    # Live measured facts per recording, so the table shows what was measured rather
+    # than an em dash beside a master that has already been listened to. `bpm` was
+    # hardcoded to "—" from the fixture era and stayed that way after
+    # `analyse_recording` started writing real numbers.
+    facts_by_recording: dict[str, dict[str, str]] = {}
+    for fact in _rows(conn, """
+            SELECT recording_id, dimension, value_text FROM party_fact
+             WHERE tenant_id = %s AND status = 'live' AND recording_id IS NOT NULL
+               AND dimension IN ('bpm', 'genre', 'style', 'style_terms')""",
+            (tenant_id,)):
+        facts_by_recording.setdefault(str(fact["recording_id"]), {})[
+            fact["dimension"]] = fact["value_text"]
+
     by_recording: dict[str, list[dict[str, Any]]] = {}
     for asset in _rows(conn, """
             SELECT id, recording_id, kind, label, bytes, mime, state, uploaded_at,
@@ -549,7 +599,10 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
 
     out = [{
         "id": str(r["id"]), "title": r["title"], "artist": r["artist_name"],
-        "state": r["status"], "bpm": "—", "key": "—",
+        "state": r["status"],
+        "bpm": facts_by_recording.get(str(r["id"]), {}).get("bpm", "—"),
+        "key": (facts_by_recording.get(str(r["id"]), {}).get("style", "")
+                .split("---")[-1] or "—"),
         "campaigns": str(r["leads"]), "streams": str(r["places"]),
         "audio": _audio_cell(by_recording.get(str(r["id"]), [])),
         "spark": "▁▁▁▁▁▁▁",
@@ -561,7 +614,9 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
                 ("status", r["status"]), ("facts", str(r["facts"])),
                 ("leads", str(r["leads"])), ("platforms", str(r["places"])),
             )),
-            *_masters_sections(str(r["id"]), by_recording.get(str(r["id"]), [])),
+            *_measured_section(facts_by_recording.get(str(r["id"]), {})),
+            *_masters_sections(str(r["id"]), by_recording.get(str(r["id"]), []),
+                               facts_by_recording.get(str(r["id"]), {})),
             Section("", "actions", ("Analyse", "Seed frontier", "Edit")),
         ),
     } for r in rows]
@@ -578,7 +633,7 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
                ("facts", str(sum(int(r["insp"][0].items[5][1]) for r in out)), "")),
         cols=(Col("title", "Track", "b", "22%"), Col("artist", "Artist", "", "18%"),
               Col("state", "Status", "chip", "11%"), Col("audio", "Audio", "chip", "11%"),
-              Col("bpm", "BPM", "num", "7%"), Col("key", "Key", "mono", "9%"),
+              Col("bpm", "BPM", "num", "7%"), Col("key", "Style", "mono", "9%"),
               Col("campaigns", "Leads", "num", "7%"), Col("streams", "On", "num", "8%"),
               Col("spark", "", "spark", "7%")),
         rows=tuple(out),

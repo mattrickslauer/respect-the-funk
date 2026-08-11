@@ -443,6 +443,56 @@ class AnalyseRecording(unittest.TestCase):
                                                self._stored_asset()))
 
 
+@unittest.skipUnless(HAVE_DB, "DATABASE_URL unset — cluster tests skipped")
+class Reanalysing(AnalyseRecording):
+    """`--reanalyse`, the hand-crank for a pipeline that got better.
+
+    `--retry-failed` does not cover this: these leads did not fail, they succeeded
+    against a worse pipeline. And `queue_analysis` is idempotent on the asset id
+    *deliberately* — re-confirming an upload must not queue a second analysis — so
+    nothing re-queues one either. Without this flag the only way to re-read a master
+    after deploying a classifier is to delete rows by hand.
+    """
+
+    def test_a_completed_lead_returns_to_the_frontier(self) -> None:
+        from rtf_platform import assets, ingest
+
+        asset_id = self._stored_asset()
+        assets.queue_analysis(self.conn, self.tenant, self.recording, asset_id)
+        with self.conn.cursor() as cur:
+            cur.execute("""UPDATE lead SET state = 'done', attempts = 3
+                            WHERE tenant_id = %s AND kind = 'analyse_recording'""",
+                        (self.tenant,))
+
+        self.assertEqual(ingest.reanalyse(self.conn, self.tenant), 1)
+        with self.conn.cursor() as cur:
+            cur.execute("""SELECT state, attempts FROM lead
+                            WHERE tenant_id = %s AND kind = 'analyse_recording'""",
+                        (self.tenant,))
+            row = cur.fetchone()
+        self.assertEqual(row["state"], "pending")
+        self.assertEqual(row["attempts"], 0,
+                         "carrying strikes forward would park it after one hiccup")
+
+    def test_a_slug_narrows_it_to_one_recording(self) -> None:
+        """After deploying a classifier you want every master; while debugging one
+        track you emphatically do not."""
+        from rtf_platform import assets, ingest
+
+        assets.queue_analysis(self.conn, self.tenant, self.recording,
+                              self._stored_asset())
+        with self.conn.cursor() as cur:
+            cur.execute("""UPDATE lead SET state = 'done'
+                            WHERE tenant_id = %s AND kind = 'analyse_recording'""",
+                        (self.tenant,))
+            cur.execute("SELECT slug FROM recording WHERE tenant_id = %s AND id = %s",
+                        (self.tenant, self.recording))
+            slug = cur.fetchone()["slug"]
+
+        self.assertEqual(ingest.reanalyse(self.conn, self.tenant, "not-a-slug"), 0)
+        self.assertEqual(ingest.reanalyse(self.conn, self.tenant, slug), 1)
+
+
 class SearchTerms(unittest.TestCase):
     """Turning stored facts into things you would type into a playlist search.
 

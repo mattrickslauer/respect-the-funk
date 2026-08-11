@@ -263,6 +263,38 @@ def retry_failed(conn: psycopg.Connection, tenant_id: str) -> int:
         return cur.rowcount
 
 
+def reanalyse(conn: psycopg.Connection, tenant_id: str, slug: str = "") -> int:
+    """Return completed `analyse_recording` leads to the frontier so masters are re-read.
+
+    The other hand-crank, and it exists for a reason `--retry-failed` does not cover:
+    those leads did not fail. They succeeded, against a pipeline that has since got
+    better — a classifier deployed where there was none, a floor retuned, a bug fixed.
+    `assets.queue_analysis` is idempotent on `(tenant_id, target_hash)` over the asset
+    id, deliberately, so that re-confirming an upload cannot queue a second analysis.
+    The cost of that guarantee is that nothing re-queues one either, and without this
+    the only way to re-read a master is to delete rows by hand.
+
+    Facts are superseded rather than overwritten when the lead runs again, so the
+    previous reading stays readable — which is the whole reason re-running is safe to
+    offer as a flag rather than a migration.
+
+    `slug` narrows it to one recording. Empty means every stored master in the tenant,
+    which is what you want after deploying a classifier for the first time.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE lead SET state = 'pending', attempts = 0, owner_agent = NULL,
+                      lease_expires_at = NULL, lease_token = NULL,
+                      next_action_at = now(), updated_at = now()
+                WHERE tenant_id = %s AND kind = 'analyse_recording'
+                  AND (%s = '' OR recording_id IN (
+                        SELECT id FROM recording
+                         WHERE tenant_id = %s AND slug = %s))""",
+            (tenant_id, slug, tenant_id, slug),
+        )
+        return cur.rowcount
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="*", type=Path)
@@ -273,6 +305,10 @@ def main() -> int:
                         help="queue a map_source lead for every unmapped presence row")
     parser.add_argument("--retry-failed", action="store_true",
                         help="return parked leads to the frontier (after fixing the cause)")
+    parser.add_argument("--reanalyse", nargs="?", const="", default=None,
+                        metavar="SLUG",
+                        help="re-read stored masters (optionally one recording slug) "
+                             "after the analysis pipeline has changed")
     parser.add_argument("--discover", action="store_true",
                         help="search every enabled keyless source for every artist")
     parser.add_argument("--prospect", action="store_true",
@@ -315,6 +351,11 @@ def main() -> int:
             retried = retry_failed(conn, tenant_id)
             print(f"returned {retried} parked lead(s) to the frontier")
 
+        if args.reanalyse is not None:
+            requeued = reanalyse(conn, tenant_id, args.reanalyse)
+            scope = args.reanalyse or "every recording"
+            print(f"re-queued {requeued} analyse_recording lead(s) for {scope}")
+
         if args.seed_sources:
             seeded = seed_sources(conn, tenant_id)
             print(f"seeded {seeded} map_source lead(s) from presence rows")
@@ -331,7 +372,7 @@ def main() -> int:
             print(f"queued {queued} profiling / prospecting lead(s)")
 
         if (args.paths or args.drain_only or args.seed_sources or args.retry_failed
-                or args.discover or args.prospect):
+                or args.discover or args.prospect or args.reanalyse is not None):
             print("draining the frontier")
             kinds = args.kinds.split(",") if args.kinds else None
             total = drain(conn, tenant_id, worker_name=args.worker, kinds=kinds)

@@ -274,9 +274,23 @@ def _client(region: str):
         import boto3
         from botocore.config import Config
     except ImportError as exc:  # pragma: no cover - present in Lambda and in dev
+        # Two very different situations, and the message must not assume the common
+        # one. Locally this means the venv is missing a dev dependency. In Lambda it
+        # means the managed runtime stopped shipping the SDK — which AWS has signalled
+        # it may eventually do — and the fix is to vendor boto3 into the bundle, not to
+        # run pip on a read-only filesystem. Telling a deployed function to `pip
+        # install` would send whoever reads the log looking in the wrong place.
+        import os as _os
+
+        in_lambda = bool(_os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
         raise StorageUnconfigured(
-            "boto3 is not importable. It ships inside the Lambda runtime, so this is a "
-            "local process: pip install -r requirements-dev.txt"
+            "boto3 is not importable, so no upload URL can be signed. "
+            + ("This is the deployed function, which relies on the managed runtime "
+               "providing the SDK — see requirements-dev.txt for that decision. If the "
+               "runtime no longer ships it, add boto3 to requirements.txt so build.sh "
+               "vendors it into the bundle."
+               if in_lambda else
+               "This is a local process: pip install -r requirements-dev.txt")
         ) from exc
 
     return boto3.client(

@@ -443,5 +443,102 @@ class AnalyseRecording(unittest.TestCase):
                                                self._stored_asset()))
 
 
+class SearchTerms(unittest.TestCase):
+    """Turning stored facts into things you would type into a playlist search.
+
+    Pure, so these always run. They cover the step where the chain nearly broke: the
+    classifier can be perfect and the labels still never reach Deezer if nothing
+    converts `Electronic---Tropical House` into `Tropical House`.
+    """
+
+    def test_a_discogs_label_keeps_the_style_and_drops_the_parent(self) -> None:
+        """"Electronic" describes a third of Deezer and would return the same playlists
+        for a techno record and an ambient one. The parent is stored as its own `genre`
+        fact; what a curator actually curates is the style."""
+        from rtf_platform import agents
+
+        self.assertEqual(agents._search_terms("Electronic---Tropical House"),
+                         ["Tropical House"])
+
+    def test_a_comma_joined_list_becomes_its_members(self) -> None:
+        from rtf_platform import agents
+
+        self.assertEqual(agents._search_terms("house, melodic house, progressive house"),
+                         ["house", "melodic house", "progressive house"])
+
+    def test_a_bare_platform_label_survives_unchanged(self) -> None:
+        from rtf_platform import agents
+
+        self.assertEqual(agents._search_terms("Dance"), ["Dance"])
+
+    def test_empty_and_whitespace_yield_nothing(self) -> None:
+        """A term of `" "` would search Deezer's playlists for a space. `sources.py`
+        already learned this one the hard way."""
+        from rtf_platform import agents
+
+        self.assertEqual(agents._search_terms(""), [])
+        self.assertEqual(agents._search_terms(" , , "), [])
+
+
+class ClassifierTerms(unittest.TestCase):
+    """Which of the model's labels become search terms.
+
+    The classifier is multi-label — 400 independent sigmoids, not a softmax — so a tight
+    cluster of related styles is the model saying a record is all of them, not the model
+    being unsure. Taking the argmax alone throws away good queries on a 0.02 margin.
+    """
+
+    #: Measured on Hallow Youth's "Losing Sleep", which is what motivated the ratio.
+    LOSING_SLEEP = {
+        "model": "genre_discogs400-discogs-effnet-1",
+        "styles": [
+            {"label": "Electronic---Tropical House", "p": 0.3099},
+            {"label": "Electronic---House", "p": 0.2900},
+            {"label": "Electronic---Deep House", "p": 0.2880},
+            {"label": "Electronic---Progressive House", "p": 0.2860},
+            {"label": "Electronic---Electro House", "p": 0.1680},
+        ],
+    }
+
+    def test_a_tight_cluster_keeps_the_whole_cluster(self) -> None:
+        from rtf_platform import agents
+
+        self.assertEqual(
+            agents._classifier_terms(self.LOSING_SLEEP),
+            ["Tropical House", "House", "Deep House", "Progressive House"])
+
+    def test_the_straggler_below_the_ratio_is_dropped(self) -> None:
+        from rtf_platform import agents
+
+        self.assertNotIn("Electro House", agents._classifier_terms(self.LOSING_SLEEP))
+
+    def test_a_confident_single_answer_yields_one_term(self) -> None:
+        """Metallica measured 0.844 against a distant field. A ratio rule must not turn
+        a decisive answer into four hedged ones."""
+        from rtf_platform import agents
+
+        decisive = {"model": "m", "styles": [
+            {"label": "Rock---Heavy Metal", "p": 0.844},
+            {"label": "Rock---Thrash", "p": 0.120},
+        ]}
+        self.assertEqual(agents._classifier_terms(decisive), ["Heavy Metal"])
+
+    def test_a_barely_recognised_track_contributes_nothing_confident(self) -> None:
+        """The absolute floor under the ratio. Without it, five labels at 0.02 would
+        pass the ratio test against each other and produce four confident-looking terms
+        that are all noise."""
+        from rtf_platform import agents
+
+        noise = {"model": "m", "styles": [{"label": f"X---S{i}", "p": 0.02}
+                                          for i in range(5)]}
+        self.assertEqual(agents._classifier_terms(noise), [])
+
+    def test_no_classifier_yields_no_terms(self) -> None:
+        from rtf_platform import agents
+
+        self.assertEqual(agents._classifier_terms(None), [])
+        self.assertEqual(agents._classifier_terms({"model": "m", "styles": []}), [])
+
+
 if __name__ == "__main__":
     unittest.main()

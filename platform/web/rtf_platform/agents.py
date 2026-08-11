@@ -514,6 +514,20 @@ def _fetch_find_counterparties(conn: psycopg.Connection, lead: dict[str, Any],
         budget = cur.fetchone()
         # Style, not name. A curator selects on what a record sounds like, and for an
         # artist nobody has heard of the name returns nothing at all.
+        #
+        # Two sources, and the second is the one that matters for a new artist. Facts
+        # attached to the **party** are what a platform's own genre labels produce —
+        # for Hallow Youth that is `Dance` and `Electro`, which is everything Deezer
+        # knows and is far too coarse to find a playlist with. Facts attached to a
+        # **recording** are what `analyse_recording` writes after listening to the
+        # master, and they are specific: `Electronic---Tropical House`.
+        #
+        # Recording facts carry `recording_id` and a NULL `party_id`, because a genre is
+        # a property of the record and not of the person who made it. So they are
+        # reached through `party_credit` rather than by party id, and an artist's
+        # searchable style is the union over the records they are credited on. Until
+        # this join existed, everything the classifier wrote was invisible here and the
+        # whole upload-listen-discover chain stopped one step short.
         cur.execute(
             """SELECT DISTINCT value_text FROM party_fact
                 WHERE tenant_id = %s AND party_id = %s AND dimension = 'genre'
@@ -521,11 +535,27 @@ def _fetch_find_counterparties(conn: psycopg.Connection, lead: dict[str, Any],
             (tenant_id, party_id),
         )
         terms = [r["value_text"] for r in cur.fetchall()]
+
+        cur.execute(
+            """SELECT DISTINCT f.value_text, f.dimension
+                 FROM party_fact f
+                 JOIN party_credit c ON c.tenant_id = f.tenant_id
+                                    AND c.subject_kind = 'recording'
+                                    AND c.subject_id = f.recording_id
+                WHERE f.tenant_id = %s AND c.party_id = %s AND f.status = 'live'
+                  AND f.dimension IN ('style', 'genre', 'style_terms')
+                  AND f.recording_id IS NOT NULL
+                ORDER BY f.dimension LIMIT 20""",
+            (tenant_id, party_id),
+        )
+        for row in cur.fetchall():
+            terms.extend(_search_terms(row["value_text"]))
     cap = int(budget["max_leads_per_run"]) if budget else 25
 
     try:
         harvest = adapter.discover_counterparties(
-            artist_name, ident["value"] if ident else "", terms=terms)
+            artist_name, ident["value"] if ident else "",
+            terms=list(dict.fromkeys(terms))[:8])
     except sources.SourceUnavailable as exc:
         raise fleet.LeadFailed(str(exc), permanent=exc.permanent) from exc
 
@@ -1041,6 +1071,65 @@ distil_lesson = fleet.NetworkAgent(fetch=_fetch_distil_lesson, write=_write_dist
 _DOWNLOAD_CHUNK = 1024 * 1024
 
 
+#: A style is kept as a search term if it is within this fraction of the top score. The
+#: classifier is multi-label — 400 independent sigmoids, not a softmax — so a record can
+#: genuinely be House *and* Deep House *and* Progressive House, and a tight cluster is
+#: the model saying so rather than the model being unsure.
+#:
+#: Measured on Hallow Youth's "Losing Sleep": Tropical House 0.310, House 0.290, Deep
+#: House 0.288, Progressive House 0.286, Electro House 0.168. Taking the argmax alone
+#: would pick "Tropical House" over "House" on a 0.02 margin and throw away three
+#: perfectly good playlist queries; this keeps the first four and drops the fifth.
+_TERM_RATIO = 0.6
+
+#: An absolute floor underneath the ratio, so that a track the model barely recognises
+#: does not contribute four confident-looking terms that are all noise.
+_TERM_FLOOR = 0.15
+
+#: Deezer's playlist search is the consumer and more queries cost more calls, so this is
+#: what the tempo path already caps at.
+_MAX_TERMS = 4
+
+
+def _classifier_terms(genre: dict[str, Any] | None) -> list[str]:
+    """The classifier's labels as playlist search terms, or `[]` if it did not run.
+
+    Preferred over the tempo-derived terms wherever both exist, and it is worth being
+    precise about why rather than treating them as interchangeable. The tempo path says
+    "125 BPM records are often house" — a lookup table keyed on a number. The classifier
+    says "this record is house" — a model that listened to it. Both are `inferred` and
+    only one is about the record.
+    """
+    if not genre or not genre.get("styles"):
+        return []
+    scores = genre["styles"]
+    best = scores[0]["p"]
+    cutoff = max(_TERM_FLOOR, best * _TERM_RATIO)
+    kept = [s["label"].split("---")[-1].strip()
+            for s in scores if s["p"] >= cutoff]
+    return list(dict.fromkeys(kept))[:_MAX_TERMS]
+
+
+def _search_terms(value: str) -> list[str]:
+    """A stored fact value, as the things you would actually type into a playlist search.
+
+    Three shapes reach this, and flattening them here rather than at write time keeps the
+    stored fact faithful to what produced it:
+
+      * `Electronic---Tropical House` — Discogs' own `Parent---Style` separator. **Only
+        the style is returned.** "Electronic" describes a third of Deezer and would
+        return the same playlists for a techno record and an ambient one; "Tropical
+        House" is what a curator actually curates. The parent is already stored as its
+        own `genre` fact for anyone who wants it.
+      * `house, melodic house, progressive house` — the comma-joined list
+        `analyse_recording` writes for `style_terms`.
+      * `Dance` — a bare platform label.
+    """
+    parts = [chunk.split("---")[-1].strip()
+             for chunk in value.split(",") if chunk.strip()]
+    return [p for p in parts if p]
+
+
 def _fetch_analyse_recording(conn: psycopg.Connection, lead: dict[str, Any],
                              gate: spend.Gate) -> dict[str, Any]:
     """Download the master, check it is the file we were promised, and listen to it.
@@ -1243,12 +1332,18 @@ def _write_analyse_recording(conn: psycopg.Connection, lead: dict[str, Any],
     # shortlist count "house" and "melodic house" as two independent pieces of evidence
     # for the same claim. Empty is not written at all — `audio.style_terms` abstains on
     # an ambiguous tempo, and an empty row would record that abstention as a finding.
-    terms = facts["inferred"]["style_terms"]
+    genre = prepared.get("genre")
+    terms = _classifier_terms(genre) or facts["inferred"]["style_terms"]
     if terms:
         written += _supersede_recording_fact(
             conn, tenant_id, recording_id, asset_id,
             dimension="style_terms", provenance="inferred",
-            value=", ".join(terms), basis=facts["basis"])
+            value=", ".join(terms),
+            # The source is what tells the two apart, and they are not equivalent: one
+            # is a model listening to the record, the other is a lookup table keyed on
+            # tempo. Same dimension, same provenance class, different evidence — which
+            # is exactly what this column is for.
+            basis=(f"{genre['model']}" if _classifier_terms(genre) else facts["basis"]))
 
     # The classifier's answer, when there was one. `genre` is the parent ("Electronic")
     # and `style` the full Discogs label ("Electronic---House"); the handler reports the
@@ -1256,7 +1351,6 @@ def _write_analyse_recording(conn: psycopg.Connection, lead: dict[str, Any],
     # the genre than at the style within it. Both are `inferred`: a BPM is a property of
     # the waveform, a genre is a model's opinion about a record, and writing the second
     # as `measured` would be the exact provenance laundering `SCOPE-RESET §2a` forbids.
-    genre = prepared.get("genre")
     if genre and genre.get("parent"):
         written += _supersede_recording_fact(
             conn, tenant_id, recording_id, asset_id,

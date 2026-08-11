@@ -1,0 +1,19 @@
+# Pinned to what was validated against the six reference tracks, inside the AWS Lambda
+# base image — not inside a convenient Debian container. That distinction cost a build:
+#
+# `public.ecr.aws/lambda/python:3.11` is Amazon Linux 2, glibc **2.26**. Essentia's own
+# wheel is manylinux2014 (glibc 2.17) and installs fine. numpy is the problem: from 2.1
+# onward the wheels are manylinux_2_28, so on this image pip finds nothing usable, falls
+# back to the sdist, and dies on `Unknown compiler(s)` because there is no toolchain in a
+# Lambda base image. Resolving unpinned on Debian gives numpy 2.4.6 and works; the same
+# requirements file fails here. Pin what the target runtime can actually install.
+numpy==1.26.4
+
+# essentia-tensorflow rather than essentia: the plain package has no TensorFlow
+# algorithms, so TensorflowPredictEffnetDiscogs does not exist in it and the failure is
+# an AttributeError that reads like a typo.
+#
+# x86_64-only and CPython <=3.11-only. Those two constraints are the entire reason this
+# is a container image rather than a zip, and the reason it is not arm64 like the
+# console. See the Dockerfile.
+essentia-tensorflow==2.1b6.dev1389

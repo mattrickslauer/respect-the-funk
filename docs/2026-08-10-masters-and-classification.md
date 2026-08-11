@@ -1,7 +1,7 @@
 ---
 title: "Masters on the spine, and classifying a record instead of guessing at it"
 subtitle: "Why counterparty discovery for a new artist is cold-start blocked, what was built today, the two approaches that failed validation, and the design for storing masters once so that analysis, delivery, radio servicing and RemixKit all read the same file."
-status: "PARTLY BUILT. §1–§3 are measured findings. §4 was a proposal and is now built — see §6, added after the fact. The classifier container of §3b is still unbuilt, and the bucket of §4b is written in Terraform but not applied."
+status: "BUILT, not fully deployed. §1–§3 are measured findings; §3a's conclusion is now confirmed against six reference tracks. §4 is built and the bucket is applied. The classifier image passes validation locally and has not been pushed to ECR."
 date: "2026-08-10"
 ---
 
@@ -106,6 +106,29 @@ tests and is still wrong.
 correct front end because it is the one the weights were trained against. That forces
 `essentia-tensorflow`, which forces Python ≤3.11, which forces a container — and the
 container was needed for AWS anyway, so nothing is lost.
+
+**Confirmed.** With Essentia's front end and the *same weights*, run inside the AWS
+Lambda base image against six records spanning six Discogs parent genres:
+
+| Track | Expected | Top prediction | p |
+|---|---|---|---|
+| Daft Punk — Around The World | Electronic | `Electronic---House` | 0.433 ✅ |
+| Metallica — Master of Puppets | Rock | `Rock---Heavy Metal` | 0.844 ✅ |
+| John Coltrane — Giant Steps | Jazz | `Jazz---Hard Bop` | 0.621 ✅ |
+| Bob Marley — Jamming | Reggae | `Reggae---Roots Reggae` | 0.790 ✅ |
+| Dr. Dre — Still D.R.E. | Hip Hop | `Hip Hop---Horrorcore` | 0.215 ✅ parent only |
+| Johnny Cash — Folsom Prison Blues | Folk, World, & Country | `…---Country` | 0.609 ✅ |
+
+Six of six on the parent genre, and the sub-genres are specific enough to be useful —
+Giant Steps really is hard bop. **The model was never the problem.** The diagnosis in
+this section was right, and the cost of having tested it before wiring anything was one
+afternoon against a classifier that would otherwise have been confidently wrong forever.
+
+The Dr. Dre row is the one to keep. Still D.R.E. is Hip Hop and is not Horrorcore: the
+model is reliably better at the genre than at the style within it, so `handler`
+reports the style only above a confidence floor and the parent alone below it. That is a
+third state — `none` / `parent` / `style` — rather than a single answer that is partly
+wrong.
 
 ### 3b. On the runtime: a container-image Lambda, not a spot instance
 
@@ -241,14 +264,31 @@ Added after §4 was implemented, so the record shows what survived contact.
    walk with no template change — but that was a claim, not a finding, until the test
    above.
 
-**What the classifier still needs.** §3b's container is not built. The seam it plugs
-into now exists: `analyse_recording` already downloads the master, verifies it, and
-writes facts through `_supersede_recording_fact`, so adding Discogs-EffNet is one more
-dimension written by the same function rather than a new agent. What remains is the
-container image, the Lambda in Terraform, and — per §3a, which is the whole reason to
-insist — reference tracks in its test suite. A genre classifier without them is
-unfalsifiable, and §3a is the proof: a mismatched mel front end classified Metallica and
-Coltrane as Electronic while emitting confident labels the whole way.
+**The classifier is built** (`platform/classifier/`): the image, the Lambda and the ECR
+repository in Terraform, and the reference-track suite that §3a says is not optional. It
+passes 7/7 locally — six genres plus the two floors, silence refused and a too-short clip
+raising. What has not happened is `./push.sh` and the second `terraform apply`; until
+then `PLATFORM_CLASSIFIER_FUNCTION` is unset and `analyse_recording` writes a tempo and
+**no genre at all**, saying so in its run summary rather than promoting tempo-derived
+style terms into the genre dimension.
+
+Three things the build itself taught, none of which were in this design:
+
+1. **numpy had to be pinned to 1.26.4**, and the reason is not the reason anyone would
+   guess. The AWS Lambda `python:3.11` base image is Amazon Linux 2 — glibc **2.26** —
+   and numpy ≥2.1 ships `manylinux_2_28` wheels only, so pip falls through to the sdist
+   and dies on `Unknown compiler(s)`. Resolving unpinned in a Debian container gives
+   2.4.6 and works perfectly. The same requirements file fails on the target. *Validate
+   in the runtime image, not a convenient one* — this is the same class of mistake as
+   §3a, one layer down.
+2. **The classifier is x86_64 while the console is arm64.** `essentia-tensorflow`
+   publishes no aarch64 wheel, and forcing Graviton would mean compiling Essentia and
+   TensorFlow from source for a function that runs seconds per month.
+3. **A skipped test reads as a pass.** The two floor tests generated their own fixtures
+   with ffmpeg, which is deliberately absent from the runtime image, so they skipped
+   silently — leaving the abstention floor untested in a run that reported OK. The
+   fixtures are made on the host now and the tests fail rather than skip if they are
+   missing.
 
 ---
 

@@ -313,6 +313,86 @@ class AnalyseRecording(unittest.TestCase):
             self._run(str(uuid.uuid4()))
         self.assertTrue(caught.exception.permanent)
 
+    # ------------------------------------------------------------- the classifier
+
+    def test_no_classifier_means_no_genre_and_the_run_says_so(self) -> None:
+        """`NO FALLBACKS`. With no classifier deployed the agent writes no genre at all
+        rather than promoting the tempo-derived style terms into the genre dimension —
+        "125 BPM records are often house" and "this record is house" are different
+        claims, and the first must not quietly stand in for the second.
+
+        The summary says which happened, because a track with no genre otherwise cannot
+        tell an operator whether it was unclassifiable or whether nothing was deployed.
+        """
+        os.environ.pop("PLATFORM_CLASSIFIER_FUNCTION", None)
+        _, outcome = self._run(self._stored_asset())
+
+        with self.conn.cursor() as cur:
+            cur.execute("""SELECT count(*) AS n FROM party_fact
+                            WHERE tenant_id = %s AND dimension IN ('genre', 'style')""",
+                        (self.tenant,))
+            self.assertEqual(cur.fetchone()["n"], 0)
+        self.assertIn("no classifier configured", outcome.summary)
+
+    def test_a_classified_master_writes_genre_and_style_as_inferred(self) -> None:
+        """A genre is a model's opinion about a record; a BPM is a property of the
+        waveform. Writing the first as `measured` would be the provenance laundering
+        `SCOPE-RESET §2a` exists to stop, so both classifier facts are `inferred`.
+
+        The classifier itself is stubbed — it is validated separately and thoroughly by
+        `platform/classifier/tests/validate.py` against six reference tracks, which is
+        where a genre model's correctness belongs. What is under test here is the wiring.
+        """
+        from rtf_platform import agents
+
+        stub = {"parent": "Electronic", "style": "Electronic---House",
+                "confidence": 0.71, "model": "genre_discogs400-discogs-effnet-1",
+                "confident": "style", "styles": []}
+        original = agents._classify
+        agents._classify = lambda cfg, asset: stub
+        try:
+            _, outcome = self._run(self._stored_asset())
+        finally:
+            agents._classify = original
+
+        with self.conn.cursor() as cur:
+            cur.execute("""SELECT dimension, provenance, value_text, source
+                             FROM party_fact
+                            WHERE tenant_id = %s AND dimension IN ('genre', 'style')
+                              AND status = 'live' ORDER BY dimension""", (self.tenant,))
+            rows = {r["dimension"]: r for r in cur.fetchall()}
+
+        self.assertEqual(rows["genre"]["value_text"], "Electronic")
+        self.assertEqual(rows["style"]["value_text"], "Electronic---House")
+        for dimension in ("genre", "style"):
+            self.assertEqual(rows[dimension]["provenance"], "inferred")
+            self.assertIn("discogs", rows[dimension]["source"])
+        self.assertIn("Electronic---House", outcome.summary)
+
+    def test_a_genre_below_the_style_floor_writes_only_the_parent(self) -> None:
+        """The Dr. Dre case, at the wiring layer: the handler reports a parent and an
+        empty style when it is unsure which sub-genre, and the agent must write one row
+        rather than two — an empty `style` fact would assert that the model said the
+        style was nothing."""
+        from rtf_platform import agents
+
+        stub = {"parent": "Hip Hop", "style": "", "confidence": 0.215,
+                "model": "genre_discogs400-discogs-effnet-1", "confident": "parent",
+                "styles": []}
+        original = agents._classify
+        agents._classify = lambda cfg, asset: stub
+        try:
+            self._run(self._stored_asset())
+        finally:
+            agents._classify = original
+
+        with self.conn.cursor() as cur:
+            cur.execute("""SELECT dimension FROM party_fact
+                            WHERE tenant_id = %s AND dimension IN ('genre', 'style')
+                              AND status = 'live'""", (self.tenant,))
+            found = {r["dimension"] for r in cur.fetchall()}
+        self.assertEqual(found, {"genre"}, "an unsure style was written anyway")
+
     # -------------------------------------------------------------- the handoff
 
     def test_confirming_an_upload_queues_the_analysis(self) -> None:

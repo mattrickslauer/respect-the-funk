@@ -342,3 +342,129 @@ resource "aws_lambda_permission" "public_invoke" {
   function_name = aws_lambda_function.console.function_name
   principal     = "*"
 }
+
+# ------------------------------------------------------------------- classifier
+#
+# Genre classification, per docs/2026-08-10-masters-and-classification.md §3b: a
+# container-image Lambda rather than a spot instance, because the workload is seconds of
+# CPU per track triggered by an upload, and the submission's "scales to zero, $0 idle"
+# claim is measured and true. An always-on box to classify a handful of tracks would
+# contradict a claim made on camera.
+#
+# x86_64, unlike everything else here. `essentia-tensorflow` publishes manylinux wheels
+# for x86_64 only and there is no aarch64 build; forcing Graviton would mean compiling
+# Essentia and TensorFlow from source for a function that runs seconds per month.
+
+resource "aws_ecr_repository" "classifier" {
+  name                 = "${local.name}-classifier"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  # The image is ~1.5GB, most of it TensorFlow. ECR storage is $0.10/GB/month, so this
+  # is ~$0.15/month for one image — the second non-zero line item in this stack after
+  # the masters bucket, and worth naming rather than discovering.
+  tags = { Component = "classifier" }
+}
+
+# Without this, every pushed image is kept forever and the bill grows by $0.15/month per
+# build. Ten is enough to roll back through a bad afternoon.
+resource "aws_ecr_lifecycle_policy" "classifier" {
+  repository = aws_ecr_repository.classifier.name
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "keep the last 10 images"
+      selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = 10 }
+      action       = { type = "expire" }
+    }]
+  })
+}
+
+resource "aws_iam_role" "classifier" {
+  count              = var.classifier_image_uri == "" ? 0 : 1
+  name               = "${local.name}-classifier"
+  assume_role_policy = data.aws_iam_policy_document.assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "classifier_logs" {
+  count      = var.classifier_image_uri == "" ? 0 : 1
+  role       = aws_iam_role.classifier[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# Read-only on the masters bucket. The classifier downloads an object and returns
+# labels; it never writes one, so GetObject and nothing else. ListBucket is granted for
+# the same reason the console has it — without it a missing key answers 403 rather than
+# 404, and "the object is not there" becomes indistinguishable from "the policy is wrong".
+data "aws_iam_policy_document" "classifier_read" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.masters.arn}/*"]
+  }
+  statement {
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.masters.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "classifier_read" {
+  count  = var.classifier_image_uri == "" ? 0 : 1
+  name   = "${local.name}-classifier-read"
+  role   = aws_iam_role.classifier[0].id
+  policy = data.aws_iam_policy_document.classifier_read.json
+}
+
+resource "aws_cloudwatch_log_group" "classifier" {
+  count             = var.classifier_image_uri == "" ? 0 : 1
+  name              = "/aws/lambda/${local.name}-classifier"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_lambda_function" "classifier" {
+  count         = var.classifier_image_uri == "" ? 0 : 1
+  function_name = "${local.name}-classifier"
+  role          = aws_iam_role.classifier[0].arn
+  package_type  = "Image"
+  image_uri     = var.classifier_image_uri
+  architectures = ["x86_64"]
+
+  # 3008MB is not about headroom. Lambda scales CPU with memory, and TensorFlow graph
+  # loading plus inference is entirely CPU-bound — at 1024MB the cold start is minutes
+  # and costs more in GB-seconds than 3008MB does, because it runs proportionally
+  # longer. This is the cheaper number as well as the faster one.
+  memory_size = 3008
+
+  # Five minutes covers a cold start (~15s of TensorFlow import and graph load) plus the
+  # download and inference of a long master, with room for a 200MB file on a slow day.
+  timeout = 300
+
+  # /tmp defaults to 512MB and the master is downloaded there. A 24-bit/96kHz master can
+  # exceed that on its own, and the failure is an ENOSPC from inside boto3 that names
+  # nothing about masters.
+  ephemeral_storage {
+    size = 2048
+  }
+
+  depends_on = [aws_cloudwatch_log_group.classifier]
+}
+
+# Let the console's role invoke it. The console does not call the classifier today —
+# `analyse_recording` runs in a worker — but the worker uses whatever credentials it is
+# given, and this is the role that exists to be given.
+data "aws_iam_policy_document" "invoke_classifier" {
+  count = var.classifier_image_uri == "" ? 0 : 1
+  statement {
+    actions   = ["lambda:InvokeFunction"]
+    resources = [aws_lambda_function.classifier[0].arn]
+  }
+}
+
+resource "aws_iam_role_policy" "invoke_classifier" {
+  count  = var.classifier_image_uri == "" ? 0 : 1
+  name   = "${local.name}-invoke-classifier"
+  role   = aws_iam_role.console.id
+  policy = data.aws_iam_policy_document.invoke_classifier[0].json
+}

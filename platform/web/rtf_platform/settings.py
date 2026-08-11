@@ -19,12 +19,23 @@ class Settings:
     tenant_slug: str
     masters_bucket: str
     region: str
+    classifier_function: str
 
     @property
     def configured(self) -> bool:
         """False in a fresh checkout with no .env — the console says so rather
         than dying with a connection error nobody can act on."""
         return bool(self.database_url)
+
+    @property
+    def classifier_configured(self) -> bool:
+        """Whether a genre can be produced at all.
+
+        Separate from `storage_configured` because the two fail independently and mean
+        different things: no bucket means nothing can be uploaded, no classifier means
+        an uploaded master gets a tempo and no genre. Neither is guessed at.
+        """
+        return bool(self.classifier_function)
 
     @property
     def storage_configured(self) -> bool:
@@ -50,6 +61,10 @@ def load() -> Settings:
         # run `terraform apply` has no bucket — and the console reports it rather
         # than inventing a local directory nothing else in the system can read.
         masters_bucket=os.environ.get("PLATFORM_MASTERS_BUCKET", ""),
+        # The genre classifier Lambda. Empty means `analyse_recording` measures tempo
+        # and writes no genre at all, rather than falling back to something weaker and
+        # labelling it the same way — the run summary says which happened.
+        classifier_function=os.environ.get("PLATFORM_CLASSIFIER_FUNCTION", ""),
         # Only used to construct the S3 client. `AWS_REGION` is set by the Lambda
         # runtime itself, so in the deployed function this needs no configuration;
         # the explicit variable is for a worker or a laptop, and the default matches

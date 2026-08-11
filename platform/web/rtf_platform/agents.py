@@ -1142,7 +1142,57 @@ def _fetch_analyse_recording(conn: psycopg.Connection, lead: dict[str, Any],
         "shape": shape,
         "facts": facts,
         "bytes": size,
+        "genre": _classify(cfg, asset),
     }
+
+
+def _classify(cfg: Any, asset: dict[str, Any]) -> dict[str, Any] | None:
+    """Ask the classifier Lambda what genre this is. `None` when there is no classifier.
+
+    `None` is not a fallback and must not be treated as one. When no classifier is
+    configured this agent writes **no genre fact at all** and says so in its run summary
+    — rather than substituting the tempo-derived style terms and labelling them the same
+    way a model's answer would be labelled. Those two are not interchangeable: a tempo
+    band says "125 BPM records are often house", and the model says "this record is
+    house". `NO FALLBACKS` is precisely about not letting the first quietly stand in for
+    the second.
+
+    The invoke is synchronous because the answer is needed to write the row, and it is
+    in `fetch` because a two-minute Lambda call inside the write transaction would hold
+    it open for two minutes.
+    """
+    if not cfg.classifier_function:
+        return None
+
+    import json
+
+    import boto3
+    from botocore.config import Config
+
+    client = boto3.client(
+        "lambda", region_name=cfg.region,
+        # The classifier's own timeout is 300s and a cold start loads TensorFlow. The
+        # botocore default read timeout is 60s, which would abandon a perfectly healthy
+        # invocation and retry it — paying for the cold start twice and still failing.
+        config=Config(read_timeout=360, connect_timeout=10, retries={"max_attempts": 0}))
+
+    response = client.invoke(
+        FunctionName=cfg.classifier_function,
+        InvocationType="RequestResponse",
+        Payload=json.dumps({"bucket": asset["bucket"], "key": asset["object_key"]}))
+
+    if response.get("FunctionError"):
+        raise fleet.LeadFailed(
+            f"the classifier failed: "
+            f"{response['Payload'].read().decode('utf-8', 'replace')[:300]}")
+
+    result = json.loads(response["Payload"].read())
+    if "error" in result:
+        # The handler caught something and described it. Not permanent by default: a
+        # transient S3 read or an out-of-memory kill on a long master both land here and
+        # both are worth one more attempt.
+        raise fleet.LeadFailed(f"the classifier refused this master: {result['error']}")
+    return result
 
 
 #: `party_fact.dimension` → which half of `audio.measure`'s return it comes from. The
@@ -1200,10 +1250,38 @@ def _write_analyse_recording(conn: psycopg.Connection, lead: dict[str, Any],
             dimension="style_terms", provenance="inferred",
             value=", ".join(terms), basis=facts["basis"])
 
+    # The classifier's answer, when there was one. `genre` is the parent ("Electronic")
+    # and `style` the full Discogs label ("Electronic---House"); the handler reports the
+    # style only above its own confidence floor, because the model is reliably better at
+    # the genre than at the style within it. Both are `inferred`: a BPM is a property of
+    # the waveform, a genre is a model's opinion about a record, and writing the second
+    # as `measured` would be the exact provenance laundering `SCOPE-RESET §2a` forbids.
+    genre = prepared.get("genre")
+    if genre and genre.get("parent"):
+        written += _supersede_recording_fact(
+            conn, tenant_id, recording_id, asset_id,
+            dimension="genre", provenance="inferred", value=genre["parent"],
+            basis=f"{genre['model']} p={genre['confidence']}")
+        if genre.get("style"):
+            written += _supersede_recording_fact(
+                conn, tenant_id, recording_id, asset_id,
+                dimension="style", provenance="inferred", value=genre["style"],
+                basis=f"{genre['model']} p={genre['confidence']}")
+
     rivals = facts["inferred"]["tempo_rivals"]
-    summary = (f"measured {values['bpm']} BPM off the master"
-               + (f", abstained on style — rivals at {rivals}" if rivals and not terms
-                  else ""))
+    summary = f"measured {values['bpm']} BPM off the master"
+    if rivals and not terms:
+        summary += f", abstained on tempo style — rivals at {rivals}"
+    if genre is None:
+        # Said out loud in the row an operator reads, because the alternative is a track
+        # with no genre and no indication of whether that means "unclassifiable" or "no
+        # classifier is deployed".
+        summary += "; no classifier configured, so no genre was written"
+    elif genre.get("parent"):
+        summary += f"; {genre.get('style') or genre['parent']} at {genre['confidence']}"
+    else:
+        summary += "; the classifier recognised nothing above its floor"
+
     return fleet.Outcome(summary=summary[:200], facts=written)
 
 

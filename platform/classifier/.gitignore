@@ -1,0 +1,9 @@
+# 20MB of model weights, published at a stable URL by the people who trained them.
+# ./fetch_models.sh puts them here.
+models/
+
+# Reference-track audio. These are 30-second Deezer previews of commercial records —
+# somebody else's copyright, fetched for validation and never redistributed. That is the
+# whole reason they are downloaded per-checkout rather than committed. ./fetch_refs.sh
+refs/*.mp3
+refs/*.wav

@@ -57,3 +57,21 @@ variable "log_retention_days" {
   default     = 7
   description = "CloudWatch charges for ingestion and storage. Seven days is enough to debug a deploy and cheap enough to ignore."
 }
+
+variable "classifier_image_uri" {
+  type    = string
+  default = ""
+
+  # Empty by default, and the classifier Lambda is `count = 0` while it is empty.
+  #
+  # That gate exists because a container-image Lambda cannot be created before the image
+  # is pushed — Terraform would fail on an ECR repository it had just created and that
+  # contains nothing. The ECR repository itself is always created, because it has to
+  # exist before anything can be pushed to it. So the order is: apply (repo appears),
+  # push the image, set this to the digest URI, apply again.
+  #
+  # Use the @sha256 digest form rather than a :tag. Lambda resolves a tag once at create
+  # time and never again, so re-pushing :latest leaves the function silently running the
+  # old image while every console and plan says it is current.
+  description = "Digest URI of the pushed classifier image. Empty leaves the classifier undeployed; the console works without it and says so."
+}

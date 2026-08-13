@@ -34,7 +34,7 @@ import psycopg
 from psycopg.types.json import Json
 
 from rtf_platform import (
-    embed, fcc, fleet, harvested, lessons, radiobrowser, repo,
+    embed, fcc, fleet, harvested, lessons, podcastindex, radiobrowser, repo,
     settings as settings_mod, sources, spend, wikipedia,
 )
 
@@ -2154,6 +2154,358 @@ enrich_genre = fleet.NetworkAgent(fetch=_fetch_enrich_genre,
                                   write=_write_enrich_genre)
 
 
+# ------------------------------------------------------------ index_podcasts
+#
+# The second channel. `index_stations`, `index_streams` and `enrich_genre` between them
+# build a radio index, and every row in it is a counterparty this label can describe and
+# cannot yet address: the music director a pitch has to reach is a person the licence
+# register does not name and the stream directories have never heard of. A podcast feed
+# carries that person in `<itunes:owner>` and the show's own site in `<link>`, which is
+# why `023_podcast_source.sql` argues a podcast belongs in the same table as a station
+# rather than in a new one — it is another proof of migration 009's argument, not an
+# exception to it.
+#
+# **One lead per block of `podcastindex.BLOCK` feed IDs**, and `podcastindex.py` sets out
+# at length why the unit of work is an ID block rather than a category page. The short
+# version is that ID blocks tile: block *k* is the half-open range `[k·BLOCK,
+# (k+1)·BLOCK)`, every feed is in exactly one block, and a block is addressable and
+# re-runnable without reference to any other. That is what makes a fifteen-thousand-lead
+# sweep safe to interrupt, which the category endpoint's timestamp walk is not.
+#
+# **No `suggestion` step**, on the same test `index_stations` passes and for the same
+# reason. `suggestion` exists for guesses about *identity*, and there is none here: a
+# Podcast Index feed ID is a canonical key for "this show", so the show's existence and
+# its owner are keyed facts rather than a name match. The one thing this stage infers,
+# `show_kind`, is written `inferred` and never promoted.
+#
+# **The host does not become a party.** `ownerName` is a string, and turning a string
+# into a person-party is the identity claim that produced thirteen junk parties from a
+# name-match harvest in August. It is written as a fact on the show — the same place and
+# shape as a station's `licensee` — and becomes a `contact_route.addressee` later, when
+# there is a route to attach it to. That split is what migration 018 was written to make.
+#
+# This stage is the change `023` said would come: that migration shipped its
+# `agent_manifest` row `enabled = false` because `agents.py` was owned by concurrent work,
+# and named this flip as the trigger for deleting its own explanation.
+# `027_enable_podcasts.sql` is the flip.
+
+#: Confidence by provenance class, because provenance is the only thing that separates
+#: these facts' strength. A per-dimension number would claim a precision this source
+#: cannot support — Podcast Index does not say how sure it is of anything — and inventing
+#: one per dimension would be the confident guess `SCOPE-RESET §2a` rule 1 is about.
+#: `asserted` is 0.5 deliberately: the same number `index_streams` writes for a musical
+#: station's tags, because `podcastindex.py` argues at length that a show's self-chosen
+#: category is not *stronger* than a stranger's tag, only differently unreliable.
+PODCAST_CONFIDENCE = {"measured": 0.9, "asserted": 0.5, "inferred": 0.3}
+
+
+def _fetch_index_podcasts(conn: psycopg.Connection, lead: dict[str, Any],
+                          gate: spend.Gate) -> dict[str, Any]:
+    """One block of Podcast Index feed IDs, narrowed to the shows worth writing.
+
+    **This stage makes no paid call and the gate is never consulted.** Podcast Index is
+    free and publishes no quota, which is what `023`'s `cost_class = 'free'` records;
+    there is no `spend.estimate` key for it and asking for one would raise by design. The
+    cost this stage *causes* is the embedding of every show it writes, and that is charged
+    where it happens — on the `embed_party` leads returned below. Saying that here rather
+    than leaving an unused parameter to be interpreted, because "no gate call" and "a gate
+    call somebody forgot" look identical from outside the function.
+
+    The pitchability filter runs in this half rather than the write half on purpose.
+    `podcastindex.pitchable` is pure — it reads the feed record and nothing else — so
+    running it before the transaction opens keeps the write phase to database statements,
+    which is the entire reason `NetworkAgent` is two functions instead of one.
+
+    **The adapter's two failures are translated rather than left to propagate**, and the
+    translation is the point. `work_once`'s catch-all records `repr(exc)` and always fails
+    the lead *transiently*, so an unconfigured deployment would burn four attempts against
+    a missing key and land a `NotConfigured(...)` repr in the console where an operator is
+    looking for a sentence. `Refused` already carries `permanent`, for precisely the
+    distinction the fleet needs — a 429 belongs back on the frontier and a 401 does not —
+    and forwarding it is the whole reason that attribute exists.
+    """
+    raw = str(lead.get("target") or "").strip()
+    if not raw:
+        raise fleet.LeadFailed(
+            "index_podcasts needs a feed-ID block start in `target`", permanent=True)
+    try:
+        start = int(raw)
+    except ValueError:
+        raise fleet.LeadFailed(
+            f"{raw!r} is not a feed-ID block start", permanent=True) from None
+    if start < 0:
+        raise fleet.LeadFailed(
+            f"a feed-ID block starts at or after 0; got {start}", permanent=True)
+
+    try:
+        feeds = podcastindex.block(start)
+    except podcastindex.NotConfigured as exc:
+        raise fleet.LeadFailed(str(exc), permanent=True) from exc
+    except podcastindex.Refused as exc:
+        raise fleet.LeadFailed(str(exc), permanent=exc.permanent) from exc
+
+    return {"start": start, "seen": len(feeds),
+            "feeds": [f for f in feeds if podcastindex.pitchable(f)]}
+
+
+def _write_index_podcasts(conn: psycopg.Connection, lead: dict[str, Any],
+                          gate: spend.Gate, prepared: dict[str, Any]) -> fleet.Outcome:
+    """Write each music show as a counterparty, with its provenance kept in three pieces.
+
+    Shaped like `_write_index_stations`, because a podcast and a radio station are the
+    same thing to this schema: a party with a role, some facts, a document that says who
+    it is, and an embedding computed from that document.
+
+    What is not the same is the provenance. A station's facts split two ways; a feed
+    record splits three, and `podcastindex.py`'s header argues each boundary. Written
+    here exactly as it argues them, because the classification only means anything if it
+    survives the trip into the column that records it:
+
+      * **`measured`** — `role` and `episode_count`. Podcast Index's crawler fetched the
+        feed and counted what came back. That we did not personally make the measurement
+        does not demote it, which is the same reasoning `026_role_backfill.sql` uses to
+        call an FCC-sourced role `measured`.
+      * **`asserted`** — `host`, `description`, `genre`, `language`. The publisher wrote
+        these about themselves. Self-description is not more reliable than a stranger's
+        tag; it is differently unreliable, and a show files itself under `Music` because
+        that is where its listeners browse.
+      * **`inferred`** — `show_kind`. This module's own reading of the weakest input in
+        the file. Labelled, never promoted, and rendered by `profiles.compose` as a hedge.
+
+    **Three of those dimension names are load-bearing and cannot be renamed here alone.**
+    `profiles.from_facts` is the rebuild path — `ingest.recompose_profiles` runs it over
+    every counterparty and replaces the text their vectors were built from — and it reads
+    the composer's inputs back out of `party_fact` by dimension. It requires `role`,
+    excises `host` from the prose so rule 2 reaches inside the publisher's own sentences,
+    and fills the `prose` slot from `description`.
+
+    So each of the three is written at ingest for the same reason, which is worth stating
+    once rather than three times: a source module holds these in its hand and the rebuild
+    path has only what was stored. Omit `role` and `from_facts` raises, the show is
+    excluded from the rebuild's own selection, and it is counted and reported — loud, and
+    recoverable. Omit `description` and nothing fails at all: the next
+    `--recompose-profiles` rebuilds eighty-five thousand podcasts without the single best
+    signal this source has, every vector quietly gets worse, and the only way anyone finds
+    out is by reading two documents side by side. That is the failure `profiles.py` was
+    written about, and writing the fact is what makes it impossible rather than unlikely.
+
+    **A show already indexed is refreshed, not skipped.** `index_stations` can `continue`
+    on a conflict because a licence record is a static row; a feed's episode count and
+    categories change under it, and `--requeue index_podcasts` exists to re-read a block.
+    Every statement below is `ON CONFLICT DO NOTHING` or hash-deduplicated, so a refresh
+    that finds nothing new writes nothing and queues nothing.
+
+    **`content_hash` covers the party id as well as the body**, unlike every writer here
+    except `ingest.recompose_profiles`, and it has to. `profiles.compose` is terse by
+    design, so two music shows with the same categories, the same language and no blurb
+    compose to a byte-identical document; under `UNIQUE (tenant_id, content_hash)` the
+    first would get its document and every one after it would silently get none, leaving
+    them unembeddable. That is the defect that stranded 63 parties last time. The hash is
+    a deduplication key, not a semantic identity, and "this party's profile, with this
+    content" is what is being deduplicated.
+
+    **`contact_route` is deliberately not written**, which `023` names as the point rather
+    than a gap. Podcast Index does not publish the owner's email address, and this stage
+    does not manufacture one from the show's domain — 018's header calls a pattern guess
+    (`music@<domain>`) the fastest way to earn a spam complaint. The show's website lands
+    in `presence`, which is a surface you may *read*; the route to send to is read off
+    that page later, by a stage that can say where it got it.
+    """
+    tenant_id, start = lead["tenant_id"], prepared["start"]
+    created = refreshed = documents = facts = 0
+    follow_on: list[dict[str, Any]] = []
+
+    with conn.cursor() as cur:
+        for feed in prepared["feeds"]:
+            feed_id = feed["id"]
+            title = str(feed.get("title") or "").strip()
+            if not title:
+                # A show with no name is a row nobody can read on a shortlist, and the
+                # feed ID is not a name. Skipped rather than titled from its URL, which
+                # would be a fabrication with a plausible shape.
+                continue
+
+            # The feed ID is Podcast Index's own key for "this show" and is never
+            # reused, so it is what the slug is built on — the same role `facility_id`
+            # plays for a station. A show that renames itself keeps its row.
+            slug = f"pi-{feed_id}"[:120]
+            cur.execute(
+                """INSERT INTO party (tenant_id, slug, name, kind, party_class,
+                                      contact_state, status)
+                   VALUES (%s, %s, %s, 'organisation', 'counterparty', 'contactable',
+                           'active')
+                   ON CONFLICT (tenant_id, slug) DO NOTHING
+                RETURNING id""",
+                (tenant_id, slug, title[:200]),
+            )
+            fresh = cur.fetchone()
+            if fresh is not None:
+                party_id = fresh["id"]
+                created += 1
+                # `kind = 'organisation'` rather than `'person'`, for the reason
+                # `index_stations` gives: the party is the show, and the human who
+                # presents it is a fact on it and later an addressee on a route.
+                cur.execute(
+                    """INSERT INTO party_role (tenant_id, party_id, role)
+                       VALUES (%s, %s, 'podcast_programmer') ON CONFLICT DO NOTHING""",
+                    (tenant_id, party_id),
+                )
+            else:
+                cur.execute(
+                    "SELECT id FROM party WHERE tenant_id = %s AND slug = %s",
+                    (tenant_id, slug),
+                )
+                existing = cur.fetchone()
+                if existing is None:
+                    # The INSERT conflicted, so a row with this slug exists, and the
+                    # SELECT is in the same transaction and therefore the same snapshot.
+                    # Reaching here means those two statements disagree about the same
+                    # table. There is no sensible value to continue with, and continuing
+                    # would drop this show silently on every future run too.
+                    raise fleet.LeadFailed(
+                        f"party slug {slug!r} conflicted on INSERT but could not then "
+                        "be read back in the same transaction — the block is abandoned "
+                        "rather than written half-way", permanent=False)
+                party_id = existing["id"]
+                refreshed += 1
+
+            # Three keys, all `measured`: the index assigned the first, the feed
+            # publishes the second under the podcast namespace, and Apple assigned the
+            # third. `party_identifier` is unique on `(tenant_id, kind, value)`, so these
+            # are what a later podcast source joins on instead of parsing a display name.
+            keys = [("podcastindex_feed_id", str(feed_id))]
+            guid = str(feed.get("podcastGuid") or "").strip()
+            if guid:
+                keys.append(("podcast_guid", guid))
+            itunes = feed.get("itunesId")
+            if itunes:
+                keys.append(("itunes_id", str(itunes)))
+            for key_kind, value in keys:
+                cur.execute(
+                    """INSERT INTO party_identifier (tenant_id, party_id, kind, value,
+                                                     provenance)
+                       VALUES (%s, %s, %s, %s, 'measured')
+                       ON CONFLICT DO NOTHING""",
+                    (tenant_id, party_id, key_kind, value[:200]),
+                )
+
+            cats = podcastindex.categories(feed)
+            # Genre as one row rather than one per category: `fact_one_live_per_dimension`
+            # allows a single live fact per (dimension, provenance), and a show's
+            # categories are one claim about it, not four independent ones.
+            claims = [
+                ("role", "podcast", "measured", None),
+                ("episode_count", str(int(feed.get("episodeCount") or 0)),
+                 "measured", None),
+                ("host", podcastindex.host(feed), "asserted", None),
+                ("description", podcastindex.blurb(feed), "asserted", None),
+                ("genre", ", ".join(cats), "asserted", Json(cats) if cats else None),
+                ("language", str(feed.get("language") or "").strip(), "asserted", None),
+                ("show_kind", podcastindex.show_kind(cats), "inferred", None),
+            ]
+            for dimension, value, provenance, structured in claims:
+                # An empty value is not written. A show whose feed names no owner gets no
+                # `host` fact, not a blank one — the absence is the honest answer and
+                # `enrich_genre` writes nothing on the same principle.
+                if not value:
+                    continue
+                cur.execute(
+                    """INSERT INTO party_fact (tenant_id, party_id, dimension, value_text,
+                                               value_json, provenance, status, confidence,
+                                               source, written_by)
+                       VALUES (%s, %s, %s, %s, %s, %s, 'live', %s, 'podcast_index',
+                               'index_podcasts')
+                       ON CONFLICT DO NOTHING""",
+                    # Not truncated here, deliberately. Every value above is already
+                    # bounded by the adapter — `host` at 200 characters, `description` at
+                    # `podcastindex.BLURB_CHARS` — and a second, tighter cap applied at
+                    # the last moment would silently shorten the one field the rebuild
+                    # path reads back, in a place nobody would think to look for it.
+                    (tenant_id, party_id, dimension, value, structured, provenance,
+                     PODCAST_CONFIDENCE[provenance]),
+                )
+                facts += cur.rowcount
+
+            # The show's own site, as a `presence` and not a `contact_route`. See the
+            # docstring: a homepage is a surface you can read, and conflating that with an
+            # endpoint you may send to is how a crawler's URL ends up in a mail merge.
+            site = str(feed.get("link") or "").strip()
+            if site:
+                cur.execute(
+                    """INSERT INTO presence (tenant_id, subject_kind, subject_id,
+                                             platform, mode, handle, url, state,
+                                             match_basis, confidence)
+                       VALUES (%s, 'party', %s, 'web', 'owned', %s, %s, 'present',
+                               'asserted', 0.6)
+                       ON CONFLICT (tenant_id, subject_kind, subject_id, platform)
+                       DO NOTHING""",
+                    (tenant_id, party_id, title[:120], site[:500]),
+                )
+
+            # The document is the evidence the embedding is computed from. A vector whose
+            # source text has been thrown away cannot be argued with when a shortlist
+            # looks wrong, which is why every counterparty writer here keeps one.
+            #
+            # `lang` is `'en'` and that is about *this* text, not about the show: the body
+            # is English prose `profiles.compose` wrote. What language the show is in is
+            # the `language` fact above, where it can be read as a claim about the show.
+            body = podcastindex.profile_text(feed)
+            cur.execute(
+                """INSERT INTO party_document (tenant_id, party_id, lead_id, platform,
+                                               url, title, body, content_hash, mime,
+                                               lang, http_status)
+                   VALUES (%s, %s, %s, 'podcast_index', %s, %s, %s, %s, 'text/plain',
+                           'en', 200)
+                   ON CONFLICT (tenant_id, content_hash) DO NOTHING""",
+                (tenant_id, party_id, lead["id"], site[:500],
+                 f"{title[:120]} — Podcast Index feed", body,
+                 content_hash(f"{party_id}:{body}")),
+            )
+            if cur.rowcount == 0:
+                # This exact text is already on this party, so the vector computed from
+                # it is current and re-queueing the embedding would be paying twice for
+                # the same answer. This is what makes a re-run of a block cheap.
+                continue
+            documents += 1
+
+            # The show has a document nothing has embedded yet. An already-completed
+            # `embed_party` lead is *requeued* rather than re-inserted, because
+            # `(tenant_id, target_hash)` is unique and a second insert would silently do
+            # nothing — leaving the show embedded on text that predates this document.
+            cur.execute(
+                """UPDATE lead
+                      SET state = 'pending', attempts = 0, owner_agent = NULL,
+                          lease_expires_at = NULL, lease_token = NULL,
+                          next_action_at = now(), updated_at = now()
+                    WHERE tenant_id = %s AND target_hash = %s AND state != 'pending'""",
+                (tenant_id, f"embed_party:{party_id}"),
+            )
+            if cur.rowcount == 0:
+                follow_on.append({
+                    "kind": "embed_party", "adapter": "podcast_index",
+                    "platform": "podcast_index", "party_id": str(party_id),
+                    "scope_kind": "party", "target": str(party_id),
+                    "target_hash": f"embed_party:{party_id}",
+                    "reason": f"{title[:60]} indexed from Podcast Index, not yet "
+                              "searchable",
+                    "score": 0.6,
+                })
+
+    return fleet.Outcome(
+        summary=(f"feeds {start}–{start + podcastindex.BLOCK}: {created} new show(s), "
+                 f"{refreshed} refreshed, from {len(prepared['feeds'])} music feed(s) "
+                 f"of {prepared['seen']} in the block"),
+        calls=1, facts=facts, documents=documents, leads=len(follow_on),
+        follow_on=follow_on,
+    )
+
+
+#: Build the standing podcast index, one block of Podcast Index feed IDs at a time, and
+#: queue each show for embedding so it is shortlistable the day a record is ready.
+index_podcasts = fleet.NetworkAgent(fetch=_fetch_index_podcasts,
+                                    write=_write_index_podcasts)
+
+
 #: Which agent handles which lead kind. The fleet reads this; no agent reads it.
 REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     "embed_document": embedder,
@@ -2166,4 +2518,5 @@ REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     "index_stations": index_stations,
     "index_streams": index_streams,
     "enrich_genre": enrich_genre,
+    "index_podcasts": index_podcasts,
 }

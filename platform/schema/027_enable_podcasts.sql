@@ -1,0 +1,59 @@
+-- =============================================================================
+-- 027_enable_podcasts.sql — the podcast stage has a worker, so it may run
+-- =============================================================================
+--
+-- `023_podcast_source.sql` shipped `index_podcasts` with `enabled = false` and spent a
+-- section of its header saying why: the workstream that added the adapter
+-- (`podcastindex.py`), the seeder (`ingest.index_podcasts`) and that migration did not
+-- own `agents.py`, which was being changed concurrently. It declared the stage anyway,
+-- on the argument that a manifest row with no registry entry renders as `declared, not
+-- running` in `research.fleet` and therefore makes the gap **visible**, where omitting
+-- the row would have left the drift real and invisible instead — the failure 017 exists
+-- about.
+--
+-- 023 also named the trigger for retiring that argument: *"the same change that adds the
+-- agent flips it to true and this comment stops being true."* `agents.REGISTRY` now
+-- carries `index_podcasts`, so this is that flip. The comment in 023 is now history
+-- rather than a description, and it is left in place as history — a migration is an
+-- append-only record of what was decided when, and editing 023 to remove an argument
+-- that was true when it was made would delete the reasoning rather than resolve it.
+--
+--
+-- ## Why this is one UPDATE and not a re-INSERT
+--
+-- 023's `ON CONFLICT (kind) DO UPDATE` deliberately omits `enabled` from its assignment
+-- list, so re-applying 023 after this migration cannot switch the stage back off. That
+-- omission is exactly what makes a separate, minimal flip the right shape here: this
+-- file has to change one column and must not restate the rest of the row, because
+-- restating it would silently re-assert `batch_size`, `lease_seconds` and `writes` at
+-- whatever values were current when this file was written, over whatever an operator has
+-- since tuned from the console. `routes.py` exposes a toggle that writes this same
+-- column; a migration that clobbers its neighbours is a migration that undoes an
+-- operator's work without saying so.
+--
+-- `WHERE NOT enabled` rather than a bare `SET`: re-running is then provably a no-op
+-- rather than merely an idempotent-looking one, and `updated_at` — which the console
+-- renders as "when did somebody last change this" — does not advance on a re-apply that
+-- changed nothing.
+--
+--
+-- ## What is still true after this, and is not a fallback
+--
+-- Enabling the stage does not make it able to run without credentials, and nothing here
+-- pretends otherwise. `source_manifest.podcast_index` keeps `auth = 'key'` and keeps its
+-- `disabled_reason` naming `PODCASTINDEX_API_KEY` and `PODCASTINDEX_API_SECRET`, because
+-- that row is about whether the *source* may be called and the answer is still "not
+-- until somebody sets those". The two rows say different things on purpose: the stage
+-- exists and has a worker; the source needs a key.
+--
+-- Without one, `ingest.index_podcasts` raises `NotConfigured` before it inserts a single
+-- lead, so an unconfigured deployment cannot seed a frontier it has no way to work; and
+-- if a lead somehow existed, `_fetch_index_podcasts` translates the same exception into a
+-- `LeadFailed(permanent=True)` whose text is the signup URL and the two variable names.
+-- Neither path degrades into an empty result, which is the whole reason `podcastindex.py`
+-- raises instead of returning `{}`: a stage that ran, succeeded and wrote nothing looks
+-- exactly like a corpus with no music podcasts in it.
+
+UPDATE agent_manifest
+   SET enabled = true, updated_at = now()
+ WHERE kind = 'index_podcasts' AND NOT enabled;

@@ -75,3 +75,25 @@ variable "classifier_image_uri" {
   # old image while every console and plan says it is current.
   description = "Digest URI of the pushed classifier image. Empty leaves the classifier undeployed; the console works without it and says so."
 }
+
+variable "changefeed_webhook_token" {
+  type      = string
+  sensitive = true
+  default   = ""
+
+  # Empty by default, and the whole changefeed endpoint is `count = 0` while it is — the
+  # same gate the classifier image uses, for a stronger reason.
+  #
+  # The sink is a public Function URL. CockroachDB's webhook sink cannot sign SigV4, so
+  # the only thing standing between a stranger and the ability to wake this fleet as often
+  # as they like is the `webhook_auth_header` this value becomes. An endpoint deployed
+  # without one authenticates nothing: `changefeed._secret()` refuses every delivery in
+  # that state, which is fail-closed, but it leaves a live public URL that exists only to
+  # answer 401. Not creating it at all is the better shape.
+  #
+  # Generate with `openssl rand -hex 32`. Set it here *and* in the CREATE CHANGEFEED
+  # statement that `python -m rtf_platform.changefeed --dry-run --reveal` prints — the two
+  # must be the same string. If they drift, every delivery answers 401 and the feed
+  # retries forever, which is the intended alarm and not a leak.
+  description = "Shared secret the changefeed sends as webhook_auth_header. Empty leaves the webhook endpoint undeployed."
+}

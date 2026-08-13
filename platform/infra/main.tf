@@ -484,3 +484,137 @@ resource "aws_iam_role_policy" "invoke_classifier" {
   role   = aws_iam_role.console.id
   policy = data.aws_iam_policy_document.invoke_classifier[0].json
 }
+
+# ------------------------------------------------------------------- changefeed
+#
+# The webhook sink for `CREATE CHANGEFEED FOR TABLE thread, outbox, message`. This is the
+# endpoint that makes `infra/platform_architecture.py`'s dashed arrow — "a changefeed
+# wakes an agent" — a true sentence rather than a drawing of an intention. As of the
+# 2026-08-10 audit, `SHOW CHANGEFEED JOBS` returned zero rows.
+#
+# `rtf_platform/changefeed.py` is the whole of it; read that module's docstring before
+# changing anything here. Two facts this stack has to respect:
+#
+#   * A wake is permission to look, not a grant of work. This function receives a batch,
+#     turns it into "there may be claimable leads of these kinds in this tenant", and
+#     calls `fleet.work_once`, which claims under a lease token exactly as every other
+#     worker does. Webhook sinks are at-least-once by specification; two invocations for
+#     one row change are normal, and they produce one unit of work because of the claim,
+#     not because of anything in this file.
+#   * Creating the changefeed itself is NOT done here. A changefeed is a job that draws
+#     request units continuously against a $10 budget, and this stack has no CockroachDB
+#     provider. `python -m rtf_platform.changefeed --dry-run` prints the exact statement;
+#     a human runs it once the URL below exists and the budget has been checked.
+#
+# Same zip as the console — `data.archive_file.bundle` already contains `rtf_platform` —
+# so this adds a function and not a build step. Idle cost is zero for the reasons argued
+# at the top of this file. Cost in use is one invocation per *batch*, because the feed is
+# created with `webhook_sink_config` flushing at 50 messages or 5 seconds, plus one
+# invocation per `resolved` heartbeat (every 5 minutes, 288 a day, answered without a
+# database connection).
+
+resource "aws_cloudwatch_log_group" "changefeed" {
+  count             = var.changefeed_webhook_token == "" ? 0 : 1
+  name              = "/aws/lambda/${local.name}-changefeed"
+  retention_in_days = var.log_retention_days
+}
+
+# Logs and nothing else. This function claims leads and runs agents; the one agent a wake
+# can reach today (`distil_lesson`) talks to an embedding provider over HTTPS with a key
+# from the environment and needs no AWS authority at all.
+#
+# The Sender is deliberately NOT reachable from here: no PLATFORM_MAIL_* variables are set
+# below, so `settings.mail_configured` is false and `changefeed.lambda_handler` reports an
+# outbox wake as "no sender attached" rather than mailing a curator because a row
+# appeared. `ingest.py` keeps `--send` separate from draining for that reason and a
+# changefeed must not quietly undo it. Wiring SES here is a decision to take on purpose,
+# with `sender.py` open.
+resource "aws_iam_role" "changefeed" {
+  count              = var.changefeed_webhook_token == "" ? 0 : 1
+  name               = "${local.name}-changefeed"
+  assume_role_policy = data.aws_iam_policy_document.assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "changefeed_logs" {
+  count      = var.changefeed_webhook_token == "" ? 0 : 1
+  role       = aws_iam_role.changefeed[0].name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_lambda_function" "changefeed" {
+  count         = var.changefeed_webhook_token == "" ? 0 : 1
+  function_name = "${local.name}-changefeed"
+  role          = aws_iam_role.changefeed[0].arn
+  handler       = "rtf_platform.changefeed.lambda_handler"
+  runtime       = "python3.13"
+  architectures = ["arm64"]
+  memory_size   = var.memory_mb
+
+  # Longer than the console's 15s, and for a different reason. The console renders a page;
+  # this claims a lead and runs an agent, and `distil_lesson` makes an embedding call. A
+  # timeout shorter than the work means the batch is never acknowledged, the feed retries
+  # it, and the same work is fetched again — paid for twice, completed once. Sixty seconds
+  # comfortably covers a batch and is well under `fleet.LEASE_SECONDS` (120), so a
+  # function killed at the limit still leaves a lease that expires while somebody is
+  # watching rather than one that outlives the demo.
+  timeout = 60
+
+  filename         = data.archive_file.bundle.output_path
+  source_code_hash = data.archive_file.bundle.output_base64sha256
+
+  reserved_concurrent_executions = var.max_concurrency
+
+  environment {
+    variables = {
+      DATABASE_URL = var.database_url
+
+      # The shared secret the feed sends as `webhook_auth_header`. The sink is a public
+      # Function URL — CockroachDB cannot sign SigV4 — so this header is the entire
+      # boundary. `changefeed._secret()` refuses every delivery when it is unset, which is
+      # why this whole endpoint is count-gated on the same variable rather than defaulted.
+      PLATFORM_CHANGEFEED_TOKEN = var.changefeed_webhook_token
+
+      # The name leases are taken under. Distinct from `ingest-cli` on purpose:
+      # `lead.owner_agent` is what an operator reads to find out which worker holds a row,
+      # and "a changefeed woke this" and "somebody ran the CLI" are different answers to
+      # that question.
+      PLATFORM_CHANGEFEED_WORKER = "changefeed-lambda"
+
+      PLATFORM_TENANT_SLUG = var.tenant_slug
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.changefeed]
+}
+
+# NONE for the same reason the console's is NONE, with a different authenticator behind
+# it: CockroachDB's webhook sink cannot sign SigV4, so IAM auth here would make the
+# endpoint unreachable by the only client it has. `changefeed.authenticate` compares the
+# shared header with `hmac.compare_digest` *before* anything opens a database connection,
+# so an unauthenticated flood costs a Lambda invocation and not one request unit.
+resource "aws_lambda_function_url" "changefeed" {
+  count              = var.changefeed_webhook_token == "" ? 0 : 1
+  function_name      = aws_lambda_function.changefeed[0].function_name
+  authorization_type = "NONE"
+}
+
+# Both statements, for the reason spelled out against the console's pair above: the URL's
+# auth type is necessary and not sufficient, and with only the first the endpoint answers
+# {"Message":"Forbidden"} without ever invoking the function — which reads as a networking
+# fault and is not one.
+resource "aws_lambda_permission" "changefeed_url" {
+  count                  = var.changefeed_webhook_token == "" ? 0 : 1
+  statement_id           = "AllowPublicFunctionUrlInvoke"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.changefeed[0].function_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}
+
+resource "aws_lambda_permission" "changefeed_invoke" {
+  count         = var.changefeed_webhook_token == "" ? 0 : 1
+  statement_id  = "AllowInvokeViaFunctionUrl"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.changefeed[0].function_name
+  principal     = "*"
+}

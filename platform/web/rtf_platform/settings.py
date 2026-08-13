@@ -23,6 +23,10 @@ class Settings:
     mail_sender: str
     mail_reply_to: str
     mail_postal_address: str
+    cockroach_api_key: str
+    cockroach_cluster_id: str
+    mcp_url: str
+    openai_api_key: str
 
     @property
     def configured(self) -> bool:
@@ -56,6 +60,25 @@ class Settings:
         """
         return bool(self.mail_sender and self.mail_reply_to
                     and self.mail_postal_address)
+
+    @property
+    def mcp_configured(self) -> bool:
+        """Whether the Ask screen can reach anything at all.
+
+        All four are required and none has a working default. The Cockroach key and
+        cluster id address the managed MCP server; `OPENAI_API_KEY` pays for the one
+        classification that turns English into a choice from `mcp.QUESTIONS`; and
+        `database_url` is where the database *name* comes from, because the MCP query
+        must run against the database the rest of the console reads and two settings
+        holding one fact is how they end up disagreeing.
+
+        This property exists so the console can render the screen's own empty state —
+        naming the missing variables — instead of offering a box whose submit raises.
+        `mcp.load()` still refuses independently; a page that only checked here would be
+        one deploy away from a form that posts into a traceback.
+        """
+        return bool(self.cockroach_api_key and self.cockroach_cluster_id
+                    and self.openai_api_key and self.database_url)
 
     @property
     def storage_configured(self) -> bool:
@@ -92,6 +115,29 @@ def load() -> Settings:
         mail_sender=os.environ.get("PLATFORM_MAIL_SENDER", ""),
         mail_reply_to=os.environ.get("PLATFORM_MAIL_REPLY_TO", ""),
         mail_postal_address=os.environ.get("PLATFORM_MAIL_POSTAL_ADDRESS", ""),
+        # CockroachDB Cloud, for the Ask screen's route through the Cloud Managed MCP
+        # Server. The key is a plain bearer token against `cockroachlabs.cloud/mcp` and
+        # is *not* something a human has to mint by hand: `ccloud auth login` already
+        # writes one to ~/.config/.cockroachdb/credentials.json, verified 2026-08-13 to
+        # authenticate that endpoint. It is still read from the environment and only
+        # from the environment, because that file does not exist in Lambda and a loader
+        # that reads two sources answers differently depending on where it runs.
+        #
+        # The cluster id is deliberately not defaulted to the one in `.mcp.json`. A
+        # default here would point a differently-deployed console at this project's
+        # cluster and answer its questions confidently from somebody else's data.
+        cockroach_api_key=os.environ.get("COCKROACH_API_KEY", ""),
+        cockroach_cluster_id=os.environ.get("COCKROACH_CLUSTER_ID", ""),
+        # The vendor's endpoint. Defaulted, unlike everything else above, because it is
+        # not a credential and there is exactly one correct value; the variable exists so
+        # a test or a future regional endpoint can point elsewhere without a code change.
+        mcp_url=(os.environ.get("COCKROACH_MCP_URL")
+                 or "https://cockroachlabs.cloud/mcp"),
+        # The classifier that maps an operator's English onto one of `mcp.QUESTIONS`.
+        # OpenAI rather than Bedrock because Bedrock is not reachable from this account —
+        # `spend.py`'s rate card records both Claude and Titan on-demand quotas at 0 RPM,
+        # measured. Empty means the Ask screen says so rather than guessing a question.
+        openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
         # Used to construct the S3 and SES clients. `AWS_REGION` is set by the Lambda
         # runtime itself, so in the deployed function this needs no configuration;
         # the explicit variable is for a worker or a laptop, and the default matches

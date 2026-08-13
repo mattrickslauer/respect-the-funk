@@ -2352,3 +2352,66 @@ def draft_form_section(thread_id: str, *, form: dict[str, str] | None = None,
               hint="Goes to the approvals screen, not to anybody. Approving queues it; "
                    "nothing sends it."),
     ), action=f"/threads/{thread_id}/draft", submit="Save draft", error=error)
+
+
+def justification_sections(conn: psycopg.Connection, tenant_id: str,
+                           thread_id: str) -> tuple[Section, ...]:
+    """Why this counterparty, answered from the index as it was — or why we cannot say.
+
+    The inspector half of `outreach.justification`. This is the beat the whole submission
+    is built around, so what it renders when it *cannot* answer matters as much as what
+    it renders when it can, and the three cases are deliberately three different panels
+    rather than one panel with a blank field.
+
+      * **A ranking.** The shortlist as it stood at the instant the thread opened, with
+        the recorded position beside the replayed one, and a line saying whether they
+        agree. Disagreement is shown, not hidden: it means the index has moved under the
+        record — a changed embedding model, most likely — and an operator seeing "the
+        replay no longer agrees" learns something true, where a silently reordered list
+        teaches them something false.
+      * **Nobody ranked it.** A human opened this thread. That is legitimate and the
+        panel says so plainly, because the alternative — an empty ranking — reads as a
+        system that lost the answer rather than one that never had it.
+      * **The history has expired.** We recorded a reason and the cluster no longer keeps
+        the memory to reconstruct it. The panel says that, and says why, because "we knew
+        and can no longer show you" is a different sentence from "we never knew" and an
+        operator standing in front of somebody asking why they were emailed needs the
+        right one.
+
+    Never falls back to the live shortlist. It would render beautifully and be a
+    fabrication — see `agents.shortlist_as_of`.
+    """
+    # Imported here rather than at module scope, like `settings_mod` and `distributors`
+    # above: `outreach` imports `agents`, and `agents` imports enough of this package
+    # that a top-level import here is a cycle waiting for the next module to join it.
+    from rtf_platform import agents, outreach
+
+    try:
+        found = outreach.justification(conn, tenant_id, thread_id)
+    except outreach.NotJustified:
+        return (Section("Why this counterparty", "note", (
+            "Nobody ranked them — this thread was opened by hand, so there is no "
+            "shortlist behind it to replay. That is recorded as an absence rather than "
+            "filled in with the ranking at the moment somebody typed the name.",)),)
+    except agents.HistoryExpired:
+        return (Section("Why this counterparty", "note", (
+            "A ranking justified this thread, and the cluster no longer retains the "
+            "memory to reconstruct it — time travel is bounded by gc.ttlseconds, and the "
+            "threshold only moves forward. The decision was recorded; the index it read "
+            "has been collected.",)),)
+
+    agreed = ("the replay agrees with what was recorded"
+              if found["matched"] else
+              "THE REPLAY NO LONGER AGREES — the index has moved under this record")
+    header = Section("Why this counterparty", "kv", (
+        ("recorded rank", f"#{found['recorded_rank']}"),
+        ("replayed rank", f"#{found['replayed_rank']}" if found["replayed_rank"] else "not in the list"),
+        ("distance then", f"{found['recorded_distance']:.4f}"),
+        ("read at", found["as_of"]),
+        ("check", agreed),
+    ))
+    ranking = Section(
+        "The shortlist, as it was", "chain",
+        tuple(f"#{i} {row['name']} — {float(row['distance']):.4f}"
+              for i, row in enumerate(found["ranking"], start=1)))
+    return (header, ranking)

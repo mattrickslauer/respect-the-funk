@@ -1108,6 +1108,10 @@ def _threads_page(request: Request, principal: auth.Principal, *, sel: str = "",
             if state in ("approved", "drafted", "awaiting_human"):
                 extra.append(research.draft_form_section(
                     str(sel_row["id"]), form=form, error=error))
+            # Last, and on every thread regardless of state, because the question it
+            # answers is asked *after* the send rather than before it.
+            extra.extend(research.justification_sections(
+                conn, tenant_id, str(sel_row["id"])))
             sel_row = dict(sel_row)
             sel_row["insp"] = sel_row["insp"] + tuple(extra)
 

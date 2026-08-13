@@ -682,6 +682,61 @@ def retry_failed(conn: psycopg.Connection, tenant_id: str) -> int:
         return cur.rowcount
 
 
+#: Document platforms that are *evidence* and belong in `party_chunk`, as opposed to
+#: `profile_v2`, which is the composed profile and deliberately does not.
+#:
+#: The distinction is the whole reason this constant exists rather than a `!=` in the
+#: query. `profile_v2` is exactly the text `embed_party` writes into
+#: `party.profile_embedding`, which is what R1 searches. Chunking it into `party_chunk`
+#: would build a second vector index over the same sentences and call the duplication
+#: retrieval — R2 would then "find evidence" that is a paraphrase of the thing that
+#: ranked the party in the first place, which is worse than finding nothing because it
+#: looks like corroboration.
+#:
+#: These four are the sources: an FCC licence row, a Radio Browser entry, a Wikipedia
+#: article, a Deezer editor. They are what somebody would actually want to read when
+#: asking "what do we already know about this party", and none of them is composed by us.
+EVIDENCE_PLATFORMS: tuple[str, ...] = ("fcc", "radio_browser", "wikipedia", "deezer")
+
+
+def embed_evidence(conn: psycopg.Connection, tenant_id: str) -> int:
+    """Queue one `embed_document` lead per evidence document, so R2 has something to
+    retrieve.
+
+    `party_chunk` has been empty since it was created, and the reason is prosaic: the
+    only writer of `embed_document` leads is the repo-document loader, which handles the
+    two internal specs and nothing else. Every document discovery has written since —
+    36,229 of them — arrived without anyone queueing the stage that chunks it. The
+    `chunk_semantic` index has therefore never had a row, which made `agents.retrieve`
+    a correct implementation of a query with no corpus.
+
+    That is a *backlog*, not a missing writer, and the difference decided what happened
+    to it. `028_drop_fact_semantic.sql` removed the other empty index because nothing
+    wrote its column and no query read it. This one has both, and only needed the leads.
+
+    Idempotent through `(tenant_id, target_hash)` like every other producer here, so
+    running it twice queues nothing the second time. Documents whose body is empty are
+    skipped in the query rather than queued and failed by the agent — `_fetch_embed_document`
+    raises `LeadFailed(permanent=True)` on an empty body, and a frontier full of leads
+    that are guaranteed to fail is a frontier nobody reads.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO lead (tenant_id, scope_kind, kind, mode, adapter,
+                                 target, target_hash, platform, reason, score)
+               SELECT d.tenant_id, 'tenant', 'embed_document', 'auto', 'internal',
+                      d.id::STRING, 'embed:' || d.content_hash, 'internal',
+                      'evidence document, needs chunking for R2', 0.6
+                 FROM party_document d
+                WHERE d.tenant_id = %s
+                  AND d.platform = ANY(%s)
+                  AND length(trim(d.body)) > 0
+               ON CONFLICT (tenant_id, target_hash) DO NOTHING""",
+            (tenant_id, list(EVIDENCE_PLATFORMS)),
+        )
+        return cur.rowcount
+
+
 def requeue(conn: psycopg.Connection, tenant_id: str, kind: str,
             slug: str = "") -> int:
     """Return completed leads of one kind to the frontier, so their agent runs again.
@@ -769,6 +824,8 @@ def main() -> int:
                              "whole four-million-feed index. Default is the whole "
                              "index. Needs PODCASTINDEX_API_KEY and "
                              "PODCASTINDEX_API_SECRET.")
+    parser.add_argument("--embed-evidence", action="store_true",
+                        help="queue chunking for every evidence document, so R2 has a corpus")
     parser.add_argument("--recompose-profiles", action="store_true",
                         help="rewrite every counterparty's embedded profile text with "
                              "the current composition rules, and re-queue its embedding")
@@ -882,6 +939,10 @@ def main() -> int:
         if args.enrich_genre:
             queued = enrich_genre(conn, tenant_id)
             print(f"queued {queued} enrich_genre lead(s)")
+
+        if args.embed_evidence:
+            queued = embed_evidence(conn, tenant_id)
+            print(f"queued {queued} embed_document lead(s) over evidence documents")
 
         if args.recompose_profiles:
             done = recompose_profiles(conn, tenant_id)

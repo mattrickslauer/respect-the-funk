@@ -159,15 +159,29 @@ that is not true on the day.**
 
 ## What must not be said
 
-- **No changefeed.** `SHOW CHANGEFEED JOBS` returns nothing. The old script's line *"a
-  changefeed wakes the next agent, no broker"* is false and a judge can check it in ten
-  seconds. Cut it unless it gets built.
+- **No changefeed — and "we built it" is not the same sentence as "it runs".** As of
+  2026-08-13 `changefeed.py` composes the statement, consumes the batches and ships a
+  Lambda handler, and `SHOW CHANGEFEED JOBS` still returns **nothing**, because creating
+  the feed spends RUs continuously and that is a human decision nobody has taken. The old
+  script's line *"a changefeed wakes the next agent, no broker"* is therefore still false
+  and still checkable in ten seconds. **The rule does not relax because code landed.** If
+  the job exists on shoot day, say it and film `SHOW CHANGEFEED JOBS` returning a row. If
+  it does not, the line stays out — and do not reach for a softer version like *"the
+  database can wake an agent"*, which is a claim about the product wearing the grammar of
+  a claim about SQL.
 - **No multi-region, no data domiciling.** `SHOW REGIONS` returns one region on a BASIC
-  cluster. It is the strongest argument we do not have; it belongs in the README's future
-  work, not in the video.
+  cluster. Migration 024 and `infra/terraform/multiregion/` are written and validated and
+  **nothing has been applied**, which changes nothing about what may be said on camera: a
+  Terraform plan is not a region. It is the strongest argument we do not have; it belongs
+  in the roadmap, not in the video.
+- **No podcasts.** The adapter and migration 023 exist, the stage has no worker, and no
+  podcast has been ingested. Radio is the second channel. Say radio.
 - **No scale claims.** Fourteen thousand rows is not a distributed-systems problem, and
   saying so invites the one comparison we lose. Volunteer that pgvector could serve the
   retrieval — then show the thing it cannot do. Conceding the replaceable parts is what
   makes the irreplaceable one land.
 - **No Bedrock.** The only embedding model that has ever produced a row here is
-  `openai:text-embedding-3-small`. AWS is satisfied by Lambda and S3; say those.
+  `openai:text-embedding-3-small`. `bedrock.py` now implements both the on-demand and the
+  batch path, and neither can run on this account: on-demand quota is 0 and
+  non-adjustable, and batch inference is entitlement-gated behind a support case. Written
+  is not running. AWS is satisfied by Lambda and S3; say those.

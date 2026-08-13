@@ -38,8 +38,16 @@ Adding a source is a decision about whether it is metered, rather than a silence
 defaults to free.
 
 **7. No AWS resource that bills while idle.** Already the rule in `README.md` — no NAT,
-no API Gateway, no Secrets Manager, no ECR. Extended: any new resource must state its
-idle cost before it is added, and $0 is the only acceptable answer until there is revenue.
+no API Gateway, no Secrets Manager. Extended: any new resource must state its idle cost
+before it is added, and $0 is the only acceptable answer until there is revenue.
+
+> **Amended 2026-08-13.** ECR was on that list and has come off it. The genre classifier
+> is a container Lambda because a 3 GB model does not fit a zip bundle, so there is an
+> image in ECR and ECR bills per GB-month whether or not anything invokes the function.
+> The rule survives as written — the cost was stated before the resource was added, and
+> the alternative was not shipping the classifier — but **"$0 idle" is no longer literally
+> true and no document may keep saying it is.** It is cents. Cents are not zero, and the
+> whole value of a rule like this is that it notices the first time it is broken.
 
 **Corollary — checking the bill costs money.** `ce:GetCostAndUsage` is **$0.01 per
 request**. It is in the rate card for that reason. Never poll it, never put it in a loop,
@@ -51,7 +59,7 @@ and read the Billing console by hand instead.
 
 | Surface | Bills for | What bounds it now | Risk |
 |---|---|---|---|
-| **Bedrock** | tokens | On-demand quota is **0 RPM account-wide** (verified 2026-08-07) | **None today** — unusable |
+| **Bedrock** | tokens | On-demand quota **0 RPM** and `Adjustable: false`; batch inference entitlement-gated behind a support case (both re-verified 2026-08-13) | **None today** — unusable by both routes |
 | **OpenAI** | tokens | `RTF_PAID_ENABLED` unset → every call refused | **None today** — gated |
 | **CockroachDB Basic** | request units | Free allowance; **scales to zero, $0 idle** | Low — overage only |
 | **Lambda** | requests + GB-seconds | Free tier 1M req / 400k GB-s; account concurrency **10** | Low |
@@ -105,11 +113,21 @@ expensive mistake.
 
 ## What has actually been spent
 
-Nothing measurable, as of 2026-08-07:
+Nothing measurable, as of 2026-08-07. **Two of these lines went stale and are corrected
+below rather than left standing** — a spend section that under-reports is still a section
+that cannot be trusted:
 
 - **No successful Bedrock call.** Every invoke returned `ThrottlingException` against a
-  0 RPM quota. Zero tokens.
-- **No deploy.** `terraform apply` has not been run against the current build.
+  0 RPM quota. Zero tokens. *Still true on 2026-08-13, and now true of the batch route
+  too: `CreateModelInvocationJob` is refused for want of an entitlement, not a quota.*
+- ~~**No deploy.**~~ **Corrected 2026-08-13: it has been deployed since.** Two Lambda
+  functions run in `us-east-1` — the console (zip) and the genre classifier (a container
+  from ECR) — plus the masters bucket, and the console's Function URL is the submission's
+  demo URL. All of it is in `platform/infra/`, and none of it bills at idle: the Function
+  URL costs nothing, S3 holds two recordings, and ECR image storage is the one line here
+  that is no longer strictly zero. Measured agent spend across every run ever is
+  **$0.005296**, from `SELECT sum(cost_micro_usd)/1e6 FROM agent_run` — see
+  `docs/submission/TOOLS.md`.
 - **CockroachDB**: three migrations and a handful of console reads, against a free
   allowance on a tier that costs $0 idle. Two test rows written to `demo_request` and
   deleted.

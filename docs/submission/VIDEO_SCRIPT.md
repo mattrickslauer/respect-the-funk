@@ -1,5 +1,13 @@
 # Respect the Funk — demo video script v3 (≤ 3:00)
 
+> ## Superseded for the shoot by [`DEMO_SCRIPT.md`](./DEMO_SCRIPT.md), 2026-08-11.
+>
+> That script was written after the sponsor audit and argues one thing — why CockroachDB
+> is irreplaceable here — where this one tours the product. **`DEMO_SCRIPT.md` is what
+> gets filmed.** This file is kept for the claim ledger below, which is a live document
+> and is maintained: it is the record of what may and may not be said on camera, and it
+> is checked against the cluster rather than against either script.
+
 > **Hard limit: under 3 minutes.** Judges are not required to watch past 3:00. This cut is
 > **370 words — 2:50 of speech at 130 wpm, ~2:57 with the marked silences.** Full
 > read-through in [`VOICEOVER.txt`](./VOICEOVER.txt), which is the authority; the timeline
@@ -35,7 +43,9 @@ system surviving something that should break it. Hook, then earn it. The founder
 at 0:13 and lands harder for having been held back.
 
 **Never say "AI".** Say what it does. **Never say "Bedrock"** — the embeddings on this
-cluster are OpenAI's; the AWS surface is Lambda, and Lambda is what the submission claims.
+cluster are OpenAI's, and Bedrock is not merely unused but unreachable on this account
+(on-demand quota 0 and non-adjustable, batch inference entitlement-gated). The AWS surface
+is Lambda and S3, and those are what the submission claims.
 
 ---
 
@@ -58,10 +68,10 @@ The script may describe what the product *will* do; it may not show what does no
 | ✅ | 239 tests, against the real cluster | **verified** — 5m58s, green |
 | 🔴 | **The shortlist returns Deezer's Dance & EDM editor** | **NOT FILMABLE TODAY.** All 18 counterparties were deleted 2026-08-10 ~04:40 UTC. Snapshot at `/home/mattricks/rtf-snapshot-2026-08-10/`. **Restore the five real editors before shooting** — audit §7.1. |
 | 🔴 | **A lesson reordered the shortlist** | **`lesson` = 0 rows.** The index exists and has never held one. **Seed this before shooting** — it is the tie-breaker criterion. |
-| ⛔ | ~~"A changefeed wakes the next agent"~~ | **CUT FROM THIS SCRIPT.** `SHOW CHANGEFEED JOBS` returns zero. It was v2's most falsifiable line. Restore it only if the job actually exists on shoot day. |
+| ⛔ | ~~"A changefeed wakes the next agent"~~ | **STILL CUT — 2026-08-13.** `changefeed.py` now composes the statement and consumes the feed, and `SHOW CHANGEFEED JOBS` still returns zero, because creating it draws RUs continuously and nobody has authorised that spend. Built is not running. Restore the line only if the *job* exists on shoot day. |
 
 **Three things gate shooting: restore the five editors, seed one real lesson, and leave
-the changefeed line out unless it is built.**
+the changefeed line out unless the job — not the module — exists.**
 
 ---
 
@@ -139,6 +149,7 @@ Capture against the deployed Function URL, signed in, with the real roster.
 - [x] Pre-existing code disclosed in `NOTICE`
 - [x] Functional demo URL — Lambda Function URL
 - [ ] **This video, under 3:00, on YouTube, public**
-- [ ] **One page naming the CockroachDB and AWS tools used and how** — scored, and
-      currently scattered across `PLATFORM-SPEC.md` and `reference/`
+- [x] **One page naming the CockroachDB and AWS tools used and how** —
+      [`TOOLS.md`](./TOOLS.md), written 2026-08-11 and revised 2026-08-13. No longer
+      scattered across `PLATFORM-SPEC.md` and `reference/`, both of which now defer to it.
 - [x] Architectural diagram (optional) — generated

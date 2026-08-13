@@ -1,7 +1,7 @@
 ---
 title: "Why CockroachDB, and not Postgres"
 subtitle: "An adversarial audit of the sponsor's load-bearingness. Every claim executed against the running cluster. The first section argues against the submission; the second is the answer, and it is a capability that was verified working today rather than a paragraph."
-status: "FINDINGS — 2026-08-11. One configuration change was made during this audit and is recorded in §4."
+status: "FINDINGS — 2026-08-11. One configuration change was made during this audit and is recorded in §4. Two dated addenda were added on 2026-08-13, in §3 and §5.2; both record that something was built, and neither upgrades a claim, because neither thing is running."
 date: "2026-08-11"
 ---
 
@@ -112,6 +112,30 @@ migration, seven days out. **Recommended: do not claim it, and do not build towa
 before the 18th.** An architectural claim a judge can falsify with one `SHOW REGIONS` is
 worse than no claim. It belongs in the roadmap section, named as future work.
 
+> **Addendum, 2026-08-13 — half of that recommendation was overruled, and the important
+> half was not.**
+>
+> The building happened: `platform/schema/024_regional_by_row.sql` makes `contact_route`
+> `REGIONAL BY ROW`, and `infra/terraform/multiregion/` provisions the three-region
+> Standard cluster the migration needs. `terraform validate` and `terraform fmt` pass
+> against `cockroachdb/cockroach v1.22.0`. **Nothing has been applied. The three queries
+> above still return exactly what they returned on the 11th**, and every document in this
+> repository is required to say so.
+>
+> The audit's advice to hold off assumed the cost of building it was the cost of upgrading
+> the live cluster. That turned out to be the wrong shape of cost, and the reason is worth
+> recording because it is what keeps the option open at all: **CockroachDB Cloud does not
+> support removing a region once it has been added.** The documented way back to
+> single-region is backup, new cluster, restore. So converting `respect-the-funk` — the
+> cluster holding the system of record, seven days from a deadline — would be a one-way
+> door taken for a demo. The module therefore creates a *throwaway* cluster
+> (`rtf-residency-demo`) and `import.tf.example` carries the conversion path disarmed,
+> with the irreversibility written where whoever renames it will read it.
+>
+> That changes the schedule and not the standard. §3's rule stands unamended: **do not
+> claim it.** A validated plan is not a region, and the sentence a judge can falsify is
+> the same sentence either way.
+
 ---
 
 ## 4. The change made during this audit
@@ -146,6 +170,24 @@ Ranked by how much each moves the "sponsor is load-bearing" judgement:
    streaming during the 2026-08-10 audit. Memory writes waking agents with no broker is
    the sharpest statement of "the database is the coordination substrate". It also makes
    the video script's existing line true instead of falsifiable.
+
+   > **Done 2026-08-13, and the line is still falsifiable.** `changefeed.py` composes the
+   > `CREATE CHANGEFEED`, parses the webhook batches, maps a change to the lead kinds it
+   > makes claimable, and ships a Lambda handler and a `--verify`. It does not run the
+   > statement; it prints it. `SHOW CHANGEFEED JOBS` returns **zero rows**, because a feed
+   > draws request units *continuously* — the one unmeasured cost `PLATFORM-SPEC §10`
+   > risk 2 flagged as the likelier of the two to erode the free allowance — and spending
+   > that is a human decision, not a deploy step. So this item is **built, not created**,
+   > and the script line stays cut. Writing the code did not earn the sentence; creating
+   > the job would.
+   >
+   > The build was still worth it for a reason this ranking undersold. The interesting
+   > part is not the DDL, it is what the event is *allowed to carry*: a `Wake` holds a
+   > tenant and a set of lead kinds, and deliberately no row id and no payload. A woken
+   > worker's only move is to call `fleet.work_once` and claim, so two workers woken by
+   > one at-least-once delivery race on the lease and the second gets nothing. The feed
+   > cannot become a work queue with no fence on it, and a fleet with the feed switched
+   > off is slower rather than broken. That is the argument; the job is the demo.
 3. **Reframe the pitch around decision auditability**, not scale. The sentence to give a
    judge: *"Our agents email real people. CockroachDB is the only reason we can replay the
    exact memory state — including the vector ranking — that made them do it."*

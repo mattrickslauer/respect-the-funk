@@ -1,8 +1,8 @@
 ---
 title: "Which CockroachDB and AWS tools this uses, and how"
 subtitle: "The submission checklist asks for one page naming the tools. This is that page. Every claim on it was executed against the running cluster and the deployed account on the date below, not read from a spec."
-status: "SUBMISSION — verified 2026-08-11 against cluster `respect-the-funk` and AWS account 821135790223."
-date: "2026-08-11"
+status: "SUBMISSION — verified 2026-08-11 against cluster `respect-the-funk` and AWS account 821135790223; revised 2026-08-13, and every revision is a downgrade. The MCP server stops being called core, Bedrock's unavailability is measured rather than asserted, and three things that exist as code are listed as not running."
+date: "2026-08-13"
 ---
 
 ## The system in one paragraph
@@ -70,13 +70,21 @@ Retrieval in practice — the live shortlist for the artist *Hallow Youth*, top 
 0.5880  Laeti - Deezer Pop Editor
 ```
 
-### 2. Cloud Managed MCP Server — **core**
+### 2. Cloud Managed MCP Server — **used in development, not part of the application**
 
 `.mcp.json` points an MCP client at `https://cockroachlabs.cloud/mcp`, scoped to this
-cluster by the `mcp-cluster-id` header. It is used for natural-language inspection of the
-spine — listing clusters, databases and tables, and answering catalogue questions without
-a hand-written query. Authentication is OAuth, held in the client's own auth store, so no
-bearer token is committed.
+cluster by the `mcp-cluster-id` header. It answered `list_clusters`, `list_databases` and
+`list_tables` during the 2026-08-10 audit, and it is how a developer asks this cluster
+questions in English instead of writing the query. Authentication is OAuth, held in the
+client's own auth store, so no bearer token is committed.
+
+**It is deliberately not billed as core, and the earlier version of this page billed it
+as core.** Nothing the fleet does and nothing the console serves passes through MCP; take
+it away and the application is unchanged. A judge who tested that would find the gap, and
+a development convenience presented as a product capability is exactly the move that
+loses the sponsor-relevance argument this whole page is making. The load-bearing
+CockroachDB capability is the one above — plus the four beneath the fold in *features
+beyond the four*, which are the actual reason this is not Postgres.
 
 ### 3. `ccloud` CLI — **used for something real**
 
@@ -120,7 +128,11 @@ Two functions, both live in `us-east-1`:
 The console is a Lambda **Function URL** (`aws_lambda_function_url.console`,
 `function_url_auth_type = "NONE"`), so the demo URL above is the function itself — there is
 no API Gateway and no always-on container in front of it. Combined with a CockroachDB BASIC
-cluster at `node_count: 0`, the entire system costs nothing while nobody is using it.
+cluster at `node_count: 0`, the entire system costs **cents** while nobody is using it —
+and the cents are worth naming rather than rounding away, because they are the whole of the
+idle bill: ECR charges per GB-month for the classifier image whether or not the function is
+ever invoked. Everything else genuinely is zero at rest. Total measured agent spend across
+every run this system has ever made is $0.005296.
 
 The classifier is a container Lambda because the model needs 3 GB and native dependencies
 that do not fit a zip bundle. Terraform: `aws_ecr_repository.classifier`,
@@ -147,13 +159,32 @@ IAM (per-function roles, least privilege), CloudWatch Logs (one log group per fu
 ECR (the classifier image). All of it is Terraform in `platform/infra/` — there is no
 console-clicked resource in the deployment.
 
-### One correction, made deliberately
+### Amazon Bedrock — written, and unreachable on this account
 
 Earlier planning documents in this repository say *"Bedrock as agent runtime and embedding
-provider."* **That is not what runs.** The only embedding model that has ever produced a row
-here is `openai:text-embedding-3-small`; `BedrockEmbedder` exists in `embed.py` and has never
-been used against this cluster. The AWS requirement is satisfied by **Lambda and S3**, and
-this page says so rather than claiming a service the cluster would contradict.
+provider."* **That is not what runs, and it is not something a support ticket away from
+running by the deadline.** Measured on 2026-08-13 against account `821135790223`, not read
+from documentation:
+
+- **On-demand inference is hard zero.** Service Quotas `L-26C560CE` — *on-demand model
+  inference requests per minute for Amazon Titan Text Embeddings V2* — has an applied value
+  of `0.0`, and is marked **`Adjustable: false`**. There is no pending increase because
+  there is no increase to request. Model access is granted and the model is `ACTIVE`; the
+  capacity behind it is nil, and 6/6 invocations throttled in `us-east-1`.
+- **Batch inference has quotas and no entitlement.** `CreateModelInvocationJob` returns
+  `ValidationException: Your account is not authorized to perform this action. Please
+  create a support case` — reproduced in `us-east-1` and `us-west-2`, with a real IAM role
+  and a real bucket, and with the caller's IAM simulated as `allowed`. The gate fires
+  before AWS looks at the role, so it is an entitlement and not a trust policy. Service
+  Quotas publishes the batch limits for every account whether or not the capability is
+  switched on, which is why a quota table reads as capability and is not.
+
+`rtf_platform/bedrock.py` implements both paths anyway, because the entitlement is a switch
+AWS throws rather than work anyone here can do, and an untested S3-and-polling pipeline is
+the wrong thing to be writing on the day it clears. But **no Bedrock call has ever produced
+a row on this cluster.** The only embedding model that has is
+`openai:text-embedding-3-small`. The AWS requirement is satisfied by **Lambda and S3**, and
+this page says so rather than claiming a service the account would contradict.
 
 ---
 
@@ -196,12 +227,37 @@ Stated here because a page like this is worth nothing if a judge finds the gap t
   arithmetic re-ranking exist and are unit-tested (`platform/web/tests/test_lessons.py`), and
   `lesson_semantic` is indexed and ready — but no closed thread has yet taught a shortlist,
   because nothing has been sent.
-- **No changefeed is running.** `SHOW CHANGEFEED JOBS` returns zero rows. Rangefeeds are
-  enabled on this cluster and the capability is available; the fleet currently wakes on
-  `next_action_at` and leases rather than on a feed.
-- **Small N.** One tenant, three roster artists, twenty-five counterparties, two recordings.
-  The numbers are labelled with their N everywhere they appear, and no improvement curve is
-  drawn through them.
+- **The changefeed is built and not created.** `SHOW CHANGEFEED JOBS` returns **zero rows**,
+  and that is the deliberate state rather than an unfinished one.
+  `rtf_platform/changefeed.py` composes the exact `CREATE CHANGEFEED` (three tables,
+  `initial_scan = 'no'`, a batched webhook sink and a shared secret), parses the delivered
+  batches, maps a change to the lead kinds it can make claimable, and ships the Lambda
+  handler and a `--verify`. Nothing in it runs the statement — it prints it. Creating the
+  feed draws request units *continuously* against a free allowance, which is a spend a
+  human authorises rather than a step in a deploy. Until then the fleet wakes on
+  `next_action_at` and a lease, which is slower and not weaker: the feed carries no work,
+  only permission to look, so a fleet with it switched off is the same fleet.
+- **Multi-region domiciling is written and not provisioned.** `contact_route` holds personal
+  data for named individuals, migration `024_regional_by_row.sql` makes it `REGIONAL BY ROW`,
+  and `infra/terraform/multiregion/` provisions the three-region Standard cluster it needs.
+  `terraform validate` passes; nothing has been applied. **`SHOW REGIONS` on this cluster
+  returns `aws-us-east-1` and nothing else.** It stays unclaimed for a reason worth stating:
+  a region cannot be removed from a CockroachDB Cloud cluster once added, so demonstrating
+  this means a throwaway cluster and never a conversion of the one holding the system of
+  record. It is the strongest architectural argument this project does not have.
+- **Podcasts are a channel with an adapter and no worker.** `podcastindex.py` and migration
+  `023_podcast_source.sql` are in; the `source_manifest` row lands disabled because the
+  source cannot be called without a key, and the `agent_manifest` row lands disabled because
+  the stage has no entry in `agents.REGISTRY` yet. Nothing has been ingested. Radio is the
+  channel that is real.
+- **Small N, and the one number that is not small has never been worked.** One tenant,
+  three roster artists, two recordings. The counterparty index is the exception —
+  fourteen thousand rows from public registers — and it is also the part with nothing
+  downstream of it: `thread` and `lesson` hold zero rows, so not one of those fourteen
+  thousand has been contacted, and nothing has been learned from contacting them. A large
+  index is not evidence of a working loop, and this page is not going to present it as
+  one. Every number here is labelled with its N where it appears, and no improvement curve
+  is drawn through any of them.
 
 ## How to verify any of this yourself
 
@@ -214,6 +270,14 @@ psql "$DATABASE_URL" -c "EXPLAIN SELECT id FROM party@party_shortlist
 
 # Isolation is not a claim
 psql "$DATABASE_URL" -c "SHOW default_transaction_isolation;"
+
+# The two things this page says are NOT running. Both are one command to falsify,
+# which is why they are named here rather than left for you to find.
+psql "$DATABASE_URL" -c "SHOW CHANGEFEED JOBS;"   # zero rows
+psql "$DATABASE_URL" -c "SHOW REGIONS;"           # aws-us-east-1, and nothing else
+
+# The changefeed statement that would be run, printed rather than executed
+python -m rtf_platform.changefeed --verify
 
 # The shortlist, end to end
 python -m rtf_platform.ingest --shortlist hallow-youth

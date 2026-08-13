@@ -53,15 +53,31 @@ from typing import Any
 UNKNOWN = "Programming not documented."
 
 
-def compose(*, genres: list[str] | None = None, market: str = "",
+def compose(*, role: str, genres: list[str] | None = None, market: str = "",
             station_kind: str = "", licensee: str = "", frequency: str = "",
-            language: str = "", role: str = "radio station") -> str:
+            language: str = "") -> str:
     """The canonical embedded description of a counterparty.
 
     Genre leads and is stated twice — once as prose and once as a bare list. That is not
     redundancy for its own sake: a sentence embeds as a sentence, and a short list of
     domain terms gives the vector a blunt, high-signal handle that survives being averaged
     with the rest. Everything else is one clause and only when it is known.
+
+    **`role` is required and deliberately has no default.** It used to default to
+    `"radio station"`, which was harmless for exactly as long as radio stations were the
+    only counterparty. The moment `podcastindex` landed, that default became a way to
+    describe eighty-five thousand podcasts as radio stations — not at ingest, where
+    `profile_text` passes the right value, but on the next `--recompose-profiles`, which
+    rebuilds from facts and never had a role to pass. Silent, wrong, and invisible until
+    somebody read the source text of the vectors side by side, which is the precise
+    failure this module was written to end.
+
+    A default that is right for the current callers and wrong for the next one is the
+    shape of bug this codebase refuses on principle — `013_lease_token.sql` makes the
+    same argument about worker names. So the parameter moved to the front of the
+    signature and lost its default: a caller that has not decided what kind of thing it
+    is describing now fails to call this at all, which is the only version of this
+    problem that cannot ship.
     """
     tags = [g.strip().lower() for g in (genres or []) if g and g.strip()]
 
@@ -98,10 +114,34 @@ def from_facts(name: str, facts: dict[str, str]) -> str:
     `name` is accepted and **not used in the returned text** — it is in the signature so
     that a caller reading this line is confronted with rule 2 rather than discovering it
     by grepping. See the module docstring.
+
+    The `role` dimension is read from the facts and is **required**, because this
+    function is the rebuild path: `ingest.recompose_profiles` calls it for every
+    counterparty in the tenant, and whatever it returns replaces the text those vectors
+    were built from. A source module gets to know what it is describing — `podcastindex`
+    passes `role="podcast"` directly. A rebuild from facts does not, and until this
+    dimension existed it silently assumed radio.
+
+    Raising here rather than guessing is the whole point. The alternatives were both
+    worse: a default relabels every podcast as a radio station, and inferring the role
+    from which other dimensions happen to be present (`frequency_mhz` implies radio,
+    `show_kind` implies podcast) is a guess wearing a measurement's clothes, which is the
+    one thing `SCOPE-RESET §2a` rule 1 forbids outright. A party whose role nobody
+    recorded is a party whose profile nobody can rebuild, and saying so is cheap next to
+    rebuilding it wrongly.
     """
+    role = facts.get("role", "").strip()
+    if not role:
+        raise ValueError(
+            f"{name!r} has no `role` fact, so there is no way to say what kind of "
+            "counterparty it is without guessing. Its profile cannot be rebuilt from "
+            "facts until one is written — see migration 026, which backfills the "
+            "sources that predate this dimension.")
+
     raw = facts.get("genre", "")
     genres = [g.strip() for g in raw.split(",") if g.strip()] if raw else []
     return compose(
+        role=role,
         genres=genres,
         market=facts.get("market", ""),
         station_kind=facts.get("station_kind", ""),

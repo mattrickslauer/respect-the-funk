@@ -72,8 +72,25 @@ class Rate:
 #: larger than a smoke test.
 RATES: dict[str, Rate] = {
     "bedrock:amazon.titan-embed-text-v2:0": Rate(
-        "Titan Embed v2", usd_per_mtok_in=Decimal("0.02"),
-        note="On-demand quota on this account is 0 RPM — unusable regardless of price.",
+        "Titan Embed v2 (on-demand)", usd_per_mtok_in=Decimal("0.02"),
+        note="Priced, and unreachable. The on-demand RPM quota on account 821135790223 "
+             "is 0.0 and Service Quotas L-26C560CE reports it as NOT adjustable "
+             "(measured 2026-08-13), so there is no increase to wait for. The entry "
+             "stays because the adapter stays: a rate card with a hole in it refuses "
+             "the call for the wrong reason. Use the ':batch' key below.",
+    ),
+    "bedrock:amazon.titan-embed-text-v2:0:batch": Rate(
+        "Titan Embed v2 (batch inference)", usd_per_mtok_in=Decimal("0.01"),
+        note="Half the on-demand rate, which is Bedrock's standard batch discount and "
+             "the published Titan Embed v2 batch price. Two entries for one model "
+             "because the price differs and the gate must estimate the real one; the "
+             "`embedding_model` column deliberately does NOT distinguish them, because "
+             "the vectors are identical and splitting the party_shortlist index prefix "
+             "over a billing detail would halve every shortlist. Priced but not yet "
+             "reachable: account 821135790223 is not entitled to CreateModelInvocationJob "
+             "and AWS releases that through a support case. The 100k-records-per-job "
+             "quota is a default row published for every account and is not evidence the "
+             "capability is on (measured 2026-08-13).",
     ),
     "bedrock:anthropic.claude-sonnet-4-5": Rate(
         "Claude Sonnet 4.5 via Bedrock",

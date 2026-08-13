@@ -95,10 +95,25 @@ ALTER TABLE thread ADD COLUMN IF NOT EXISTS decided_at_hlc DECIMAL;
 ALTER TABLE thread ADD COLUMN IF NOT EXISTS decided_rank INT;
 ALTER TABLE thread ADD COLUMN IF NOT EXISTS decided_distance FLOAT;
 
+-- Dropped before being added, because `ADD CONSTRAINT` has no `IF NOT EXISTS` and this
+-- file has to be re-runnable. `apply.py` has no transaction around a migration —
+-- CockroachDB will not take several schema changes in one — so a file that fails partway
+-- leaves the schema between its two states, and the only defence is that every statement
+-- can be run again. The `ADD COLUMN`s above get that from `IF NOT EXISTS`; these two get
+-- it from here. Dropping a constraint you are about to re-add loses nothing, so it is
+-- correctly absent from the set of statements apply.py's destructive guard looks for.
+--
+-- That guard reads the *raw file text*, comments included, which is worth knowing before
+-- writing about it: naming the destructive statements in a sentence here is enough to
+-- make this file refuse to apply. Deliberately conservative — it would rather stop a
+-- migration whose prose mentions one than miss a migration that performs one — and the
+-- cost is that a comment has to describe them without naming them, as this one does.
+
 -- Rank is a position in a list, so zero and negatives are not merely unlikely, they
 -- are meaningless. The constraint is NOT VALID against existing rows for the reason
 -- every migration in this directory is additive: this is a shared, live cluster, and
 -- pre-migration rows carry NULL, which passes anyway.
+ALTER TABLE thread DROP CONSTRAINT IF EXISTS thread_decided_rank_positive;
 ALTER TABLE thread ADD CONSTRAINT thread_decided_rank_positive
     CHECK (decided_rank IS NULL OR decided_rank > 0);
 
@@ -107,6 +122,7 @@ ALTER TABLE thread ADD CONSTRAINT thread_decided_rank_positive
 -- checked. Enforcing that here means the reader never has to handle a half-written
 -- decision, and the writer finds out immediately rather than at replay time, which
 -- may be days later and in front of somebody asking why we emailed their client.
+ALTER TABLE thread DROP CONSTRAINT IF EXISTS thread_decision_is_whole;
 ALTER TABLE thread ADD CONSTRAINT thread_decision_is_whole
     CHECK (
         (decided_at_hlc IS NULL AND decided_rank IS NULL AND decided_distance IS NULL)

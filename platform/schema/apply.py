@@ -44,6 +44,27 @@ CARRIED: dict[str, tuple[str, ...]] = {
     "005_party_first.sql": ("tenant", "artist", "artist_profile"),
 }
 
+#: Migrations that only make sense on a multi-region cluster, and the reason.
+#:
+#: This exists because applying one to a single-region cluster does not fail cleanly —
+#: it fails *halfway*. `024` adds `contact_country`, backfills it, sets it NOT NULL, and
+#: only then reaches `ADD REGION`, which is the statement a single-region cluster
+#: refuses. The statements before it have already committed by then (see the note on
+#: atomicity below), so the table is left carrying a NOT NULL column nothing writes, and
+#: every insert into `contact_route` starts failing with a constraint violation that
+#: names a column whose migration appears, from the output, not to have applied.
+#:
+#: Measured 2026-08-13 against a fresh Basic cluster: exactly that happened, and it took
+#: nineteen sender tests down with it. The guard below turns that into a refusal before
+#: the first statement runs.
+MULTI_REGION_ONLY: dict[str, str] = {
+    "024_regional_by_row.sql": (
+        "it adds regions and sets a table's locality to REGIONAL BY ROW. The runbook at "
+        "docs/runbooks/multiregion.md provisions a throwaway three-region cluster for "
+        "this; it is deliberately not applied to the single-region production cluster, "
+        "because a region cannot be removed once added."),
+}
+
 
 def statements(sql: str) -> list[str]:
     without_comments = re.sub(r"--[^\n]*", "", sql)
@@ -96,6 +117,19 @@ def main() -> int:
         return 1
 
     with psycopg.connect(url, autocommit=True) as conn:
+        reason = MULTI_REGION_ONLY.get(path.name)
+        if reason is not None:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) FROM [SHOW REGIONS]")
+                regions = cur.fetchone()[0]
+            if regions < 2:
+                print(f"REFUSING: {path.name} needs a multi-region cluster and this one "
+                      f"has {regions} region.\n\n{reason}\n\n"
+                      "Applying it here would not fail cleanly — the statements before "
+                      "the first region change would commit, leaving the schema half "
+                      "migrated. See MULTI_REGION_ONLY in this file.")
+                return 1
+
         if carried:
             print("-- carried over --")
             for table in carried:
@@ -133,6 +167,19 @@ def main() -> int:
             except Exception as exc:  # noqa: BLE001 — the message is the product
                 print(f"  {i:3d} FAILED  {head}")
                 print(f"       {exc}")
+                # Statements before this one have already committed. There is no
+                # transaction around the file — `conn` is autocommit, deliberately,
+                # because CockroachDB will not run several schema changes in one
+                # transaction — so a mid-file failure is a *partially applied* migration
+                # and not a no-op. Saying so is the difference between an operator who
+                # re-runs and one who spends an hour wondering why a column exists that
+                # this file appears not to have created.
+                if i > 1:
+                    print(f"\n  {i - 1} statement(s) before it already committed. "
+                          f"{path.name} is now PARTIALLY APPLIED — the schema is in "
+                          "neither its before nor its after state. Inspect it before "
+                          "re-running: the statements above are individually idempotent "
+                          "where they say IF NOT EXISTS, and are not where they do not.")
                 return 1
             print(f"  {i:3d} ok      {head}")
 

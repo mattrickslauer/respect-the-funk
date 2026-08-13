@@ -1,0 +1,61 @@
+A hundred and seventy thousand radio stations, curators and shows. For any
+given single, maybe two hundred of them matter.
+
+Miss by a little, and you are not marketing. You are spam.
+
+This is CockroachDB's vector index. Look at the plan: the filters live
+inside the index prefix. Tenant, model, contactable. The search runs in
+the filtered subspace — not a scan with a WHERE clause bolted on
+afterwards.
+
+And that prefix starts with tenant_id. The same column a static test
+proves every single statement in this codebase carries.
+
+One column. Our security boundary and our partition key at once.
+
+pgvector can do the similarity. It cannot make one decision do both jobs.
+
+No orchestrator. Agents never call each other — a changefeed on the memory
+tables wakes the next one. The database is the event bus.
+
+So kill half the fleet mid-run. The work still finishes. A dead worker's
+lease expires and the row comes back on its own.
+
+And the one thing we can never take back — the send — commits its claim
+before the network call. Two workers, same name, one lead. The name cannot
+tell them apart. The token can.
+
+Serializable by default. A fence that fails closed.
+
+We email real people. So we hold real data about them — and European law
+says where that data may live.
+
+Same table. Same query. This row is in Virginia. This one is physically in
+Ireland, because she is a European contact.
+
+One logical table. Residency per row, enforced by the database instead of
+by us remembering. In Postgres that is three databases and a
+synchronisation problem you own forever.
+
+Now lose a region. It keeps answering.
+
+We emailed this curator on Tuesday. Why her?
+
+Here is the same shortlist, re-run against the memory exactly as it was at
+the moment we sent. Same index. Same embeddings. Same lesson that moved
+her up four places.
+
+Four extra words of SQL. No audit table. No event log. No versioned copy
+of anything.
+
+Every agentic system can tell you what it knows. This one tells you what
+it believed, when it acted.
+
+Postgres cannot do that at any price.
+
+One database. The index, the scheduler, the outbox, the event bus, the
+audit log. Ask it questions in English.
+
+It scales to zero between releases.
+
+All of that cost less than a coffee.

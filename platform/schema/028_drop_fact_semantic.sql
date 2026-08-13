@@ -1,0 +1,66 @@
+-- =============================================================================
+-- 028_drop_fact_semantic.sql — an index nothing writes, for a query nobody runs
+-- =============================================================================
+--
+-- `007_vector_index.sql` built three vector indexes and argued for each. Two of the
+-- arguments held. This one did not, and the honest thing is to remove it rather than
+-- keep paying for it while it indexes nothing.
+--
+--     CREATE VECTOR INDEX fact_semantic
+--         ON party_fact (tenant_id, model, status, embedding vector_cosine_ops);
+--
+-- Measured against the live cluster on 2026-08-13:
+--
+--   * `party_fact` holds 45,125 rows and **0** of them have an `embedding`.
+--   * **No code writes that column.** A grep across `rtf_platform/` finds one mention,
+--     in a docstring in `embed.py` describing the schema. There is no agent, no
+--     backfill, no stage. It was never populated because nothing was ever written to
+--     populate it.
+--   * **No query reads it.** `test_vector_plans.EXPECTED_VECTOR_QUERY_SITES` is the
+--     authoritative census of every `<=>` site in the package — it is recomputed from
+--     the AST on every test run, so it cannot drift — and it lists four:
+--     `agents.retrieve` over `party_chunk`, `agents.shortlist` and
+--     `agents.shortlist_as_of` over `party`, and `lessons.retrieve_for` over `lesson`.
+--     None of them touch `party_fact`.
+--
+-- So the index has never accelerated a query, because there is no query, and has never
+-- had anything to accelerate it over, because there are no vectors.
+--
+--
+-- ## Why drop rather than backfill
+--
+-- The tempting move is to embed the 45,110 facts and let the index light up. It costs
+-- about a third of a cent, which is the problem: it is cheap enough to do for the wrong
+-- reason. It would turn a truthful "one vector index does real work" into a number that
+-- looks better and means nothing, because the queries that would use it still would not
+-- exist. That is paying to improve a metric rather than a product, and this repository
+-- has spent a lot of words refusing exactly that trade elsewhere — `profiles.py` rule 1
+-- deletes text that every row shares for the same reason a number every reader
+-- misreads should not be manufactured.
+--
+-- R2 over concluded facts is a genuinely good idea and may well come back. When it
+-- does it arrives as a *feature*: a writer that embeds facts, a query that retrieves
+-- them, an `EXPLAIN` assertion in `test_vector_plans` proving the plan, and an entry in
+-- that file's census. Re-adding the index is then one line of the change that uses it,
+-- which is the right order. `007`'s reasoning for the prefix — `status` in the index so
+-- a retracted fact can never surface in a retrieval — is preserved above and in `007`
+-- itself, so nothing about the design is lost by removing the object.
+--
+--
+-- ## What this costs and does not cost
+--
+-- No rows. A vector index holds no data of its own; every fact, its provenance, its
+-- basis chain and its `status` are untouched. What goes away is write amplification on
+-- a table that takes bulk inserts from every discovery stage, and one entry in the
+-- schema that a reader would otherwise reasonably assume was load-bearing.
+--
+-- `chunk_semantic` and `party_shortlist` are deliberately not touched. `chunk_semantic`
+-- serves `agents.retrieve`, which is R2 and is real; `party_chunk` being empty today is
+-- a *backlog* — no `embed_document` lead has been queued — and not an absence of a
+-- writer. The difference between those two situations is the whole point of this file.
+--
+-- `DROP INDEX` is not among the statements `apply.py`'s destructive guard looks for, and
+-- correctly so: an index carries no data, and this one can be recreated verbatim from
+-- `007` by anyone who needs it back.
+
+DROP INDEX IF EXISTS party_fact@fact_semantic;

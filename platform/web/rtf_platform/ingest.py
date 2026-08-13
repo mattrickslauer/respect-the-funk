@@ -26,7 +26,8 @@ import psycopg
 from psycopg.rows import dict_row
 
 from rtf_platform import (
-    agents, fcc, fleet, mail, outreach, profiles, radiobrowser, sender, spend,
+    agents, fcc, fleet, mail, outreach, podcastindex, profiles, radiobrowser, sender,
+    spend,
 )
 
 
@@ -292,6 +293,98 @@ def index_streams(conn: psycopg.Connection, tenant_id: str,
                      "no genre or website yet"),
                 )
                 queued += cur.rowcount
+    return queued
+
+
+def feed_id_range(text: str) -> tuple[int, int | None]:
+    """`"0-20000"` into `(0, 20000)`; `""` into `(0, None)`, meaning the whole index.
+
+    Anything else raises. There is no lenient reading of `--index-podcasts 0..20000` or
+    `--index-podcasts 20000` on offer, because every lenient reading of a *range* is a
+    guess about which end the operator meant, and guessing wrong here seeds thousands of
+    leads against the wrong part of a four-million-feed index. A typo should cost one
+    error message.
+    """
+    raw = text.strip()
+    if not raw:
+        return 0, None
+    first, sep, last = raw.partition("-")
+    if not sep:
+        raise ValueError(
+            f"{text!r} is not a feed-ID range. Give it as FIRST-LAST, e.g. 0-20000, "
+            "or pass --index-podcasts with no value to cover the whole index.")
+    try:
+        start, ceiling = int(first.strip()), int(last.strip())
+    except ValueError:
+        raise ValueError(
+            f"{text!r} is not a feed-ID range: both ends must be whole numbers, "
+            "e.g. 0-20000") from None
+    if start < 0 or ceiling < start:
+        raise ValueError(
+            f"{text!r} does not run upwards from zero; a feed-ID range is "
+            "FIRST-LAST with 0 <= FIRST <= LAST")
+    return start, ceiling
+
+
+def index_podcasts(conn: psycopg.Connection, tenant_id: str, *, start: int = 0,
+                   ceiling: int | None = None) -> int:
+    """Queue `index_podcasts` leads, one per block of Podcast Index feed IDs.
+
+    Tenant-scoped, like `index_stations` and `index_streams` and for the same reason: the
+    podcast index belongs to the label rather than to any one artist, and the value of
+    building it up front is that when a single is ready the shows that might play it are
+    already embedded and the shortlist is a query. `lead_scope_shape` requires
+    `party_id IS NULL` for a tenant-scoped lead, so none is passed.
+
+    **The ceiling is read from the source, not chosen.** `podcastindex.newest_feed_id()`
+    asks the index how far it currently goes, exactly as this module's `index_streams`
+    asks Radio Browser for its country counts. A hardcoded ceiling would quietly stop
+    covering the tail of the index the week after it was written, and quietly is the
+    problem — nothing would report an error, there would simply be fewer podcasts.
+
+    **Credentials are demanded before the first INSERT, not at the first fetch.** Podcast
+    Index cannot be read at all without a key, so seeding fifteen thousand leads that
+    every worker will fail is worse than refusing: it fills the frontier with work nobody
+    can do and buries the one sentence that says why. `podcastindex.credentials()` raises
+    `NotConfigured` with the signup URL and the two variable names, which is the whole of
+    what an operator needs. This is called even when `ceiling` is supplied by hand, so
+    there is no path that seeds a frontier an unconfigured deployment cannot work.
+
+    `target_hash` is `index_podcasts:<block start>`, so re-seeding is a no-op on blocks
+    that already exist and adds only the ones the index has grown since. Re-reading a
+    block that has already run will be `--requeue index_podcasts` — the same explicit
+    hand-crank as `--reanalyse`, rather than a silent re-fetch nobody asked for.
+
+    **What this does not yet do is work the leads it writes.** `agents.REGISTRY` has no
+    `index_podcasts` entry, because `agents.py` is owned by concurrent work; migration
+    023 declares the stage `enabled = false` and explains the split at length. Until that
+    entry lands, a seeded lead sits `pending` — visible in the frontier and in
+    `research.fleet`'s "declared, not running" branch, which is an accurate report of the
+    state rather than a stage that appears to run and writes nothing. That is also why
+    `--requeue index_podcasts` exits today: it validates the kind against the registry.
+    """
+    podcastindex.credentials()
+    if ceiling is None:
+        ceiling = podcastindex.newest_feed_id()
+    if start > ceiling:
+        raise ValueError(
+            f"a block range runs upwards: start={start} is past ceiling={ceiling}")
+
+    queued = 0
+    with conn.cursor() as cur:
+        for first in podcastindex.blocks_to(ceiling, start=start):
+            target = str(first)
+            cur.execute(
+                """INSERT INTO lead (tenant_id, scope_kind, kind, mode, adapter,
+                                     target, target_hash, platform, reason, score)
+                   VALUES (%s, 'tenant', 'index_podcasts', 'auto', 'podcast_index',
+                           %s, %s, 'podcast_index', %s, 0.6)
+                   ON CONFLICT (tenant_id, target_hash) DO NOTHING""",
+                (tenant_id, target, f"index_podcasts:{target}",
+                 f"podcast feeds {first}–{first + podcastindex.BLOCK} have never been "
+                 "read for music shows"),
+            )
+            queued += cur.rowcount
     return queued
 
 
@@ -634,6 +727,14 @@ def main() -> int:
                         help="pull genre tags and websites from Radio Browser, "
                              "enriching stations already indexed and adding the rest. "
                              "Comma-separated ISO country codes; default US.")
+    parser.add_argument("--index-podcasts", nargs="?", const="", default=None,
+                        metavar="FIRST-LAST",
+                        help="index music podcasts from Podcast Index as "
+                             "counterparties. Optionally a feed-ID range, e.g. 0-20000 "
+                             "— which is how to exercise the stage without seeding the "
+                             "whole four-million-feed index. Default is the whole "
+                             "index. Needs PODCASTINDEX_API_KEY and "
+                             "PODCASTINDEX_API_SECRET.")
     parser.add_argument("--recompose-profiles", action="store_true",
                         help="rewrite every counterparty's embedded profile text with "
                              "the current composition rules, and re-queue its embedding")
@@ -731,6 +832,19 @@ def main() -> int:
             print(f"queued {queued} index_streams lead(s) for "
                   f"{', '.join(countries) if countries else 'US'}")
 
+        if args.index_podcasts is not None:
+            # Both failures exit rather than raise: a malformed range and a missing key
+            # are things an operator fixes in the next shell line, and a traceback is a
+            # worse way to say either. Neither is defaulted around.
+            try:
+                first, ceiling = feed_id_range(args.index_podcasts)
+                queued = index_podcasts(conn, tenant_id, start=first, ceiling=ceiling)
+            except (ValueError, podcastindex.NotConfigured, podcastindex.Refused) as exc:
+                sys.exit(str(exc))
+            scope = (f"feed IDs {first}–{ceiling}" if ceiling is not None
+                     else "the whole index")
+            print(f"queued {queued} index_podcasts lead(s) for {scope}")
+
         if args.enrich_genre:
             queued = enrich_genre(conn, tenant_id)
             print(f"queued {queued} enrich_genre lead(s)")
@@ -766,6 +880,7 @@ def main() -> int:
                 or args.discover or args.prospect or args.reanalyse is not None
                 or args.requeue or args.index_stations is not None
                 or args.index_streams is not None or args.enrich_genre
+                or args.index_podcasts is not None
                 or args.close_thread):
             print("draining the frontier")
             kinds = args.kinds.split(",") if args.kinds else None

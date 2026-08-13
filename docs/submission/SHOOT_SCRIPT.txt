@@ -1,0 +1,418 @@
+===============================================================================
+SHOOT SCRIPT — "What did it believe, when it acted?"
+Respect the Funk / CockroachDB x AWS Hackathon
+===============================================================================
+
+STATUS      DRAFT FOR REVIEW. Not binding until the Day-4 gate in the build
+            plan passes.
+SUPERSEDES  docs/submission/DEMO_SCRIPT.md, written for the pre-build state,
+            whose "what must not be said" forbids four things this depends on.
+            See CHANGES FROM DEMO_SCRIPT.md at the bottom.
+RUNTIME     393 spoken words. 2:48 read straight at 140 wpm; 2:26 at 115%.
+            That leaves ~34s of headroom under the 3:00 cap, and the headroom
+            is the point: it buys long holds on the EXPLAIN, the two rankings
+            and the region failure. Silence on a readable terminal is not dead
+            air — it is the evidence. Counts below are measured, not estimated;
+            re-measure after editing any VO block.
+DATE        2026-08-13
+
+
+-------------------------------------------------------------------------------
+THE THESIS, IN ONE SENTENCE
+-------------------------------------------------------------------------------
+
+    We map the music industry into a vector index and then mail real human
+    beings, one at a time — and CockroachDB is the only reason we can do that
+    in the right jurisdiction and prove afterwards what we believed when we
+    did it.
+
+Every beat serves that sentence. If a shot does not advance it, cut it, however
+good it looks. No brand story. No founder story. No feature tour.
+
+
+-------------------------------------------------------------------------------
+THREE RULES THAT GOVERN EVERY BEAT
+-------------------------------------------------------------------------------
+
+1. EVERY CLAIM IS ON SCREEN AS OUTPUT, not asserted by a voice. Show the
+   EXPLAIN. Show the refusal. Show SHOW RANGES. A judge who mutes the audio
+   should still be able to verify the argument.
+
+2. THE VIDEO AND THE REPOSITORY ARGUE THE SAME THING. Assume the judge never
+   opens the app and the repo is read by a model. TOOLS.md and the sponsor
+   audit are what gets read when the video ends.
+
+3. CONCEDE THE REPLACEABLE PARTS. Volunteering that pgvector could serve the
+   retrieval is what makes beats 4 and 5 land. A pitch that claims everything
+   is unique gets nothing believed.
+
+
+-------------------------------------------------------------------------------
+THE ARC — SIX BEATS
+-------------------------------------------------------------------------------
+
+    #  BEAT                             WORDS  @115%  WEIGHT     DEPENDS ON
+    1  The problem is precision            32    11s  setup      W6
+    2  The filters are inside the index    81    28s  proof      (built)
+    3  The database is the runtime         90    31s  proof      W2
+    4  The row lives where the law says    77    27s  ARGUMENT   W1
+    5  What did it believe, when it acted? 80    28s  ARGUMENT   W3
+    6  Close                               33    11s  landing    W7
+                                         -----  -----
+                                           393   2:26
+
+    Beats 4 and 5 are the video. Everything before them is earning the right to
+    make those two claims; everything after is getting out of the way. If you
+    are over time, cut from 1, 2 and 6 — never from 4 or 5.
+
+    Previous draft had seven beats. The lease-token beat merged into beat 3:
+    it shared a kill -9 with the changefeed beat, and by its own admission
+    argued correct engineering rather than irreplaceability. One strong beat
+    beats two adjacent ones.
+
+
+===============================================================================
+BEAT 1 — THE PROBLEM IS PRECISION, NOT REACH
+===============================================================================
+
+SCREEN
+    Terminal. One query, one number, held:
+
+        SELECT count(*) FROM party WHERE party_class = 'counterparty';
+         count
+        --------
+         175000        <- FILM THE REAL NUMBER ON THE DAY
+
+    Cut to a shortlist for one artist. Five rows, genre beside each.
+
+VO
+    A hundred and seventy thousand radio stations, curators and shows. For any
+    given single, maybe two hundred of them matter.
+
+    Miss by a little, and you are not marketing. You are spam.
+
+WHY
+    States the problem as a retrieval problem and puts the N on screen before
+    anyone thinks to ask. "You are spam" is the stake — it makes precision a
+    moral constraint rather than a performance metric, which is what licenses
+    the whole rest of the video.
+
+DEPENDS ON  W6 (corpus to ~175k).
+FALLBACK    Say the true number. "Fourteen thousand" works identically —
+            the beat is about the ratio, not the magnitude. Never round up.
+
+
+===============================================================================
+BEAT 2 — THE FILTERS ARE INSIDE THE INDEX
+===============================================================================
+
+SCREEN
+    EXPLAIN, full frame. Hold it long enough to actually read. Highlight
+    "vector search" and "prefix spans".
+
+        • vector search
+            table: party@party_shortlist
+            target count: 20
+            prefix spans: [/'1f9e6dd3…'/'amazon.titan-embed-text-v2'
+                           /'counterparty'/'contactable' - …]
+
+    Then two seconds of the static test failing against a deliberately broken
+    query — proof the assertion is real and not decoration.
+
+VO
+    This is CockroachDB's vector index. Look at the plan: the filters live
+    inside the index prefix. Tenant, model, contactable. The search runs in the
+    filtered subspace — not a scan with a WHERE clause bolted on afterwards.
+
+    And that prefix starts with tenant_id. The same column a static test proves
+    every single statement in this codebase carries.
+
+    One column. Our security boundary and our partition key at once.
+
+    pgvector can do the similarity. It cannot make one decision do both jobs.
+
+WHY
+    "prefix spans" is the detail a technical judge reads as real. But the
+    second half is the strongest idea in the system and has never been said out
+    loud: filtered ANN and multi-tenant isolation fall out of ONE schema
+    decision. Correctness and performance from the same column.
+
+    The concession in the last line is doing work. It is the first of two
+    places we hand the opposition its best argument, which is what makes the
+    irreplaceable beats credible when they arrive.
+
+DEPENDS ON  Nothing. Already true, already asserted by test_vector_plans.py on
+            every run.
+NOTE        Re-run EXPLAIN on the day. The model string reads Titan only if W5
+            landed; openai:text-embedding-3-small is fine and changes nothing.
+
+
+===============================================================================
+BEAT 3 — THE DATABASE IS THE RUNTIME
+===============================================================================
+
+SCREEN
+    Three moves, fast:
+
+    1. SHOW CHANGEFEED JOBS — one running job. A row written to outbox, and
+       with no poller running anywhere, an agent run appears two seconds later.
+    2. kill -9 across half the fleet. The work still completes.
+    3. lease_race_demo.py Act 2 — both workers named ingest-cli:
+
+           terminal 1 claims b844314c…  owner=ingest-cli  token=2bb498ed…
+           terminal 2 claims b844314c…  owner=ingest-cli  token=6f72beda…
+           terminal 1 tries to complete -> REFUSED: lease lost
+           terminal 2 completes         -> OK
+
+VO
+    No orchestrator. Agents never call each other — a changefeed on the memory
+    tables wakes the next one. The database is the event bus.
+
+    So kill half the fleet mid-run. The work still finishes. A dead worker's
+    lease expires and the row comes back on its own.
+
+    And the one thing we can never take back — the send — commits its claim
+    before the network call. Two workers, same name, one lead. The name cannot
+    tell them apart. The token can.
+
+    Serializable by default. A fence that fails closed.
+
+WHY
+    The brief's headline criterion is "memory as integral to agent
+    functionality — not supplementary". This is the sharpest available answer:
+    the memory layer is not where agents look things up, it is what makes them
+    run at all. A row changing IS the scheduling primitive.
+
+    Merging the lease token in here is what makes the beat land. Alone it was a
+    correctness footnote; here it completes the thought — the database starts
+    the work AND refuses the work that should not happen. Same substrate, both
+    directions.
+
+    A missed pitch costs nothing. A second pitch to a curator who already got
+    one costs us that curator permanently. That asymmetry is why the fence
+    fails closed.
+
+DEPENDS ON  W2 (changefeed to Lambda). The lease half is already built.
+FALLBACK    If W2 slipped, cut the first paragraph and open on kill -9. Do NOT
+            soften it to "the database could wake agents" — SHOW CHANGEFEED
+            JOBS returning nothing is a ten-second falsification. The beat
+            still works as a resilience-and-refusal beat.
+
+
+===============================================================================
+BEAT 4 — THE ROW LIVES WHERE THE LAW SAYS
+===============================================================================
+
+    *** ARGUMENT BEAT. Slow down. Let the two rows sit on screen. ***
+
+SCREEN
+    SHOW RANGES FROM TABLE contact_route. Two rows, side by side, held:
+    one US contact on us-east-1 replicas, one EU contact on eu-west-1.
+    Same table. Same query. Different continents.
+
+        SHOW SURVIVAL GOAL FROM DATABASE defaultdb;   ->  region
+
+    Then take a region offline. The shortlist keeps answering.
+
+VO
+    We email real people. So we hold real data about them — and European law
+    says where that data may live.
+
+    Same table. Same query. This row is in Virginia. This one is physically in
+    Ireland, because she is a European contact.
+
+    One logical table. Residency per row, enforced by the database instead of
+    by us remembering. In Postgres that is three databases and a
+    synchronisation problem you own forever.
+
+    Now lose a region. It keeps answering.
+
+WHY
+    This answers "why not Postgres" with no hedging at all.
+
+    It matters that it is contact_route specifically. That table holds personal
+    data for named individuals our agents actually contact. This is not a
+    synthetic demo of a feature — it is the one table where residency is a
+    legal obligation rather than an architectural preference.
+
+    "Because she is a European contact" is deliberate. A person, not a row.
+    The whole video is about a system that acts on people.
+
+DEPENDS ON  W1 (three-region cluster, REGIONAL BY ROW, SURVIVE REGION FAILURE).
+FALLBACK    CUT THE BEAT ENTIRELY and say nothing about regions. SHOW REGIONS
+            on Basic returns one row and a judge checks it instantly. Beat 5
+            can carry the irreplaceability argument alone — it is strong enough.
+IMPORTANT   The hosted demo runs single-region on Basic. This beat is filmed
+            against an ephemeral cluster stood up from committed Terraform and
+            torn down after. THE SUBMISSION TEXT MUST SAY SO PLAINLY. See WHAT
+            MUST NOT BE SAID, item 1.
+
+
+===============================================================================
+BEAT 5 — WHAT DID IT BELIEVE, WHEN IT ACTED?
+===============================================================================
+
+    *** THE CENTREPIECE. Give it the most room. Nothing else in this video is
+        Postgres-impossible at any price. This is. ***
+
+SCREEN
+    A sent message in the console. Click through to the ranking that justified
+    it. Then the same shortlist query, twice, side by side:
+
+        - now
+        - AS OF SYSTEM TIME, at the exact timestamp stamped on that send
+
+    Different rankings. Same query. Highlight the four words of SQL, and the
+    lesson row that moved her.
+
+VO
+    We emailed this curator on Tuesday. Why her?
+
+    Here is the same shortlist, re-run against the memory exactly as it was at
+    the moment we sent. Same index. Same embeddings. Same lesson that moved her
+    up four places.
+
+    Four extra words of SQL. No audit table. No event log. No versioned copy of
+    anything.
+
+    Every agentic system can tell you what it knows. This one tells you what it
+    believed, when it acted.
+
+    Postgres cannot do that at any price.
+
+WHY
+    Every agentic memory demo answers "what does the agent know". Almost none
+    answers "why did it decide that, THEN" — because answering it normally
+    means building an event-sourcing subsystem: temporal tables, a versioned
+    copy of every embedding, an audit log of every rerank. And even then you
+    only replay what you thought in advance to record.
+
+    AS OF SYSTEM TIME replays state nobody chose to record — including the
+    vector ranking itself. That is the difference between an audit log and a
+    time machine.
+
+    "What it believed, when it acted" is the line the whole video is built to
+    earn. Do not step on it. Let it sit before the close.
+
+    The moral weight is the point: this system emails strangers. Reconstructing
+    the exact belief state behind an irreversible act is not a feature. It is
+    the condition for being allowed to run it at all.
+
+DEPENDS ON  W3 (time travel on the production path + outreach audit trail).
+CONSTRAINT  Reachable depth is governed by gc.ttlseconds and is roughly TEN
+            HOURS today, not seven days — the GC threshold only moves forward
+            from when it was raised. Pick a send inside the window. If asked:
+            "seven days of retention from the day we raised it; ten hours
+            available today."
+
+
+===============================================================================
+BEAT 6 — CLOSE
+===============================================================================
+
+SCREEN
+    SELECT sum(cost_micro_usd)/1e6 FROM agent_run;   -> film the real number.
+    The console's natural-language box: a question typed in English, answered
+    over the catalogue through the Cloud Managed MCP Server.
+    Then: node_count: 0.
+
+VO
+    One database. The index, the scheduler, the outbox, the event bus, the
+    audit log. Ask it questions in English.
+
+    It scales to zero between releases.
+
+    All of that cost less than a coffee.
+
+WHY
+    Consolidation is the practical argument under the whole video: not Postgres
+    plus a vector store plus Redis plus a queue plus an audit pipeline. One
+    system, five jobs, zero nodes at rest.
+
+    The MCP flash is deliberate — it satisfies the second required CockroachDB
+    tool by being a product feature rather than developer tooling.
+
+    End on cost because it reframes everything above as achievable rather than
+    expensive. The judge should finish thinking "I could build on this", not
+    "that must have taken a team".
+
+DEPENDS ON  W7 (MCP in the console).
+FALLBACK    Drop the English-question clause and that shot. Vector indexing
+            plus the ccloud CLI already satisfies 2-of-4, so nothing breaks.
+
+
+===============================================================================
+WHAT MUST BE TRUE BEFORE THE CAMERA ROLLS
+===============================================================================
+
+Nothing here may be filmed against a claim that is not true on the day.
+
+  [ ] W6 — corpus at its measured cap; the count on screen is real.
+  [ ] W4 — party_fact and party_chunk backfilled, so R2 retrieval is not an
+      empty table sitting behind a confident sentence.
+  [ ] W2 — SHOW CHANGEFEED JOBS returns a running job, or beat 3 opens on
+      kill -9 instead.
+  [ ] W3 — at least one real send exists WITH its as-of timestamp recorded,
+      and at least one lesson row, so beat 5 shows two genuinely different
+      rankings rather than the same list twice. THIS IS THE LONG POLE.
+  [ ] W1 — ephemeral three-region cluster up, REGIONAL BY ROW applied,
+      SHOW RANGES filmed, cluster torn down after. Or beat 4 is cut.
+  [ ] Re-run every EXPLAIN and every count on the day. The plans are asserted
+      by tests, but film the real output, never this file's copy of it.
+  [ ] One real send to a verified address. SES sandbox is sufficient.
+
+
+===============================================================================
+WHAT MUST NOT BE SAID
+===============================================================================
+
+1. DO NOT IMPLY THE HOSTED DEMO IS MULTI-REGION. It runs on Basic,
+   single-region. Beat 4 is filmed against an ephemeral cluster. The submission
+   must say, in plain words: "the hosted demo runs single-region; the
+   multi-region topology is reproducible from the committed Terraform in under
+   twenty minutes and is shown in the video." A claim a judge can falsify with
+   one SHOW REGIONS is worse than no claim — and that rule does not relax
+   because the capability is real but not currently deployed.
+
+2. NO SCALE CLAIMS. 175k is twelve times where we started and enough to make
+   the index necessary. It is not a distributed-systems problem, and saying it
+   is invites the one comparison we lose. Label the benchmark with its N.
+
+3. DO NOT CLAIM SEVEN DAYS OF TIME TRAVEL. Ten hours is what the cluster can
+   serve today.
+
+4. DO NOT CLAIM ANY BEAT WHOSE WORKSTREAM SLIPPED. Every beat has a fallback
+   for exactly this reason. Cutting a beat costs fifteen seconds. Getting
+   caught costs the submission.
+
+5. NO FEATURE TOUR. Every capability named here is named because it does a job
+   in this product. If it has no job, it is not in the video, however
+   impressive it sounds.
+
+
+===============================================================================
+CHANGES FROM DEMO_SCRIPT.md (2026-08-11)
+===============================================================================
+
+DEMO_SCRIPT.md forbade four things because they were not built. This script
+depends on all four, and each is now a workstream with an acceptance test:
+
+    changefeed      forbidden 08-11  ->  beat 3, gated on W2
+    multi-region    forbidden 08-11  ->  beat 4, gated on W1
+    Bedrock         forbidden 08-11  ->  beat 2 model string, gated on W5
+    scale           forbidden 08-11  ->  beat 1, gated on W6, still labelled
+
+The prohibition was correct on 08-11 and remains correct for anything that does
+not land. The gates, not the ambition, are what keep this honest.
+
+Structural changes from that draft:
+
+  - Seven beats became six. The lease-token beat merged into beat 3.
+  - Beat 5 (time travel) moves from a demo endpoint onto the production path,
+    which turns it from a capability claim into a product claim.
+  - Beat 2 gains the tenant_id argument, which existed in the schema since
+    migration 009 and has never appeared in any pitch.
+  - The title changed. "What did it believe, when it acted?" is the question
+    the product answers and no competitor's will.
+
+===============================================================================

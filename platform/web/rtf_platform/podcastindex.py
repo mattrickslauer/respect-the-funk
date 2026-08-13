@@ -513,15 +513,20 @@ def profile_text(feed: dict[str, Any]) -> str:
     was a sentence every other document also had. `role="podcast"` is why that function
     takes a role at all.
 
-    The blurb is appended **here** rather than passed in, and that is a gap being named
-    rather than hidden: `profiles.compose` has no slot for free text because no source
-    before this one had any. Adding one belongs in `profiles.py`, in a change that can
-    also decide what `from_facts` should do with it — until then this is the only caller
-    that appends, and it appends exactly one field.
+    The blurb goes in through `compose`'s `prose` slot rather than being appended after
+    it. An earlier version of this function did append, and said so — `compose` had no
+    slot for free text because no source before this one had any — which made this module
+    the fourth composer that `profiles.py` was written to prevent. It is now the third
+    caller of the one composer and nothing more: every rule about what reaches a vector,
+    including how much of a long description does and what is stripped out of it, is
+    argued and applied in one file.
 
-    Rule 2 of `profiles.py` still holds: the show's *name* is not in here. `party.name`
-    carries it for display, and putting it in the vector is how an artist called Deep
-    House gets shortlisted to a show called Deep House.
+    Rule 2 of `profiles.py` still holds, and now holds against the blurb too. The show's
+    *name* is not composed in — `party.name` carries it for display, and putting it in
+    the vector is how an artist called Deep House gets shortlisted to a show called Deep
+    House. The title and the host are passed as `names` so that the same rule reaches
+    inside the publisher's own prose, where "Deep House Weekly is a weekly…" would
+    otherwise put it back.
     """
     cats = categories(feed)
     kind = show_kind(cats)
@@ -531,11 +536,15 @@ def profile_text(feed: dict[str, Any]) -> str:
     # same claim in words the embedding can use. The fact keeps the distinction for
     # anyone querying `party_fact` — which is where a distinction belongs when the prose
     # cannot say it well.
-    body = profiles.compose(
+    return profiles.compose(
         genres=cats,
         station_kind="" if kind in {"other", "music_show"} else kind,
         language=str(feed.get("language") or "").strip(),
         role="podcast",
+        prose=blurb(feed),
+        # The two identity strings this source knows. `title` is the show's own name and
+        # `host` is a person's; both are written as facts elsewhere, and neither belongs
+        # in the vector. `profiles` decides what to do with them — this module only says
+        # which strings they are.
+        names=[str(feed.get("title") or ""), host(feed)],
     )
-    said = blurb(feed)
-    return f"{body} {said}".strip() if said else body

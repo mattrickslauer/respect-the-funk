@@ -113,7 +113,7 @@ SCREEN
         • vector search
             table: party@party_shortlist
             target count: 20
-            prefix spans: [/'1f9e6dd3…'/'amazon.titan-embed-text-v2'
+            prefix spans: [/'1f9e6dd3…'/'openai:text-embedding-3-small'
                            /'counterparty'/'contactable' - …]
 
     Then two seconds of the static test failing against a deliberately broken
@@ -143,8 +143,10 @@ WHY
 
 DEPENDS ON  Nothing. Already true, already asserted by test_vector_plans.py on
             every run.
-NOTE        Re-run EXPLAIN on the day. The model string reads Titan only if W5
-            landed; openai:text-embedding-3-small is fine and changes nothing.
+NOTE        Re-run EXPLAIN on the day and film the real output. The model string
+            reads openai:text-embedding-3-small and will keep reading it — see
+            WHAT MUST NOT BE SAID item 6. That changes nothing about this beat:
+            the argument is the prefix spans, not whose embeddings fill them.
 
 
 ===============================================================================
@@ -389,6 +391,25 @@ WHAT MUST NOT BE SAID
    in this product. If it has no job, it is not in the video, however
    impressive it sounds.
 
+6. DO NOT CLAIM BEDROCK. It is implemented and unreachable on this account, and
+   both walls were measured rather than assumed:
+
+     - on-demand inference quota is 0 requests/minute, and Service Quotas marks
+       it Adjustable: false (L-26C560CE), so it cannot be raised;
+     - batch inference returns "Your account is not authorized to perform this
+       action. Please create a support case" — reproduced in us-east-1 and
+       us-west-2, with a real IAM role and a real bucket, while
+       simulate_principal_policy says the caller IS allowed.
+
+   The Service Quotas table publishes batch's 100k-records-per-job row for every
+   account whether or not batch is switched on, which is what misled two earlier
+   passes at this: a quota is a number, an entitlement is a permission.
+
+   Embeddings are openai:text-embedding-3-small and will be on the 18th. AWS is
+   satisfied by Lambda and S3, which are real and in use. The Bedrock adapter
+   stays in the tree as the demonstrated-correct path behind a switch AWS throws;
+   that is a sentence for the repository, not for the video.
+
 
 ===============================================================================
 CHANGES FROM DEMO_SCRIPT.md (2026-08-11)
@@ -399,7 +420,9 @@ depends on all four, and each is now a workstream with an acceptance test:
 
     changefeed      forbidden 08-11  ->  beat 3, gated on W2
     multi-region    forbidden 08-11  ->  beat 4, gated on W1
-    Bedrock         forbidden 08-11  ->  beat 2 model string, gated on W5
+    Bedrock         forbidden 08-11  ->  STILL FORBIDDEN, and now for a measured
+                                        reason rather than an unbuilt one. See
+                                        item 6 below.
     scale           forbidden 08-11  ->  beat 1, gated on W6, still labelled
 
 The prohibition was correct on 08-11 and remains correct for anything that does

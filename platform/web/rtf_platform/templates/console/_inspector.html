@@ -88,7 +88,11 @@
                              {% if f.placeholder %}accept="{{ f.placeholder }}"{% endif %}
                              {% if f.required %}required{% endif %}>
                     {% else %}
-                      <input type="{{ 'url' if f.kind == 'url' else 'text' }}"
+                      {# `date` gets the native picker. A release date typed into a text
+                         box arrives in whatever format the operator's habits supply,
+                         and the server parses one — so the constraint belongs on the
+                         input rather than in an error message after the fact. #}
+                      <input type="{{ 'url' if f.kind == 'url' else ('date' if f.kind == 'date' else 'text') }}"
                              id="f-{{ s.action }}-{{ f.name }}" name="{{ f.name }}"
                              value="{{ f.value }}"
                              {% if f.placeholder %}placeholder="{{ f.placeholder }}"{% endif %}

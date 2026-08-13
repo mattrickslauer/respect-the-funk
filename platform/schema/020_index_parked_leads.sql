@@ -1,0 +1,45 @@
+-- =============================================================================
+-- 020_index_parked_leads.sql — the console stops full-scanning `lead` to draw a badge
+-- =============================================================================
+--
+-- Every console page calls `_nav()`, and `_nav()` counts parked leads:
+--
+--     SELECT count(*) FROM lead WHERE tenant_id = %s AND state = 'failed'
+--
+-- There was no index that could answer it. `lead_claimable` is partial on
+-- `state = 'pending'`, which is the opposite half of the table, so the planner fell
+-- back to `lead@lead_pkey` with `spans: FULL SCAN` — all 10,288 rows read to return
+-- the number 4.
+--
+-- On its own that scan costs ~310ms and nobody would have noticed. What made it a
+-- hang is who else is holding the table. `index_streams` (added in 019) enriches a
+-- page of 500 stations inside one transaction with a 600s lease, and `lead` is one
+-- of the six tables it writes. A full scan has to walk across every write intent
+-- that worker has left behind, so the count blocks in the lock table for as long as
+-- the worker's transaction stays open. Measured on the live cluster:
+--
+--     execution time: 3m38s
+--     KV contention time: 3m38s        <- the whole of it
+--     sql cpu time: 4ms                <- the actual work
+--
+-- And because `db.connect()` hands every request the same cached connection, one
+-- request stuck in the lock table stalls every other request behind it. That is why
+-- the symptom was "the console never loads" rather than "one badge is slow".
+--
+-- The fix is to stop reading rows the query was never interested in. A partial index
+-- on the failed half is four entries wide, and — this is the part that matters — it
+-- shares no keys with the pending rows `index_streams` is writing, so the count can
+-- no longer be blocked by a worker that is nowhere near a parked lead.
+--
+-- `updated_at DESC` is in the key because `research.today()` reads the same half of
+-- the table for the needs-you queue, ordered the same way:
+--
+--     ... WHERE l.tenant_id = %s AND l.state = 'failed'
+--     ORDER BY l.updated_at DESC LIMIT 20
+--
+-- One index serves both, and a second index for the same four rows would be upkeep
+-- with nothing to show for it.
+
+CREATE INDEX IF NOT EXISTS lead_parked
+    ON lead (tenant_id, updated_at DESC)
+    WHERE state = 'failed';

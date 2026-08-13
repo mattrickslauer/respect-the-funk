@@ -149,6 +149,21 @@ class ProfileMode(str, Enum):
 #: select and the validation cannot drift apart.
 ARTIST_STATUSES: tuple[str, ...] = ("active", "paused", "archived")
 
+#: The same for a recording. A separate tuple rather than a reuse of `ARTIST_STATUSES`
+#: even though the members are identical today: a paused artist stops the agents, an
+#: archived recording is a catalogue statement, and collapsing them would make the next
+#: divergence a schema migration instead of an edit here.
+RECORDING_STATUSES: tuple[str, ...] = ("active", "paused", "archived")
+
+#: The credit roles the console offers. `party_credit.role` is an open `STRING` — a
+#: contract can credit anyone as anything — so this is the set an operator can pick from
+#: rather than the set the column allows. `main_artist` and `featured` lead because
+#: `research.tracks` and `assets.queue_analysis` both key on exactly those two: they are
+#: what decides whose record it is, and therefore whose budget an analysis is spent from.
+CREDIT_ROLES: tuple[str, ...] = (
+    "main_artist", "featured", "producer", "writer", "remixer", "engineer",
+)
+
 
 # ------------------------------------------------------------------ identifiers
 

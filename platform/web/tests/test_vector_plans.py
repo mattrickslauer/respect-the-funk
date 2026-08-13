@@ -83,6 +83,7 @@ REAL_EMBEDDING_MODEL = "openai:text-embedding-3-small"
 EXPECTED_VECTOR_QUERY_SITES: set[tuple[str, str]] = {
     ("agents.py", "retrieve"),    # R2 over party_chunk — this file's Task 1.
     ("agents.py", "shortlist"),   # R1 over party — already fixed; the model to copy.
+    ("agents.py", "shortlist_as_of"),  # R1 again, read-only, over the index as it was.
     ("lessons.py", "retrieve_for"),  # R2's general pass over lesson.
 }
 
@@ -378,6 +379,66 @@ class VectorSearchPlans(unittest.TestCase):
         _, captured = _capture_vector_queries(
             agents.shortlist, self.conn, self.tenant, artist_id, gate=gate)
         self._assert_plans_as_vector_search(captured, expected_queries=2)
+
+    # ------------------------------------------------------- agents.shortlist_as_of
+
+    def test_shortlist_as_of_plans_as_a_vector_search(self) -> None:
+        """R1's read-only twin, in both of the forms it can take.
+
+        `shortlist_as_of` exists because `AS OF SYSTEM TIME` and a read-write transaction
+        are mutually exclusive, so it is a second copy of the same vector search rather
+        than a flag on `shortlist` — and a second copy is exactly the thing that drifts.
+        The `@party_shortlist` hint and the four prefix-equality predicates have to hold
+        here for the same reason they do there, and nothing but an `EXPLAIN` proves it.
+
+        Both forms are run: without `as_of` (the plain read) and with it (the clause
+        actually spliced into the SQL). The historical one uses `-5s` rather than the
+        demo's `-30m` deliberately — any interval inside the GC window plans identically,
+        and a short one cannot fail on a cluster that has not been running long enough to
+        have thirty minutes of history to read.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO party (tenant_id, slug, name, party_class, contact_state,
+                                      profile_embedding, embedding_model)
+                   VALUES (%s, 'artist', 'the artist', 'roster', 'contactable',
+                           %s::VECTOR(1024), %s)
+                RETURNING id""",
+                (self.tenant, self._vec(0.1), REAL_EMBEDDING_MODEL),
+            )
+            artist_id = str(cur.fetchone()["id"])
+            for i in range(3):
+                cur.execute(
+                    """INSERT INTO party (tenant_id, slug, name, party_class,
+                                          contact_state, profile_embedding, embedding_model)
+                       VALUES (%s, %s, %s, 'counterparty', 'contactable',
+                               %s::VECTOR(1024), %s)""",
+                    (self.tenant, f"curator-{i}", f"curator {i}",
+                     self._vec(0.1 * i), REAL_EMBEDDING_MODEL),
+                )
+
+        for as_of in ("", "-5s"):
+            with self.subTest(as_of=as_of or "(live)"):
+                _, captured = _capture_vector_queries(
+                    agents.shortlist_as_of, self.conn, self.tenant, artist_id,
+                    as_of=as_of)
+                self.assertEqual(
+                    ("AS OF SYSTEM TIME" in captured[0][0]), bool(as_of),
+                    "the AS OF SYSTEM TIME clause is present exactly when `as_of` is")
+                self._assert_plans_as_vector_search(captured, expected_queries=1)
+
+    def test_shortlist_as_of_rejects_a_timestamp_it_did_not_validate(self) -> None:
+        """The `as_of` value is interpolated into the SQL, not bound — CockroachDB
+        rejects a placeholder there — so the regex guard in front of it is the only thing
+        between a public endpoint and an injection. Cluster-gated alongside the plan test
+        because it drives the real function; the assertion itself needs no database, and
+        the point is that the guard runs *before* any SQL is built.
+        """
+        for bad in ("-30m; DROP TABLE party", "now()", "-30x", "'", "-99999m"):
+            with self.subTest(as_of=bad):
+                with self.assertRaises(ValueError):
+                    agents.shortlist_as_of(self.conn, self.tenant, str(uuid.uuid4()),
+                                           as_of=bad)
 
     # ------------------------------------------------------------- agents.retrieve
 

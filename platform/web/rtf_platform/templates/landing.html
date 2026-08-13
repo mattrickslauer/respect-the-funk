@@ -1,147 +1,371 @@
-{% extends "_public.html" %}
-{# What anyone without a session sees. The console is closed — there is no anonymous
-   read of it any more — so this page has exactly two jobs: let the operator in, and let
-   a label ask for a call. Everything else on it exists to make the second one worth
-   doing. #}
-{% block title %}Respect the Funk — an agentic OS for record labels{% endblock %}
+{# The public demo surface, aimed at one reader: a CockroachDB judge.
 
-{% block topnav %}
-  <a class="btn" href="#demo">Book a demo</a>
-  <a class="btn p" href="/signin">Sign in</a>
-{% endblock %}
+   Deliberately NOT extending `_public.html`. That layout dresses the sign-in form and
+   the old marketing page, and this is a third thing with a different job — it has to
+   make an argument about a database, interactively, to someone who will not create an
+   account. Inheriting the console's chrome would have meant fighting it in every rule.
 
-{% block body %}
+   Design note, so the next person does not "tidy" it: the display face is **monospace**
+   on purpose. This product is call signs, licence records and query plans; setting the
+   headlines in the same face as the output is the point, not an oversight. #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Respect the Funk — built on CockroachDB</title>
+<meta name="description" content="A music distribution agentic OS. 14,000 radio stations in a distributed vector index, and an outbox that cannot send twice.">
+<style>
+:root{
+  /* A transmitter room at night. Amber is the meter, teal is the carrier, and the
+     purple belongs to CockroachDB alone — it is never used for our own UI. */
+  --void:#080b11; --panel:#0f151e; --panel2:#131b26; --rule:#1c2531;
+  --ink:#e9eef6; --dim:#8493a6; --faint:#5c6a7d;
+  --phosphor:#ffb340; --carrier:#35d0c0; --crdb:#7d4dff; --warn:#ff6b6b;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono",Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--void);color:var(--ink);
+  font:16px/1.65 var(--sans);-webkit-font-smoothing:antialiased;
+  background-image:
+    radial-gradient(900px 400px at 78% -8%, rgba(125,77,255,.13), transparent 62%),
+    radial-gradient(700px 340px at 8% 4%, rgba(255,179,64,.07), transparent 60%);
+  background-attachment:fixed;
+}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+h1,h2,h3{font-family:var(--mono);font-weight:600;letter-spacing:-.02em;margin:0}
+
+/* ---------- eyebrow: a label, not decoration. It names the section's claim. ---------- */
+.eyebrow{
+  font:600 11px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;
+  color:var(--phosphor);display:flex;align-items:center;gap:10px;margin-bottom:18px;
+}
+.eyebrow::after{content:"";flex:1;height:1px;background:var(--rule)}
+
+/* ---------- masthead ---------- */
+.masthead{padding:34px 0 12px;border-bottom:1px solid var(--rule)}
+.built{
+  display:inline-flex;align-items:center;gap:12px;padding:8px 14px;
+  border:1px solid rgba(125,77,255,.42);border-radius:999px;
+  background:rgba(125,77,255,.09);font:500 13px/1 var(--sans);color:#cbb8ff;
+}
+.built .mark{
+  font:700 14px/1 var(--mono);letter-spacing:-.03em;color:#fff;
+  background:var(--crdb);padding:6px 9px;border-radius:5px;
+}
+.hero{padding:56px 0 44px}
+.hero h1{font-size:clamp(30px,5.1vw,60px);line-height:1.04;max-width:19ch}
+.hero h1 em{font-style:normal;color:var(--phosphor)}
+.hero p{max-width:60ch;color:var(--dim);font-size:18px;margin:22px 0 0}
+.hero .sub{color:var(--faint);font:13px/1.6 var(--mono);margin-top:18px}
+
+/* ---------- counters ---------- */
+.counters{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));
+  gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:10px;
+  overflow:hidden;margin:8px 0 64px;
+}
+.counter{background:var(--panel);padding:18px 16px}
+.counter b{display:block;font:600 26px/1 var(--mono);color:var(--ink);letter-spacing:-.02em}
+.counter span{display:block;margin-top:7px;font:11px/1.3 var(--mono);
+  letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.counter.live b{color:var(--carrier)}
+
+section{padding:64px 0;border-top:1px solid var(--rule)}
+section h2{font-size:clamp(21px,2.7vw,29px);max-width:24ch}
+section .lede{color:var(--dim);max-width:66ch;margin:16px 0 0}
+
+/* ---------- THE SIGNATURE: the tuner ---------- */
+.tuner{margin-top:34px;border:1px solid var(--rule);border-radius:12px;
+  background:var(--panel);overflow:hidden}
+.tuner-head{display:flex;flex-wrap:wrap;gap:14px;align-items:center;
+  padding:16px 18px;border-bottom:1px solid var(--rule);background:var(--panel2)}
+.tuner-head .who{font:600 13px/1 var(--mono);color:var(--ink)}
+.dial{display:flex;gap:0;border:1px solid var(--rule);border-radius:7px;overflow:hidden}
+.dial button{
+  appearance:none;border:0;background:transparent;color:var(--dim);cursor:pointer;
+  font:600 12px/1 var(--mono);padding:9px 13px;letter-spacing:.04em;
+  border-right:1px solid var(--rule);transition:background .15s,color .15s;
+}
+.dial button:last-child{border-right:0}
+.dial button[aria-pressed="true"]{background:var(--phosphor);color:#1a1206}
+.dial button:hover:not([aria-pressed="true"]){background:var(--panel);color:var(--ink)}
+.dial button:focus-visible{outline:2px solid var(--carrier);outline-offset:-2px}
+
+.rows{padding:8px 0;min-height:220px}
+.row{display:grid;grid-template-columns:34px 1fr 74px;gap:14px;align-items:center;
+  padding:9px 18px}
+.row .rank{font:600 11px/1 var(--mono);color:var(--faint);text-align:right}
+.row .name{font:13px/1.35 var(--mono);color:var(--ink);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+/* The meter: cosine distance as signal strength. Nearer = longer bar. */
+.meter{height:5px;border-radius:3px;background:var(--rule);margin-top:6px;overflow:hidden}
+.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--carrier),var(--phosphor));
+  width:0;transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.row .d{font:11px/1 var(--mono);color:var(--faint);text-align:right}
+.row.moved .name{color:var(--phosphor)}
+.tuner-foot{padding:12px 18px;border-top:1px solid var(--rule);background:var(--panel2);
+  font:11px/1.5 var(--mono);color:var(--faint)}
+.tuner-foot b{color:var(--carrier);font-weight:600}
+
+/* ---------- code ---------- */
+pre{background:#060910;border:1px solid var(--rule);border-radius:10px;padding:18px;
+  overflow-x:auto;font:12.5px/1.65 var(--mono);color:#c9d6e6;margin:26px 0 0}
+pre .hl{color:var(--phosphor)}
+pre .cm{color:var(--faint)}
+
+/* ---------- two-column claims ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:34px}
+.card{border:1px solid var(--rule);border-radius:11px;background:var(--panel);padding:20px}
+.card h3{font-size:14px;color:var(--phosphor);margin-bottom:9px}
+.card p{margin:0;color:var(--dim);font-size:14.5px}
+.card code{font:12px/1.5 var(--mono);color:var(--carrier);background:#060910;
+  padding:2px 5px;border-radius:4px}
+
+/* ---------- verdict table ---------- */
+.verdict{width:100%;border-collapse:collapse;margin-top:30px;font-size:14px}
+.verdict th{text-align:left;font:600 11px/1 var(--mono);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--faint);padding:0 12px 12px;border-bottom:1px solid var(--rule)}
+.verdict td{padding:13px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+.verdict td:first-child{font:12.5px/1.5 var(--mono);color:var(--ink)}
+.verdict .no{color:var(--dim)}
+.verdict .yes{color:var(--phosphor);font-weight:600}
+
+footer{border-top:1px solid var(--rule);padding:40px 0 64px;color:var(--faint);font-size:13px}
+footer a{color:var(--carrier)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}
+@media (max-width:620px){.row{grid-template-columns:26px 1fr 62px;gap:10px}}
+</style>
+</head>
+<body>
+
 <div class="wrap">
 
-  <section>
-    <h1>An agentic OS for record labels.</h1>
-    <p class="lede">
-      Release <i>n+1</i> should cost less and land harder than release <i>n</i>.
-      That only happens if <b>something accumulates in between</b> — the relationships,
-      the audience you actually reached, and what you learned the last four times.
-      This is the thing that accumulates.
-    </p>
-    <p>
-      <a class="btn p lg" href="#demo">Book a demo call</a>
-      <a class="btn lg" href="/signin" style="margin-left:.4rem">Sign in</a>
-    </p>
-  </section>
+  <header class="masthead">
+    <div class="built">
+      <span class="mark">CockroachDB</span>
+      <span>Built for the CockroachDB&nbsp;×&nbsp;AWS Hackathon — Agentic Memory</span>
+    </div>
+  </header>
 
-  <section>
-    <h2>What it does</h2>
+  <div class="hero">
+    <h1>We mail real people, one at a time. <em>The database is why that is safe.</em></h1>
+    <p>Respect the Funk is a music distribution agentic OS. It maps the industry into a
+       vector index — {{ "{:,}".format(stats.get('counterparties', 0)) }} radio stations
+       and curators, from public registers — then works out who should hear a record and
+       writes to them individually. Not a blast. Every page below is live against the
+       cluster.</p>
+    <p class="sub">read-only · no sign-in · every number queried on page load</p>
+  </div>
 
-    <p class="lede" style="margin-bottom:1.4rem">
-      <b>It researches your artists, and it does not stop.</b>
-      Not a one-off scrape — a queue that keeps going across every platform, including
-      the ones your artist has no account on. Fan activity is content about them whether
-      they take part or not.
-    </p>
+  <div class="counters">
+    <div class="counter"><b>{{ "{:,}".format(stats.get('counterparties', 0)) }}</b><span>counterparties</span></div>
+    <div class="counter live"><b>{{ "{:,}".format(stats.get('embedded', 0)) }}</b><span>embedded</span></div>
+    <div class="counter"><b>{{ "{:,}".format(stats.get('with_genre', 0)) }}</b><span>with genre</span></div>
+    <div class="counter"><b>{{ stats.get('lessons', 0) }}</b><span>lessons learned</span></div>
+    <div class="counter"><b>{{ stats.get('sent', 0) }}</b><span>sent, ever</span></div>
+    <div class="counter"><b>${{ "%.4f"|format((stats.get('micro_usd', 0) or 0) / 1000000) }}</b><span>total spend</span></div>
+  </div>
 
-    <p class="lede" style="margin-bottom:1.4rem">
-      <b>It builds an index of everyone who can help.</b>
-      Creators, playlist runners, programmers, writers — with how you found each one, and
-      where the relationship actually stands. Two of your artists can never work the same
-      creator at once, because the database refuses it rather than trusting anyone to
-      remember.
-    </p>
+  <!-- ===================== 1. THE TUNER ===================== -->
+  <section id="tune">
+    <div class="eyebrow">Distributed vector indexing</div>
+    <h2>Tune the index, and then tune it to last week.</h2>
+    <p class="lede">This runs R1 — the shortlist query — against
+      {{ "{:,}".format(stats.get('embedded', 0)) }} embedded counterparties, live. The bar
+      is cosine distance drawn as signal strength: longer is nearer. Now move the dial.
+      The same query runs against the index <em>as it existed</em> at that moment, using
+      <code style="color:var(--carrier)">AS&nbsp;OF&nbsp;SYSTEM&nbsp;TIME</code> — no audit
+      table, no snapshot, no versioned copy of anything.</p>
 
-    <p class="lede" style="margin-bottom:1.4rem">
-      <b>It runs every channel at the same time.</b>
-      UGC, radio, curators, press. One engine, a different playbook each — adding a
-      channel is configuration, not a new product. Nothing sends without you approving it.
-    </p>
-
-    <p class="lede" style="margin-bottom:0">
-      <b>It learns from replies, not from stream counts.</b>
-      Streams are confounded by playlist adds, algorithmic push, seasonality and your own
-      campaigns firing at once. A reply is fast and clean. The fast signal is what teaches
-      it; the slow one only audits whether the fast one was lying.
-    </p>
-  </section>
-
-  <section>
-    <h2>Why you would trust it</h2>
-
-    <p class="lede" style="margin-bottom:1.4rem">
-      <b>It shows its work.</b> Every single thing it believes records what that belief
-      stands on, back to the page it was read from or the person who said it. Retract one
-      fact and everything built on top of it goes stale on its own.
-    </p>
-
-    <p class="lede" style="margin-bottom:1.4rem">
-      <b>It refuses to guess.</b> When your own answer and a public record disagree about
-      who owns a master, it stops and asks you. Rights are exactly where quietly picking a
-      winner costs real money.
-    </p>
-
-    <p class="lede" style="margin-bottom:0">
-      <b>It tells you what it skipped.</b> When an artist hits their daily budget, the
-      work it dropped is written down. A system that truncates silently reads as
-      “we covered everything” when it did not.
-    </p>
-  </section>
-
-  <section id="demo">
-    <h2>Book a demo call</h2>
-
-    {% if sent %}
-      <p class="notice">
-        <b>Got it — thank you.</b> Your request is recorded and somebody will write back
-        to {{ sent }} to find a time.
-      </p>
-    {% elif error %}
-      <p class="notice bad"><b>That did not go through.</b> {{ error }}</p>
-    {% endif %}
-
-    <p class="lede" style="font-size:16px; margin-bottom:1.6rem">
-      Tell us about the roster and we will walk you through it against one of your own
-      artists rather than a canned demo.
-    </p>
-
-    <form method="post" action="/demo#demo">
-      <div class="two">
-        <div class="field">
-          <label for="name">Your name</label>
-          <input id="name" name="name" required maxlength="120" autocomplete="name"
-                 value="{{ form.name or '' }}">
-        </div>
-        <div class="field">
-          <label for="label">Label</label>
-          <input id="label" name="label" required maxlength="160" autocomplete="organization"
-                 value="{{ form.label or '' }}">
+    <div class="tuner">
+      <div class="tuner-head">
+        <span class="who">artist: Hallow Youth — dance, 124bpm</span>
+        <div class="dial" role="group" aria-label="Query the index as of">
+          <button data-w="now" aria-pressed="true">now</button>
+          <button data-w="-15m" aria-pressed="false">−15m</button>
+          <button data-w="-1h" aria-pressed="false">−1h</button>
+          <button data-w="-3h" aria-pressed="false">−3h</button>
+          <button data-w="-6h" aria-pressed="false">−6h</button>
         </div>
       </div>
-      <div class="two">
-        <div class="field">
-          <label for="email">Email</label>
-          <input id="email" name="email" type="email" required maxlength="254"
-                 autocomplete="email" value="{{ form.email or '' }}">
-        </div>
-        <div class="field">
-          <label for="roster_size">Roster size</label>
-          <select id="roster_size" name="roster_size">
-            {% for opt in roster_sizes %}
-              <option {% if form.roster_size == opt %}selected{% endif %}>{{ opt }}</option>
-            {% endfor %}
-          </select>
-        </div>
+      <div class="rows" id="rows" aria-live="polite"></div>
+      <div class="tuner-foot" id="foot">querying…</div>
+    </div>
+  </section>
+
+  <!-- ===================== 2. THE PLAN ===================== -->
+  <section id="plan">
+    <div class="eyebrow">The filters are inside the index</div>
+    <h2>It is a vector search, not a scan with a filter bolted on.</h2>
+    <p class="lede">Four predicates — tenant, embedding model, party class, contact state —
+      sit in the index prefix, so the search happens inside the filtered subspace rather
+      than over everything followed by a discard. A test asserts this plan on every run,
+      because a query that quietly degrades to a full scan still returns rows that look
+      correct.</p>
+<pre><span class="cm">-- EXPLAIN, live cluster</span>
+• lookup join
+│ table: party@party_pkey
+└── <span class="hl">• vector search</span>
+      table: party@party_shortlist
+      target count: 20
+      <span class="hl">prefix spans:</span> [/'1f9e6dd3…'/'openai:text-embedding-3-small'/'counterparty'/'contactable'
+                   - /'1f9e6dd3…'/'openai:text-embedding-3-small'/'counterparty'/'contactable']</pre>
+  </section>
+
+  <!-- ===================== 3. IRREVERSIBILITY ===================== -->
+  <section id="send">
+    <div class="eyebrow">What we cannot take back</div>
+    <h2>A missed pitch costs nothing. A second pitch costs us the curator.</h2>
+    <p class="lede">Sending is the one act this system cannot undo, so the guarantees are
+      constraints rather than conventions — things the database will not let us get wrong,
+      even when we are in a hurry.</p>
+
+    <div class="grid">
+      <div class="card">
+        <h3>One open thread per counterparty</h3>
+        <p>A partial unique index on <code>(tenant_id, counterparty_id)</code> where the
+           thread is not closed. Two campaigns cannot work the same person at once, and
+           the lock releases the moment the conversation ends.</p>
       </div>
-      <div class="field">
-        <label for="note">What are you trying to move? <span class="hint">Optional.</span></label>
-        <textarea id="note" name="note" maxlength="2000"
-                  placeholder="A release coming up, a channel that has stopped working, an artist you cannot get traction on…">{{ form.note or '' }}</textarea>
+      <div class="card">
+        <h3>One outbox row per message</h3>
+        <p><code>UNIQUE (message_id)</code>. A double approval is a failed insert, not a
+           second copy in flight. The gate is safe to double-click.</p>
       </div>
-      <button class="btn p lg" type="submit">Request a call</button>
-      <p class="hint" style="margin-top:.8rem">
-        Goes to the label, not to a CRM. No list, no sequence, and one reply from a person.
-      </p>
-    </form>
+      <div class="card">
+        <h3>A token only the database mints</h3>
+        <p>Every agent action is fenced on a <code>lease_token</code> stamped at claim
+           time. Two workers with the same name, one lead: the name cannot tell them
+           apart, the token can. The stale claim is refused.</p>
+      </div>
+      <div class="card">
+        <h3>Opting out is terminal</h3>
+        <p>Ask us to stop and <code>opted_out</code> is a state no discovery stage can
+           overwrite. Guessed addresses are refused outright. Not spam by construction,
+           not by policy.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 4. THE HONEST PART ===================== -->
+  <section id="verdict">
+    <div class="eyebrow">Where Postgres would do</div>
+    <h2>Most of this is replaceable. One thing is not.</h2>
+    <p class="lede">A submission that claims everything is unique is one a judge stops
+      believing. So here is the audit we ran on ourselves, and the single row that
+      survived it.</p>
+
+    <table class="verdict">
+      <thead><tr><th>What we use</th><th>Postgres equivalent</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>Vector index, cosine, prefix-filtered</td><td class="no">pgvector + composite indexes</td><td class="no">replaceable</td></tr>
+        <tr><td>SERIALIZABLE by default</td><td class="no">one SET statement</td><td class="no">replaceable</td></tr>
+        <tr><td>FOR UPDATE SKIP LOCKED</td><td class="no">Postgres shipped it first</td><td class="no">replaceable</td></tr>
+        <tr><td>Scale to zero</td><td class="no">Neon, Aurora Serverless</td><td class="no">replaceable</td></tr>
+        <tr><td>AS OF SYSTEM TIME over a vector index</td><td class="no">nothing</td><td class="yes">irreplaceable</td></tr>
+      </tbody>
+    </table>
+
+    <p class="lede" style="margin-top:26px">Our agents contact real people. When someone
+      asks <em>why did you write to me</em>, we re-run the ranking that caused it against
+      the memory as it stood at that second — the same index, the same embeddings, the
+      same lessons. Four extra words of SQL. That is the reason an autonomous system that
+      acts on the world can be held to account, and it is the reason this is built on
+      CockroachDB.</p>
   </section>
 
   <footer>
-    Respect the Funk · the console is private —
-    <a href="/signin">sign in</a> if you have a token.
+    <p>Respect the Funk — a music distribution agentic OS, built for the CockroachDB × AWS
+       Hackathon, 2026. Counterparties are drawn from the FCC's public licence register and
+       the Radio Browser open database. CockroachDB is a trademark of Cockroach Labs; this
+       page is a hackathon submission, not an endorsement.</p>
+    <p style="margin-top:18px">
+      <a href="/signin">Operator sign-in</a> — the console is private; everything on this
+      page is read-only and needs no account.
+    </p>
   </footer>
-
 </div>
-{% endblock %}
+
+<script>
+(function () {
+  var rowsEl = document.getElementById('rows');
+  var footEl = document.getElementById('foot');
+  var dial = document.querySelectorAll('.dial button');
+  var previous = {};   // name -> rank, so a re-rank can be shown rather than described
+
+  function render(data, window) {
+    var rows = data.rows || [];
+    if (!rows.length) {
+      rowsEl.innerHTML = '<div class="row"><span class="rank"></span>' +
+        '<span class="name" style="color:var(--faint);white-space:normal">' +
+        escapeHtml(data.note || 'Nothing was embedded at that timestamp yet.') +
+        '</span><span class="d"></span></div>';
+      footEl.textContent = 'no rows at ' + window;
+      return;
+    }
+    // Distances cluster tightly, so the meter is scaled across the returned range
+    // rather than 0–1. An honest bar that is all-full tells you nothing.
+    var ds = rows.map(function (r) { return r.distance; });
+    var lo = Math.min.apply(null, ds), hi = Math.max.apply(null, ds), span = (hi - lo) || 1;
+    var moved = 0;
+
+    rowsEl.innerHTML = rows.map(function (r, i) {
+      var pct = 96 - ((r.distance - lo) / span) * 74;
+      var was = previous[r.name];
+      var didMove = was !== undefined && was !== i;
+      if (didMove) moved++;
+      return '<div class="row' + (didMove ? ' moved' : '') + '">' +
+        '<span class="rank">' + String(i + 1).padStart(2, '0') + '</span>' +
+        '<span><span class="name">' + escapeHtml(r.name) + '</span>' +
+        '<span class="meter"><i data-w="' + pct.toFixed(1) + '"></i></span></span>' +
+        '<span class="d">' + r.distance.toFixed(4) + '</span></div>';
+    }).join('');
+
+    requestAnimationFrame(function () {
+      rowsEl.querySelectorAll('.meter i').forEach(function (b) {
+        b.style.width = b.getAttribute('data-w') + '%';
+      });
+    });
+
+    previous = {};
+    rows.forEach(function (r, i) { previous[r.name] = i; });
+    footEl.innerHTML = window === 'now'
+      ? 'ranked <b>now</b> · ' + rows.length + ' of ' +
+        (document.querySelector('.counter.live b').textContent) + ' embedded'
+      : 'ranked <b>AS OF SYSTEM TIME \'' + window + '\'</b>' +
+        (moved ? ' · <b>' + moved + '</b> moved position since' : ' · same order as now');
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function load(window) {
+    footEl.textContent = 'querying the cluster…';
+    fetch('/demo/tune?artist=hallow-youth&window=' + encodeURIComponent(window))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { render(d, window); })
+      .catch(function () {
+        footEl.textContent = 'the cluster did not answer — it scales to zero, so the ' +
+          'first query after an idle period can take a moment. Try again.';
+      });
+  }
+
+  dial.forEach(function (b) {
+    b.addEventListener('click', function () {
+      dial.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+      load(b.getAttribute('data-w'));
+    });
+  });
+
+  load('now');
+})();
+</script>
+</body>
+</html>

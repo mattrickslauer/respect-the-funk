@@ -426,6 +426,215 @@ def delete_presence(conn: psycopg.Connection, tenant_id: str, subject_id: str,
         return cur.rowcount > 0
 
 
+# ------------------------------------------------------------------ recordings
+
+#: What the console reads back after a write. `isrc_raw` travels with `isrc` everywhere
+#: for the reason `domain` gives: the canonical form is what joins, and the raw form is
+#: what the provenance model needs in order to show what a source actually said.
+_RECORDING_COLUMNS = ("id, slug, title, isrc, isrc_raw, duration_ms, released_on, "
+                      "status, created_at")
+
+
+def get_recording(conn: psycopg.Connection, tenant_id: str,
+                  recording_id: str) -> dict[str, Any] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {_RECORDING_COLUMNS} FROM recording "
+            f"WHERE tenant_id = %s AND id = %s",
+            (tenant_id, recording_id),
+        )
+        return cur.fetchone()
+
+
+def create_recording(
+    conn: psycopg.Connection, tenant_id: str, *, title: str, isrc: str = "",
+    isrc_raw: str = "", released_on: Any = None, status: str = "active",
+) -> dict[str, Any]:
+    """One recording. The caller has already canonicalised the ISRC.
+
+    Deliberately *not* `ON CONFLICT DO NOTHING` on either unique index. A collision on
+    the slug means two different tracks with the same title, and a collision on the ISRC
+    means this exact master is already here — both are things the operator needs told,
+    and swallowing them would hand back a row they did not create as though they had.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""INSERT INTO recording (tenant_id, slug, title, isrc, isrc_raw,
+                                       released_on, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+             RETURNING {_RECORDING_COLUMNS}""",
+            (tenant_id, slugify(title), title, isrc, isrc_raw, released_on, status),
+        )
+        return cur.fetchone()
+
+
+def update_recording(
+    conn: psycopg.Connection, tenant_id: str, recording_id: str, *, title: str,
+    isrc: str = "", isrc_raw: str = "", released_on: Any = None,
+    status: str = "active",
+) -> dict[str, Any] | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""UPDATE recording SET slug = %s, title = %s, isrc = %s, isrc_raw = %s,
+                                     released_on = %s, status = %s
+                 WHERE tenant_id = %s AND id = %s
+             RETURNING {_RECORDING_COLUMNS}""",
+            (slugify(title), title, isrc, isrc_raw, released_on, status,
+             tenant_id, recording_id),
+        )
+        return cur.fetchone()
+
+
+#: How many times a serialization failure is retried before it is allowed to surface.
+#: Four is not tuning, it is the point past which "the cluster is busy" stops being the
+#: likely explanation and the operator deserves the error.
+_MAX_RETRIES = 4
+
+
+def _retrying(attempt: int, exc: psycopg.errors.SerializationFailure) -> None:
+    """Sleep before the next attempt, or re-raise on the last one.
+
+    `RETRY_SERIALIZABLE` is not a bug and not something to swallow: CockroachDB's
+    contract is that the client retries, because the alternative to a retry here is
+    blocking every other transaction that touches these rows. It is raised when a
+    transaction's read timestamp gets pushed past what its reads can be refreshed to —
+    which for `delete_recording` is a matter of duration rather than contention. The
+    cascade under `recording` reaches `recording_asset`, `party_fact` and `lead`, and on
+    a cluster that scales to zero the first delete after an idle period has been
+    measured at twenty seconds. Nothing is competing; the transaction is simply older
+    than the closed timestamp by the time it tries to commit.
+
+    Exponential, because if the cause *is* contention then retrying at the same cadence
+    reproduces it. This is deliberately not a general-purpose decorator: it is used by
+    the one function whose transaction is long enough to need it, and adding it to the
+    short ones would hide the day one of those starts needing it too.
+    """
+    import time
+
+    if attempt >= _MAX_RETRIES:
+        raise exc
+    time.sleep(0.1 * (2 ** attempt))
+
+
+def delete_recording(conn: psycopg.Connection, tenant_id: str,
+                     recording_id: str) -> list[str]:
+    """Delete the recording, the rows the database cannot cascade, and report the bytes.
+
+    Two tables need deleting by hand, and both for the reason `delete_party` documents:
+    `presence` and `party_credit` address their subject as `(subject_kind, subject_id)`
+    with no foreign key, which is the price of one table serving parties, recordings and
+    releases — so `ON DELETE CASCADE` never fires for either. Left behind, presence rows
+    keep the probe reconciler fetching a track that no longer exists, and credit rows
+    keep an artist's track count claiming a catalogue it does not have.
+
+    The return value is the other half. `recording_asset` *does* cascade, so the rows
+    vanish in the same statement — and with them the only record of which S3 objects
+    those rows were holding. A master is 50–100MB and the bucket bills for it forever, so
+    the keys are collected *before* the delete and handed back for the caller to remove
+    from the bucket, exactly as `assets.delete` does for one asset.
+
+    The same "is anything else pointing at these bytes" check `assets.delete` makes is
+    made here, against the rows that survive: `object_key` carries no unique index, so a
+    backfill or a future importer can legitimately point a second row at one object.
+    """
+    # Read before the transaction, not inside it. Under SERIALIZABLE the exposure to a
+    # retry is the length of the read-write transaction, and this one already contains a
+    # cascading delete — `recording_asset`, `party_fact` and `lead` all hang off
+    # `recording`. Wrapping two extra reads around that cascade was enough to get the
+    # transaction's read timestamp pushed and its refresh refused on a cluster this far
+    # away; the deletes are what need to be atomic, and only they are.
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT DISTINCT object_key FROM recording_asset
+                WHERE tenant_id = %s AND recording_id = %s AND object_key != ''""",
+            (tenant_id, recording_id),
+        )
+        keys = [r["object_key"] for r in cur.fetchall()]
+
+    # Retried rather than reported, per `_retrying`. Safe to repeat: a transaction that
+    # raises `SerializationFailure` committed nothing, and all three statements are
+    # idempotent anyway — so a second attempt sees exactly the state the first did.
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            with conn.transaction():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """DELETE FROM presence
+                            WHERE tenant_id = %s AND subject_kind = 'recording'
+                              AND subject_id = %s""",
+                        (tenant_id, recording_id),
+                    )
+                    cur.execute(
+                        """DELETE FROM party_credit
+                            WHERE tenant_id = %s AND subject_kind = 'recording'
+                              AND subject_id = %s""",
+                        (tenant_id, recording_id),
+                    )
+                    cur.execute(
+                        "DELETE FROM recording WHERE tenant_id = %s AND id = %s",
+                        (tenant_id, recording_id))
+                    deleted = cur.rowcount
+            break
+        except psycopg.errors.SerializationFailure as exc:
+            _retrying(attempt, exc)
+
+    if deleted == 0 or not keys:
+        return []
+
+    # Anything still pointing at one of these keys keeps its object — `object_key` has
+    # no unique index, so a backfill or an importer adopting existing objects can
+    # legitimately point a second row at one file. Asked after the commit, so what it
+    # sees is the state the caller is about to act on rather than a snapshot from
+    # before the cascade.
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT DISTINCT object_key FROM recording_asset
+                WHERE tenant_id = %s AND object_key = ANY(%s)""",
+            (tenant_id, keys),
+        )
+        still_referenced = {r["object_key"] for r in cur.fetchall()}
+    return [key for key in keys if key not in still_referenced]
+
+
+def add_credit(conn: psycopg.Connection, tenant_id: str, recording_id: str, *,
+               party_id: str, role: str) -> bool:
+    """Credit a party on a recording. Returns whether this created a new row.
+
+    `provenance` is `asserted` and not defaulted quietly: a credit typed in by an
+    operator is a different kind of claim from one an agent inferred off a release page,
+    and `SCOPE-RESET §2a` forbids the second wearing the first's clothes.
+
+    `split_percent` is left NULL on purpose — see `005_party_first.sql`. A default of 100
+    or an even split is a fabricated number in a column people will eventually trust with
+    money, and nobody typing a name into this form has been asked about splits.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO party_credit (tenant_id, party_id, subject_kind, subject_id,
+                                         role, provenance)
+               VALUES (%s, %s, 'recording', %s, %s, 'asserted')
+          ON CONFLICT (tenant_id, party_id, subject_kind, subject_id, role)
+          DO NOTHING""",
+            (tenant_id, party_id, recording_id, role),
+        )
+        return cur.rowcount > 0
+
+
+def delete_credit(conn: psycopg.Connection, tenant_id: str, recording_id: str,
+                  credit_id: str) -> bool:
+    """Scoped by subject as well as tenant, for the reason `delete_presence` gives: the
+    id alone is enough to find the row, which is why it is not enough to authorise
+    deleting it."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """DELETE FROM party_credit
+                WHERE tenant_id = %s AND subject_kind = 'recording'
+                  AND subject_id = %s AND id = %s""",
+            (tenant_id, recording_id, credit_id),
+        )
+        return cur.rowcount > 0
+
+
 # --------------------------------------------------------------- demo requests
 
 #: Field caps. This is the only write in the system reachable without a session, so the

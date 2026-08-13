@@ -31,8 +31,11 @@ from typing import Any
 
 import psycopg
 
+from psycopg.types.json import Json
+
 from rtf_platform import (
-    embed, fleet, harvested, lessons, repo, settings as settings_mod, sources, spend,
+    embed, fcc, fleet, harvested, lessons, radiobrowser, repo,
+    settings as settings_mod, sources, spend, wikipedia,
 )
 
 #: Target chunk size in characters. ~400 tokens at four characters per token, which is
@@ -802,6 +805,58 @@ def _write_embed_party(conn: psycopg.Connection, lead: dict[str, Any], gate: spe
 embed_party = fleet.NetworkAgent(fetch=_fetch_embed_party, write=_write_embed_party)
 
 
+def shortlist_as_of(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
+                    as_of: str = "", limit: int = 12) -> list[dict[str, Any]]:
+    """R1's vector search, read-only, optionally against the index as it was.
+
+    A separate function rather than a parameter on `shortlist`, for a reason that is not
+    tidiness. `shortlist` runs inside `conn.transaction()` because it *writes* — it
+    increments `lesson.hit_count` for every lesson the rerank consulted. A read-write
+    transaction cannot carry `AS OF SYSTEM TIME`; the two are mutually exclusive by
+    construction, in CockroachDB and in the concept. So the historical view has to be a
+    read, and saying so in the function's name is better than a flag that silently
+    disables the write half.
+
+    What survives is the part the demo is about: the same `party@party_shortlist` vector
+    search, the same four equality predicates on the index prefix, the same hint and the
+    same `<=>` ordering. What is dropped is the lesson rerank and the `presence` subquery
+    — neither is a vector operation, and leaving them out keeps this a plain read that
+    cannot take a lock or spend anything.
+
+    `as_of` is interpolated into the SQL rather than bound as a parameter because
+    CockroachDB requires `AS OF SYSTEM TIME` to be a constant expression at plan time; a
+    placeholder is rejected. **It is therefore validated against a strict pattern first,**
+    and anything else raises — this is reachable from a public endpoint, so the
+    alternative is a SQL injection with a database-shaped hole in it.
+    """
+    if as_of and not re.fullmatch(r"-\d{1,4}(s|m|h)", as_of):
+        raise ValueError(f"{as_of!r} is not a relative timestamp like '-30m'")
+    clause = f"AS OF SYSTEM TIME '{as_of}'" if as_of else ""
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT profile_embedding, embedding_model FROM party "
+            "WHERE tenant_id = %s AND id = %s", (tenant_id, party_id))
+        artist = cur.fetchone()
+        if artist is None or artist["profile_embedding"] is None:
+            return []
+
+        cur.execute(
+            f"""SELECT id, name,
+                       profile_embedding <=> %s::VECTOR(1024) AS distance
+                  FROM party@party_shortlist {clause}
+                 WHERE tenant_id = %s
+                   AND embedding_model = %s
+                   AND party_class = 'counterparty'
+                   AND contact_state = 'contactable'
+                 ORDER BY profile_embedding <=> %s::VECTOR(1024)
+                 LIMIT %s""",
+            (str(artist["profile_embedding"]), tenant_id, artist["embedding_model"],
+             str(artist["profile_embedding"]), limit),
+        )
+        return list(cur.fetchall())
+
+
 def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
               gate: spend.Gate, limit: int = 20) -> list[dict[str, Any]]:
     """R1 — given one of our artists, who should we take them to?
@@ -1430,6 +1485,539 @@ analyse_recording = fleet.NetworkAgent(fetch=_fetch_analyse_recording,
                                        write=_write_analyse_recording)
 
 
+# ------------------------------------------------------------ index_stations
+#
+# The stage that gives the label a *standing* counterparty index: when a single is
+# ready, the people who could play it are already in the database, already embedded,
+# already shortlistable. Everything before this discovered counterparties one artist at
+# a time, as a side effect of prospecting; this builds the index up front.
+#
+# One lead per jurisdiction, and that is the whole reason it is 51 leads and not one.
+# A jurisdiction is a natural unit of work: it bounds the fetch, it bounds the write, and
+# a state that fails its HTTP call retries on its own backoff without re-fetching the
+# other fifty or rolling back their rows.
+#
+# **No `suggestion` step, and that is a deliberate distinction rather than a shortcut.**
+# `suggestion` exists for guesses about *identity* — "is this Deezer profile the same
+# person as this party?" — which is what produced thirteen junk parties from a name-match
+# harvest in August. There is no identity guess here. The FCC publishes a canonical
+# `facility_id` per station, so the station's existence and its licensee are `measured`
+# facts with a stable key. The one thing this stage infers, `station_kind`, is written as
+# `inferred` and never promoted.
+
+#: How many stations one lead may write. No jurisdiction comes close — the largest holds
+#: roughly 150 pitchable NCE licences — so this is a bound on a feed that misbehaves,
+#: not a sampling policy. `Outcome.dropped` reports anything past it rather than
+#: discarding it quietly.
+STATION_CAP = 400
+
+
+def _fetch_index_stations(conn: psycopg.Connection, lead: dict[str, Any],
+                          gate: spend.Gate) -> dict[str, Any]:
+    """Pull one jurisdiction's licensed NCE-band FM stations. Network only, no writes.
+
+    The gate is not consulted because there is nothing to charge for: the FM Query is a
+    free public service, and `spend.estimate` raises on an unpriced key by design. The
+    cost this stage does incur is the embedding of everything it writes, and that is
+    charged where it happens — on the `embed_party` leads it queues.
+    """
+    #: `target` is `<STATE>` or `<STATE>:<band>`. The bare form means the NCE band,
+    #: which is what the first 56 leads were seeded as and what they must keep meaning.
+    raw = str(lead.get("target") or "").strip().upper()
+    if not raw:
+        raise fleet.LeadFailed(
+            "index_stations needs a jurisdiction in `target`", permanent=True)
+    state, _, band = raw.partition(":")
+    band = (band or "NCE").lower()
+
+    if state not in fcc.JURISDICTIONS:
+        raise fleet.LeadFailed(
+            f"{state!r} is not an FCC jurisdiction", permanent=True)
+    if band not in fcc.BANDS:
+        raise fleet.LeadFailed(
+            f"{band!r} is not a band; known: {', '.join(sorted(fcc.BANDS))}",
+            permanent=True)
+
+    text = fcc.fetch(state, band=band)
+    stations = fcc.dedupe(fcc.parse(text, state))
+    return {"state": state, "band": band,
+            "stations": fcc.pitchable(stations, band),
+            "authorisations": len(stations)}
+
+
+def _write_index_stations(conn: psycopg.Connection, lead: dict[str, Any],
+                          gate: spend.Gate, prepared: dict[str, Any]) -> fleet.Outcome:
+    """Write each station as a counterparty, and queue it for embedding.
+
+    Shaped exactly like `_write_find_counterparties`, because a radio station and a
+    playlist curator are the same thing to this schema: a party with a role, some facts,
+    a document that says who they are, and an embedding computed from that document.
+    Migration 009 argues at length that there is no `counterparty` table for precisely
+    this reason.
+
+    `kind = 'organisation'` rather than `'person'` — a licence is held by a body, not by
+    the music director we eventually write to. The person comes later, as a
+    `contact_route` with an `addressee`, which is why 018 put the addressee on the route
+    and not on the party.
+    """
+    tenant_id, state = lead["tenant_id"], prepared["state"]
+    stations = prepared["stations"]
+
+    written = 0
+    follow_on: list[dict[str, Any]] = []
+    with conn.cursor() as cur:
+        for st in stations[:STATION_CAP]:
+            # The facility ID is the Commission's own key for "this station" and survives
+            # a call-sign change, so it is what the slug and the identifier are built on.
+            # `dedupe` already fell back to call sign + frequency for the rare row
+            # without one; the same fallback is repeated here so the slug stays stable
+            # for those rows too.
+            fac = st["facility_id"] or f"{st['call_sign']}-{st['frequency_mhz']}"
+            slug = f"{repo.slugify(st['call_sign'])}-fcc-{repo.slugify(str(fac))}"[:120]
+            freq = f"{st['frequency_mhz']:.1f}" if st["frequency_mhz"] else "FM"
+            name = f"{st['call_sign']} {freq} ({st['city']}, {st['state']})"
+
+            cur.execute(
+                """INSERT INTO party (tenant_id, slug, name, kind, party_class,
+                                      contact_state, status)
+                   VALUES (%s, %s, %s, 'organisation', 'counterparty', 'contactable',
+                           'active')
+                   ON CONFLICT (tenant_id, slug) DO NOTHING
+                RETURNING id""",
+                (tenant_id, slug, name),
+            )
+            created = cur.fetchone()
+            if created is None:
+                # Already indexed. Re-running a jurisdiction is the normal case — the
+                # register changes — and it must not re-queue an embedding we have
+                # already paid for.
+                continue
+            party_id = created["id"]
+            written += 1
+
+            cur.execute(
+                """INSERT INTO party_role (tenant_id, party_id, role)
+                   VALUES (%s, %s, 'radio_programmer') ON CONFLICT DO NOTHING""",
+                (tenant_id, party_id),
+            )
+            if st["facility_id"]:
+                cur.execute(
+                    """INSERT INTO party_identifier (tenant_id, party_id, kind, value,
+                                                     provenance)
+                       VALUES (%s, %s, 'fcc_facility_id', %s, 'measured')
+                       ON CONFLICT DO NOTHING""",
+                    (tenant_id, party_id, st["facility_id"]),
+                )
+            # The call sign is the *public* name of a station — it is how every other
+            # source in the world refers to it, and `party_identifier` is unique on
+            # `(tenant_id, kind, value)`, so this is the key any later source joins on
+            # rather than parsing a display name. `index_streams` matches on exactly this
+            # to enrich a station instead of creating a second party for it.
+            cur.execute(
+                """INSERT INTO party_identifier (tenant_id, party_id, kind, value,
+                                                 provenance)
+                   VALUES (%s, %s, 'call_sign', %s, 'measured')
+                   ON CONFLICT DO NOTHING""",
+                (tenant_id, party_id, st["call_sign"]),
+            )
+
+            # Four facts, three transcribed and one guessed, and the guess says so in its
+            # own `provenance` column. `fact_one_live_per_dimension` is a partial unique
+            # index over (dimension, provenance), so a re-index cannot stack duplicates.
+            facts = [
+                ("licensee", st["licensee"], "measured"),
+                ("market", f"{st['city']}, {st['state']}", "measured"),
+                ("frequency_mhz", freq, "measured"),
+                ("station_kind", st["station_kind"], "inferred"),
+            ]
+            for dimension, value, provenance in facts:
+                cur.execute(
+                    """INSERT INTO party_fact (tenant_id, party_id, dimension,
+                                               value_text, provenance, status, source,
+                                               written_by)
+                       VALUES (%s, %s, %s, %s, %s, 'live', 'fcc_fm_query',
+                               'index_stations')
+                       ON CONFLICT DO NOTHING""",
+                    (tenant_id, party_id, dimension, value, provenance),
+                )
+
+            # The document is the evidence the embedding is computed from — same rule as
+            # a curator's profile text. A vector whose source text has been thrown away
+            # cannot be argued with when a shortlist looks wrong.
+            body = fcc.profile_text(st)
+            cur.execute(
+                """INSERT INTO party_document (tenant_id, party_id, lead_id, platform,
+                                               url, title, body, content_hash, mime,
+                                               lang, http_status)
+                   VALUES (%s, %s, %s, 'fcc', '', %s, %s, %s, 'text/plain', 'en', 200)
+                   ON CONFLICT (tenant_id, content_hash) DO NOTHING""",
+                (tenant_id, party_id, lead["id"],
+                 f"{st['call_sign']} — FCC licence record", body, content_hash(body)),
+            )
+
+            follow_on.append({
+                "kind": "embed_party", "adapter": "fcc", "platform": "fcc",
+                "party_id": str(party_id), "scope_kind": "party",
+                "target": str(party_id),
+                "target_hash": f"embed_party:{party_id}",
+                "reason": f"{st['call_sign']} indexed from the FCC register, "
+                          "not yet searchable",
+                "score": 0.6,
+            })
+
+    return fleet.Outcome(
+        summary=(f"{written} new {prepared['band']} station(s) in {state} — "
+                 f"{prepared['authorisations']} authorisations, "
+                 f"{len(stations)} pitchable"),
+        calls=1, leads=len(follow_on), follow_on=follow_on,
+        dropped=max(0, len(stations) - STATION_CAP),
+    )
+
+
+#: Build the standing radio index, one US jurisdiction at a time, and queue each station
+#: for embedding so it is shortlistable the day a record is ready.
+index_stations = fleet.NetworkAgent(fetch=_fetch_index_stations,
+                                    write=_write_index_stations)
+
+
+# ------------------------------------------------------------ index_streams
+#
+# What a station plays, and where its website is — the two things the licence register
+# does not know and a shortlist cannot work without.
+#
+# This stage does something the others do not: it **enriches a party it did not create**.
+# A Radio Browser row whose name leads with a call sign is the same station the FCC
+# already gave us, and writing a second party for it would put the same broadcaster on a
+# shortlist twice. `party_identifier(kind='call_sign')` is the join, which is why
+# `index_stations` writes one for every station and why 1,777 were backfilled.
+#
+# The enrichment has to reach the *vector*, not just a column, or none of it matters.
+# `_fetch_embed_party` embeds a party's most recent `party_document`, so this stage
+# writes a new document whose prose names the genres and then returns that party's
+# `embed_party` lead to the frontier. A genre in a column that never reached an embedding
+# would leave the shortlist exactly as wrong as it was.
+
+
+def _fetch_index_streams(conn: psycopg.Connection, lead: dict[str, Any],
+                         gate: spend.Gate) -> dict[str, Any]:
+    """One page of one country's streaming stations. Network only, no writes.
+
+    Free, like the FCC feed, so the gate is not consulted — the cost this stage causes is
+    the re-embedding it queues, and that is charged where it happens.
+    """
+    raw = str(lead.get("target") or "").strip()
+    if not raw:
+        raise fleet.LeadFailed(
+            "index_streams needs `<COUNTRY>:<offset>` in `target`", permanent=True)
+    country, _, offset_text = raw.partition(":")
+    try:
+        offset = int(offset_text or 0)
+    except ValueError:
+        raise fleet.LeadFailed(
+            f"{offset_text!r} is not an offset", permanent=True) from None
+
+    page = radiobrowser.stations(country, offset=offset)
+    return {"country": country.upper(), "offset": offset, "stations": page}
+
+
+def _write_index_streams(conn: psycopg.Connection, lead: dict[str, Any],
+                         gate: spend.Gate, prepared: dict[str, Any]) -> fleet.Outcome:
+    """Enrich the stations we already know, create the ones we do not, re-embed both."""
+    tenant_id = lead["tenant_id"]
+    enriched = created = 0
+    follow_on: list[dict[str, Any]] = []
+
+    with conn.cursor() as cur:
+        for st in prepared["stations"]:
+            name = (st.get("name") or "").strip()
+            uuid = st.get("stationuuid") or ""
+            if not name or not uuid:
+                continue
+            tags = radiobrowser.genres(st)
+
+            # Does the FCC already know this station? The call sign is the join.
+            party_id = None
+            sign = radiobrowser.call_sign(name)
+            if sign:
+                cur.execute(
+                    """SELECT party_id FROM party_identifier
+                        WHERE tenant_id = %s AND kind = 'call_sign' AND value = %s""",
+                    (tenant_id, sign),
+                )
+                found = cur.fetchone()
+                if found is not None:
+                    party_id = found["party_id"]
+
+            if party_id is None:
+                cur.execute(
+                    """INSERT INTO party (tenant_id, slug, name, kind, party_class,
+                                          contact_state, status)
+                       VALUES (%s, %s, %s, 'organisation', 'counterparty',
+                               'contactable', 'active')
+                       ON CONFLICT (tenant_id, slug) DO NOTHING
+                    RETURNING id""",
+                    (tenant_id, f"rb-{uuid}"[:120], name[:200]),
+                )
+                fresh = cur.fetchone()
+                if fresh is None:
+                    continue      # already indexed from a previous page
+                party_id = fresh["id"]
+                created += 1
+                cur.execute(
+                    """INSERT INTO party_role (tenant_id, party_id, role)
+                       VALUES (%s, %s, 'radio_programmer') ON CONFLICT DO NOTHING""",
+                    (tenant_id, party_id),
+                )
+                if sign:
+                    cur.execute(
+                        """INSERT INTO party_identifier (tenant_id, party_id, kind,
+                                                         value, provenance)
+                           VALUES (%s, %s, 'call_sign', %s, 'asserted')
+                           ON CONFLICT DO NOTHING""",
+                        (tenant_id, party_id, sign),
+                    )
+            else:
+                enriched += 1
+
+            cur.execute(
+                """INSERT INTO party_identifier (tenant_id, party_id, kind, value,
+                                                 provenance)
+                   VALUES (%s, %s, 'radiobrowser_uuid', %s, 'measured')
+                   ON CONFLICT DO NOTHING""",
+                (tenant_id, party_id, uuid),
+            )
+
+            # Genre, as one row rather than one row per tag: `fact_one_live_per_dimension`
+            # allows a single live fact per (dimension, provenance), and a station's
+            # genres are one claim about it, not five independent ones.
+            if tags:
+                cur.execute(
+                    """INSERT INTO party_fact (tenant_id, party_id, dimension,
+                                               value_text, value_json, provenance,
+                                               status, confidence, source, written_by)
+                       VALUES (%s, %s, 'genre', %s, %s, 'asserted', 'live', %s,
+                               'radio_browser', 'index_streams')
+                       ON CONFLICT DO NOTHING""",
+                    (tenant_id, party_id, ", ".join(tags), Json(tags),
+                     0.5 if radiobrowser.musical(tags) else 0.3),
+                )
+
+            # The website is a `presence`, not a `contact_route`. A homepage is a surface
+            # you can read, which is exactly what `presence` means; a contact route is an
+            # endpoint you may *send to*, and conflating the two is how a crawler's URL
+            # ends up in a mail merge. The route comes from reading this page, later.
+            homepage = (st.get("homepage") or "").strip()
+            if homepage:
+                cur.execute(
+                    """INSERT INTO presence (tenant_id, subject_kind, subject_id,
+                                             platform, mode, handle, url, state,
+                                             match_basis, confidence)
+                       VALUES (%s, 'party', %s, 'web', 'owned', %s, %s, 'present',
+                               'asserted', 0.6)
+                       ON CONFLICT (tenant_id, subject_kind, subject_id, platform)
+                       DO NOTHING""",
+                    (tenant_id, party_id, name[:120], homepage[:500]),
+                )
+
+            body = radiobrowser.profile_text(st, tags)
+            cur.execute(
+                """INSERT INTO party_document (tenant_id, party_id, lead_id, platform,
+                                               url, title, body, content_hash, mime,
+                                               lang, http_status)
+                   VALUES (%s, %s, %s, 'radio_browser', %s, %s, %s, %s, 'text/plain',
+                           'en', 200)
+                   ON CONFLICT (tenant_id, content_hash) DO NOTHING""",
+                (tenant_id, party_id, lead["id"], homepage[:500],
+                 f"{name} — Radio Browser profile", body, content_hash(body)),
+            )
+
+            # Return this party's embedding to the frontier so the genre reaches the
+            # vector. An already-completed `embed_party` lead is *requeued* rather than
+            # re-inserted, because `(tenant_id, target_hash)` is unique and a second
+            # insert would silently do nothing — leaving the station embedded on the
+            # text that did not mention what it plays.
+            cur.execute(
+                """UPDATE lead
+                      SET state = 'pending', attempts = 0, owner_agent = NULL,
+                          lease_expires_at = NULL, lease_token = NULL,
+                          next_action_at = now(), updated_at = now()
+                    WHERE tenant_id = %s AND target_hash = %s AND state != 'pending'""",
+                (tenant_id, f"embed_party:{party_id}"),
+            )
+            if cur.rowcount == 0:
+                follow_on.append({
+                    "kind": "embed_party", "adapter": "radio_browser",
+                    "platform": "radio_browser", "party_id": str(party_id),
+                    "scope_kind": "party", "target": str(party_id),
+                    "target_hash": f"embed_party:{party_id}",
+                    "reason": f"{name[:60]} indexed from Radio Browser, not yet "
+                              "searchable",
+                    "score": 0.6,
+                })
+
+    return fleet.Outcome(
+        summary=(f"{prepared['country']} +{prepared['offset']}: "
+                 f"{created} new station(s), {enriched} enriched with genre"),
+        calls=1, facts=created + enriched, leads=len(follow_on), follow_on=follow_on,
+    )
+
+
+#: Give every station a genre and a website, and put the genre where the embedding will
+#: find it. Enriches stations `index_stations` already wrote; creates the rest.
+index_streams = fleet.NetworkAgent(fetch=_fetch_index_streams,
+                                   write=_write_index_streams)
+
+
+# ------------------------------------------------------------ enrich_genre
+#
+# The stage that takes genre coverage from a third of the index to most of it.
+#
+# Sequenced deliberately after `index_streams`: Radio Browser's tags are the better
+# source where they exist — they describe what a station *streams today*, not what an
+# encyclopaedia recorded — so this stage only ever looks at parties that still have no
+# genre, and re-running it is therefore self-limiting rather than a re-fetch of
+# everything.
+#
+# **Work is bucketed by call-sign prefix**, one lead per two-letter prefix, and that
+# choice is doing real work. It is deterministic, so a re-run addresses the same
+# stations; it is resumable, because the query selects on "has no genre yet" rather than
+# on a cursor that a crash could lose; and it is naturally bounded, because a prefix
+# holds a few hundred stations rather than eight thousand.
+
+#: Stations one lead will look up. A prefix bucket larger than this is finished by the
+#: lead's *next* run rather than in one lease — `GENRE_CAP` divided by `wikipedia.BATCH`
+#: is the number of API calls one run makes, and six is a polite ceiling for a service
+#: that is answering for free.
+GENRE_CAP = 150
+
+
+def _fetch_enrich_genre(conn: psycopg.Connection, lead: dict[str, Any],
+                        gate: spend.Gate) -> dict[str, Any]:
+    """Look up formats for one call-sign prefix. Reads the database, writes nothing.
+
+    Reading here is allowed and deliberate — `NetworkAgent.fetch` runs with no
+    transaction open, so this is an autocommitted SELECT, not a held lock. Doing the
+    selection here rather than in `write` is what lets the expensive part (the HTTP
+    round trips) happen outside the transaction that later commits the facts.
+    """
+    # Any two letters, not `[KWC][A-Z]`. The buckets are derived from call signs that are
+    # actually in the index, so a validator narrower than the data rejects real work: five
+    # rows carry a leading `D`, `N` or `Z` from an FCC feed artifact — `DWWQZ` is `WWQZ`
+    # with a marker the parser took literally — and the first version of this check failed
+    # their prefixes permanently. The seeder is the authority on which buckets exist; this
+    # only guards against a malformed target.
+    prefix = str(lead.get("target") or "").strip().upper()
+    if not re.fullmatch(r"[A-Z]{2}", prefix):
+        raise fleet.LeadFailed(
+            f"{prefix!r} is not a two-letter call-sign prefix", permanent=True)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT pi.value AS call_sign, pi.party_id
+                 FROM party_identifier pi
+                WHERE pi.tenant_id = %s AND pi.kind = 'call_sign'
+                  AND pi.value LIKE %s
+                  AND NOT EXISTS (SELECT 1 FROM party_fact f
+                                   WHERE f.tenant_id = pi.tenant_id
+                                     AND f.party_id = pi.party_id
+                                     AND f.dimension = 'genre')
+                ORDER BY pi.value
+                LIMIT %s""",
+            (lead["tenant_id"], f"{prefix}%", GENRE_CAP),
+        )
+        rows = cur.fetchall()
+
+    if not rows:
+        return {"prefix": prefix, "rows": [], "found": {}}
+
+    found = wikipedia.formats([r["call_sign"] for r in rows])
+    return {"prefix": prefix, "rows": rows, "found": found}
+
+
+def _write_enrich_genre(conn: psycopg.Connection, lead: dict[str, Any],
+                        gate: spend.Gate, prepared: dict[str, Any]) -> fleet.Outcome:
+    """Write the formats found, and send each enriched party back for re-embedding.
+
+    A station whose format Wikipedia does not record gets **nothing** — no row, no
+    placeholder, no genre guessed from its licensee's name. The absence is the honest
+    answer and the shortlist is entitled to see it.
+    """
+    tenant_id = lead["tenant_id"]
+    found: dict[str, str] = prepared["found"]
+    written = 0
+
+    with conn.cursor() as cur:
+        for row in prepared["rows"]:
+            fmt = found.get(row["call_sign"])
+            if not fmt:
+                continue
+            party_id = row["party_id"]
+
+            cur.execute(
+                """INSERT INTO party_fact (tenant_id, party_id, dimension, value_text,
+                                           value_json, provenance, status, confidence,
+                                           source, written_by)
+                   VALUES (%s, %s, 'genre', %s, %s, 'asserted', 'live', 0.6,
+                           'wikipedia', 'enrich_genre')
+                   ON CONFLICT DO NOTHING""",
+                (tenant_id, party_id, fmt, Json([fmt])),
+            )
+            if cur.rowcount == 0:
+                continue          # raced with another source; theirs stands
+            written += 1
+
+            # The genre has to reach the *vector*, so it is appended to the party's
+            # profile text as a new document — `_fetch_embed_party` reads the most
+            # recent one — and the existing text is carried forward rather than
+            # replaced, because the licence facts in it are still true and still worth
+            # embedding.
+            cur.execute(
+                """SELECT body FROM party_document
+                    WHERE tenant_id = %s AND party_id = %s AND body != ''
+                    ORDER BY fetched_at DESC LIMIT 1""",
+                (tenant_id, party_id),
+            )
+            previous = cur.fetchone()
+            base = previous["body"] if previous else ""
+            body = (f"{base}\n\nFormat: {fmt}. This station's programming is "
+                    f"described as {fmt}, recorded in its Wikipedia infobox and "
+                    f"asserted rather than measured.").strip()
+
+            cur.execute(
+                """INSERT INTO party_document (tenant_id, party_id, lead_id, platform,
+                                               url, title, body, content_hash, mime,
+                                               lang, http_status)
+                   VALUES (%s, %s, %s, 'wikipedia', %s, %s, %s, %s, 'text/plain',
+                           'en', 200)
+                   ON CONFLICT (tenant_id, content_hash) DO NOTHING""",
+                (tenant_id, party_id, lead["id"],
+                 f"https://en.wikipedia.org/wiki/{row['call_sign']}",
+                 f"{row['call_sign']} — format", body, content_hash(body)),
+            )
+
+            cur.execute(
+                """UPDATE lead
+                      SET state = 'pending', attempts = 0, owner_agent = NULL,
+                          lease_expires_at = NULL, lease_token = NULL,
+                          next_action_at = now(), updated_at = now()
+                    WHERE tenant_id = %s AND target_hash = %s AND state != 'pending'""",
+                (tenant_id, f"embed_party:{party_id}"),
+            )
+
+    looked = len(prepared["rows"])
+    return fleet.Outcome(
+        summary=(f"{prepared['prefix']}: {written} format(s) from {looked} station(s) "
+                 f"without one"),
+        calls=1, facts=written,
+    )
+
+
+#: Give a station a genre when Radio Browser could not, by reading the format out of its
+#: Wikipedia infobox. Writes nothing when there is nothing to read.
+enrich_genre = fleet.NetworkAgent(fetch=_fetch_enrich_genre,
+                                  write=_write_enrich_genre)
+
+
 #: Which agent handles which lead kind. The fleet reads this; no agent reads it.
 REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     "embed_document": embedder,
@@ -1439,4 +2027,7 @@ REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     "embed_party": embed_party,
     "distil_lesson": distil_lesson,
     "analyse_recording": analyse_recording,
+    "index_stations": index_stations,
+    "index_streams": index_streams,
+    "enrich_genre": enrich_genre,
 }

@@ -39,6 +39,7 @@ require `may_write`, checked in `_require_write`.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote_plus
@@ -51,10 +52,12 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 
 from rtf_platform import (
-    auth, db, demo, fleet, outreach, repo, research, settings as settings_mod, statements,
+    agents, auth, db, demo, fleet, outreach, repo, research,
+    settings as settings_mod, statements,
 )
 from rtf_platform.domain import (
-    ARTIST_STATUSES, DEFAULT_TYPE, ArtistType, Platform, ProfileMode, unrecognised,
+    ARTIST_STATUSES, CREDIT_ROLES, DEFAULT_TYPE, RECORDING_STATUSES, ArtistType,
+    Platform, ProfileMode, canonical_isrc, unrecognised,
 )
 
 router = APIRouter()
@@ -337,13 +340,109 @@ def _table(request: Request, principal: auth.Principal, view: demo.View,
 ROSTER_SIZES: tuple[str, ...] = ("1–5 artists", "6–20", "21–50", "50+", "Not a label")
 
 
+#: Windows the public demo will run R1 against. A closed set, not free text: `as_of` is
+#: interpolated into SQL (CockroachDB will not accept a placeholder for `AS OF SYSTEM
+#: TIME`), and `agents.shortlist_as_of` validates the shape as a second gate. Two
+#: independent checks on a public input that reaches a query is the right number.
+#: Kept inside the window the cluster can actually serve. `gc.ttlseconds` was raised
+#: from CockroachDB's 75-minute default to seven days, but raising it does not
+#: retroactively un-collect: the GC threshold only moves forward, so the reachable depth
+#: grows from the moment it was changed rather than jumping. Measured 2026-08-13: -10h
+#: resolved, -18h did not. These are the windows that answer today.
+DEMO_WINDOWS: dict[str, str] = {
+    "now": "", "-15m": "-15m", "-1h": "-1h", "-3h": "-3h", "-6h": "-6h",
+}
+
+
+def _demo_stats(conn: psycopg.Connection, tenant_id: str) -> dict[str, Any]:
+    """The counters on the public page, read live rather than baked in.
+
+    A judge should be able to reload and watch these move while the fleet works. Baked
+    numbers age into a lie by the afternoon, and this project's whole argument is that
+    the database is the thing telling the truth.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT
+                 (SELECT count(*) FROM party
+                   WHERE tenant_id = %(t)s AND party_class = 'counterparty') AS counterparties,
+                 (SELECT count(*) FROM party
+                   WHERE tenant_id = %(t)s AND party_class = 'counterparty'
+                     AND profile_embedding IS NOT NULL) AS embedded,
+                 (SELECT count(DISTINCT party_id) FROM party_fact
+                   WHERE tenant_id = %(t)s AND dimension = 'genre') AS with_genre,
+                 (SELECT count(*) FROM lesson WHERE tenant_id = %(t)s) AS lessons,
+                 (SELECT count(*) FROM agent_run WHERE tenant_id = %(t)s) AS runs,
+                 (SELECT coalesce(sum(cost_micro_usd), 0) FROM agent_run
+                   WHERE tenant_id = %(t)s) AS micro_usd,
+                 (SELECT count(*) FROM outbox
+                   WHERE tenant_id = %(t)s AND state = 'sent') AS sent""",
+            {"t": tenant_id})
+        return dict(cur.fetchone())
+
+
+@router.get("/demo/tune")
+def demo_tune(artist: str = "hallow-youth", window: str = "now") -> JSONResponse:
+    """R1, run read-only against the index as it stood in one of `DEMO_WINDOWS`.
+
+    Public and unauthenticated on purpose — the point of the page is that a judge can
+    run the query themselves. It is safe to expose because it cannot write: it calls
+    `agents.shortlist_as_of`, which takes no `Gate` and spends nothing, holds no
+    transaction, and reads a vector that already exists rather than embedding anything.
+    """
+    if window not in DEMO_WINDOWS:
+        return JSONResponse({"error": "unknown window"}, status_code=400)
+
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return JSONResponse({"error": "no tenant"}, status_code=503)
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id, name FROM party
+                WHERE tenant_id = %s AND slug = %s AND party_class = 'roster'""",
+            (tenant_id, artist))
+        act = cur.fetchone()
+    if act is None:
+        return JSONResponse({"error": "unknown artist"}, status_code=404)
+
+    try:
+        rows = agents.shortlist_as_of(conn, tenant_id, str(act["id"]),
+                                      as_of=DEMO_WINDOWS[window], limit=12)
+    except psycopg.InternalError as exc:
+        # Asking for a timestamp the cluster has already garbage-collected is a real
+        # answer, not a crash: time travel is bounded by `gc.ttlseconds`, and saying so
+        # is more useful to a reader than a 500. The bound is the interesting part —
+        # it is the cost of the feature, and this project does not hide costs.
+        if "GC threshold" not in str(exc):
+            raise
+        return JSONResponse({
+            "artist": act["name"], "window": window, "rows": [],
+            "note": ("that moment has been garbage-collected — time travel reaches back "
+                     "as far as gc.ttlseconds allows, and no further"),
+        })
+    return JSONResponse({
+        "artist": act["name"],
+        "window": window,
+        "rows": [{"name": r["name"], "distance": round(float(r["distance"]), 4)}
+                 for r in rows],
+    })
+
+
 def _landing(request: Request, principal: auth.Principal, *,
              sent: str = "", error: str = "",
              form: dict[str, str] | None = None) -> Response:
+    # Read live. If the cluster is unreachable the page still renders — a landing page
+    # that 500s because a counter could not be fetched is worse than one that says so.
+    try:
+        conn = _conn()
+        stats = _demo_stats(conn, _tenant_id(conn) or "")
+    except Exception:  # noqa: BLE001 — a counter is not worth losing the page over
+        stats = {}
     return templates.TemplateResponse(
         request, "landing.html",
         _ctx(request, principal, sent=sent, error=error, form=form or {},
-             roster_sizes=ROSTER_SIZES),
+             roster_sizes=ROSTER_SIZES, stats=stats),
     )
 
 
@@ -1097,11 +1196,319 @@ def threads_close(principal: Operator, thread_id: str, outcome: str) -> Response
     return RedirectResponse(f"/threads?sel={thread_id}", status_code=303)
 
 
+#: Tracks is the second console view that writes, and for the same reason Artists is the
+#: first: the inspector is where a record is already open, so changing it there does not
+#: cost the selection, the scroll position, or the comparison in progress. Everything
+#: below is the editor that `/tracks` used to gesture at with three inert buttons.
+
+_TRACKS_BLURB = (
+    "Recordings — the masters, identified by ISRC. Credits decide who they belong to, "
+    "so a collaboration is one row. Live from recording, and editable in place."
+)
+
+
+def _tracks_page(
+    request: Request, principal: auth.Principal, *,
+    sel: str = "", confirm: str = "", error: str = "", credit_error: str = "",
+    banner: str = "", form: dict[str, str] | None = None, status_code: int = 200,
+) -> Response:
+    """The Tracks view, including whichever editor state the inspector is in.
+
+    One function for the GET and for every rejected POST, so a validation failure
+    renders the page the operator was already looking at with the message beside the
+    field — the same shape `_artists_page` uses, for the same reason.
+
+    `error` and `banner` are both refusals and are deliberately not the same argument.
+    `error` belongs to a field: it is rendered inside the form that was rejected, next
+    to what the operator typed. `banner` belongs to nothing on the page — it is carried
+    back through a redirect by the two routes that have no form to return to (deleting a
+    track, queueing an analysis) and is drawn above the table. Passing one value to both
+    places renders every validation failure twice.
+    """
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    creating = sel == "new"
+
+    if tenant_id is None:
+        view = demo.View(
+            key="tracks", title="Tracks", blurb=_TRACKS_BLURB, stats=(), cols=(),
+            rows=(), empty="Nothing here yet — save an artist first.",
+        )
+    else:
+        view = research.tracks(
+            conn, tenant_id, editing_id=(None if creating else sel or None),
+            error=("" if creating else error), credit_error=credit_error,
+            confirm_delete=(confirm == "delete"),
+        )
+
+    if creating:
+        # A synthetic selection: there is no row yet, and the inspector is the form that
+        # would make one.
+        sel_row: dict[str, Any] | None = {
+            "id": "new", "title": "New track",
+            "insp": research.new_recording_sections(form=form, error=error),
+        }
+    else:
+        sel_row = demo.select(view.rows, sel or None)
+
+    return templates.TemplateResponse(
+        request, "console/table.html",
+        _ctx(request, principal, here="tracks", view=view, sel=sel_row, live=True,
+             insp_kicker="track",
+             insp_title=(sel_row or {}).get("title", "—"),
+             insp_new=None if creating else ("/tracks?sel=new", "New track"),
+             error=banner),
+        status_code=status_code,
+    )
+
+
 @router.get("/tracks", response_class=HTMLResponse)
-def tracks(request: Request, principal: Operator, sel: str = "",
+def tracks(request: Request, principal: Operator, sel: str = "", confirm: str = "",
            error: str = "") -> Response:
-    return _live(request, principal, research.tracks, sel or None, "track", "title",
-                 error)
+    # A GET's `error` only ever arrives from a redirect, so it is a banner. Nothing on
+    # this page was just rejected — the form is showing the stored row.
+    return _tracks_page(request, principal, sel=sel, confirm=confirm, banner=error)
+
+
+def _recording_form(title: str, isrc: str, released_on: str,
+                    status: str = "active") -> dict[str, str]:
+    """What the form sent, kept verbatim so a rejected post redraws what was typed."""
+    return {"title": title, "isrc_raw": isrc, "released_on": released_on,
+            "status": status}
+
+
+def _validated_recording(title: str, isrc: str, released_on: str) -> tuple[str, str, Any]:
+    """The three fields every recording write shares, checked. Raises `ValueError`.
+
+    The ISRC is the one worth care. `domain.canonical_isrc` returns "" for anything
+    malformed rather than guessing at a repair, and storing that blank would silently
+    turn "I typed the ISRC wrong" into "this recording has no ISRC" — a different and
+    entirely plausible state, which is why it cannot be the fallback. A blank *input* is
+    genuinely no identifier and is allowed; a non-blank one that will not canonicalise
+    is refused and says so.
+    """
+    title = title.strip()
+    if not title:
+        raise ValueError("A track needs a title.")
+    if not repo.slugify(title):
+        raise ValueError("That title has no URL-safe form.")
+
+    isrc = isrc.strip()
+    canonical = canonical_isrc(isrc)
+    if isrc and not canonical:
+        raise ValueError(
+            f"{isrc!r} is not a well-formed ISRC. ISO 3901 is two letters of country, "
+            "three of registrant, two digits of year and five of designation — "
+            "QZ-ABC-25-00001. Leave it blank if you do not have one yet.")
+
+    released = released_on.strip()
+    parsed: Any = None
+    if released:
+        try:
+            parsed = date.fromisoformat(released)
+        except ValueError:
+            raise ValueError(f"{released!r} is not a date. Use YYYY-MM-DD.") from None
+
+    return title, canonical, parsed
+
+
+@router.post("/tracks", response_class=HTMLResponse)
+def tracks_create(request: Request, principal: Operator,
+                  title: Annotated[str, Form()] = "",
+                  isrc: Annotated[str, Form()] = "",
+                  released_on: Annotated[str, Form()] = "") -> Response:
+    _require_write(principal)
+    typed = _recording_form(title, isrc, released_on)
+    try:
+        clean_title, canonical, released = _validated_recording(title, isrc, released_on)
+    except ValueError as exc:
+        return _tracks_page(request, principal, sel="new", form=typed,
+                            error=str(exc), status_code=400)
+
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return _tracks_page(
+            request, principal, sel="new", form=typed, status_code=400,
+            error="There is no tenant yet — save an artist first, so the recording "
+                  "has a label to belong to.")
+
+    try:
+        created = repo.create_recording(conn, tenant_id, title=clean_title,
+                                        isrc=canonical, isrc_raw=isrc.strip(),
+                                        released_on=released)
+    except psycopg.errors.UniqueViolation as exc:
+        # Two unique indexes reach here and they mean different things, so the message
+        # says which: a slug clash is a second track with this title, an ISRC clash is
+        # this exact master already being on the roster.
+        clash = ("A recording with that ISRC is already here."
+                 if "isrc" in str(exc).lower()
+                 else f"A track already exists with the same URL key as {clean_title!r}.")
+        return _tracks_page(request, principal, sel="new", form=typed,
+                            error=clash, status_code=409)
+    return RedirectResponse(f"/tracks?sel={created['id']}", status_code=303)
+
+
+@router.post("/tracks/{recording_id}", response_class=HTMLResponse)
+def tracks_update(request: Request, principal: Operator, recording_id: str,
+                  title: Annotated[str, Form()] = "",
+                  isrc: Annotated[str, Form()] = "",
+                  released_on: Annotated[str, Form()] = "",
+                  status: Annotated[str, Form()] = "active") -> Response:
+    _require_write(principal)
+    try:
+        clean_title, canonical, released = _validated_recording(title, isrc, released_on)
+    except ValueError as exc:
+        return _tracks_page(request, principal, sel=recording_id, error=str(exc),
+                            status_code=400)
+    if status not in RECORDING_STATUSES:
+        return _tracks_page(request, principal, sel=recording_id, status_code=400,
+                            error=f"{status!r} is not a supported status.")
+
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None or repo.get_recording(conn, tenant_id, recording_id) is None:
+        raise HTTPException(status_code=404, detail="No such recording.")
+
+    try:
+        repo.update_recording(conn, tenant_id, recording_id, title=clean_title,
+                              isrc=canonical, isrc_raw=isrc.strip(),
+                              released_on=released, status=status)
+    except psycopg.errors.UniqueViolation as exc:
+        clash = ("A recording with that ISRC is already here."
+                 if "isrc" in str(exc).lower()
+                 else f"A track already exists with the same URL key as {clean_title!r}.")
+        return _tracks_page(request, principal, sel=recording_id, error=clash,
+                            status_code=409)
+    return RedirectResponse(f"/tracks?sel={recording_id}", status_code=303)
+
+
+@router.post("/tracks/{recording_id}/delete")
+def tracks_delete(principal: Operator, recording_id: str) -> Response:
+    """Reached only from the confirmation step, which names what goes with it.
+
+    The bucket is cleaned second and its failure is deliberately not fatal, the same
+    trade `masters_delete` makes and for the same reason: versioning with a 30-day
+    noncurrent expiry means a half-done delete leaves recoverable bytes and no row,
+    which is the recoverable direction. Rows gone but objects still billed is the one
+    that rots, so the operator is told the keys rather than left to find them.
+    """
+    from rtf_platform import storage
+
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return RedirectResponse("/tracks", status_code=303)
+
+    orphaned = repo.delete_recording(conn, tenant_id, recording_id)
+    stranded: list[str] = []
+    for key in orphaned:
+        try:
+            _store().delete(key)
+        except storage.StorageUnconfigured:
+            stranded.append(key)
+        except Exception:  # noqa: BLE001 - the message is the product
+            stranded.append(key)
+
+    if stranded:
+        return RedirectResponse(
+            "/tracks?error=" + _q(
+                "The track is gone but "
+                f"{len(stranded)} object(s) are still in the bucket: "
+                f"{', '.join(stranded)}"),
+            status_code=303)
+    return RedirectResponse("/tracks", status_code=303)
+
+
+@router.post("/tracks/{recording_id}/credits", response_class=HTMLResponse)
+def tracks_credit_add(request: Request, principal: Operator, recording_id: str,
+                      party_id: Annotated[str, Form()] = "",
+                      role: Annotated[str, Form()] = "") -> Response:
+    """Credit an artist. This is what decides whose record it is — and therefore
+    whether it can be analysed at all, since `lead_scope_shape` requires a party."""
+    _require_write(principal)
+    if role not in CREDIT_ROLES:
+        return _tracks_page(request, principal, sel=recording_id, status_code=400,
+                            credit_error=f"{role!r} is not a credit role this console "
+                                         f"offers.")
+
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        raise HTTPException(status_code=404, detail="No such recording.")
+    if repo.get_recording(conn, tenant_id, recording_id) is None:
+        raise HTTPException(status_code=404, detail="No such recording.")
+    # Checked rather than trusted from the select: the form is a hint to a browser, and
+    # a posted party id from another tenant would otherwise become a real credit row.
+    if repo.get_party(conn, tenant_id, party_id) is None:
+        return _tracks_page(request, principal, sel=recording_id, status_code=400,
+                            credit_error="No such artist on this roster.")
+
+    if not repo.add_credit(conn, tenant_id, recording_id,
+                           party_id=party_id, role=role):
+        return _tracks_page(
+            request, principal, sel=recording_id, status_code=409,
+            credit_error="That artist already holds that credit on this track.")
+    return RedirectResponse(f"/tracks?sel={recording_id}", status_code=303)
+
+
+@router.post("/tracks/{recording_id}/credits/{credit_id}/delete")
+def tracks_credit_delete(principal: Operator, recording_id: str,
+                         credit_id: str) -> Response:
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is not None:
+        repo.delete_credit(conn, tenant_id, recording_id, credit_id)
+    return RedirectResponse(f"/tracks?sel={recording_id}", status_code=303)
+
+
+@router.post("/tracks/{recording_id}/analyse")
+def tracks_analyse(principal: Operator, recording_id: str) -> Response:
+    """Queue `analyse_recording` against the newest stored master.
+
+    The same call `masters_confirm` makes on upload, exposed as a control for the case
+    that upload does not cover: the pipeline improved, and the operator wants a record
+    measured again by the better version. `platform/bin --reanalyse` is the fleet-wide
+    form of this; this is the one-record form.
+
+    `queue_analysis` returns False for a real and non-obvious reason — no credited
+    party, so a recording-scoped lead cannot satisfy `lead_scope_shape` — and this says
+    so rather than redirecting to an unchanged page that looks like a click that missed.
+    """
+    from rtf_platform import assets
+
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return RedirectResponse("/tracks", status_code=303)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT id FROM recording_asset
+                WHERE tenant_id = %s AND recording_id = %s AND kind = 'master'
+                  AND state = 'stored'
+                ORDER BY created_at DESC LIMIT 1""",
+            (tenant_id, recording_id))
+        master = cur.fetchone()
+
+    if master is None:
+        return RedirectResponse(
+            f"/tracks?sel={recording_id}&error=" + _q(
+                "There is no stored master to analyse. Upload one — the analysis is "
+                "queued from the upload itself."),
+            status_code=303)
+
+    if not assets.queue_analysis(conn, tenant_id, recording_id, str(master["id"])):
+        return RedirectResponse(
+            f"/tracks?sel={recording_id}&error=" + _q(
+                "Nothing was queued. Either this master is already waiting in the "
+                "frontier — one analysis per distinct file — or nobody is credited on "
+                "the track, and a recording-scoped lead has to carry a party."),
+            status_code=303)
+    return RedirectResponse(f"/tracks?sel={recording_id}", status_code=303)
 
 
 # ------------------------------------------------------------------- masters

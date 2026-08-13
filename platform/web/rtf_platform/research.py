@@ -31,7 +31,8 @@ import psycopg
 
 from rtf_platform.demo import Col, Field, Section, View, _bar
 from rtf_platform.domain import (
-    ARTIST_STATUSES, DEFAULT_TYPE, ArtistType, Platform, ProfileMode, unrecognised,
+    ARTIST_STATUSES, CREDIT_ROLES, DEFAULT_TYPE, RECORDING_STATUSES, ArtistType,
+    Platform, ProfileMode, unrecognised,
 )
 
 # How many rows a list view pulls. The console is a working surface, not a report: past
@@ -450,23 +451,9 @@ def _audio_cell(assets: list[dict[str, Any]]) -> str:
     return "none"
 
 
-def _measured_section(facts: dict[str, str]) -> tuple[Section, ...]:
-    """What listening to the master established. Absent entirely when nothing has.
-
-    Rendered from `party_fact` rather than recomputed, so what an operator reads is the
-    row a shortlist would read — and `style_terms` in particular, because that is the
-    value counterparty discovery actually searches playlists with.
-    """
-    if not facts:
-        return ()
-    items = [(k, facts[k]) for k in ("bpm", "genre", "style", "style_terms")
-             if facts.get(k)]
-    return (Section("Measured from the master", "kv", tuple(items)),) if items else ()
-
-
-def _masters_sections(recording_id: str,
-                      assets: list[dict[str, Any]],
-                      facts: dict[str, str] | None = None) -> tuple[Section, ...]:
+def _masters_sections(recording_id: str, assets: list[dict[str, Any]],
+                      measured: dict[str, dict[str, Any]] | None = None,
+                      ) -> tuple[Section, ...]:
     """The masters panel: what is held, and the form that adds to it.
 
     The form is only offered when there is somewhere for it to put a file. A console
@@ -491,20 +478,20 @@ def _masters_sections(recording_id: str,
             )
             for a in assets)))
 
-    facts = facts or {}
+    measured = measured or {}
     has_master = any(a["kind"] == "master" and a["state"] == "stored" for a in assets)
 
     # A master that has been listened to and still has no genre means one of two very
     # different things, and a track showing neither sends an operator hunting for a bug
     # in the upload. Say which.
-    if has_master and not facts.get("genre"):
+    if has_master and not measured.get("genre"):
         if not settings_mod.load().classifier_configured:
             sections.append(Section("No genre: no classifier", "note", (
                 "PLATFORM_CLASSIFIER_FUNCTION is unset, so analyse_recording measures "
                 "tempo and deliberately writes no genre rather than passing "
                 "tempo-band guesses off as a model's answer.",
             )))
-        elif facts:
+        elif measured:
             sections.append(Section("No genre: nothing recognised", "note", (
                 "The classifier ran and nothing cleared its confidence floor. A 400-way "
                 "sigmoid always has a best answer; reporting one this weak would be "
@@ -538,7 +525,326 @@ def _masters_sections(recording_id: str,
     return tuple(sections)
 
 
-def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
+#: The dimensions `analyse_recording` writes, in the order a person reads them. Kept
+#: here rather than imported from `agents._AUDIO_DIMENSIONS` because that tuple is the
+#: *writer's* list and this is the *reader's*: it also carries `genre`, `style` and
+#: `style_terms`, which are written further down that same function and not from it.
+#:
+#: There is no `key` in this list, and that is not an omission. Nothing in `audio.py`
+#: estimates a musical key, so the column the table used to reserve for one could never
+#: hold anything but an em dash — see the note on `tracks`'s columns.
+_MEASURED_DIMENSIONS: tuple[str, ...] = (
+    "bpm", "bpm_confidence", "brightness_hz", "genre", "style", "style_terms",
+)
+
+
+def _measurements(conn: psycopg.Connection,
+                  tenant_id: str) -> dict[str, dict[str, dict[str, Any]]]:
+    """The live measured facts for every recording, keyed `{recording: {dimension: row}}`.
+
+    One query for the tenant rather than one per row, the same rule the asset fetch
+    follows: the table is the unit of work here, not the record.
+
+    `DISTINCT ON` rather than a bare `status = 'live'` filter because live is not quite
+    unique. `agents._supersede_recording_fact` supersedes within
+    `(recording, dimension, provenance)`, so a dimension written once as `measured` and
+    later as `inferred` leaves two live rows, and picking arbitrarily between them would
+    make the column flicker between page loads. Newest wins, deterministically.
+    """
+    rows = _rows(conn, """
+        SELECT DISTINCT ON (recording_id, dimension)
+               id, recording_id, dimension, value_text, provenance, source, observed_at
+          FROM party_fact
+         WHERE tenant_id = %s AND recording_id IS NOT NULL AND status = 'live'
+           AND dimension = ANY(%s)
+         ORDER BY recording_id, dimension, observed_at DESC""",
+        (tenant_id, list(_MEASURED_DIMENSIONS)))
+
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in rows:
+        out.setdefault(str(row["recording_id"]), {})[row["dimension"]] = row
+    return out
+
+
+def _value(measured: dict[str, dict[str, Any]], dimension: str, default: str = "—") -> str:
+    row = measured.get(dimension)
+    return row["value_text"] if row and row["value_text"] else default
+
+
+def _confidence_bar(measured: dict[str, dict[str, Any]]) -> str:
+    """The tempo confidence as a bar, or blank.
+
+    Blank rather than an empty bar when nothing has been measured: a ten-cell trough
+    reads as "measured, and scored zero", which is the opposite of "not listened to yet".
+    """
+    raw = _value(measured, "bpm_confidence", "")
+    if not raw:
+        return ""
+    try:
+        return _bar(int(round(float(raw) * 100)))
+    except ValueError:
+        # A non-numeric confidence is a writer bug, not something to render as 0%.
+        return ""
+
+
+def _measured_section(measured: dict[str, dict[str, Any]],
+                      assets: list[dict[str, Any]]) -> Section:
+    """What listening to the master established, and what it was listening to.
+
+    Empty is a real answer and says which of its two causes it is — no master at all, or
+    a master nothing has got to yet — because the fix for the two is different.
+    """
+    if not measured:
+        stored = any(a["state"] == "stored" for a in assets)
+        return Section("Measured", "note", (
+            "Nothing measured yet. The master is stored, so `analyse_recording` has "
+            "either not claimed it or has not finished — check the queue."
+            if stored else
+            "Nothing measured yet, and no master is stored. Upload one and the "
+            "analysis is queued from the upload; no other action is needed.",
+        ))
+
+    shaped = next((a for a in assets if a.get("duration_ms") or a.get("sample_rate")),
+                  None)
+    items: list[tuple[str, str]] = []
+
+    bpm = _value(measured, "bpm", "")
+    if bpm:
+        confidence = _value(measured, "bpm_confidence", "")
+        items.append(("bpm", f"{bpm} · {confidence} confidence" if confidence else bpm))
+
+    brightness = _value(measured, "brightness_hz", "")
+    if brightness:
+        # Spelled out because "brightness" is not a word anyone outside this codebase
+        # uses for a spectral centroid, and the number is meaningless without the unit.
+        items.append(("brightness", f"{brightness} Hz (spectral centroid)"))
+
+    for dimension, label in (("genre", "genre"), ("style", "style"),
+                             ("style_terms", "style terms")):
+        value = _value(measured, dimension, "")
+        if not value:
+            continue
+        # `style` is stored as the full Discogs label — "Electronic---Tropical House".
+        # The parent is already on the line above as `genre`, so the tail is the part
+        # that carries new information; the separator is an artefact of the taxonomy
+        # and not something an operator should have to read past.
+        if dimension == "style":
+            value = value.split("---")[-1]
+        items.append((label, value))
+
+    if shaped:
+        if shaped.get("duration_ms"):
+            seconds = int(shaped["duration_ms"]) // 1000
+            items.append(("duration", f"{seconds // 60}:{seconds % 60:02d}"))
+        if shaped.get("sample_rate"):
+            items.append(("sample rate", f"{shaped['sample_rate']} Hz"))
+
+    # Which measurement this is *of*. A number taken off a 30-second preview is a
+    # different claim from one taken off the master, and `audio.py` names the difference
+    # in `source` precisely so a reader can tell without opening the fact row.
+    source = next((r["source"] for r in measured.values() if r.get("source")), "")
+    if source:
+        items.append(("listened to", source))
+    items.append(("measured", _ago(next(iter(measured.values())), "observed_at")))
+
+    return Section("Measured", "kv", tuple(items))
+
+
+def _provenance_section(conn: psycopg.Connection,
+                        measured: dict[str, dict[str, Any]]) -> tuple[Section, ...]:
+    """The basis walk for the tempo fact, which is the walk for all of them.
+
+    Every fact `analyse_recording` writes hangs off the same `recording_asset` edge, so
+    rendering one walk per dimension would repeat the same single row six times. The
+    tempo fact is the representative because it is the one always present when anything
+    is.
+
+    `"fact"` is the subject kind because that is the literal `agents` writes into
+    `fact_basis`. It is worth stating out loud: `facts()` above walks `"party_fact"` for
+    the same edges and therefore finds none of them.
+    """
+    anchor = measured.get("bpm") or next(iter(measured.values()), None)
+    if anchor is None:
+        return ()
+    walk = _basis(conn, "fact", anchor["id"])
+    if walk and walk[0][1] == "nothing":
+        return ()
+    return (Section("Measured from", "chain", tuple(walk)),)
+
+
+def _credit_sections(recording_id: str, credits: list[dict[str, Any]],
+                     roster: list[dict[str, Any]], *,
+                     error: str = "") -> tuple[Section, ...]:
+    """Who is on the record, and the form that adds someone.
+
+    Credits get the same `editlist` shape as the artist inspector's surfaces because
+    they are the same kind of thing: a row an operator asserts, removable one at a time,
+    where removing the wrong one is silent. It is not cosmetic here — the main-artist
+    credit is what `assets.queue_analysis` scopes an analysis lead by, so deleting it
+    stops the track being analysable at all.
+    """
+    listed = Section(
+        "Credits", "editlist",
+        tuple(
+            (c["party_name"],
+             f"{c['role'].replace('_', ' ')} · {c['provenance']}",
+             f"/tracks/{recording_id}/credits/{c['id']}/delete")
+            for c in credits
+        ) or ((None, "Nobody is credited — so this track belongs to no artist, and "
+                     "nothing can be analysed or budgeted against it.", None),),
+    )
+
+    if not roster:
+        return (listed, Section("No artists yet", "note", (
+            "A credit points at a party, and there are none. Add an artist first.",
+        )))
+
+    add = Section(
+        "Credit an artist", "form", (
+            Field("party_id", "Artist", "select", "",
+                  _flat(tuple((str(a["id"]), a["name"]) for a in roster))),
+            Field("role", "Role", "select", "main_artist",
+                  _flat(tuple((r, r.replace("_", " ")) for r in CREDIT_ROLES)),
+                  hint="Main artist and featured are the two that decide ownership."),
+        ),
+        action=f"/tracks/{recording_id}/credits", submit="Add credit", error=error,
+    )
+    return (listed, add)
+
+
+def _recording_fields(row: dict[str, Any]) -> tuple[Field, ...]:
+    return (
+        Field("title", "Title", "text", row.get("title", ""), required=True),
+        Field("isrc", "ISRC", "text", row.get("isrc_raw") or row.get("isrc", ""),
+              placeholder="QZ-ABC-25-00001",
+              hint="Stored canonically. A malformed one is refused, not filed."),
+        Field("released_on", "Released", "date",
+              str(row["released_on"]) if row.get("released_on") else "",
+              placeholder="YYYY-MM-DD"),
+    )
+
+
+def new_recording_sections(*, form: dict[str, str] | None = None,
+                           error: str = "") -> tuple[Section, ...]:
+    """The inspector when `?sel=new`. Same fields as the editor, minus status — a
+    recording nobody has saved cannot be archived."""
+    form = form or {}
+    return (
+        Section("New track", "form", _recording_fields(form),
+                action="/tracks", submit="Add track", error=error),
+        Section("", "actions", (("Cancel", "/tracks", ""),)),
+        Section("Note", "note", (
+            "Most recordings arrive from a statement import or a source harvest, with "
+            "their ISRC already attached. This is the hand path — for a master you are "
+            "holding before anything has reported it.",
+        )),
+    )
+
+
+def recording_editor_sections(
+    conn: psycopg.Connection, tenant_id: str, row: dict[str, Any],
+    assets: list[dict[str, Any]], measured: dict[str, dict[str, Any]],
+    credits: list[dict[str, Any]], roster: list[dict[str, Any]], *,
+    error: str = "", credit_error: str = "", confirm_delete: bool = False,
+) -> tuple[Section, ...]:
+    """Everything the inspector shows for one recording: read it, act on it, edit it.
+
+    This used to be a key-value block, the masters panel, and three buttons that posted
+    nowhere — `("Analyse", "Seed frontier", "Edit")` rendered as controls because the
+    template draws a bare string as an inert button. The artist inspector solved the
+    same problem by absorbing the editor that lived at `/roster`; this is that move.
+    """
+    rid = str(row["id"])
+    has_master = any(a["kind"] == "master" and a["state"] == "stored" for a in assets)
+    credited = any(c["role"] in ("main_artist", "featured") for c in credits)
+
+    edit = Section(
+        "Recording", "form",
+        _recording_fields(row) + (
+            Field("status", "Status", "select", row["status"],
+                  _flat(tuple((s, s) for s in RECORDING_STATUSES)),
+                  hint="Paused keeps the history and stops the agents."),
+        ),
+        action=f"/tracks/{rid}", submit="Save", error=error,
+    )
+
+    record = Section("Record", "kv", (
+        ("slug", row["slug"]),
+        ("isrc", row["isrc"] or "—"),
+        ("added", row["created_at"].strftime("%Y-%m-%d")),
+        ("live facts", str(row["facts"])),
+        ("pending leads", str(row["leads"])),
+        ("platforms", str(row["places"])),
+    ))
+
+    #: Only the buttons that do something. "Analyse" posts; the rest navigate. The two
+    #: reasons an analysis cannot be queued are stated before it is offered rather than
+    #: discovered by pressing it, because `queue_analysis` returning False is silent.
+    controls: list[Any] = []
+    if has_master and credited:
+        controls.append(("Analyse again", f"/tracks/{rid}/analyse", "p", "post"))
+    artist = next((c for c in credits if c["role"] in ("main_artist", "featured")), None)
+    if artist:
+        controls.append(("Artist", f"/artists?sel={artist['party_id']}", ""))
+    controls.append(("Facts", "/facts", ""))
+    controls.append(("Queue", "/queue", ""))
+    actions = Section("", "actions", tuple(controls))
+
+    blocked: tuple[Section, ...] = ()
+    if not has_master:
+        blocked = (Section("Analysis is not available", "note", (
+            "No master is stored, so there is nothing to listen to. Uploading one "
+            "queues the analysis by itself — see below.",
+        )),)
+    elif not credited:
+        blocked = (Section("Analysis is not available", "note", (
+            "Nobody is credited as main artist or featured. `lead_scope_shape` requires "
+            "a recording-scoped lead to carry a party — analysis is spent against the "
+            "artist whose record it is — so nothing can be queued until a credit exists.",
+        )),)
+
+    note = Section("Note", "note", (
+        "Re-analysing is not free and not always a no-op: a fact is superseded rather "
+        "than overwritten, so the previous measurement stays readable and "
+        "\"why did we think it was 84 BPM in March\" keeps its answer.",
+    ))
+
+    body = (
+        edit, record,
+        _measured_section(measured, assets),
+        *_provenance_section(conn, measured),
+        *_masters_sections(rid, assets, measured),
+        *_credit_sections(rid, credits, roster, error=credit_error),
+        *blocked, actions, note,
+    )
+
+    if confirm_delete:
+        danger = Section(
+            "Delete", "form", (
+                Field("", "", "static",
+                      f"Deleting {row['title']} also deletes {row['facts']} facts, "
+                      f"{len(credits)} credits, {row['places']} platform rows, "
+                      f"{row['leads']} pending leads and {len(assets)} stored file(s) — "
+                      "including the master, from the bucket. This cannot be undone."),
+            ),
+            action=f"/tracks/{rid}/delete", submit="Yes, delete permanently",
+            tone="danger",
+        )
+        # First, not last, for the reason the artist editor gives: the control that asks
+        # for the confirmation sits at the bottom of a scrolling pane, so a confirmation
+        # rendered in place would appear below the fold and read as a click that did
+        # nothing.
+        return (danger, Section("", "actions", (("Cancel", f"/tracks?sel={rid}", ""),)),
+                *body)
+
+    return (*body, Section("", "actions", (
+        ("Delete track", f"/tracks?sel={rid}&confirm=delete", "d"),
+    )))
+
+
+def tracks(conn: psycopg.Connection, tenant_id: str, *,
+           editing_id: str | None = None, error: str = "",
+           credit_error: str = "", confirm_delete: bool = False) -> View:
     # A recording is not owned by an artist — credits are, which is what lets one
     # recording carry two main artists instead of being stored twice. So the
     # performer comes from `party_credit`, and `string_agg` because there can be
@@ -553,7 +859,8 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
     # drop it as redundant without deleting the `f.tenant_id = t.tenant_id` predicates
     # too, and those are load-bearing — see `tests/test_tenant_scoping.py`.
     rows = _rows(conn, """
-        SELECT t.id, t.title, t.slug, t.isrc, t.released_on, t.status,
+        SELECT t.id, t.title, t.slug, t.isrc, t.isrc_raw, t.released_on, t.status,
+               t.created_at,
                coalesce(string_agg(a.name, ', ' ORDER BY a.name), '—') AS artist_name,
                (SELECT count(*) FROM party_fact f
                  WHERE f.tenant_id = t.tenant_id AND f.recording_id = t.id)     AS facts,
@@ -569,25 +876,13 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
                                   AND c.role IN ('main_artist', 'featured')
           LEFT JOIN party a ON a.tenant_id = t.tenant_id AND a.id = c.party_id
          WHERE t.tenant_id = %s
-         GROUP BY t.tenant_id, t.id, t.title, t.slug, t.isrc, t.released_on, t.status
+         GROUP BY t.tenant_id, t.id, t.title, t.slug, t.isrc, t.isrc_raw,
+                  t.released_on, t.status, t.created_at
          ORDER BY t.title""", (tenant_id,))
 
     # Every asset for the tenant in one query, grouped in Python, rather than one query
     # per row. Thirteen views render the same way and none of them fans out per row —
     # the table is the unit of work here, not the record.
-    # Live measured facts per recording, so the table shows what was measured rather
-    # than an em dash beside a master that has already been listened to. `bpm` was
-    # hardcoded to "—" from the fixture era and stayed that way after
-    # `analyse_recording` started writing real numbers.
-    facts_by_recording: dict[str, dict[str, str]] = {}
-    for fact in _rows(conn, """
-            SELECT recording_id, dimension, value_text FROM party_fact
-             WHERE tenant_id = %s AND status = 'live' AND recording_id IS NOT NULL
-               AND dimension IN ('bpm', 'genre', 'style', 'style_terms')""",
-            (tenant_id,)):
-        facts_by_recording.setdefault(str(fact["recording_id"]), {})[
-            fact["dimension"]] = fact["value_text"]
-
     by_recording: dict[str, list[dict[str, Any]]] = {}
     for asset in _rows(conn, """
             SELECT id, recording_id, kind, label, bytes, mime, state, uploaded_at,
@@ -597,48 +892,80 @@ def tracks(conn: psycopg.Connection, tenant_id: str) -> View:
              ORDER BY kind, created_at DESC""", (tenant_id,)):
         by_recording.setdefault(str(asset["recording_id"]), []).append(asset)
 
-    out = [{
-        "id": str(r["id"]), "title": r["title"], "artist": r["artist_name"],
-        "state": r["status"],
-        "bpm": facts_by_recording.get(str(r["id"]), {}).get("bpm", "—"),
-        "key": (facts_by_recording.get(str(r["id"]), {}).get("style", "")
-                .split("---")[-1] or "—"),
-        "campaigns": str(r["leads"]), "streams": str(r["places"]),
-        "audio": _audio_cell(by_recording.get(str(r["id"]), [])),
-        "spark": "▁▁▁▁▁▁▁",
-        "insp": (
-            Section("Recording", "kv", (
-                ("title", r["title"]), ("credited", r["artist_name"]),
-                ("isrc", r["isrc"] or "—"),
-                ("released", str(r["released_on"]) if r["released_on"] else "—"),
-                ("status", r["status"]), ("facts", str(r["facts"])),
-                ("leads", str(r["leads"])), ("platforms", str(r["places"])),
-            )),
-            *_measured_section(facts_by_recording.get(str(r["id"]), {})),
-            *_masters_sections(str(r["id"]), by_recording.get(str(r["id"]), []),
-                               facts_by_recording.get(str(r["id"]), {})),
-            Section("", "actions", ("Analyse", "Seed frontier", "Edit")),
-        ),
-    } for r in rows]
+    # The measured facts and the credits, each in one query for the whole tenant, for
+    # the reason the asset fetch above gives.
+    measurements = _measurements(conn, tenant_id)
+
+    by_credit: dict[str, list[dict[str, Any]]] = {}
+    for credit in _rows(conn, """
+            SELECT c.id, c.subject_id, c.party_id, c.role, c.provenance,
+                   p.name AS party_name
+              FROM party_credit c
+              JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id
+             WHERE c.tenant_id = %s AND c.subject_kind = 'recording'
+             ORDER BY c.role, p.name""", (tenant_id,)):
+        by_credit.setdefault(str(credit["subject_id"]), []).append(credit)
+
+    # Fetched once and shared by every row's credit form rather than per selection: the
+    # inspector is built for all rows here, and the roster does not vary between them.
+    roster = _rows(conn, """
+        SELECT a.id, a.name FROM party a
+          JOIN party_role r ON r.tenant_id = a.tenant_id AND r.party_id = a.id
+                            AND r.role = 'roster_artist'
+         WHERE a.tenant_id = %s ORDER BY a.name""", (tenant_id,))
+
+    out = []
+    for r in rows:
+        rid = str(r["id"])
+        assets = by_recording.get(rid, [])
+        measured = measurements.get(rid, {})
+        out.append({
+            "id": rid, "title": r["title"], "artist": r["artist_name"],
+            "state": r["status"],
+            "audio": _audio_cell(assets),
+            "bpm": _value(measured, "bpm"),
+            # The style when the classifier resolved one, the parent genre otherwise.
+            # The style is the more specific answer and is only written above the
+            # model's own confidence floor, so preferring it costs nothing when absent.
+            # Split on the Discogs separator: the column has room for "House", not for
+            # "Electronic---House".
+            "genre": (_value(measured, "style", "").split("---")[-1]
+                      or _value(measured, "genre")),
+            "campaigns": str(r["leads"]), "streams": str(r["places"]),
+            "conf": _confidence_bar(measured),
+            "insp": recording_editor_sections(
+                conn, tenant_id, r, assets, measured,
+                by_credit.get(rid, []), roster,
+                error=(error if editing_id == rid else ""),
+                credit_error=(credit_error if editing_id == rid else ""),
+                confirm_delete=(confirm_delete and editing_id == rid),
+            ),
+        })
 
     with_master = sum(1 for r in out if r["audio"] == "master")
+    analysed = sum(1 for r in out if r["bpm"] != "—")
     return View(
         key="tracks", title="Tracks",
         blurb="Recordings — the masters, identified by ISRC. Credits decide who they "
-              "belong to, so a collaboration is one row. Live from recording.",
+              "belong to, so a collaboration is one row. Live from recording, and "
+              "editable in place.",
         stats=(("tracks", str(len(out)), ""),
                ("with a master", str(with_master), ""),
-               ("analysed", "0", ""),
+               ("analysed", str(analysed), _bar(_pct(analysed, len(out) or 1))),
                ("with leads", str(sum(1 for r in out if r["campaigns"] != "0")), ""),
-               ("facts", str(sum(int(r["insp"][0].items[5][1]) for r in out)), "")),
-        cols=(Col("title", "Track", "b", "22%"), Col("artist", "Artist", "", "18%"),
-              Col("state", "Status", "chip", "11%"), Col("audio", "Audio", "chip", "11%"),
-              Col("bpm", "BPM", "num", "7%"), Col("key", "Style", "mono", "9%"),
-              Col("campaigns", "Leads", "num", "7%"), Col("streams", "On", "num", "8%"),
-              Col("spark", "", "spark", "7%")),
+               ("facts", str(sum(int(r["facts"]) for r in rows)), "")),
+        # No `Key` column. Nothing in `audio.py` estimates a musical key, so the column
+        # that used to sit here was a hardcoded em dash in every row of every tenant — a
+        # promise of a measurement this platform has never been able to take. `Genre` is
+        # in its place because the classifier genuinely writes one.
+        cols=(Col("title", "Track", "b", "22%"), Col("artist", "Artist", "", "16%"),
+              Col("state", "Status", "chip", "10%"), Col("audio", "Audio", "chip", "10%"),
+              Col("bpm", "BPM", "num", "7%"), Col("genre", "Genre", "", "13%"),
+              Col("campaigns", "Leads", "num", "6%"), Col("streams", "On", "num", "6%"),
+              Col("conf", "", "bar", "10%")),
         rows=tuple(out),
         empty="No recordings yet. One arrives with an ISRC, and the ISRC is what "
-              "places it on every platform.",
+              "places it on every platform — or start one by hand with ＋ New track.",
     )
 
 

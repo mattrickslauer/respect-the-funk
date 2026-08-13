@@ -102,6 +102,7 @@ from __future__ import annotations
 
 import ast
 import re
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
@@ -154,35 +155,107 @@ _WHERE_ZONE_ENDERS = {"GROUP BY", "ORDER BY", "LIMIT", "RETURNING", "HAVING",
 #: unscoped — see the module docstring.
 ALLOWLIST: dict[str, str] = {}
 
+#: Interpolations this resolver is permitted to treat as an opaque *value* rather than
+#: give up on, keyed by `(file, enclosing function, variable name)` with the reason.
+#:
+#: The resolver's default for an interpolation it cannot follow is to raise, and that
+#: default is the whole guarantee: a statement it cannot read is a statement this file
+#: no longer covers, so falling back to a placeholder *generally* would silently retire
+#: the check. Registering a site here is therefore a claim about that site, and the claim
+#: is narrow: **the interpolated text is a value, not SQL structure** — it cannot
+#: introduce a table reference, a `JOIN`, or a `WHERE` clause, so substituting a
+#: placeholder leaves the statement's skeleton — the part carrying `tenant_id` — intact
+#: and still checked.
+#:
+#: That claim is not something this file can verify by reading the AST, which is exactly
+#: why each entry has to be written by hand and justified. An interpolation that splices
+#: in a clause must never be registered here; simplify the call instead.
+VALIDATED_FRAGMENTS: dict[tuple[str, str, str], str] = {
+    ("agents.py", "shortlist_as_of", "as_of"): (
+        "A relative timestamp for `AS OF SYSTEM TIME`, interpolated because CockroachDB "
+        "requires that clause to be a constant at plan time and rejects a placeholder. "
+        "`shortlist_as_of` regex-validates it against `-\\d{1,4}(s|m|h)` and raises "
+        "otherwise, before it reaches the SQL — so what lands here is a timestamp "
+        "literal, never a clause. The surrounding statement keeps its literal "
+        "`WHERE tenant_id = %s` and is checked below in both of its two possible forms."),
+}
+
+#: What an entry in `VALIDATED_FRAGMENTS` resolves to. Deliberately not SQL-shaped: it
+#: must not be readable as a table name by `_REF_RE`, nor as a `tenant_id` predicate by
+#: `_has_tenant_equality`, so a registered fragment can only ever make a statement look
+#: *less* scoped than it is — never more.
+OPAQUE = "<opaque>"
+
+#: Ceiling on the number of statically-possible texts one call site may expand into.
+#: A conditional fragment doubles the count, so a statement built from several would
+#: grow exponentially; a site that hits this is not one to raise the ceiling for, it is
+#: one to simplify.
+MAX_VARIANTS = 8
+
 
 # --------------------------------------------------------------- static SQL resolution
 
-def _literal_text(node: ast.AST | None, env: dict[str, str | None]) -> str | None:
-    """Best-effort static string value of an AST node, or `None` if it depends on
-    something this resolver does not follow (a function call, a dict lookup, ...)."""
+def _cross(prefixes: list[str], suffixes: list[str]) -> list[str]:
+    """Every `prefix + suffix` pairing, capped at `MAX_VARIANTS`. Raising rather than
+    truncating: a silently-dropped variant is a statement that stopped being checked,
+    which is the failure mode this whole file is built to make impossible."""
+    if len(prefixes) * len(suffixes) > MAX_VARIANTS:
+        raise AssertionError(
+            f"this statement expands into more than {MAX_VARIANTS} statically-possible "
+            "texts, which means it is assembled from several conditional fragments. "
+            "Simplify it rather than raising the ceiling — a statement nobody can read "
+            "in one piece is one nobody can review for tenant scoping either.")
+    return [p + s for p in prefixes for s in suffixes]
+
+
+def _literal_texts(node: ast.AST | None, env: dict[str, list[str] | None],
+                   opaque: set[str]) -> list[str] | None:
+    """Every statically-possible string value of an AST node, or `None` if it depends on
+    something this resolver does not follow (a function call, a dict lookup, ...).
+
+    A *list*, not a single string, because a conditional fragment (`x if c else y`) gives
+    the statement more than one possible text and checking only one of them would let the
+    other hide. Every variant is returned and every variant is checked, so a branch that
+    drops `tenant_id` fails the suite even when its sibling branch keeps it.
+
+    `opaque` names the variables — drawn from `VALIDATED_FRAGMENTS` for this scope — whose
+    interpolated value may stand in as `OPAQUE` instead of defeating resolution.
+    """
     if node is None:
         return None
     if isinstance(node, ast.Constant) and isinstance(node.value, (str, int, float)):
-        return str(node.value)
+        return [str(node.value)]
     if isinstance(node, ast.JoinedStr):  # an f-string
-        parts: list[str] = []
+        parts: list[str] = [""]
         for value in node.values:
             if isinstance(value, ast.Constant):
-                parts.append(str(value.value))
+                parts = _cross(parts, [str(value.value)])
             elif isinstance(value, ast.FormattedValue):
-                resolved = _literal_text(value.value, env)
+                resolved = _literal_texts(value.value, env, opaque)
                 if resolved is None:
-                    return None
-                parts.append(resolved)
+                    # Unreadable — but permitted to be, if this exact interpolation is
+                    # registered as a value rather than structure. Only a bare name can
+                    # be registered: an expression has no single name to justify.
+                    if isinstance(value.value, ast.Name) and value.value.id in opaque:
+                        resolved = [OPAQUE]
+                    else:
+                        return None
+                parts = _cross(parts, resolved)
             else:
                 return None
-        return "".join(parts)
+        return parts
     if isinstance(node, ast.Name):
         return env.get(node.id)
+    if isinstance(node, ast.IfExp):  # `a if cond else b` — both are possible
+        left = _literal_texts(node.body, env, opaque)
+        right = _literal_texts(node.orelse, env, opaque)
+        if left is None or right is None:
+            return None
+        return _cross([""], left + right)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left = _literal_text(node.left, env)
-        right = _literal_text(node.right, env)
-        return None if left is None or right is None else left + right
+        left = _literal_texts(node.left, env, opaque)
+        right = _literal_texts(node.right, env, opaque)
+        return None if left is None or right is None else _cross(left, right)
     return None
 
 
@@ -198,21 +271,27 @@ def _gather_assigns(nodes: Any) -> list[tuple[str, str, ast.AST, int]]:
 
 
 def _build_env(assigns: list[tuple[str, str, ast.AST, int]],
-               base: dict[str, str | None] | None = None) -> dict[str, str | None]:
+               base: dict[str, list[str] | None] | None = None,
+               opaque: set[str] | None = None) -> dict[str, list[str] | None]:
     """A same-scope string environment: `sql = f"..."` then `sql += "..."`, in source
     order, so a variable built across a few statements (`repo.list_parties`) resolves
     the same as a single literal would. Order matters more than control flow here — an
     `if` branch's assignment is folded in unconditionally, which over-approximates
     (assumes every branch ran) rather than under-approximates, so a statement that
-    *sometimes* omits `tenant_id` cannot hide behind a branch that includes it."""
-    env = dict(base or {})
+    *sometimes* omits `tenant_id` cannot hide behind a branch that includes it.
+
+    Each name maps to every value it could statically hold, so a variable assigned a
+    conditional expression carries both of its possibilities forward into whatever
+    statement uses it."""
+    env: dict[str, list[str] | None] = dict(base or {})
+    names = opaque or set()
     for kind, name, valnode, _ in sorted(assigns, key=lambda t: t[3]):
-        val = _literal_text(valnode, env)
+        val = _literal_texts(valnode, env, names)
         if kind == "assign":
             env[name] = val
         else:
             prev = env.get(name)
-            env[name] = None if prev is None or val is None else prev + val
+            env[name] = None if prev is None or val is None else _cross(prev, val)
     return env
 
 
@@ -240,7 +319,10 @@ def _find_forwarders(tree: ast.AST) -> tuple[dict[str, int], set[int]]:
 
 
 def _extract_statements(path: Path) -> list[tuple[int, str]]:
-    """`(lineno, sql_text)` for every statement reaching `.execute()` in this file.
+    """`(lineno, sql_text)` for every statement reaching `.execute()` in this file, one
+    entry per statically-possible text — a call whose SQL is assembled with a conditional
+    fragment yields every form it could take, so each is checked independently.
+
     Raises with file/line detail — rather than skipping — for any call whose SQL text
     this resolver cannot statically determine, so a future dynamic-SQL pattern fails
     the test loudly instead of quietly falling out of coverage."""
@@ -248,18 +330,32 @@ def _extract_statements(path: Path) -> list[tuple[int, str]]:
     forwarders, internal = _find_forwarders(tree)
     fn_scopes = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
 
+    try:
+        relative = path.resolve().relative_to(RTF_PLATFORM).as_posix()
+    except ValueError:  # a path outside the package — the self-tests below use these
+        relative = path.name
+
+    def opaque_for(scope: ast.FunctionDef | None) -> set[str]:
+        """The names this scope may leave opaque, per `VALIDATED_FRAGMENTS`. Keyed by
+        function name rather than line, so moving the function does not silently drop
+        its registration — renaming it does, which is the intended re-justification."""
+        fn_name = scope.name if scope else "<module>"
+        return {var for (f, fn, var) in VALIDATED_FRAGMENTS
+                if f == relative and fn == fn_name}
+
     module_assigns = _gather_assigns(
         n for n in tree.body if isinstance(n, (ast.Assign, ast.AugAssign)))
-    module_env = _build_env(module_assigns)
-    env_cache: dict[int | None, dict[str, str | None]] = {}
+    module_env = _build_env(module_assigns, opaque=opaque_for(None))
+    env_cache: dict[int | None, dict[str, list[str] | None]] = {}
 
-    def env_for(scope: ast.FunctionDef | None) -> dict[str, str | None]:
+    def env_for(scope: ast.FunctionDef | None) -> dict[str, list[str] | None]:
         key = id(scope) if scope else None
         if key not in env_cache:
             if scope is None:
                 env_cache[key] = module_env
             else:
-                env_cache[key] = _build_env(_gather_assigns(ast.walk(scope)), base=module_env)
+                env_cache[key] = _build_env(_gather_assigns(ast.walk(scope)),
+                                            base=module_env, opaque=opaque_for(scope))
         return env_cache[key]
 
     def scope_of(node: ast.AST) -> ast.FunctionDef | None:
@@ -298,16 +394,19 @@ def _extract_statements(path: Path) -> list[tuple[int, str]]:
                 "argument(s) — this resolver cannot tell whether SQL text is even "
                 "involved. Pass the SQL positionally, or teach this resolver the new "
                 "call shape.")
-        text = _literal_text(node.args[arg_index], env_for(scope_of(node)))
-        if text is None:
+        scope = scope_of(node)
+        texts = _literal_texts(node.args[arg_index], env_for(scope), opaque_for(scope))
+        if texts is None:
             raise AssertionError(
                 f"{path}:{node.lineno}: this test cannot statically resolve the SQL "
                 "text passed here — it is neither a literal/f-string nor a variable "
                 "this resolver can trace. Either simplify the call so the SQL is "
-                "readable statically, or teach `_literal_text`/`_find_forwarders` the "
-                "new shape. A statement this test cannot see is a statement the "
+                "readable statically, or teach `_literal_texts`/`_find_forwarders` the "
+                "new shape. If the unreadable part is an interpolated *value* rather "
+                "than SQL structure, register it in `VALIDATED_FRAGMENTS` with the "
+                "argument for why. A statement this test cannot see is a statement the "
                 "tenant-scoping guarantee no longer covers.")
-        out.append((node.lineno, text))
+        out.extend((node.lineno, text) for text in texts)
     return out
 
 
@@ -436,6 +535,69 @@ class TenantScoping(unittest.TestCase):
         self.assertIn(Path("fleet.py"), found)
         self.assertIn(Path("distributors/base.py"), found,
                       "rglob must recurse into subpackages, not just the top level")
+
+    def test_a_conditional_fragment_is_checked_in_every_form(self) -> None:
+        """`_literal_texts` returning a *list* is the whole defence against a statement
+        assembled with `x if cond else y`: resolving only one branch would let the other
+        drop `tenant_id` unseen. Prove it against a throwaway module whose two branches
+        differ exactly that way, rather than trusting that the real code happens to be
+        safe in both of its forms — which it is, and which is not evidence of anything.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "conditional.py"
+            path.write_text(
+                "def q(conn, tenant_id, scoped):\n"
+                "    where = 'WHERE tenant_id = %s' if scoped else ''\n"
+                "    with conn.cursor() as cur:\n"
+                "        cur.execute(f'SELECT id FROM party {where}')\n"
+            )
+            texts = [sql for _, sql in _extract_statements(path)]
+
+        self.assertEqual(
+            len(texts), 2,
+            f"both branches should surface as separate statements, got: {texts}")
+        offenders = [t for t in texts if _violations(t)]
+        self.assertEqual(
+            len(offenders), 1,
+            "the unscoped branch must be caught even though its sibling is scoped — "
+            f"statements checked: {texts}")
+
+    def test_an_unregistered_opaque_interpolation_still_raises(self) -> None:
+        """The `VALIDATED_FRAGMENTS` escape must stay opt-in per site. A module that
+        interpolates an untraceable value without registering it is exactly the dynamic
+        SQL this resolver refuses to pretend it can read."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "dynamic.py"
+            path.write_text(
+                "def q(conn, tenant_id, frag):\n"
+                "    with conn.cursor() as cur:\n"
+                "        cur.execute(f'SELECT id FROM party {frag} WHERE tenant_id = %s')\n"
+            )
+            with self.assertRaises(AssertionError) as caught:
+                _extract_statements(path)
+        self.assertIn("cannot statically resolve", str(caught.exception))
+
+    def test_every_validated_fragment_entry_is_still_live(self) -> None:
+        """An entry left behind for a call site that no longer interpolates anything is
+        a standing permission nobody is checking — the same staleness the `ALLOWLIST`
+        guard below refuses to tolerate, applied to the other escape hatch."""
+        for (rel, fn, var), reason in VALIDATED_FRAGMENTS.items():
+            with self.subTest(fragment=(rel, fn, var)):
+                path = RTF_PLATFORM / rel
+                self.assertTrue(path.exists(), f"{rel} no longer exists")
+                tree = ast.parse(path.read_text(), filename=str(path))
+                fns = [n for n in ast.walk(tree)
+                       if isinstance(n, ast.FunctionDef) and n.name == fn]
+                self.assertEqual(
+                    len(fns), 1,
+                    f"{rel} does not define exactly one `{fn}` — the registration is "
+                    "stale; re-justify it against whatever replaced the function")
+                names = {n.id for n in ast.walk(fns[0]) if isinstance(n, ast.Name)}
+                self.assertIn(
+                    var, names,
+                    f"`{var}` is no longer referenced in {rel}:{fn} — remove the "
+                    "entry rather than let it excuse a future interpolation silently")
+                self.assertTrue(reason.strip(), "an entry must carry its argument")
 
     def test_every_tenant_scoped_statement_carries_tenant_id(self) -> None:
         used_allowlist_entries: set[str] = set()

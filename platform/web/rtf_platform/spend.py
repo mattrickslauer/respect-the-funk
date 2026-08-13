@@ -91,6 +91,15 @@ RATES: dict[str, Rate] = {
         "AWS Cost Explorer query", usd_per_request=Decimal("0.01"),
         note="Checking the bill costs money. Priced here so nobody calls it in a loop.",
     ),
+    "aws:ses:SendEmail": Rate(
+        "Amazon SES outbound email", usd_per_request=Decimal("0.0001"),
+        note="$0.10 per thousand. The money is not the point — this entry exists so "
+             "sending passes through the same gate as everything else, which means "
+             "RTF_PAID_ENABLED=0 is a working kill switch for outbound mail and "
+             "RTF_DAILY_CEILING_USD is a hard cap on how many strangers this system "
+             "can contact in a day. A runaway loop that mails ten thousand curators "
+             "costs $1 and is unrecoverable; the ceiling stops it at the ceiling.",
+    ),
 }
 
 #: Free. Listed explicitly rather than assumed, so adding a source is a decision about

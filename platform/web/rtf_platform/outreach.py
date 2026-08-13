@@ -34,6 +34,10 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
+# `agents` does not import this module, so this direction is safe and the reverse would
+# not be: `justification` replays a shortlist, and the shortlist is agents' to define.
+from rtf_platform import agents
+
 #: `PLATFORM-SPEC §2d`'s state machine, as `state -> the states it may become`.
 #:
 #: Read the shape rather than the entries: every state can reach a closed one, because
@@ -139,7 +143,8 @@ def set_campaign_state(conn: psycopg.Connection, tenant_id: str, campaign_id: st
 # --------------------------------------------------------------------- threads
 
 def open_thread(conn: psycopg.Connection, tenant_id: str, *, campaign_id: str,
-                counterparty_id: str) -> dict[str, Any]:
+                counterparty_id: str,
+                decided: tuple[Any, int, float] | None = None) -> dict[str, Any]:
     """Open a conversation, and take the counterparty off the shortlist.
 
     The insert may fail on `one_open_thread_per_counterparty`, and that failure is the
@@ -151,14 +156,31 @@ def open_thread(conn: psycopg.Connection, tenant_id: str, *, campaign_id: str,
     what makes that true rather than the fact that the statements are adjacent.
     `contact_state` is a cache of the index, and a cache written in a second transaction
     is a cache that can be wrong.
+
+    `decided` is `(hlc, rank, distance)` from the shortlist that produced this
+    counterparty, or `None` when a human picked the name themselves. It is written in the
+    same transaction as the thread for the same reason `contact_state` is: a justification
+    committed separately from the thing it justifies is a justification that can be
+    missing, and the one moment anybody will want it is the moment something went wrong.
+
+    **`None` is a real answer and not a missing one.** `025_decision_provenance.sql`
+    argues this at length: defaulting it to the current timestamp would let a
+    hand-opened thread present "the ranking at the instant somebody typed a name" as its
+    reason, which reads exactly like a real justification. The column stays NULL, and
+    the schema's `thread_decision_is_whole` CHECK means a caller cannot write half of one
+    — a rank without the instant it was a rank at cannot be replayed, and an instant
+    without a rank cannot be checked against the replay.
     """
+    hlc, rank, distance = decided if decided is not None else (None, None, None)
     with conn.transaction():
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO thread (tenant_id, campaign_id, counterparty_id, state)
-                   VALUES (%s, %s, %s, 'discovered')
-                   RETURNING id, state, campaign_id, counterparty_id""",
-                (tenant_id, campaign_id, counterparty_id))
+                """INSERT INTO thread (tenant_id, campaign_id, counterparty_id, state,
+                                       decided_at_hlc, decided_rank, decided_distance)
+                   VALUES (%s, %s, %s, 'discovered', %s, %s, %s)
+                   RETURNING id, state, campaign_id, counterparty_id,
+                             decided_at_hlc, decided_rank, decided_distance""",
+                (tenant_id, campaign_id, counterparty_id, hlc, rank, distance))
             row = cur.fetchone()
             cur.execute(
                 "UPDATE party SET contact_state = 'in_thread' WHERE tenant_id = %s AND id = %s",
@@ -428,3 +450,91 @@ def counts(conn: psycopg.Connection, tenant_id: str) -> dict[str, int]:
                    WHERE tenant_id = %(t)s AND state = 'running') AS running""",
             {"t": tenant_id})
         return dict(cur.fetchone() or {})
+
+
+class NotJustified(RuntimeError):
+    """This thread carries no ranking to replay.
+
+    Distinct from `agents.HistoryExpired`, and the distinction is the whole point of
+    having two exceptions: this one means *nobody ever recorded a reason* — a human
+    opened the thread, or it predates `025_decision_provenance.sql`. The other means a
+    reason was recorded and the cluster no longer retains the memory to reconstruct it.
+
+    "We never had one" and "we had one and it aged out" are different answers to
+    somebody asking why they were contacted, and a console that renders them
+    identically is lying about one of them.
+    """
+
+
+def justification(conn: psycopg.Connection, tenant_id: str,
+                  thread_id: str, *, limit: int = 12) -> dict[str, Any]:
+    """Reconstruct the shortlist that opened this thread, as it stood at that instant.
+
+    The whole reason `025_decision_provenance.sql` exists. Given a thread — reachable
+    from any message anybody actually sent — this returns the ranking that caused it,
+    read from the vector index as it was, not as it is.
+
+    Three outcomes, and keeping them separate is more important than any of them:
+
+      * a ranking, plus `matched` saying whether the replay still puts this counterparty
+        where the thread recorded it;
+      * `NotJustified`, when nothing was ever recorded;
+      * `agents.HistoryExpired`, when the instant has passed the GC window.
+
+    **`matched` is the part worth arguing for.** The replay alone is a strong claim and
+    an unfalsifiable one: whatever it returns looks like an answer. Comparing it against
+    the rank and distance the thread stored at decision time makes the claim checkable —
+    if the embedding model changed underneath, or the replay is reading a different query
+    than the one that ran, the numbers diverge and the console can say so instead of
+    presenting a confident reconstruction of the wrong thing. A claim that can fail is
+    worth more than one that cannot, and this is the cheapest way to let it.
+
+    `distance` is compared with a tolerance rather than for equality because it is a
+    FLOAT that has been through a database round trip; the rank is compared exactly,
+    because a position in a list either is or is not the one recorded.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            # The join carries its own `tenant_id` rather than borrowing the thread's.
+            # `test_tenant_scoping` refuses the version without it and is right to: a
+            # `WHERE` on the left table does not scope the right one, so a campaign id
+            # colliding across tenants would join a foreign row. UUIDs make that
+            # vanishingly unlikely and "unlikely" is not the guarantee this codebase
+            # claims — the whole point of proving it statically is that nobody has to
+            # reason about the odds.
+            """SELECT t.counterparty_id, t.decided_at_hlc, t.decided_rank,
+                      t.decided_distance, c.party_id AS artist_id
+                 FROM thread t
+                 JOIN campaign c ON c.id = t.campaign_id AND c.tenant_id = t.tenant_id
+                WHERE t.tenant_id = %s AND t.id = %s""",
+            (tenant_id, thread_id))
+        row = cur.fetchone()
+
+    if row is None:
+        raise LookupError(f"no thread {thread_id!r} in this tenant")
+    if row["decided_at_hlc"] is None:
+        raise NotJustified(
+            f"thread {thread_id} records no shortlist behind it. Either somebody opened "
+            "it by hand, or it predates migration 025 — see that file for why an absent "
+            "reason is left absent rather than given a plausible default.")
+
+    # Raises HistoryExpired if the instant has been collected. Deliberately not caught:
+    # the caller has to decide what to tell a person, and this module cannot.
+    ranking = agents.shortlist_as_of(
+        conn, tenant_id, str(row["artist_id"]),
+        as_of=str(row["decided_at_hlc"]), limit=limit)
+
+    here = next(((i + 1, r) for i, r in enumerate(ranking)
+                 if str(r["id"]) == str(row["counterparty_id"])), None)
+    matched = bool(
+        here and here[0] == row["decided_rank"]
+        and abs(float(here[1]["distance"]) - float(row["decided_distance"])) < 1e-6)
+
+    return {
+        "as_of": str(row["decided_at_hlc"]),
+        "recorded_rank": row["decided_rank"],
+        "recorded_distance": float(row["decided_distance"]),
+        "replayed_rank": here[0] if here else None,
+        "ranking": ranking,
+        "matched": matched,
+    }

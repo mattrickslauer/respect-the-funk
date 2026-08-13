@@ -805,6 +805,52 @@ def _write_embed_party(conn: psycopg.Connection, lead: dict[str, Any], gate: spe
 embed_party = fleet.NetworkAgent(fetch=_fetch_embed_party, write=_write_embed_party)
 
 
+class HistoryExpired(RuntimeError):
+    """A replay asked for an instant the cluster no longer retains.
+
+    Its own type rather than a `ValueError`, because callers must be able to tell it
+    apart from a malformed `as_of` and say something different: one is "that is not a
+    timestamp", the other is "that was a timestamp, and the answer used to exist".
+    A console rendering the second as the first tells an operator their input was wrong
+    when the truth is that they waited too long.
+    """
+
+
+#: The two ways CockroachDB says "that is before the GC threshold", captured verbatim
+#: from this cluster on 2026-08-13 by asking for `-24h` and `-72h` respectively:
+#:
+#:     batch timestamp 1786548125.584370651,0 must be after replica GC threshold 178657…
+#:     error in retrieving descs between 1786375325.763722825,0, 1786460047.883410335,2
+#:
+#: The second does not mention GC at all — it surfaces as a descriptor lookup failing,
+#: because past the threshold the *table's own schema history* is gone too, and that is
+#: what the planner misses first.
+_GC_BOUNDARY_SIGNATURES = (
+    "must be after replica gc threshold",
+    "error in retrieving descs between",
+)
+
+
+def _is_gc_boundary(exc: BaseException) -> bool:
+    """Whether this error is the GC window and not something else.
+
+    Matching on message text is fragile and it is worth being explicit about why it is
+    the right fragility here. CockroachDB reports both of these as generic errors with no
+    distinguishing SQLSTATE — `must be after replica GC threshold` arrives as the same
+    class as a dozen unrelated failures — so there is no code to switch on, and the text
+    is the only signal that exists.
+
+    The failure mode of getting it wrong is deliberately asymmetric. If a future version
+    rewords the message, this returns False, the original error propagates unchanged, and
+    a caller sees a database error instead of a tidy one — noisy, and correct. What it
+    will not do is mistake some *other* failure for an expired history and tell somebody
+    their audit trail has aged out when it has not. Both signatures are anchored to
+    phrases that mean this and nothing else, and the day one stops matching is a day this
+    gets louder rather than quieter.
+    """
+    return any(sig in str(exc).lower() for sig in _GC_BOUNDARY_SIGNATURES)
+
+
 def shortlist_as_of(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
                     as_of: str = "", limit: int = 12) -> list[dict[str, Any]]:
     """R1's vector search, read-only, optionally against the index as it was.
@@ -828,9 +874,29 @@ def shortlist_as_of(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
     placeholder is rejected. **It is therefore validated against a strict pattern first,**
     and anything else raises — this is reachable from a public endpoint, so the
     alternative is a SQL injection with a database-shaped hole in it.
+
+    Two shapes are accepted, and the second is the one that matters:
+
+      * **relative** — `-30m`, for a person moving a scrubber. Approximate by nature and
+        that is fine, because a human dragging a control does not mean a precise instant.
+      * **absolute** — a hybrid logical clock reading like `1786644836824776765.0000000000`,
+        which is what `thread.decided_at_hlc` stores and what a *replay* needs.
+        `025_decision_provenance.sql` argues at length why an HLC and not a timestamp;
+        the short version is that several writes share a millisecond, so a wall clock
+        reconstructs a neighbourhood and an HLC reconstructs the instant. Answering "why
+        did you email this person" with a ranking that is nearly the one that caused it
+        is not an answer, it is a plausible fabrication.
+
+    Both patterns are anchored and admit only digits, a minus, a dot and one trailing
+    unit letter, so neither can carry a quote, a semicolon or whitespace into the
+    statement. That property is the whole security argument and is asserted by tests
+    rather than left to inspection.
     """
-    if as_of and not re.fullmatch(r"-\d{1,4}(s|m|h)", as_of):
-        raise ValueError(f"{as_of!r} is not a relative timestamp like '-30m'")
+    if as_of and not (re.fullmatch(r"-\d{1,4}(s|m|h)", as_of)
+                      or re.fullmatch(r"\d{1,19}(\.\d{1,10})?", as_of)):
+        raise ValueError(
+            f"{as_of!r} is neither a relative window like '-30m' nor a cluster logical "
+            "timestamp like '1786644836824776765.0000000000'")
     clause = f"AS OF SYSTEM TIME '{as_of}'" if as_of else ""
 
     with conn.cursor() as cur:
@@ -841,19 +907,39 @@ def shortlist_as_of(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
         if artist is None or artist["profile_embedding"] is None:
             return []
 
-        cur.execute(
-            f"""SELECT id, name,
-                       profile_embedding <=> %s::VECTOR(1024) AS distance
-                  FROM party@party_shortlist {clause}
-                 WHERE tenant_id = %s
-                   AND embedding_model = %s
-                   AND party_class = 'counterparty'
-                   AND contact_state = 'contactable'
-                 ORDER BY profile_embedding <=> %s::VECTOR(1024)
-                 LIMIT %s""",
-            (str(artist["profile_embedding"]), tenant_id, artist["embedding_model"],
-             str(artist["profile_embedding"]), limit),
-        )
+        try:
+            cur.execute(
+                f"""SELECT id, name,
+                           profile_embedding <=> %s::VECTOR(1024) AS distance
+                      FROM party@party_shortlist {clause}
+                     WHERE tenant_id = %s
+                       AND embedding_model = %s
+                       AND party_class = 'counterparty'
+                       AND contact_state = 'contactable'
+                     ORDER BY profile_embedding <=> %s::VECTOR(1024)
+                     LIMIT %s""",
+                (str(artist["profile_embedding"]), tenant_id, artist["embedding_model"],
+                 str(artist["profile_embedding"]), limit),
+            )
+        except psycopg.Error as exc:
+            # The one failure this function must never paper over. Time travel is bounded
+            # by `gc.ttlseconds`, and past that boundary the MVCC versions are collected
+            # and the answer is genuinely gone.
+            #
+            # Retrying without the clause would "work": it returns rows, the shape is
+            # right, the page renders. It would also be the current ranking presented as
+            # the historical one — a true answer to a question nobody asked, offered as
+            # the justification for having emailed somebody. There is no failure mode in
+            # this codebase worse than that one, which is why this is a raise and not a
+            # fallback, and why the message says the history is gone rather than that
+            # something went wrong.
+            if _is_gc_boundary(exc):
+                raise HistoryExpired(
+                    f"the memory at {as_of!r} has passed the cluster's garbage-collection "
+                    f"window and cannot be reconstructed. `gc.ttlseconds` bounds how far "
+                    f"back this can see, and the threshold only moves forward — raising "
+                    f"it does not restore history already collected.") from exc
+            raise
         return list(cur.fetchall())
 
 

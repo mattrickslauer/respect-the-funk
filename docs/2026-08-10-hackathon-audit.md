@@ -186,6 +186,13 @@ script's line *"A changefeed on that table wakes the next agent. No broker."* is
 today. It is also the one claim a judge can check in ten seconds. **Build it or cut the
 line — do not ship it as written.**
 
+> **Follow-up, 2026-08-13.** It was built — `rtf_platform/changefeed.py` — and the line is
+> still cut, because `SHOW CHANGEFEED JOBS` still returns zero rows. The module composes
+> the statement and refuses to run it: creating the feed starts a continuous RU draw whose
+> rate nobody has published, and that is a human decision. This paragraph therefore stands
+> exactly as written, which is the point of writing findings against a command rather than
+> against a codebase.
+
 ### Real-World Impact — real premise, thin evidence
 
 A real label, real artists, real ISRCs (`QT6F62677752`, `QT3FB2669818`), real Deezer

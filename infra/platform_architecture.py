@@ -18,6 +18,13 @@ architecture by changing this file.
 Source of record is docs/PLATFORM-SPEC.md; this renders it, and where the two
 disagree the spec wins and this file is the bug.
 
+That makes this a drawing of the design, not a report on the build, and the two
+have diverged since 2026-08-06 — migration 005 renamed the counterparty-shaped
+root to a Party, and several tables on page 2 were never created. The divergence
+is stated on page 1 rather than left for a reader to discover, and the audit
+pages (5-7) are held to a stricter rule: they are status, so they carry only what
+is true today. docs/submission/TOOLS.md is what actually shipped.
+
 Requires weasyprint (`pip install weasyprint`). No graphviz — the diagrams are
 hand-authored SVG so this runs anywhere weasyprint does.
 """
@@ -28,19 +35,23 @@ from weasyprint import HTML
 
 OUT = Path(__file__).parent / "platform-architecture.pdf"
 SPEC_DATE = "2026-08-06"
+#: When the audit pages (5-7) were last reconciled against the cluster and the AWS
+#: account. Pages 1-4 render the spec as of SPEC_DATE; these carry status, and status
+#: with no date on it is an assertion.
+AS_OF = "2026-08-13"
 DEADLINE = "2026-08-18 17:00 EDT"
 
 # ─────────────────────────────────────────────────────────────── the four jobs
 
 JOBS = [
     ("Memory", "What we know about a track, an artist, a counterparty — and what we have learned",
-     "track_character · counterparty_observation · lesson"),
+     "party_fact · party_chunk · lesson"),
     ("State", "Where every conversation with every counterparty currently stands",
      "campaign · thread · message"),
     ("Coordination", "Which agent owns which work item right now, and for how long",
-     "thread.owner_agent · thread.lease_expires_at · outbox"),
+     "lead.owner_agent · lead.lease_expires_at · outbox"),
     ("Event bus", "Row changes, streamed, as the signal that wakes the next agent",
-     "CHANGEFEED FOR thread, outbox, message, counterparty_observation"),
+     "CHANGEFEED FOR thread, outbox, message — written, not created"),
 ]
 
 # ───────────────────────────────────────────────────────────────── the tables
@@ -162,11 +173,14 @@ DECIDED = [
 ]
 
 OPEN = [
-    ("Counterparty acquisition method", "HIGH — gates the Scout",
-     "Pillar 10 §4 is a hard 'no scraper, ever'; §5 finds manual sound-page browsing both "
-     "compliant and higher-signal. Human-in-the-loop bulk acceptance is the presumed middle."),
-    ("Licence", "MEDIUM — required to submit",
-     "Repo has none. Apache-2.0 recommended: patent grant, safer commercial default."),
+    ("Counterparty acquisition method", "RESOLVED",
+     "Public registers, not scraping. The FCC broadcast register, Radio Browser and "
+     "Wikipedia feed the index; Pillar 10 §4's 'no scraper, ever' is met by never "
+     "needing one. Inferred parties still reach contact only via the suggestion queue."),
+    ("Creating the changefeed", "HIGH — the last gate on §4",
+     "The feed is written and the job does not exist. Creating it starts a continuous RU "
+     "draw against a free allowance whose rate is still unpublished. A human spends that, "
+     "not a deploy. Until then the poller is the wake mechanism, by design."),
     ("Repository topology", "LOW — cosmetic until launch",
      "Platform here with RemixKit beneath it, or a new repo with this one vendored."),
     ("Tenancy", "LOW — policy, not schema",
@@ -186,16 +200,25 @@ VERIFICATION = [
      "Vector index docs: 'Index acceleration with filters is only supported if the filters "
      "match prefix columns.' Range comparisons and subqueries fall back to post-filtering. "
      "R1 was amended for this — see reference/COCKROACHDB-AI.md."),
-    ("feature.vector_index.enabled settable on a Basic cluster", "UNVERIFIED",
-     "GO/NO-GO. Vector indexes require this cluster setting, and cluster settings are "
-     "generally restricted on serverless tiers. The entire retrieval design depends on it. "
-     "Check first, on day 1, before anything else is built."),
+    ("feature.vector_index.enabled settable on a Basic cluster", "VERIFIED",
+     "The day-1 go/no-go, and it never needed setting: already 't' on the Basic cluster. "
+     "Four cosine vector indexes are live, and EXPLAIN resolves prefix spans on all of "
+     "them — asserted by tests/test_vector_plans.py, not by a comment."),
     ("RU cost of a filtered vector scan", "UNVERIFIED",
      "Not published anywhere. Stated as headroom, never as spend. Measure on day 1."),
     ("RU cost of a continuously running changefeed", "UNVERIFIED",
-     "Confirmed to consume RUs; the rate is unpublished. Unlike a query this draws "
-     "continuously, so it is the likelier of the two to erode the free allowance. "
-     "Measure on day 1 alongside the vector scan."),
+     "Still unmeasured, because the feed is written and deliberately not created — "
+     "measuring it means starting the continuous draw. SHOW CHANGEFEED JOBS returns zero "
+     "rows and every document in the repository is required to say so."),
+    ("Amazon Bedrock as embedding provider or agent runtime", "UNAVAILABLE",
+     "Not unused — unreachable. On-demand quota L-26C560CE is 0 and Adjustable: false; "
+     "batch inference returns 'not authorized … create a support case' in two regions "
+     "with a real role and bucket. Both paths are written; neither can run. Embeddings "
+     "are openai:text-embedding-3-small. AWS is carried by Lambda and S3, deployed."),
+    ("REGIONAL BY ROW domiciling of contact_route", "UNAVAILABLE",
+     "Migration 024 and infra/terraform/multiregion/ are written and validate; nothing is "
+     "applied. SHOW REGIONS returns aws-us-east-1 alone. A region cannot be removed once "
+     "added, so the path is a throwaway cluster, never a conversion of the live one."),
     ("CockroachDB overage rates past the free tier", "UNVERIFIED",
      "Third-party figures only; both vendor pages defer to a quote. Matters only if free breaks."),
     ("Improvement in outreach cost from accumulated memory", "ASSUMPTION",
@@ -211,15 +234,22 @@ RISKS = [
      "Documented, not speculative. Mitigated by denormalising freshness and open-thread "
      "state into counterparty.contact_state, maintained in the same transaction that "
      "opens the thread, so every predicate is equality."),
-    ("Twelve days, greenfield, zero CockroachDB code written", "HIGH",
-     "Scope expanded to a superset while the clock shrank. Days 5-7 are the core: if "
-     "everything after slips, the submission still has its headline criterion."),
+    ("Built features outrunning the documents that describe them", "HIGH",
+     "The original entry here was 'twelve days, greenfield, zero CockroachDB code "
+     "written', and it stopped being the risk once the code existed. The live one is its "
+     "mirror: code lands, a document is upgraded to match, and the claim outruns what is "
+     "switched on. Three things are written and not created; each is labelled as such "
+     "wherever it appears, and no document may say 'built' where a judge would find "
+     "nothing running."),
     ("Email deliverability and domain warmup", "HIGH",
      "Takes longer than twelve days and scores nothing. The demo sends only to owned and "
      "consented addresses; the outbox proves the mechanism without volume."),
     ("Free-tier RU erosion by the changefeed", "MEDIUM",
-     "Continuous draw, unpublished rate. Fallback is polling thread.next_action_at, which "
-     "is adequate at this volume and costs the architecture its elegance, not its function."),
+     "Continuous draw, unpublished rate — which is exactly why the feed is written and "
+     "the job is not created. The fallback is running as the primary: the fleet polls "
+     "next_action_at and claims, which costs the architecture its elegance, not its "
+     "function. A wake carries no work, only permission to look, so the feed can be "
+     "switched on or left off without changing a single guarantee."),
     ("Serializable retries under fleet contention", "MEDIUM",
      "Serializable is the reason to choose this database and also a cost: contended "
      "transactions retry and the application must handle it. SKIP LOCKED keeps claim "
@@ -227,9 +257,12 @@ RISKS = [
     ("Small N on the improvement metric by Aug 18", "MEDIUM",
      "Label the curve with its N. Do not draw a flattering one — the house rule that made "
      "screen_clips.py abstain applies to our own demo."),
-    ("Counterparty PII acquires residency obligations", "LOW",
-     "A creator index is a database of people. If EU counterparties are indexed at volume, "
-     "REGIONAL BY ROW stops being optional. Not a launch blocker."),
+    ("Counterparty PII acquires residency obligations", "HIGH",
+     "This has happened. contact_route holds an email address, a phone number and a named "
+     "job title for identifiable individuals — Article 4(1) personal data, and the only "
+     "table here that is. Migration 024 makes it REGIONAL BY ROW and the Terraform for a "
+     "three-region cluster validates; neither is applied, so the obligation is live and "
+     "the mitigation is not. Not a submission blocker, and not something to claim either."),
 ]
 
 VERDICT_ROWS = [
@@ -240,8 +273,10 @@ VERDICT_ROWS = [
     ("Serializable by default", "COCKROACH",
      "Postgres defaults to Read Committed. Two agents writing lessons about one counterparty "
      "silently lose an update. Here the footgun cannot be forgotten — at the cost of retries."),
-    ("Changefeeds as a first-class feature", "COCKROACH",
-     "Postgres logical decoding plus Debezium is a project. Here it is one DDL statement."),
+    ("Changefeeds as a first-class feature", "COCKROACH, unclaimed",
+     "Postgres logical decoding plus Debezium is a project; here it is one DDL statement, "
+     "and that statement is composed and not run. Worth the row for honesty about the "
+     "comparison, worth nothing as an argument until SHOW CHANGEFEED JOBS returns one."),
     ("Scale to zero at $0 idle", "COCKROACH, narrowly",
      "Matches the measured cost model. Neon and Aurora Serverless v2 also scale to zero, "
      "so this is a convenience, not a moat."),
@@ -296,6 +331,9 @@ def svg_system() -> str:
     <marker id="arwb" markerWidth="9" markerHeight="9" refX="8" refY="3"
             orient="auto" markerUnits="strokeWidth">
       <path d="M0,0 L0,6 L8,3 z" fill="#1d4ed8"/></marker>
+    <marker id="arwg" markerWidth="9" markerHeight="9" refX="8" refY="3"
+            orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8"/></marker>
   </defs>
 
   <text x="14" y="20" font-size="11" font-weight="700" fill="#0f766e"
@@ -312,11 +350,14 @@ def svg_system() -> str:
 
   <text x="14" y="300" font-size="11" font-weight="700" fill="#1d4ed8"
         letter-spacing="1.4">THE FLEET — agents do not call each other</text>
-  <path d="M250 272 L250 392" stroke="#1d4ed8" stroke-width="2" marker-end="url(#arwb)"
-        stroke-dasharray="5 4"/>
-  <text x="262" y="326" font-size="11" fill="#1d4ed8">a changefeed wakes an agent</text>
+  <path d="M250 272 L250 392" stroke="#1d4ed8" stroke-width="2" marker-end="url(#arwb)"/>
+  <text x="262" y="320" font-size="11" fill="#1d4ed8">a worker claims a due lead</text>
   <path d="M470 392 L470 272" stroke="#1d4ed8" stroke-width="2" marker-end="url(#arwb)"/>
-  <text x="262" y="352" font-size="11" fill="#1d4ed8">the agent writes its result back</text>
+  <text x="262" y="336" font-size="11" fill="#1d4ed8">the agent writes its result back</text>
+  <path d="M180 272 L180 392" stroke="#94a3b8" stroke-width="2" marker-end="url(#arwg)"
+        stroke-dasharray="5 4"/>
+  <text x="262" y="356" font-size="10.5" fill="#64748b">a changefeed wakes an agent</text>
+  <text x="262" y="370" font-size="10.5" fill="#64748b">— written, not created. The claim above is what runs.</text>
   {''.join(boxes)}
 </svg>"""
 
@@ -384,8 +425,8 @@ def build_html() -> str:
 
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
 @page {{ size: A4; margin: 12mm 13mm 13mm 13mm;
-  @bottom-center {{ content: "Platform Architecture · {SPEC_DATE} · page " counter(page)
-    " of " counter(pages); font: 8pt Helvetica; color: #94a3b8; }} }}
+  @bottom-center {{ content: "Platform Architecture · design {SPEC_DATE} · audit {AS_OF}"
+    " · page " counter(page) " of " counter(pages); font: 8pt Helvetica; color: #94a3b8; }} }}
 body {{ font: 9pt/1.38 Helvetica, Arial, sans-serif; color: #1e293b; }}
 h1 {{ font-size: 18pt; margin: 0 0 2pt; letter-spacing: -.4pt; }}
 h2 {{ font-size: 11.5pt; margin: 13pt 0 5pt; padding-bottom: 2pt;
@@ -413,9 +454,12 @@ h2, h3 {{ break-after: avoid; }}
 .invh {{ font-weight: 700; margin-bottom: 2pt; }}
 .cite {{ color: #0f766e; margin-top: 3pt; }}
 .pill {{ font-size: 7.4pt; font-weight: 700; padding: 1.5pt 5pt; border-radius: 8pt; }}
-.HIGH, .UNVERIFIED, .POSTGRES {{ background:#fee2e2; color:#991b1b; }}
+.HIGH, .UNVERIFIED, .UNAVAILABLE, .POSTGRES {{ background:#fee2e2; color:#991b1b; }}
 .MEDIUM, .ASSUMPTION, .TIE, .NEITHER {{ background:#fef3c7; color:#92400e; }}
-.LOW, .VERIFIED, .COCKROACH {{ background:#dcfce7; color:#166534; }}
+.LOW, .VERIFIED, .RESOLVED, .COCKROACH {{ background:#dcfce7; color:#166534; }}
+.diverge {{ background:#fffbeb; border-left:3px solid #b45309; padding:6pt 9pt;
+            margin:7pt 0 9pt; font-size:8.4pt; }}
+.diverge b {{ color:#92400e; }}
 .code {{ background:#f8fafc; border:1px solid #e2e8f0; border-radius:3px; padding:7pt 9pt;
          font-family:"DejaVu Sans Mono",monospace; font-size:7.6pt; white-space:pre;
          margin:5pt 0; }}
@@ -430,8 +474,22 @@ h2, h3 {{ break-after: avoid; }}
      source of record docs/PLATFORM-SPEC.md · submission deadline {DEADLINE}</p>
 
   <div class="thesis"><b>Agents do not call each other.</b> They read shared memory, act,
-  write the result back, and that write wakes the next agent. There is no orchestrator, no
-  agent-to-agent RPC and no message broker. A campaign advances because a row changed.</div>
+  write the result back, and the next agent finds that write waiting for it. There is no
+  orchestrator, no agent-to-agent RPC and no message broker. A campaign advances because a
+  row changed.</div>
+
+  <div class="diverge"><b>This is the design, dated {SPEC_DATE}. It is not a report on the
+  build, and by {AS_OF} the two have diverged in three ways worth knowing before page 2.</b>
+  Migration 005 replaced the counterparty-shaped root with a <span class="mono">party</span>,
+  so several table names on the data-model page were never created — including
+  <span class="mono">counterparty_observation</span>, which is why the Analyst has nothing to
+  wake it. The changefeed is <b>written and not created</b>: the fleet claims due leads by
+  lease, and <span class="mono">SHOW CHANGEFEED JOBS</span> returns zero rows. And the fleet
+  that exists is a pipeline of ten ingest and enrichment stages rather than the eight named
+  roles on page 4. The audit pages that follow are held to a stricter standard than these
+  first four — they are status, and carry only what is true today.
+  <span class="mono sm">docs/submission/TOOLS.md</span> is what shipped, verified against the
+  cluster.</div>
 
   {svg_system()}
 
@@ -521,7 +579,8 @@ RETURNING *;</div>
 
 <div class="page">
   <h1>Audit — open, verified, at risk</h1>
-  <p class="sub">Everything not yet settled, and everything asserted that has not been checked.</p>
+  <p class="sub">Everything not yet settled, and everything asserted that has not been
+     checked. Status as of {AS_OF}, against the live cluster and AWS account.</p>
 
   <h2>Open</h2>
   <table><thead><tr><th style="width:23%">Question</th><th style="width:18%">Urgency</th>
@@ -539,7 +598,8 @@ RETURNING *;</div>
 
 <div class="page">
   <h1>Audit — risk register</h1>
-  <p class="sub">Ordered by what would cost the most to discover late.</p>
+  <p class="sub">Ordered by what would cost the most to discover late. Status as of
+     {AS_OF}.</p>
   <h2>Risks and mitigations</h2>
   <table><thead><tr><th style="width:27%">Risk</th><th style="width:12%">Severity</th>
   <th>Mitigation</th></tr></thead><tbody>

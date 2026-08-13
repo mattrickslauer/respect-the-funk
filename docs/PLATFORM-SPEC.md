@@ -41,6 +41,8 @@ The argument is consolidation and correctness defaults. What CockroachDB gives o
 
 Multi-region is **not** claimed as a current requirement. It becomes one if counterparty PII acquires residency obligations (see §10, open).
 
+> ⚠️ **Amended 2026-08-13.** The trigger has fired and the capability has not. `contact_route` (migration 018) now holds email addresses, phone numbers and named job titles for identifiable individuals — Article 4(1) personal data, and the only table in this schema that is. Migration `024_regional_by_row.sql` makes it `REGIONAL BY ROW` and `infra/terraform/multiregion/` provisions the three-region cluster it needs; both are written, `terraform validate` passes, and **neither has been applied**. The live cluster is still Basic, single-region `aws-us-east-1`, and `SHOW REGIONS` will say so. A region cannot be removed from a CockroachDB Cloud cluster once added, so the plan is a throwaway cluster and never a conversion of the one holding the system of record. Nothing in the submission claims this, and nothing should until a `SHOW REGIONS` backs it.
+
 ---
 
 ## 2. The spine
@@ -192,8 +194,9 @@ A creator who is also a curator cannot be worked by the UGC fleet and the curato
 ## 4. Changefeed topology
 
 ```sql
-CREATE CHANGEFEED FOR TABLE thread, outbox, message, counterparty_observation
-  INTO 'webhook-https://…' WITH updated, resolved;
+CREATE CHANGEFEED FOR TABLE thread, outbox, message
+  INTO 'webhook-https://…'
+  WITH initial_scan = 'no', updated, resolved = '5m';
 ```
 
 | Change | Wakes | Which then |
@@ -206,6 +209,30 @@ CREATE CHANGEFEED FOR TABLE thread, outbox, message, counterparty_observation
 | `counterparty_observation` insert | Analyst | updates the audience model, may write a `lesson` |
 
 No agent names another agent. The topology is a property of the data.
+
+> ⚠️ **Amended 2026-08-13, on two counts, and the first one would have cost money.**
+>
+> **`initial_scan` defaults to *on* for a feed with a sink.** As first written, this
+> statement does not begin at the present — it replays every existing row of every named
+> table through the webhook before it reports anything that has actually happened. On this
+> cluster that is every thread ever closed, each arriving as a change, each waking a
+> `distil_lesson` claim, each of those a paid embedding call. The feed's job is to say
+> *something happened*, and history did not just happen. One option, added above.
+>
+> **`counterparty_observation` was never built.** §2c's table did not survive migration
+> 005's party-first rename, and a `CREATE CHANGEFEED` naming a table that does not exist
+> fails at creation. The feed watches the three tables that do. The Analyst row in the
+> table above is consequently wired to nothing; it is left standing as the design it was,
+> rather than quietly deleted as though it had never been planned.
+>
+> **Status: built, not created.** `platform/web/rtf_platform/changefeed.py` composes this
+> exact statement, parses the webhook batches, maps a change to the set of lead kinds it
+> can make claimable, and ships a Lambda handler and a `--verify`. `SHOW CHANGEFEED JOBS`
+> still returns **zero rows**, because creating the feed draws RUs continuously against a
+> free allowance (§10 risk 2) and that is a spend a human authorises, not a step in a
+> deploy. Nothing in that module runs the statement; it prints it. The fleet meanwhile
+> wakes on `next_action_at` and a lease — precisely the fallback risk 2 named, running as
+> the primary rather than as a contingency.
 
 ---
 
@@ -296,6 +323,31 @@ Adding press or sync is a `channel_playbook` row plus a contact adapter. The spi
 | CockroachDB tool 3 *(free)* | `ccloud` CLI in the day-1 provisioning path |
 | AWS | Bedrock as agent runtime and embedding provider; Lambda for changefeed webhooks |
 
+> ⚠️ **Amended 2026-08-13. Two of these four rows did not survive contact with the
+> accounts they were written against, and the submission page says so instead.**
+>
+> **Bedrock is unreachable on this AWS account, not merely unused.** On-demand inference
+> for Titan Text Embeddings V2 is quota `L-26C560CE` at an applied value of **0**, marked
+> `Adjustable: false` — there is no increase to request. Batch inference has published
+> quotas and no entitlement: `CreateModelInvocationJob` returns *"Your account is not
+> authorized to perform this action. Please create a support case"*, reproduced in
+> `us-east-1` and `us-west-2` with a real IAM role and a real bucket. Both paths are
+> written (`rtf_platform/bedrock.py`) because the entitlement is a switch AWS throws
+> rather than work anyone here can do — but the only embedding model that has ever
+> produced a row on this cluster is `openai:text-embedding-3-small`. **The AWS requirement
+> is carried by Lambda and S3**, which are genuinely deployed. Days 2–3 and 7–9 above
+> should be read as the plan they were.
+>
+> **The Managed MCP Server is development wiring, not an application component.**
+> `.mcp.json` points a developer's MCP client at `https://cockroachlabs.cloud/mcp` for
+> natural-language inspection of the cluster. Nothing the fleet or the console does goes
+> through it, and no user-facing feature depends on it. It is honestly claimable as a tool
+> *used*; claiming it as one of the two core CockroachDB capabilities was a category
+> error, corrected in `docs/reference/HACKATHON.md` and `docs/submission/TOOLS.md`.
+>
+> What actually shipped, verified against the cluster and the account rather than read
+> from this file, is [`docs/submission/TOOLS.md`](./submission/TOOLS.md).
+
 ---
 
 ## 9. Deferred
@@ -307,7 +359,7 @@ Fan and creator-facing surfaces, attribution links, rewards and payouts. Press, 
 ## 10. Risks and open decisions
 
 1. **Email deliverability is a time sink with low judging value.** Warmup and domain reputation take longer than twelve days. **Mitigation:** the demo sends only to owned and consented addresses; the outbox proves the mechanism without needing volume.
-2. **RU cost of a filtered vector scan is still unverified** — carried forward from `infra/MEMORY-WORKLOAD.md`. Day 1 measures it. Changefeeds are now **confirmed available on Basic and confirmed to consume RUs**; the rate is unpublished, and because a changefeed draws continuously rather than per-query it is the likelier of the two to erode the free allowance. Fallback if it does: poll `thread.next_action_at`, which is adequate at this volume and costs the architecture its elegance, not its function.
+2. **RU cost of a filtered vector scan is still unverified** — carried forward from `infra/MEMORY-WORKLOAD.md`. Day 1 measures it. Changefeeds are now **confirmed available on Basic and confirmed to consume RUs**; the rate is unpublished, and because a changefeed draws continuously rather than per-query it is the likelier of the two to erode the free allowance. Fallback if it does: poll `thread.next_action_at`, which is adequate at this volume and costs the architecture its elegance, not its function. **Update 2026-08-13:** the rate is still unpublished and still unmeasured, because the fallback is what runs. The feed itself is built — see §4 — and creating it remains a deliberate human act for exactly the reason stated here.
 3. **⚠️ Go/no-go: `SET CLUSTER SETTING feature.vector_index.enabled = true` on a Basic cluster.** Vector indexes require that setting, and cluster settings are generally restricted on serverless tiers. If it cannot be set on Basic, either it is on by default there or the tier is wrong — and the entire retrieval design depends on the answer. **This is the first thing to check on day 1, before anything else is built.**
 4. **No batching of vector writes.** The documentation states large batch inserts degrade the index, and `IMPORT INTO` is unsupported on tables carrying one. The day 3–5 synthetic backfill must use small `INSERT` batches.
 5. **Counterparty acquisition is unresolved** — `SCOPE-RESET.md` open decision 4. `10-creator-indexing.md §4` is a hard "no scraper, ever"; §5 finds manual sound-page browsing both compliant and higher-signal. A human-in-the-loop Scout that surfaces candidates for bulk acceptance is the presumed middle, and is not yet a decision.

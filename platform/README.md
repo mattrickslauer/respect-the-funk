@@ -12,30 +12,40 @@ The platform described by [`docs/SCOPE-RESET.md`](../docs/SCOPE-RESET.md) and
 
 | | |
 |---|---|
-| `schema/` | Migrations, applied in order. Seventeen so far. |
+| `schema/` | Migrations, applied in order by `apply.py` — which is the only thing that runs them. The count is deliberately not stated here; a number that goes stale every week is a claim, and `ls schema/*.sql` is the answer. |
 | `web/` | The console and the fleet — FastAPI + Jinja + htmx, the same shape as `app/remixkit/ui/`. |
-| `infra/` | Terraform. Lambda + Function URL, and the masters bucket — the one resource here that is not free at idle. |
+| `infra/` | Terraform. Two Lambdas + a Function URL, the masters bucket, and the classifier's ECR repository — the last two are the only resources here that are not free at idle. |
 | `bin/` | Setup that has to touch a vendor account: `ccloud-mcp-setup.sh`. |
 
 ## Where we are
+
+Three states, and the third is the one that matters. **live** — running against the
+cluster. **built** — the code exists and is tested and nothing has run it in anger.
+**written, not created** — the code exists and turning it on is a deliberate act somebody
+has decided not to take yet, for a reason recorded under *Still open*. The third is not a
+softer version of the second: it means a judge running one command will find nothing, and
+every document in this repository is required to agree with what that command returns.
 
 | Piece | State |
 |---|---|
 | `tenant`, `artist` | **live** in `defaultdb` |
 | `artist.type` — band, dj, singer, orchestra, composer, … | **live** |
 | Landing page at `/` + `demo_request` capture | **live** — the console is gated behind sign-in |
-| Roster CRUD at `/roster` — list, search, add, edit, delete | **works locally**, not yet deployed |
+| Roster CRUD at `/roster` — list, search, add, edit, delete | **live** at the deployed Function URL |
 | Console — thirteen views at `/`, `/facts`, `/fleet`, … | **live**, every view reads the cluster |
 | Outreach — `campaign`, `thread`, `message`, `outbox` | **live**, migration 010 |
-| The send gate at `/approvals` — approve, reject, queue | **live**; nothing claims the outbox, so nothing sends |
+| The send gate at `/approvals` — approve, reject, queue | **live**; see *Still open* for what claims the outbox and what it is allowed to send to |
 | The fleet — lease claiming, backoff, follow-on leads, `agent_run` | **live** in `web/rtf_platform/fleet.py` |
-| Vector indexes on `party_chunk` and `party_fact` | **live**, cosine, prefix-filtered |
-| Embeddings — 856 chunks over 17 documents | **live**, via the OpenAI adapter |
+| Vector indexes on `party_chunk`, `party_fact`, `lesson`, `party` | **live**, cosine, prefix-filtered — the plan is asserted by `tests/test_vector_plans.py`, not by a comment |
+| Embeddings | **live**, via the OpenAI adapter. Not Bedrock, and not for want of code — see *Still open* |
 | Retrieval — R2 semantic search over the corpus | **live**, `python -m rtf_platform.ingest --search "…"` |
-| Masters — `recording_asset`, S3, presigned upload, `/tracks` inspector | **built**, migration 016; the bucket is written in Terraform and **not applied**, so uploads report themselves unconfigured |
-| `analyse_recording` — reads the master, verifies its hash, writes facts | **built**, drained by a worker (`--kinds analyse_recording`), never yet run against a real master |
-| Genre classification — Discogs-EffNet in a container | not built. See `docs/2026-08-10-masters-and-classification.md` §3a for the front end that failed reference-track validation, and why the container is the fix |
-| Counterparties, threads, outreach | not started |
+| The counterparty index — FCC, Radio Browser, Wikipedia | **live**; radio is the channel that is real |
+| Masters — `recording_asset`, S3, presigned upload, `/tracks` inspector | **live**, migration 016; the bucket is deployed, content-addressed by SHA-256 |
+| `analyse_recording` — reads the master, verifies its hash, writes facts | **live**, drained by a worker (`--kinds analyse_recording`) |
+| Genre classification — Discogs-EffNet in a container | **live** as a container Lambda, validated against six reference tracks. `docs/2026-08-10-masters-and-classification.md` §3a is the front end that failed that validation, and why the container was the fix |
+| The changefeed — statement, consumer, Lambda handler, `--verify` | **written, not created.** `SHOW CHANGEFEED JOBS` returns zero rows |
+| `REGIONAL BY ROW` on `contact_route` — migration 024, `infra/terraform/multiregion/` | **written, not created.** `SHOW REGIONS` returns `aws-us-east-1` and nothing else |
+| Podcasts — `podcastindex.py`, migration 023 | **built**, and both manifest rows land disabled: the source has no key, the stage has no worker in `agents.REGISTRY` |
 
 A table arrives when something needs it, not because `PLATFORM-SPEC §2` lists it.
 
@@ -134,7 +144,7 @@ admin_token  = "…"                # openssl rand -hex 24; this is how you sign
 ```bash
 ./platform/infra/build.sh              # vendors arm64 wheels into infra/build
 terraform -chdir=platform/infra init
-terraform -chdir=platform/infra apply  # 5 resources: role, attachment, log group, fn, url
+terraform -chdir=platform/infra apply  # read the plan; it is the resource list
 ```
 
 `terraform output console_url` is the demo URL `PLATFORM-SPEC §8` day 12 requires.
@@ -146,16 +156,25 @@ terraform -chdir=platform/infra apply  # 5 resources: role, attachment, log grou
 > refused before it is made. This section covers the infrastructure; that one covers
 > models, ceilings and the kill switch.
 
-**$0.00/month idle.** Not "under a dollar" — zero. Each omission in `infra/main.tf` is
-deliberate:
+**Effectively $0/month idle, and no longer exactly zero.** Each omission in
+`infra/main.tf` is deliberate:
 
 | Not used | Why |
 |---|---|
 | API Gateway | A Function URL routes a server-rendered app for free. |
 | VPC / NAT gateway | A NAT is ~$32/month of idle floor, forever, visits or not. The Lambda reaches CockroachDB over public TLS, as CockroachDB Cloud expects. |
 | Secrets Manager | $0.40/secret/month; Lambda env vars are already KMS-encrypted at rest for free. |
-| ECR | A zip deployment has no per-GB image storage. |
 | CloudFront / domain / ACM | The Function URL is working HTTPS. A domain is a decision for when something is worth pointing at. |
+
+**Correction, 2026-08-13: ECR was on that list and is not any more, and the headline
+number changed with it.** This section used to say *"$0.00/month idle. Not 'under a
+dollar' — zero"*, with ECR omitted because *"a zip deployment has no per-GB image
+storage."* The genre classifier is a container Lambda — the Discogs-EffNet model needs
+3 GB and native dependencies that will not fit a zip bundle — so there is now an image in
+ECR, and ECR charges per GB-month whether or not the function is invoked. It is cents, and
+cents are not zero. The rule in `COSTS.md` is that any new resource states its idle cost
+before it is added; the honest reading of that rule is that the first resource to break a
+$0 floor breaks the claim built on it, and the claim gets rewritten rather than rounded.
 
 What can cost money: Lambda beyond the free tier (1M requests + 400k GB-seconds/month,
 which this will not approach) and CloudWatch ingestion, capped by 7-day retention.
@@ -306,26 +325,48 @@ comes up, not as a plan.
   schema rather than the schema meeting it) and Titan drops in unchanged when the case
   clears. The AWS requirement was never Bedrock's to carry anyway — Lambda already
   satisfies it and is deployed.
+
+  **Update 2026-08-13: the escape hatch is shut too, and the way it is shut is the part
+  worth remembering.** Batch inference was the obvious route around a zero on-demand
+  quota — asynchronous is the right shape for a bulk backfill anyway, and Service Quotas
+  advertises 100,000 records per job and 100 concurrent jobs on this account. Every one of
+  those numbers is real and none of them is reachable: `CreateModelInvocationJob` returns
+  `ValidationException: Your account is not authorized to perform this action. Please
+  create a support case`, in `us-east-1` and `us-west-2`, with a real role and a real
+  bucket, and with the caller's IAM simulated as `allowed`. **A quota is a number; an
+  entitlement is a permission**, and Service Quotas publishes those default rows whether
+  or not the capability is switched on — so the quota table reads as capability and is
+  not. Anyone planning from it alone plans a path that cannot run. `bedrock.py` ships both
+  paths regardless, because the entitlement is a switch AWS throws rather than work we can
+  do, and every one of its failures names which of the four walls it hit.
 - **`POST /demo` has no rate limiting, no CAPTCHA and no email verification.** It is the
   one route a stranger can write through, and today nothing stops somebody filling the
   table with junk. Acceptable while the URL is unpublished and the Lambda is capped at
   `reserved_concurrent_executions = 10`; not acceptable once the address is public. The
   cheapest real fix is a per-IP limit at the edge, which the current no-API-Gateway
   topology does not have a place for — so it is a topology decision, not a code one.
-- **Nothing sends, and the outbox is the proof.** `approve` writes the `message` row and
-  the `outbox` row in one transaction per `§3b`, and no Sender claims from `outbox`
-  because no mail provider is wired. A row sitting there in `pending` is a send that is
-  fully prepared and has not happened. The gate is therefore genuinely load-bearing —
+- ~~**Nothing sends, and the outbox is the proof.**~~ **The Sender exists; no pitch has
+  been sent.** `sender.py` and `mail.py` landed with migration 021: the worker claims an
+  `outbox` row in its own committed transaction *before* the network call, so a worker
+  that dies mid-send leaves a row in `claimed` that nothing will ever pick up again, and
+  it refuses any contact route the system merely guessed at. What has not happened is a
+  send — the demo script's *"one real send exists"* box is still unticked, and until it is
+  ticked the correct description of this system is that it is fully prepared to mail a
+  curator and has not mailed one. `approve` writes the `message` row and the `outbox` row
+  in one transaction per `§3b`. A row sitting in `pending` is a send that is fully
+  prepared and has not happened. The gate is therefore genuinely load-bearing —
   and the button says "Approve & queue" rather than "Approve & send", because labelling
   it for what the product will eventually do is the difference between a gate and a lie.
   Deliverability was already called out as a time sink with low judging value in
   `PLATFORM-SPEC §10` risk 1; this is that decision, made visible on the screen.
-- **The Drafter, Sender and Inbox agents are declared and unwritten.** They have
-  `agent_manifest` rows with `enabled = false`, and `/fleet` renders an agent with a
-  manifest and no implementation as `declared` rather than `idle` — one is a switch, the
-  other is unwritten work, and they must not look alike. Meanwhile the operator does
-  those jobs by hand through the console, which is deliberate: a governing screen should
-  work before the thing it governs.
+- **The Drafter and Inbox agents are declared and unwritten** — the Sender no longer is,
+  see above. They have `agent_manifest` rows with `enabled = false`, and `/fleet` renders
+  an agent with a manifest and no implementation as `declared` rather than `idle` — one is
+  a switch, the other is unwritten work, and they must not look alike. The podcast stage
+  (migration 023) is the newest row in that state, and it is disabled twice over: no key
+  for the source, no worker in `agents.REGISTRY` for the stage. Meanwhile the operator
+  does those jobs by hand through the console, which is deliberate: a governing screen
+  should work before the thing it governs.
 - **`/inbox` reads a real table nothing writes to.** `outreach.record_reply` is the
   writer and the tests drive it; what is missing is an inbound adapter to call it. The
   empty state says exactly that. Resisting a fixture here matters more than elsewhere —
@@ -342,18 +383,35 @@ comes up, not as a plan.
   reminds the operator a lead arrived, so a request could sit unseen indefinitely.
 - **Dev runs Python 3.14, Lambda runs 3.13.** No 3.12/3.13 interpreter exists on the dev
   machine, so version-sensitive behaviour is only truly proven in the deployed function.
-- **RU cost of a filtered vector scan** (`PLATFORM-SPEC §10` risk 2) — needs real row
-  volume; a probe with no rows measures nothing.
-- **Changefeed RU draw** — needs a webhook sink to exist first.
-- **`ccloud` is installed and wired, but nobody has logged in yet.**
-  `platform/bin/ccloud-mcp-setup.sh` uses it to resolve the cluster ID and writes the
-  MCP client config from it. That is a real use rather than a command run once to be able
-  to claim it — but the claim is only earned once the script has actually been run, and
-  `ccloud auth login` is an interactive browser flow that no script can do for you.
-- **The MCP server is configured but not yet connected.** Same blocker: the endpoint
-  (`https://cockroachlabs.cloud/mcp`) answers `401` with an OAuth challenge, which is the
-  correct response and confirms it is live. Read-only by default, which is the right
-  posture — the console is the write path.
+- **RU cost of a filtered vector scan** (`PLATFORM-SPEC §10` risk 2) — the excuse has
+  expired and the measurement has not been taken. This used to read *"needs real row
+  volume; a probe with no rows measures nothing"*, and the volume arrived: the shortlist
+  index now covers fourteen thousand counterparties. What is missing is somebody running
+  the query and reading the RUs off it. It is the older of this project's two unmeasured
+  costs, and the cheaper one to close.
+- **Changefeed RU draw** — still unmeasured, and now for a different reason. The sink
+  exists: `web/rtf_platform/changefeed.py` composes the `CREATE CHANGEFEED` for `thread`,
+  `outbox` and `message`, parses the webhook batches, maps each change to the lead kinds
+  it can make claimable, and ships the Lambda handler. `--verify` prints the cluster's
+  rangefeed setting and its (zero) jobs; `--follow` runs the sinkless fallback in-process
+  for a laptop. What is missing is the decision to create the job, because that is what
+  starts the continuous draw this line exists to measure, and it is the one cost that
+  cannot be undone by not looking at it. **Built, not created** — `SHOW CHANGEFEED JOBS`
+  returns nothing, and every submission document says so.
+- **`ccloud` is installed, wired and has been run.** ~~Nobody has logged in yet.~~
+  `platform/bin/ccloud-mcp-setup.sh` uses it to resolve the cluster ID by name and writes
+  the MCP client config from it; `.mcp.json` carries a real cluster ID, and the MCP server
+  answered against it during the 2026-08-10 audit, which it could not have done otherwise.
+  That is a real use rather than a command run once in order to claim it. The interactive
+  `ccloud auth login` remains the one step no script can do for you.
+- **The MCP server is connected, and is not part of the product.** ~~Configured but not
+  yet connected~~ — it answered `list_clusters`, `list_databases` and `list_tables` during
+  the 2026-08-10 audit. Read-only by default, which is the right posture: the console is
+  the write path. **What it is not is an application component.** Nothing the fleet does
+  and nothing the console serves goes through MCP; it is how a developer asks this cluster
+  questions in English. Earlier documents billed it as one of the two *core* CockroachDB
+  tools, which was a category error — `docs/reference/HACKATHON.md` and
+  `docs/submission/TOOLS.md` now bill it as used, in development.
 - **Licence chosen: Apache-2.0.** `LICENSE` and `NOTICE` are at the repository root. The
   `NOTICE` carries the pre-existing-code disclosure the hackathon rules require, naming
   `content/` and `app/` as out-of-period RemixKit work and `platform/` as the submission.

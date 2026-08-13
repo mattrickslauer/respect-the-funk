@@ -1,0 +1,137 @@
+# The platform console's test suite, run without a database — on purpose.
+#
+# This is the first CI in this repository, and it starts deliberately small rather than
+# aspirational. Two jobs: the database-free suite, and a check that the production fence
+# actually fences.
+#
+#
+# ## Why there is no database here, and no secret
+#
+# The obvious next step is a repository secret holding a connection string so the 215
+# cluster-gated tests run too. That step is not taken, for two reasons that are worth
+# writing down so nobody has to re-derive them.
+#
+# **A repository secret is readable by every workflow in the repository.** Including one
+# added by a pull request, whose author is not necessarily someone with commit rights.
+# A connection string is not a URL, it is a credential with a password in it, and the
+# blast radius of leaking this project's is the whole spine. If CI ever does need a
+# cluster, it needs an *environment*-scoped secret with a required reviewer, pointed at
+# the test cluster from docs/runbooks/environments.md and never at production.
+#
+# **The tests that need no cluster are the ones CI is good at.** 232 of them: the tenant
+# scoping lint that parses every SQL statement in rtf_platform/ and fails if one omits
+# its tenant_id predicate, the spend gate's refusals, the agent registry, and this
+# repository's structural guards. Those catch the class of mistake a second pair of eyes
+# would catch. The cluster-gated tests catch the class of mistake that needs a cluster,
+# and they are run by a human against the test cluster.
+#
+# So the honest posture is: CI proves the code, a human proves the integration, and the
+# workflow says which is which instead of implying it does both.
+#
+#
+# ## Why the second job exists
+#
+# `tests/test_environment_guard.py` proves the *decision* — production-shaped URL in,
+# refusal out. What a unit test structurally cannot prove is that pytest ever asks: the
+# guard lives in a `pytest_configure` hook, and a hook that is renamed, moved to a
+# conftest in the wrong directory, or shadowed by a second conftest stops being called
+# while every one of its unit tests keeps passing. That is the failure mode of a guard —
+# it goes quiet, and quiet looks exactly like working.
+#
+# So the `fence` job runs the real pytest with a production-shaped DATABASE_URL and
+# requires it to exit non-zero. The password in it is fake and the host check refuses
+# before opening a connection, so this job never touches the production cluster; that
+# it does not is itself asserted, in test_production_is_refused_without_connecting_to_it.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Neither job needs to read anything but the code, and a token that can only read is a
+# token that cannot be turned into a deploy by a clever pull request.
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: suite (no database)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # 3.13, matching `runtime = "python3.13"` in platform/infra/main.tf. CI that
+          # runs a different interpreter than the deployed function is CI that can go
+          # green on code Lambda will not import.
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: platform/web/requirements-dev.txt
+
+      - name: install
+        working-directory: platform/web
+        run: |
+          python -m pip install --upgrade pip
+          # pytest is pinned here rather than added to requirements-dev.txt, because
+          # that file's header defines it as "everything in the deployed function, plus
+          # a server to run it locally" and a test runner is neither. Pinned rather than
+          # floating for the reason requirements.txt gives: a version that resolves
+          # differently here than on a laptop is a failure nobody can reproduce.
+          pip install -r requirements-dev.txt pytest==9.1.1
+
+      # DATABASE_URL is not set anywhere in this workflow, which is what makes the
+      # cluster-gated tests skip themselves. Passed explicitly as empty rather than
+      # merely omitted, so that a future `env:` block at the workflow level cannot
+      # leak one in without this line having to be deleted first.
+      - name: pytest
+        working-directory: platform/web
+        env:
+          DATABASE_URL: ''
+        run: python -m pytest -q
+
+  fence:
+    name: the production fence is wired up
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: platform/web/requirements-dev.txt
+
+      - name: install
+        working-directory: platform/web
+        run: |
+          python -m pip install --upgrade pip
+          # pytest is pinned here rather than added to requirements-dev.txt, because
+          # that file's header defines it as "everything in the deployed function, plus
+          # a server to run it locally" and a test runner is neither. Pinned rather than
+          # floating for the reason requirements.txt gives: a version that resolves
+          # differently here than on a laptop is a failure nobody can reproduce.
+          pip install -r requirements-dev.txt pytest==9.1.1
+
+      - name: pytest refuses a production-shaped DATABASE_URL
+        working-directory: platform/web
+        env:
+          # The real host, a fake password. The guard reads the host and never the
+          # credentials, so this is the exact shape of the accident without being the
+          # accident. If this host is ever wrong, the assertion below fails loudly,
+          # which is the correct way for a stale constant to be discovered.
+          DATABASE_URL: 'postgresql://ci:not-a-real-password@respect-the-funk-31317.j77.aws-us-east-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full'
+        run: |
+          if python -m pytest -q; then
+              echo "::error::pytest RAN against a production-shaped DATABASE_URL."
+              echo "The guard in platform/web/tests/conftest.py did not fire."
+              exit 1
+          fi
+          echo "refused, as it should be"

@@ -1,0 +1,107 @@
+{% extends "_console.html" %}
+{# The one screen where the operator types English instead of clicking a view.
+
+   Two things are deliberately on the page rather than hidden behind it. The first is the
+   statement that ran: an operator who typed a sentence and got a number back cannot tell
+   which of six questions was chosen unless they are shown, and a mis-routed question that
+   is visible is correctable while one that is not is simply believed. The second is the
+   list of questions this console can answer — printed in full, because "ask me anything"
+   is a promise this page does not keep and pretending otherwise wastes the operator's
+   afternoon discovering the edges one refusal at a time. #}
+{% block title %}Ask{% endblock %}
+{% block h1 %}Ask{% endblock %}
+{% block blurb %}
+  A question in English, answered by CockroachDB's Cloud Managed MCP Server against this
+  tenant's rows. The model chooses which question you meant; it never writes the SQL.
+{% endblock %}
+
+{% block centre %}
+  {% if not mcp_configured %}
+    <div class="empty">
+      This screen is not configured. {{ mcp_missing }}
+    </div>
+  {% else %}
+    {% if error %}<p class="ederr" style="margin:0 0 .8rem">{{ error }}</p>{% endif %}
+
+    <form method="post" action="/ask" class="ed" style="margin:0 0 1rem">
+      <div class="edf">
+        <label for="q">Your question</label>
+        <input id="q" name="q" value="{{ asked }}" autofocus
+               placeholder="which stations play soul?">
+        <span class="edh">
+          Routed by one <code>gpt-4o-mini</code> call, about $0.0001. It passes through
+          the same spend gate as every other metered call, so
+          <code>RTF_PAID_ENABLED=0</code> turns this screen off rather than making it
+          quietly free.
+        </span>
+      </div>
+      <button type="submit" class="b p">Ask</button>
+    </form>
+
+    {% if answer %}
+      <p class="note" style="margin:0 0 .35rem">
+        Read as <b>{{ answer.question.asks }}</b>
+        {% if answer.cost_usd %}· ${{ answer.cost_usd }} spent routing it{% endif %}
+      </p>
+      {% if answer.question.note %}
+        <p class="note" style="margin:0 0 .6rem; color:var(--faint)">{{ answer.question.note }}</p>
+      {% endif %}
+      <pre class="ednote" style="margin:0 0 .8rem">{{ answer.sql }}</pre>
+
+      {% if answer.rows %}
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>{% for c in answer.columns %}<th>{{ c }}</th>{% endfor %}</tr>
+            </thead>
+            <tbody>
+              {% for row in answer.rows %}
+                <tr>{% for c in answer.columns %}<td>{{ row[c] }}</td>{% endfor %}</tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        {# An empty result is an answer, not a failure, and it is labelled as the one it
+           is: the statement ran on the cluster and matched nothing. Rendering the same
+           blank space a refusal would produce is how "no rows" and "nothing happened"
+           become indistinguishable. #}
+        <div class="empty">
+          That statement ran and matched no rows.
+        </div>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block inspector %}
+  <div class="sect">
+    <h3>Questions it can answer</h3>
+    <ul class="chain">
+      {% for q in questions %}
+        <li class="q"><span class="val">{{ q.asks }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="sect">
+    <h3>How the answer is reached</h3>
+    <p class="note">
+      The model picks one of the questions above and fills its slots. Every SQL statement
+      is a literal in <code>mcp.QUESTIONS</code>, pinned to this tenant, and re-checked
+      for that predicate before it is sent. Nothing the model writes reaches the cluster.
+    </p>
+  </div>
+  <div class="sect">
+    <h3>Where it runs</h3>
+    <dl class="kv">
+      <dt>executor</dt><dd>cockroachlabs.cloud/mcp</dd>
+      <dt>tool</dt><dd>select_query</dd>
+      <dt>tenant</dt><dd>{{ tenant_slug }}</dd>
+    </dl>
+    <p class="note" style="margin-top:.4rem">
+      The managed server has no tenant concept — it runs whatever SQL it is handed with
+      the API key's privileges. The scoping is entirely this side of the wire, which is
+      why the model is not allowed to compose the statement.
+    </p>
+  </div>
+{% endblock %}

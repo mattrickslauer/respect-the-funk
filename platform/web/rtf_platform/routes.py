@@ -52,8 +52,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 
 from rtf_platform import (
-    agents, auth, db, demo, fleet, outreach, repo, research,
-    settings as settings_mod, statements,
+    agents, auth, db, demo, fleet, mcp, outreach, repo, research,
+    settings as settings_mod, spend, statements,
 )
 from rtf_platform.domain import (
     ARTIST_STATUSES, CREDIT_ROLES, DEFAULT_TYPE, RECORDING_STATUSES, ArtistType,
@@ -2005,3 +2005,85 @@ def roster_delete(request: Request, principal: Operator, artist_id: str) -> Resp
     return templates.TemplateResponse(
         request, "components/_artist_rows.html", _ctx(request, principal, artists=artists, q="")
     )
+
+
+# ------------------------------------------------------------------------- ask
+
+def _ask_page(request: Request, principal: auth.Principal, *, asked: str = "",
+              answer: Any = None, error: str = "") -> Response:
+    """The Ask screen, in all four of its states: unconfigured, empty, answered, refused.
+
+    One function rather than a GET handler and a POST handler that each build a context,
+    because the two differ only in whether an answer exists and the failure mode of the
+    other shape is a refusal that renders without the question that caused it — leaving
+    the operator with an error and an empty box.
+    """
+    conn = _conn()
+    return templates.TemplateResponse(
+        request, "console/ask.html",
+        _ctx(request, principal, conn=conn, tenant_id=_tenant_id(conn), here="ask",
+             live=True, error=error, asked=asked, answer=answer,
+             questions=mcp.QUESTIONS,
+             mcp_configured=SETTINGS.mcp_configured,
+             mcp_missing=_mcp_missing()),
+    )
+
+
+def _mcp_missing() -> str:
+    """Which variables the Ask screen is short of, named individually.
+
+    "Not configured" is not an actionable message, and this screen needs four things from
+    three different places. Naming them is the difference between a page somebody fixes
+    in a minute and one they file a bug about.
+    """
+    absent = [name for name, value in (
+        ("COCKROACH_API_KEY", SETTINGS.cockroach_api_key),
+        ("COCKROACH_CLUSTER_ID", SETTINGS.cockroach_cluster_id),
+        ("OPENAI_API_KEY", SETTINGS.openai_api_key),
+        ("DATABASE_URL", SETTINGS.database_url),
+    ) if not value]
+    if not absent:
+        return ""
+    return (f"{', '.join(absent)} " + ("is" if len(absent) == 1 else "are")
+            + " unset. The Cockroach key is the one `ccloud auth login` writes to "
+              "~/.config/.cockroachdb/credentials.json.")
+
+
+@router.get("/ask", response_class=HTMLResponse)
+def ask_form(request: Request, principal: Operator) -> Response:
+    """The box, and the list of questions beside it. No cluster call and no spend — a GET
+    that costs money is one a browser can make by being refreshed."""
+    return _ask_page(request, principal)
+
+
+@router.post("/ask", response_class=HTMLResponse)
+def ask_run(request: Request, principal: Operator,
+            q: Annotated[str, Form()] = "") -> Response:
+    """Ask the managed MCP server one question.
+
+    A POST that re-renders rather than redirecting, the same shape `POST /demo` uses:
+    the answer is the page, and carrying a table of rows through a query string is not
+    something a redirect can do. It is a POST rather than a GET because it spends money
+    and a GET that spends money is one a prefetch can trigger.
+
+    Every failure is caught by class and reported as itself. `SpendRefused` means the
+    gate said no and the fix is a ceiling; `QuestionRefused` means this console does not
+    know that question or would not run the statement; `McpRefused` means the server did.
+    Collapsing the three into "something went wrong" would leave the operator unable to
+    tell a $0 budget from an expired key, which are hours apart in what they require.
+    """
+    _require_write(principal)
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return _ask_page(request, principal, asked=q,
+                         error="There is no tenant on this cluster yet, so there is "
+                               "nothing to ask about. Save an artist first.")
+    gate = spend.Gate.open(conn, tenant_id)
+    try:
+        answer = mcp.ask(q, tenant_id, gate)
+    except spend.SpendRefused as exc:
+        return _ask_page(request, principal, asked=q, error=str(exc))
+    except (mcp.QuestionRefused, mcp.McpRefused, mcp.McpNotConfigured) as exc:
+        return _ask_page(request, principal, asked=q, error=str(exc))
+    return _ask_page(request, principal, asked=q, answer=answer)

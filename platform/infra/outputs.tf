@@ -25,3 +25,8 @@ output "classifier_function_name" {
   value       = length(aws_lambda_function.classifier) > 0 ? aws_lambda_function.classifier[0].function_name : ""
   description = "Empty until an image is pushed. Set PLATFORM_CLASSIFIER_FUNCTION to this for a worker."
 }
+
+output "changefeed_webhook_url" {
+  value       = length(aws_lambda_function_url.changefeed) > 0 ? aws_lambda_function_url.changefeed[0].function_url : ""
+  description = "The changefeed's webhook sink. Empty until changefeed_webhook_token is set. Feed it to `python -m rtf_platform.changefeed --dry-run --url <this>` to render the exact CREATE CHANGEFEED statement — which a human then runs, because a changefeed draws request units continuously and nothing in this repo is allowed to start one on its own."
+}

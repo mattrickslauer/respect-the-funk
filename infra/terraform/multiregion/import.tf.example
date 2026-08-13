@@ -1,0 +1,92 @@
+# THE OTHER PATH — adopting the live cluster instead of creating an ephemeral one.
+#
+# Not `.tf`, so Terraform does not read it. Renaming it is a deliberate act, which is the
+# correct amount of friction for what it does.
+#
+# ============================================================================
+# READ THIS BEFORE RENAMING
+# ============================================================================
+#
+# Converting `respect-the-funk` to three-region Standard is a ONE-WAY DOOR.
+#
+#   * Basic -> Standard is reversible. Standard -> Basic is supported and in-place, with
+#     a 48-hour lockout before you can go back up to Standard again.
+#   * Adding a region is NOT reversible. CockroachDB Cloud does not support removing a
+#     region from a Basic or Standard cluster, at all, ever. Verified from the Cloud
+#     documentation on 2026-08-13:
+#     https://www.cockroachlabs.com/docs/cockroachcloud/basic-cluster-management
+#     — "You cannot remove a region once it has been added."
+#   * The documented way back to a single-region cluster is therefore: back up, create a
+#     new single-region cluster, restore, repoint every DATABASE_URL, delete the old one.
+#     That is a data migration, not a config change.
+#
+# So: the demo does not run here. This block exists for the day the product wants
+# residency in production, which is a decision with a customer behind it and not a
+# decision made on the afternoon of a deadline.
+#
+# ============================================================================
+#
+# Two further things that are UNVERIFIED and would be found out the hard way:
+#
+#   1. Whether the provider treats a BASIC -> STANDARD change of `plan` as an in-place
+#      update or as a replacement. If it is a replacement, `terraform apply` DESTROYS
+#      the live cluster and creates a new empty one. The provider schema does not record
+#      RequiresReplace in a form that can be read without applying, so the only safe
+#      procedure is: run `terraform plan`, read it, and abort on the words
+#      "must be replaced" or "forces replacement". `prevent_destroy` below turns that
+#      from a judgement call into a hard error.
+#   2. Whether the region configuration of a cluster that was created single-region can
+#      be edited at all. The Basic management docs say "You cannot currently edit the
+#      region configuration for a single-region cluster once it has been created", which
+#      may be a console limitation or may be a platform one. If it is a platform one,
+#      this whole path is closed and only backup/restore remains.
+#
+# ---------------------------------------------------------------------------
+#
+# import {
+#   to = cockroach_cluster.live
+#   id = "ae38b92e-c1ad-4a06-a247-489cd5ce9964"
+# }
+#
+# resource "cockroach_cluster" "live" {
+#   name           = "respect-the-funk"
+#   cloud_provider = "AWS"
+#   plan           = "STANDARD"
+#
+#   regions = [
+#     { name = "us-east-1", primary = true },
+#     { name = "eu-west-1", primary = false },
+#     { name = "ap-southeast-1", primary = false },
+#   ]
+#
+#   serverless = {
+#     upgrade_type = "AUTOMATIC"
+#     usage_limits = {
+#       provisioned_virtual_cpus = 2
+#       storage_mib_limit        = 81920
+#     }
+#   }
+#
+#   delete_protection = true
+#
+#   lifecycle {
+#     # The point of this module is a plan change. If Terraform decides the only way to
+#     # achieve it is to replace the resource, that is a destroyed production database,
+#     # and this turns it into a refusal at plan time rather than a discovery at apply
+#     # time.
+#     prevent_destroy = true
+#   }
+# }
+#
+# ---------------------------------------------------------------------------
+#
+# The equivalent by hand, which is what docs/runbooks/multiregion.md §7 actually
+# recommends for this path — the Cloud API's plan change is documented as zero-downtime
+# and the ordering is explicit, where Terraform would decide the ordering itself:
+#
+#   ccloud cluster update respect-the-funk --provisioned-vcpus 2
+#   ccloud cluster update respect-the-funk us-east-1 eu-west-1 ap-southeast-1 \
+#          --primary-region us-east-1
+#
+# Both flags verified present in ccloud 0.8.23 (`ccloud cluster update --help`,
+# 2026-08-13). Neither has been run.

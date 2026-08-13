@@ -1,0 +1,24 @@
+# cp terraform.tfvars.example terraform.tfvars, then fill in.
+# terraform.tfvars is gitignored — see the repo-root .gitignore.
+
+# Your public IPv4. `curl -s https://checkip.amazonaws.com`
+operator_cidr_ip  = "203.0.113.7"
+operator_cidr_mask = 32
+
+# Generate one, use it once, throw it away with the cluster:
+#   python3 -c 'import secrets; print(secrets.token_urlsafe(24))'
+sql_user_password = "CHANGE-ME"
+
+# The defaults below are the demo's shape. Listed so a reader does not have to open
+# variables.tf to find out what they are.
+# cluster_name       = "rtf-residency-demo"
+# primary_region     = "us-east-1"
+# eu_region          = "eu-west-1"
+# apac_region        = "ap-southeast-1"
+# provisioned_vcpus  = 2
+# storage_mib_limit  = 10240
+
+# The API key is NOT here. It goes in the environment:
+#   export COCKROACH_API_KEY=...
+# Terraform writes every variable it is given into plaintext state, and a Cloud API key
+# can delete clusters.

@@ -447,6 +447,26 @@ def recompose_profiles(conn: psycopg.Connection, tenant_id: str,
     parties as unembeddable last time. The hash is a deduplication key, not a semantic
     identity, and "this party's profile, with this content" is the thing being deduped.
     """
+    # Counted once, up front, because it cannot change while this runs and because the
+    # operator wants the number before the pass rather than inferred from a shortfall
+    # afterwards. `026_role_backfill.sql` explains who these are: parties whose source
+    # never said what kind of thing they were, mostly rows carrying a name and nothing
+    # else.
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT count(*) AS n FROM party p
+                WHERE p.tenant_id = %s AND p.party_class = 'counterparty'
+                  AND NOT EXISTS (SELECT 1 FROM party_fact r
+                                   WHERE r.tenant_id = p.tenant_id AND r.party_id = p.id
+                                     AND r.dimension = 'role' AND r.status = 'live'
+                                     AND trim(r.value_text) != '')""",
+            (tenant_id,),
+        )
+        unrebuildable = cur.fetchone()["n"]
+    if unrebuildable:
+        print(f"  {unrebuildable} counterparties have no `role` fact and will be left "
+              f"alone — see 026_role_backfill.sql")
+
     total = 0
     while True:
         with conn.cursor() as cur:
@@ -457,6 +477,16 @@ def recompose_profiles(conn: psycopg.Connection, tenant_id: str,
                                        WHERE d.tenant_id = p.tenant_id
                                          AND d.party_id = p.id
                                          AND d.platform = 'profile_v2')
+                      -- Excluded in the *selection* and not skipped in the loop, which
+                      -- matters more than it looks: the selection is "has no profile_v2
+                      -- document", so a party this pass declined to write would be
+                      -- returned again on the next iteration, and the `while True` would
+                      -- never see an empty batch. Filtering here terminates; filtering in
+                      -- Python spins forever against the cluster.
+                      AND EXISTS (SELECT 1 FROM party_fact r
+                                   WHERE r.tenant_id = p.tenant_id AND r.party_id = p.id
+                                     AND r.dimension = 'role' AND r.status = 'live'
+                                     AND trim(r.value_text) != '')
                     LIMIT %s""",
                 (tenant_id, batch),
             )
@@ -476,6 +506,10 @@ def recompose_profiles(conn: psycopg.Connection, tenant_id: str,
                     fact["value_text"])
 
             for row in rows:
+                # No `try` here on purpose. The selection above already guarantees a
+                # `role` fact, so a raise from `from_facts` would mean that guarantee had
+                # broken, and catching it would turn a contradiction between two queries
+                # into a quietly smaller number.
                 body = profiles.from_facts(row["name"], by_party.get(row["id"], {}))
                 cur.execute(
                     """INSERT INTO party_document (tenant_id, party_id, platform, url,

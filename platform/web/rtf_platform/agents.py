@@ -943,6 +943,56 @@ def shortlist_as_of(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
         return list(cur.fetchall())
 
 
+def shortlist_with_instant(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
+                           limit: int = 12) -> tuple[Any, list[dict[str, Any]]]:
+    """The live shortlist, and the instant it was read, provably the same instant.
+
+    `shortlist_as_of` can replay a ranking given an instant; this is how an instant worth
+    replaying gets created in the first place. It returns
+    `(cluster_logical_timestamp, rows)` for `outreach.open_thread` to store, so that
+    "why did you email this person" has an exact coordinate to answer from.
+
+    **Both statements run inside one transaction, and that is the entire reason this
+    function exists rather than two calls at the call site.** CockroachDB gives every
+    statement in a transaction the same snapshot timestamp, so `cluster_logical_timestamp()`
+    read here *is* the timestamp the shortlist was computed at. Called separately under
+    autocommit they would be two instants a few milliseconds apart, and a replay would
+    then reconstruct the index as it was very slightly before or after the read that
+    actually happened — which is the same class of near-miss `025_decision_provenance.sql`
+    rejects wall-clock timestamps for. Near enough is not an audit trail.
+
+    Read-only and unpriced, like `shortlist_as_of` and unlike `shortlist`: no lesson
+    rerank, so no `hit_count` write, so no `Gate`. A justification that cost money to
+    record would be a justification somebody eventually skips recording.
+
+    The rank returned to the caller is the position in this list, one-based, which is
+    what `thread.decided_rank` means and what `outreach.justification` compares against.
+    """
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.execute("SELECT cluster_logical_timestamp() AS hlc")
+            hlc = cur.fetchone()["hlc"]
+        rows = shortlist_as_of(conn, tenant_id, party_id, limit=limit)
+    return hlc, rows
+
+
+def rank_of(rows: list[dict[str, Any]], party_id: str) -> tuple[int, float] | None:
+    """`(rank, distance)` for `party_id` in a shortlist, or `None` if it is not there.
+
+    One-based, because `decided_rank` is a position a human would say out loud — "they
+    were third" — and because `025`'s CHECK refuses zero for exactly that reason.
+
+    `None` is the honest answer for a counterparty an operator opened a thread with while
+    they were not on the shortlist at all, which is a legitimate thing to do and must not
+    be recorded as rank 1. The caller writes no decision in that case, and the thread
+    reads as hand-opened — which is what it was.
+    """
+    for i, row in enumerate(rows, start=1):
+        if str(row["id"]) == str(party_id):
+            return i, float(row["distance"])
+    return None
+
+
 def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
               gate: spend.Gate, limit: int = 20) -> list[dict[str, Any]]:
     """R1 — given one of our artists, who should we take them to?

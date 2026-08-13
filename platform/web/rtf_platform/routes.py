@@ -1796,9 +1796,31 @@ def campaigns_open_thread(principal: Operator, campaign_id: str,
     _require_write(principal)
     conn = _conn()
     tenant_id = _tenant_id(conn)
+
+    # The ranking is recomputed here rather than carried from the page that rendered the
+    # button, and the difference is the whole value of the record. A hidden field holding
+    # the instant and the rank would be operator-supplied — which is to say forgeable, by
+    # the one party with a motive to forge it, in the one place where the record exists to
+    # answer for an irreversible act. Recomputed server-side it costs nothing (this read
+    # is unpriced) and cannot be anything but what was true when the button was pressed.
+    #
+    # A counterparty who is not on the shortlist at all yields no decision, and the thread
+    # honestly reads as hand-opened. See `agents.rank_of`.
+    decided = None
+    with conn.cursor() as cur:
+        cur.execute("SELECT party_id FROM campaign WHERE tenant_id = %s AND id = %s",
+                    (tenant_id, campaign_id))
+        campaign_row = cur.fetchone()
+    if campaign_row is not None:
+        hlc, ranking = agents.shortlist_with_instant(
+            conn, tenant_id, str(campaign_row["party_id"]))
+        placed = agents.rank_of(ranking, counterparty_id)
+        if placed is not None:
+            decided = (hlc, placed[0], placed[1])
+
     try:
         outreach.open_thread(conn, tenant_id, campaign_id=campaign_id,
-                             counterparty_id=counterparty_id)
+                             counterparty_id=counterparty_id, decided=decided)
     except psycopg.errors.UniqueViolation:
         return RedirectResponse(
             f"/campaigns?sel={campaign_id}&error="

@@ -156,6 +156,68 @@ class ReplayAgainstTheCluster(unittest.TestCase):
                                cluster_logical_timestamp(), 0, 0.5)""",
                     (self.tenant, campaign, counterparty))
 
+    def _embed(self, party_id: str, fill: float) -> None:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """UPDATE party SET profile_embedding = %s::VECTOR(1024),
+                                    embedding_model = 'openai:text-embedding-3-small'
+                    WHERE tenant_id = %s AND id = %s""",
+                ("[" + ",".join([str(fill)] * 1024) + "]", self.tenant, party_id))
+
+    def test_a_thread_opened_from_a_ranking_replays_to_that_ranking(self) -> None:
+        """The whole loop, end to end, and the only test here that proves the claim
+        rather than one of its guard rails.
+
+        Open a thread the way the console does — recompute the shortlist, take the
+        instant and the position, store both — then ask `justification` to reconstruct it
+        and assert the replay agrees. `matched` is what makes the reconstruction
+        falsifiable, so asserting it is true here is asserting that the check itself
+        works, not merely that a list came back.
+        """
+        artist, campaign = self._artist_and_campaign()
+        self._embed(artist, 0.10)
+        for i in range(4):
+            self._embed(self._counterparty(f"curator-{i}"), 0.10 + i * 0.01)
+
+        hlc, ranking = agents.shortlist_with_instant(self.conn, self.tenant, artist)
+        self.assertTrue(ranking, "seeded counterparties should produce a shortlist")
+
+        chosen = str(ranking[0]["id"])
+        placed = agents.rank_of(ranking, chosen)
+        self.assertIsNotNone(placed)
+        assert placed is not None
+        thread = outreach.open_thread(
+            self.conn, self.tenant, campaign_id=campaign, counterparty_id=chosen,
+            decided=(hlc, placed[0], placed[1]))
+
+        found = outreach.justification(self.conn, self.tenant, str(thread["id"]))
+        self.assertEqual(found["recorded_rank"], placed[0])
+        self.assertEqual(found["replayed_rank"], placed[0],
+                         "the replay must put the counterparty where the thread said")
+        self.assertTrue(found["matched"],
+                        f"replay disagreed with the stored decision: {found}")
+
+    def test_rank_of_returns_nothing_for_a_counterparty_not_on_the_list(self) -> None:
+        """An operator may open a thread with somebody the shortlist never surfaced.
+        That is legitimate, and recording it as rank 1 would be a lie of exactly the kind
+        this feature exists to prevent."""
+        self.assertIsNone(agents.rank_of([{"id": "a", "distance": 0.1}], "b"))
+
+    def test_the_instant_is_the_instant_the_ranking_was_read(self) -> None:
+        """`shortlist_with_instant` runs both statements in one transaction so the
+        timestamp is the read's own snapshot rather than a neighbouring one. Observable
+        property: replaying at the returned instant reproduces the same ordering. If the
+        two had drifted apart, a write landing between them would be enough to break
+        this, which is precisely the near-miss the design rejects."""
+        artist, _ = self._artist_and_campaign()
+        self._embed(artist, 0.10)
+        for i in range(3):
+            self._embed(self._counterparty(f"c-{i}"), 0.10 + i * 0.01)
+
+        hlc, live = agents.shortlist_with_instant(self.conn, self.tenant, artist)
+        replayed = agents.shortlist_as_of(self.conn, self.tenant, artist, as_of=str(hlc))
+        self.assertEqual([str(r["id"]) for r in live], [str(r["id"]) for r in replayed])
+
     def test_an_expired_instant_raises_rather_than_returning_today(self) -> None:
         """The failure this whole design exists to prevent.
 

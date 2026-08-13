@@ -1689,7 +1689,7 @@ def masters_delete(principal: Operator, recording_id: str, asset_id: str) -> Res
 
 def _campaigns_page(request: Request, principal: auth.Principal, *, sel: str = "",
                     error: str = "", form: dict[str, str] | None = None,
-                    status_code: int = 200) -> Response:
+                    as_of: str = "", status_code: int = 200) -> Response:
     """The Campaigns view, plus whichever editor state the inspector is in.
 
     The selected campaign's inspector carries the shortlist — every contactable
@@ -1717,7 +1717,15 @@ def _campaigns_page(request: Request, principal: auth.Principal, *, sel: str = "
             if sel_row is not None:
                 candidates = research.shortlist_candidates(conn, tenant_id)
                 sel_row = dict(sel_row)
-                sel_row["insp"] = sel_row["insp"] + (
+                # The ranked view goes first: an operator opening a campaign wants the
+                # order before the roll-call. `party_id` is the campaign's artist —
+                # R1 searches *from* them, so a campaign without one has nothing to rank.
+                ranked: tuple[demo.Section, ...] = ()
+                if sel_row.get("party_id"):
+                    ranked = research.ranked_shortlist_sections(
+                        conn, tenant_id, campaign_id=str(sel_row["id"]),
+                        artist_id=str(sel_row["party_id"]), as_of=as_of)
+                sel_row["insp"] = sel_row["insp"] + ranked + (
                     demo.Section(
                         "Contactable — open a thread", "editlist",
                         tuple((c["name"], (c["roles"] or "no role recorded")
@@ -1751,8 +1759,11 @@ def _campaigns_page(request: Request, principal: auth.Principal, *, sel: str = "
 
 @router.get("/campaigns", response_class=HTMLResponse)
 def campaigns(request: Request, principal: Operator, sel: str = "",
-              error: str = "") -> Response:
-    return _campaigns_page(request, principal, sel=sel, error=error)
+              error: str = "", as_of: str = "") -> Response:
+    """`as_of` is the scrubber. It is a query parameter rather than a form post because
+    reading the shortlist as it stood changes nothing — a judge or an operator should be
+    able to paste the URL, and a GET is what makes that true."""
+    return _campaigns_page(request, principal, sel=sel, error=error, as_of=as_of)
 
 
 @router.post("/campaigns", response_class=HTMLResponse)

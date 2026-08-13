@@ -2415,3 +2415,93 @@ def justification_sections(conn: psycopg.Connection, tenant_id: str,
         tuple(f"#{i} {row['name']} — {float(row['distance']):.4f}"
               for i, row in enumerate(found["ranking"], start=1)))
     return (header, ranking)
+
+
+#: The windows the console scrubber offers, in the order a person reads them.
+#:
+#: Bounded by what the cluster can actually serve rather than by what would be nice:
+#: `gc.ttlseconds` is seven days but the GC threshold only moves forward from the moment
+#: it was raised, so reachable depth grows rather than jumping. Measured 2026-08-13 —
+#: -10h resolved, -18h did not. Offering a window that raises `HistoryExpired` on every
+#: press would be a control that exists to disappoint; these are the ones that answer.
+#:
+#: `agents.shortlist_as_of` validates the value again on the way in. Two independent
+#: checks on something interpolated into SQL is the right number, and this list being one
+#: of them is not a reason for the other to relax.
+SCRUB_WINDOWS: tuple[tuple[str, str], ...] = (
+    ("now", ""), ("15 min ago", "-15m"), ("1 hour ago", "-1h"),
+    ("3 hours ago", "-3h"), ("6 hours ago", "-6h"),
+)
+
+
+def ranked_shortlist_sections(conn: psycopg.Connection, tenant_id: str, *,
+                              campaign_id: str, artist_id: str,
+                              as_of: str = "") -> tuple[Section, ...]:
+    """R1's ranking for this campaign's artist, live or as it stood.
+
+    The console's other shortlist — `shortlist_candidates` — answers "who may we
+    contact", which is a state question the partial unique index settles. This answers
+    "who should we contact, and in what order", which is the vector search, and the two
+    are deliberately separate sections rather than one merged list: an operator deciding
+    who to pitch is doing a different thing from an operator checking who is free.
+
+    The scrubber is the point. Running the same query at `-3h` and reading a different
+    order is the product's central claim made visible in one control — lessons
+    accumulate, genres land, threads open, and the ranking those produce is a thing that
+    existed at a time rather than a fact about the world.
+
+    An expired window renders as a refusal and never as the live list. `shortlist_as_of`
+    raises `HistoryExpired` past the GC boundary and this catches it to say so; falling
+    back would put today's ranking under a label saying Tuesday, which is the one
+    outcome the whole feature exists to prevent.
+    """
+    from rtf_platform import agents
+
+    picker = Section(
+        "The shortlist, as of", "actions",
+        tuple((label, f"/campaigns?sel={campaign_id}&as_of={window}", "s", "get")
+              for label, window in SCRUB_WINDOWS))
+
+    # An unrecognised window REFUSES. The obvious sanitiser — fall back to the live
+    # ranking when the value is not in the list — was what this function shipped with for
+    # about ten minutes, and it is the exact silent fallback this codebase forbids
+    # everywhere else: `?as_of=-72h` rendered today's shortlist, correctly labelled
+    # "Ranked now", to somebody who had asked for three days ago. Nothing was wrong on
+    # screen. Nothing was right either, because the question went unanswered and
+    # unmentioned.
+    #
+    # The empty string is the one non-member that means something — it is "now", the
+    # default when no window is chosen at all.
+    known = {window for _, window in SCRUB_WINDOWS}
+    if as_of and as_of not in known:
+        return (picker, Section("Not a window", "note", (
+            f"{as_of!r} is not one of the windows this console offers. It is not being "
+            "quietly rounded to the live ranking: the value would reach an AS OF SYSTEM "
+            "TIME clause, and a control that answers a question you did not ask is worse "
+            "than one that says no.",)))
+
+    try:
+        ranked = agents.shortlist_as_of(conn, tenant_id, artist_id, as_of=as_of)
+    except agents.HistoryExpired:
+        return (picker, Section("Not reachable", "note", (
+            "That window is past the cluster's garbage-collection threshold, so the "
+            "index as it stood then no longer exists to be read. The ranking is not "
+            "being approximated from today's — it is gone, and saying so is the only "
+            "honest answer.",)))
+    except ValueError:
+        # Unreachable while SCRUB_WINDOWS holds only shapes `shortlist_as_of` accepts,
+        # and kept because that is a property of a constant somebody will edit. The two
+        # validations are deliberately independent; this is what makes them so.
+        return (picker, Section("Not a window", "note", (
+            "That value did not survive validation on the way into the query.",)))
+
+    if not ranked:
+        return (picker, Section("Nothing to rank", "note", (
+            "This artist has no profile embedding, so R1 has nothing to search from. "
+            "Embed the artist and the ranking appears.",)))
+
+    when = next((label for label, w in SCRUB_WINDOWS if w == as_of), "now")
+    return (picker, Section(
+        f"Ranked {when}", "chain",
+        tuple(f"#{i} {row['name']} — {float(row['distance']):.4f}"
+              for i, row in enumerate(ranked, start=1))))

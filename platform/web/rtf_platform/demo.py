@@ -49,6 +49,10 @@ NAV: tuple[tuple[str, tuple[tuple[str, str, str, str], ...]], ...] = (
         ("imports",   "Statements",     "/imports",        ""),
         ("facts",     "Facts",          "/facts",          ""),
         ("counter",   "Counterparties", "/counterparties", ""),
+        # Under Knowledge and not System, because what it answers is the catalogue
+        # rather than the machinery — an operator asking "how many curators do we have"
+        # is doing the same thing the four screens above it are for, in a sentence.
+        ("ask",       "Ask",            "/ask",            ""),
     )),
     ("Campaigns", (
         ("campaigns", "Campaigns",      "/campaigns",      ""),

@@ -25,8 +25,9 @@ an empty state that says what is missing beats a fixture that hides it, because 
 operator looking at three invented replies has no way to learn the integration does not
 exist.
 
-**The console is private.** Four routes are public — `/` (the landing page), `/signin`,
-`POST /demo` and `/healthz` — and everything else is behind `require_operator`, which
+**The console is private.** Five routes are public — `/` (the landing page), `/manual`
+(the operator manual), `/signin`, `POST /demo` and `/healthz` — and everything else is
+behind `require_operator`, which
 303s a visitor to the landing page rather than showing them a wall. An earlier build
 served the console to anonymous readers so a hackathon judge would see the product
 rather than a login box; that is reversed deliberately, and judges get a token instead.
@@ -79,7 +80,7 @@ Principal = Annotated[auth.Principal, Depends(current_principal)]
 def require_operator(
     rtf_session: Annotated[str | None, Cookie()] = None,
 ) -> auth.Principal:
-    """The gate. Everything except `/`, `/signin`, `/demo` and `/healthz` is behind it.
+    """The gate. All but `/`, `/manual`, `/signin`, `/demo` and `/healthz` sit behind it.
 
     A 303 with a Location rather than a 401: an unauthenticated browser should land on
     the page that explains what this is and offers a way in, not on a wall. Declared as
@@ -471,6 +472,33 @@ def home(request: Request, principal: Principal, sel: str = "") -> Response:
              here="today", items=items, sel=row, quiet=quiet, live=True,
              insp_kicker=(row or {}).get("kind", ""),
              insp_title=(row or {}).get("head", "—")),
+    )
+
+
+@router.get("/manual", response_class=HTMLResponse)
+def manual(request: Request, principal: Principal) -> Response:
+    """The operator manual. Public, and the second half of the public surface.
+
+    `/` argues to a judge that the database earns its place; this argues to a label
+    that the console is usable. Different reader, different ground — see the header of
+    `manual.html` — but one design system, so the three provenance marks the manual
+    teaches are drawn by the same rules the console draws them with.
+
+    Two figures in the document are read live. When the cluster does not answer, the
+    template says so rather than printing the number that was true when it was written;
+    a manual explaining that this product refuses stale figures must not itself serve
+    one. That is why this passes `None` on failure instead of a default.
+    """
+    try:
+        conn = _conn()
+        stats = _demo_stats(conn, _tenant_id(conn) or "")
+    except Exception:  # noqa: BLE001 — the document is worth more than its counters
+        stats = {}
+    return templates.TemplateResponse(
+        request, "manual.html",
+        _ctx(request, principal,
+             counterparties=stats.get("counterparties"),
+             with_genre=stats.get("with_genre")),
     )
 
 

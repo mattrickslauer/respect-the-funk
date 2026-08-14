@@ -19,6 +19,33 @@ than one that is uniformly green.
 **Empty is a real answer here.** A view with no rows says what would create some,
 because an empty table and a broken query look identical otherwise, and the operator
 should be able to tell without opening a log.
+
+## The `rows_*` split, and why it exists
+
+Every builder below used to be one function that did two jobs: run a statement, and
+shape the result into columns, chips and inspector sections. That was correct while
+Jinja was the only reader. It stopped being correct when `rtf_platform/api/` added a
+second one.
+
+The shaping half is *not* reusable and should not be. It turns `None` into `"—"`,
+`0.42` into `"0.42"`, a boolean into `"yes"`, a timestamp into `"08-13 14:22"` and a
+percentage into `"████░░░░░░"`. Those are answers to "what does an operator read", and
+a JSON client that received them could not sort by score, format a date in the reader's
+locale, or tell an absent value from a literal em-dash. So the API does its own shaping.
+
+The query half **is** the same question asked by both surfaces, and duplicating it is
+how two front ends drift apart — one gains a `tenant_id` predicate the other never
+gets, one learns that `status = 'live'` matters and the other quietly quotes retracted
+facts. So each statement now lives in exactly one `rows_*` (or `counts_*`) function,
+directly above the view that shapes it, and both surfaces call that.
+
+The direction of the dependency is deliberate: `api/` imports `research`, never the
+reverse. This module is the read layer; Jinja and JSON are two surfaces on top of it,
+and the read layer is not allowed to know which one is asking.
+
+Nothing here changed shape when the split was made. The SQL is the same text it was,
+moved rather than rewritten, so `test_research_views.py` still proves the same thing:
+that every one of these statements reaches the planner and survives it.
 """
 
 from __future__ import annotations
@@ -60,8 +87,9 @@ def _ago(row: dict[str, Any], key: str) -> str:
 
 # --------------------------------------------------------------------- facts
 
-def facts(conn: psycopg.Connection, tenant_id: str) -> View:
-    rows = _rows(conn, """
+def rows_facts(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
+    """Everything the fleet believes, newest first."""
+    return _rows(conn, """
         SELECT f.id, f.dimension, f.value_text, f.provenance, f.status, f.confidence,
                f.source, f.written_by, f.observed_at, f.model, f.supersedes_id,
                a.name AS artist_name
@@ -71,12 +99,22 @@ def facts(conn: psycopg.Connection, tenant_id: str) -> View:
          ORDER BY f.observed_at DESC
          LIMIT %s""", (tenant_id, LIMIT))
 
-    counts = _one(conn, """
+
+def counts_facts(conn: psycopg.Connection, tenant_id: str) -> dict[str, Any]:
+    """Claim totals by status. Counted over the whole table, not over `rows_facts`'s
+    page — a header that said "3 live" because only three fit on the page would be
+    worse than no header."""
+    return _one(conn, """
         SELECT count(*) AS total,
                count(*) FILTER (WHERE status = 'live')       AS live,
                count(*) FILTER (WHERE status = 'stale')      AS stale,
                count(*) FILTER (WHERE status = 'retracted')  AS retracted
           FROM party_fact WHERE tenant_id = %s""", (tenant_id,))
+
+
+def facts(conn: psycopg.Connection, tenant_id: str) -> View:
+    rows = rows_facts(conn, tenant_id)
+    counts = counts_facts(conn, tenant_id)
 
     glyphs = {"measured": "●", "inferred": "○", "asserted": "◆"}
     out = []
@@ -156,8 +194,9 @@ def _dependents(conn: psycopg.Connection, kind: str, basis_id: Any) -> list[tupl
 
 # --------------------------------------------------------------------- queue
 
-def queue(conn: psycopg.Connection, tenant_id: str) -> View:
-    rows = _rows(conn, """
+def rows_queue(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
+    """The frontier — pending first, then by score."""
+    return _rows(conn, """
         SELECT l.id, l.kind, l.adapter, l.target, l.depth, l.score, l.state,
                l.owner_agent, l.lease_expires_at, l.next_action_at, l.attempts,
                l.last_error, l.cadence_seconds, l.scope_kind, l.reason,
@@ -168,13 +207,20 @@ def queue(conn: psycopg.Connection, tenant_id: str) -> View:
          ORDER BY (l.state = 'pending') DESC, l.score DESC, l.next_action_at
          LIMIT %s""", (tenant_id, LIMIT))
 
-    counts = _one(conn, """
+
+def counts_queue(conn: psycopg.Connection, tenant_id: str) -> dict[str, Any]:
+    return _one(conn, """
         SELECT count(*) AS total,
                count(*) FILTER (WHERE state = 'pending') AS pending,
                count(*) FILTER (WHERE state = 'claimed') AS claimed,
                count(*) FILTER (WHERE state = 'failed')  AS failed,
                count(*) FILTER (WHERE state = 'done')    AS done
           FROM lead WHERE tenant_id = %s""", (tenant_id,))
+
+
+def queue(conn: psycopg.Connection, tenant_id: str) -> View:
+    rows = rows_queue(conn, tenant_id)
+    counts = counts_queue(conn, tenant_id)
 
     out = []
     for r in rows:
@@ -264,8 +310,9 @@ def _trail(conn: psycopg.Connection, tenant_id: str, lead_id: Any) -> list[tuple
 
 # ---------------------------------------------------------------------- runs
 
-def runs(conn: psycopg.Connection, tenant_id: str) -> View:
-    rows = _rows(conn, """
+def rows_runs(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
+    """Every action every agent took, newest first."""
+    return _rows(conn, """
         SELECT r.id, r.agent_kind, r.state, r.summary, r.error, r.documents, r.facts,
                r.metrics, r.leads, r.dropped, r.tokens_in, r.tokens_out,
                r.cost_micro_usd, r.refused_json, r.duration_ms, r.started_at,
@@ -275,7 +322,10 @@ def runs(conn: psycopg.Connection, tenant_id: str) -> View:
          WHERE r.tenant_id = %s
          ORDER BY r.started_at DESC LIMIT %s""", (tenant_id, LIMIT))
 
-    counts = _one(conn, """
+
+def counts_runs(conn: psycopg.Connection, tenant_id: str) -> dict[str, Any]:
+    """The 24-hour window, which is the window the header states."""
+    return _one(conn, """
         SELECT count(*) AS total,
                -- `failed` is an agent raising `LeadFailed`; `error` is one raising
                -- anything else. Both are the work not getting done, and counting only
@@ -290,6 +340,11 @@ def runs(conn: psycopg.Connection, tenant_id: str) -> View:
           FROM agent_run
          WHERE tenant_id = %s AND started_at > now() - INTERVAL '24 hours'""",
         (tenant_id,))
+
+
+def runs(conn: psycopg.Connection, tenant_id: str) -> View:
+    rows = rows_runs(conn, tenant_id)
+    counts = counts_runs(conn, tenant_id)
 
     out = []
     for r in rows:
@@ -344,8 +399,13 @@ def runs(conn: psycopg.Connection, tenant_id: str) -> View:
 
 # ------------------------------------------------------------------- budgets
 
-def budgets(conn: psycopg.Connection, tenant_id: str) -> View:
-    rows = _rows(conn, """
+def rows_budgets(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
+    """Per-artist caps and what has been spent against them.
+
+    Spend is summed from `agent_run` rather than decremented from a counter — see the
+    note the view renders, which is the argument, not decoration.
+    """
+    return _rows(conn, """
         SELECT a.id, a.name, a.slug,
                coalesce(b.max_tokens_per_hour, 20000) AS cap,
                coalesce(b.paused, false)              AS paused,
@@ -367,6 +427,10 @@ def budgets(conn: psycopg.Connection, tenant_id: str) -> View:
                              AND pr.role = 'roster_artist'
           LEFT JOIN party_budget b ON b.tenant_id = a.tenant_id AND b.party_id = a.id
          WHERE a.tenant_id = %s ORDER BY a.name""", (tenant_id,))
+
+
+def budgets(conn: psycopg.Connection, tenant_id: str) -> View:
+    rows = rows_budgets(conn, tenant_id)
 
     out = []
     for r in rows:
@@ -842,9 +906,8 @@ def recording_editor_sections(
     )))
 
 
-def tracks(conn: psycopg.Connection, tenant_id: str, *,
-           editing_id: str | None = None, error: str = "",
-           credit_error: str = "", confirm_delete: bool = False) -> View:
+def rows_tracks(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
+    """Recordings, with their credited performers folded into one row each."""
     # A recording is not owned by an artist — credits are, which is what lets one
     # recording carry two main artists instead of being stored twice. So the
     # performer comes from `party_credit`, and `string_agg` because there can be
@@ -858,7 +921,7 @@ def tracks(conn: psycopg.Connection, tenant_id: str, *,
     # result: `t.id` is already unique, so the extra column splits no group. Do not
     # drop it as redundant without deleting the `f.tenant_id = t.tenant_id` predicates
     # too, and those are load-bearing — see `tests/test_tenant_scoping.py`.
-    rows = _rows(conn, """
+    return _rows(conn, """
         SELECT t.id, t.title, t.slug, t.isrc, t.isrc_raw, t.released_on, t.status,
                t.created_at,
                coalesce(string_agg(a.name, ', ' ORDER BY a.name), '—') AS artist_name,
@@ -880,9 +943,14 @@ def tracks(conn: psycopg.Connection, tenant_id: str, *,
                   t.released_on, t.status, t.created_at
          ORDER BY t.title""", (tenant_id,))
 
-    # Every asset for the tenant in one query, grouped in Python, rather than one query
-    # per row. Thirteen views render the same way and none of them fans out per row —
-    # the table is the unit of work here, not the record.
+
+def rows_recording_assets(conn: psycopg.Connection,
+                          tenant_id: str) -> dict[str, list[dict[str, Any]]]:
+    """Every asset for the tenant in one query, grouped by recording in Python.
+
+    One query rather than one per row. Thirteen views render the same way and none of
+    them fans out per row — the table is the unit of work here, not the record.
+    """
     by_recording: dict[str, list[dict[str, Any]]] = {}
     for asset in _rows(conn, """
             SELECT id, recording_id, kind, label, bytes, mime, state, uploaded_at,
@@ -891,11 +959,13 @@ def tracks(conn: psycopg.Connection, tenant_id: str, *,
              WHERE tenant_id = %s
              ORDER BY kind, created_at DESC""", (tenant_id,)):
         by_recording.setdefault(str(asset["recording_id"]), []).append(asset)
+    return by_recording
 
-    # The measured facts and the credits, each in one query for the whole tenant, for
-    # the reason the asset fetch above gives.
-    measurements = _measurements(conn, tenant_id)
 
+def rows_recording_credits(conn: psycopg.Connection,
+                           tenant_id: str) -> dict[str, list[dict[str, Any]]]:
+    """Credits for the tenant's recordings, grouped by recording, for the reason
+    `rows_recording_assets` gives."""
     by_credit: dict[str, list[dict[str, Any]]] = {}
     for credit in _rows(conn, """
             SELECT c.id, c.subject_id, c.party_id, c.role, c.provenance,
@@ -905,6 +975,16 @@ def tracks(conn: psycopg.Connection, tenant_id: str, *,
              WHERE c.tenant_id = %s AND c.subject_kind = 'recording'
              ORDER BY c.role, p.name""", (tenant_id,)):
         by_credit.setdefault(str(credit["subject_id"]), []).append(credit)
+    return by_credit
+
+
+def tracks(conn: psycopg.Connection, tenant_id: str, *,
+           editing_id: str | None = None, error: str = "",
+           credit_error: str = "", confirm_delete: bool = False) -> View:
+    rows = rows_tracks(conn, tenant_id)
+    by_recording = rows_recording_assets(conn, tenant_id)
+    measurements = _measurements(conn, tenant_id)
+    by_credit = rows_recording_credits(conn, tenant_id)
 
     # Fetched once and shared by every row's credit form rather than per selection: the
     # inspector is built for all rows here, and the roster does not vary between them.
@@ -1304,7 +1384,9 @@ def suggestions_section(rows: list[dict[str, Any]], *, back: str) -> Section:
 
 # --------------------------------------------------------------- counterparties
 
-def counterparties(conn: psycopg.Connection, tenant_id: str) -> View:
+def rows_counterparties(conn: psycopg.Connection, tenant_id: str, *,
+                        query: str = "", contact_state: str = "",
+                        searchable: bool | None = None) -> list[dict[str, Any]]:
     """Everyone we could take a record to, and what we actually know about each.
 
     Live from `party` where `party_class = 'counterparty'` — the same table the roster
@@ -1313,11 +1395,22 @@ def counterparties(conn: psycopg.Connection, tenant_id: str) -> View:
     embedding, because a counterparty without one is invisible to R1 no matter how good a
     match they would be.
 
-    `searchable` is shown as its own column rather than folded into a status, because
-    "we know about them but cannot find them" is a specific, fixable state and a reader
-    should be able to count them at a glance.
+    **The three filters reach the database rather than the browser**, for the reason
+    `LIMIT` exists at all: past a couple of hundred rows a client that filters what it
+    was sent is filtering a page, not a table, and quietly shows a subset of a subset.
+    The console passes none of them and gets exactly the statement it had before.
+
+    `searchable` is a tri-state and `None` is not a default standing in for `False`:
+    "every counterparty", "only the ones R1 can see" and "only the ones it cannot" are
+    three different questions, and the third is the one worth asking — an unembedded
+    counterparty is a specific, fixable state rather than an absence.
+
+    The empty string means "unfiltered" for the two text parameters. That is safe here
+    and only here because neither column is nullable and neither has `''` as a legal
+    value: `contact_state` is a closed set and `name` is `NOT NULL`. It is a real
+    coupling to the schema, which is why it is written down rather than assumed.
     """
-    rows = _rows(conn, """
+    sql = """
         SELECT p.id, p.name, p.contact_state, p.embedding_model,
                (p.profile_embedding IS NOT NULL) AS searchable,
                pr.platform, pr.url,
@@ -1331,9 +1424,31 @@ def counterparties(conn: psycopg.Connection, tenant_id: str) -> View:
           FROM party p
           LEFT JOIN presence pr ON pr.tenant_id = p.tenant_id
                                 AND pr.subject_kind = 'party' AND pr.subject_id = p.id
-         WHERE p.tenant_id = %s AND p.party_class = 'counterparty'
-         ORDER BY p.name
-         LIMIT %s""", (tenant_id, LIMIT))
+         WHERE p.tenant_id = %s AND p.party_class = 'counterparty'"""
+    params: list[Any] = [tenant_id]
+
+    if query:
+        # `name` only. A role is a closed vocabulary an operator does not type, and
+        # matching the profile body would make a search box quietly full-text-search
+        # every document we hold — slow, and surprising in a field labelled "who".
+        sql += " AND p.name ILIKE %s"
+        params.append(f"%{query}%")
+    if contact_state:
+        sql += " AND p.contact_state = %s"
+        params.append(contact_state)
+    if searchable is not None:
+        sql += (" AND p.profile_embedding IS NOT NULL" if searchable
+                else " AND p.profile_embedding IS NULL")
+
+    sql += " ORDER BY p.name LIMIT %s"
+    params.append(LIMIT)
+    return _rows(conn, sql, tuple(params))
+
+
+def counterparties(conn: psycopg.Connection, tenant_id: str) -> View:
+    """The console's unfiltered read. The filters exist for the JSON API; this screen
+    scans, and a scan that silently omitted rows would be worse than a long one."""
+    rows = rows_counterparties(conn, tenant_id)
 
     out = []
     for r in rows:
@@ -1481,13 +1596,14 @@ def today(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]
 
 # ------------------------------------------------------------------- artists
 
-def artists(conn: psycopg.Connection, tenant_id: str, *,
-            editing_id: str | None = None, error: str = "",
-            profile_error: str = "", confirm_delete: bool = False) -> View:
-    # The roster is a role, not a table. Joining `party_role` is what keeps a
-    # counterparty — a creator, a curator, a journalist — out of this view while
-    # letting it live in the same tables.
-    rows = _rows(conn, """
+def rows_artists(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
+    """The roster, with the four counts every surface wants beside a name.
+
+    The roster is a role, not a table. Joining `party_role` is what keeps a
+    counterparty — a creator, a curator, a journalist — out of this view while
+    letting it live in the same tables.
+    """
+    return _rows(conn, """
         SELECT a.id, a.name, a.artist_type AS type, a.slug, a.kind, a.status,
                a.created_at,
                (SELECT count(*) FROM party_credit c
@@ -1509,16 +1625,30 @@ def artists(conn: psycopg.Connection, tenant_id: str, *,
                             AND r.role = 'roster_artist'
          WHERE a.tenant_id = %s ORDER BY a.name""", (tenant_id,))
 
+
+def rows_presence(conn: psycopg.Connection, tenant_id: str,
+                  subject_id: Any) -> list[dict[str, Any]]:
+    """Where we look for one party.
+
+    `id` is needed because each surface is its own delete target, and the tenant
+    predicate is here rather than implied by the party — a scoped delete link built
+    from an unscoped read is how one label removes another's row.
+    """
+    return _rows(conn, """
+        SELECT id, platform, mode, handle, url AS profile_url, state, match_basis
+          FROM presence
+         WHERE tenant_id = %s AND subject_kind = 'party' AND subject_id = %s
+         ORDER BY platform""", (tenant_id, subject_id))
+
+
+def artists(conn: psycopg.Connection, tenant_id: str, *,
+            editing_id: str | None = None, error: str = "",
+            profile_error: str = "", confirm_delete: bool = False) -> View:
+    rows = rows_artists(conn, tenant_id)
+
     out = []
     for r in rows:
-        # `id` is needed because each surface is its own delete target, and the tenant
-        # predicate is here rather than implied by the party — a scoped delete link
-        # built from an unscoped read is how one label removes another's row.
-        profiles = _rows(conn, """
-            SELECT id, platform, mode, handle, url AS profile_url, state, match_basis
-              FROM presence
-             WHERE tenant_id = %s AND subject_kind = 'party' AND subject_id = %s
-             ORDER BY platform""", (tenant_id, r["id"]))
+        profiles = rows_presence(conn, tenant_id, r["id"])
         out.append({
             "id": str(r["id"]), "name": r["name"], "type": r["type"],
             "tracks": str(r["tracks"]), "facts": str(r["facts"]),
@@ -1629,76 +1759,23 @@ def fleet(conn: psycopg.Connection, tenant_id: str) -> View:
     many times. Rather than silently dropping those rows, any `agent_kind` with runs and
     no manifest is listed too, marked `unmanifested`.
     """
-    # Deliberately imported here rather than at module scope: `agents` imports the
-    # embedding adapters, and a console page should not fail to render because an
-    # optional provider SDK is missing from the bundle.
-    try:
-        from rtf_platform.agents import REGISTRY
-        implemented = set(REGISTRY)
-    except Exception:  # noqa: BLE001 — an unimportable registry is a fact to display
-        implemented = set()
-
-    manifests = _rows(conn, """
-        SELECT kind, work_table, claim_state, scope_kinds, adapters, writes,
-               batch_size, per_artist_cap, lease_seconds, max_attempts,
-               requires_human, enabled, updated_at
-          FROM agent_manifest
-         ORDER BY enabled DESC, kind""", ())
-
-    runs = {r["agent_kind"]: r for r in _rows(conn, """
-        SELECT agent_kind,
-               count(*) AS total,
-               count(*) FILTER (WHERE started_at > now() - INTERVAL '1 hour') AS last_hour,
-               count(*) FILTER (WHERE state = 'failed') AS errors,
-               count(*) FILTER (WHERE state = 'refused') AS refused,
-               max(started_at) AS last_run,
-               sum(cost_micro_usd) AS cost_micro
-          FROM agent_run
-         WHERE tenant_id = %s
-         GROUP BY agent_kind""", (tenant_id,))}
-
-    leases = {r["owner_agent"]: r["n"] for r in _rows(conn, """
-        SELECT owner_agent, count(*) AS n
-          FROM lead
-         WHERE tenant_id = %s AND owner_agent IS NOT NULL
-           AND lease_expires_at > now()
-         GROUP BY owner_agent""", (tenant_id,))}
-
-    # Work waiting per table, so "idle" can be read as "idle with nothing to do" rather
-    # than "idle with a backlog", which are very different bugs.
-    waiting = {
-        "lead": _one(conn, "SELECT count(*) AS n FROM lead WHERE tenant_id = %s "
-                           "AND state = 'pending' AND next_action_at <= now()",
-                     (tenant_id,)).get("n", 0),
-        "thread": _one(conn, "SELECT count(*) AS n FROM thread WHERE tenant_id = %s "
-                             "AND state = 'approved'", (tenant_id,)).get("n", 0),
-        "outbox": _one(conn, "SELECT count(*) AS n FROM outbox WHERE tenant_id = %s "
-                             "AND state = 'pending'", (tenant_id,)).get("n", 0),
-        "message": _one(conn, "SELECT count(*) AS n FROM message WHERE tenant_id = %s "
-                              "AND direction = 'inbound' AND intent = ''",
-                        (tenant_id,)).get("n", 0),
-    }
+    waiting = counts_work_waiting(conn, tenant_id)
+    agents_ = fleet_agents(conn, tenant_id, waiting=waiting)
+    manifests = [a["manifest"] for a in agents_ if a["manifest"] is not None]
 
     out: list[dict[str, Any]] = []
-    for m in manifests:
-        kind = m["kind"]
-        run = runs.get(kind, {})
-        held = leases.get(kind, 0)
-        has_code = kind in implemented
-        queued = waiting.get(m["work_table"], 0)
-
-        if not m["enabled"]:
-            state = "off"
-        elif not has_code:
-            state = "declared"
-        elif held:
-            state = "working"
-        else:
-            state = "idle"
-
+    for a in agents_:
+        m = a["manifest"]
+        kind, state, has_code = a["kind"], a["state"], a["has_code"]
+        held, queued = a["leases_held"], a["work_waiting"]
+        run = a["runs"]
         errors = int(run.get("errors") or 0)
         total = int(run.get("total") or 0)
         cost = Decimal(int(run.get("cost_micro") or 0)) / Decimal(1_000_000)
+
+        if m is None:
+            out.append(_unmanifested_row(kind, run, errors, cost))
+            continue
 
         out.append({
             "id": kind, "agent": kind, "state": state, "leased": str(held),
@@ -1753,38 +1830,6 @@ def fleet(conn: psycopg.Connection, tenant_id: str) -> View:
             ),
         })
 
-    # Anything that has run but has no manifest. Listed rather than dropped: a worker
-    # nobody declared is exactly the thing you want to find out about from the screen
-    # that claims to show the fleet.
-    for kind, run in sorted(runs.items()):
-        if any(m["kind"] == kind for m in manifests):
-            continue
-        errors = int(run.get("errors") or 0)
-        cost = Decimal(int(run.get("cost_micro") or 0)) / Decimal(1_000_000)
-        out.append({
-            "id": kind, "agent": kind, "state": "unmanifested", "leased": "0",
-            "bar": _bar(0), "work": "—", "scope": "—",
-            "rate": str(int(run.get("last_hour") or 0)),
-            "spark": "▁▁▁▁▁▁▁", "errors": str(errors),
-            "insp": (
-                Section("Unmanifested worker", "kv", (
-                    ("name", kind), ("runs recorded", str(int(run.get("total") or 0))),
-                    ("failed", str(errors)),
-                    ("refused by the gate", str(int(run.get("refused") or 0))),
-                    ("last run", _since(run.get("last_run"))),
-                    ("est. cost to date", f"${cost:.4f}"),
-                )),
-                Section("Note", "note", (
-                    "This name has agent_run rows and no row in agent_manifest, so nothing "
-                    "describes what it claims, what it may write or whether it is allowed to "
-                    "run. `ingest-cli` is the expected one — it is the CLI worker, which "
-                    "claims leads under its own name and dispatches to whichever agent the "
-                    "lead's kind selects. A name here that is not the CLI is worth chasing.",
-                )),
-                Section("", "actions", (("Runs", "/runs", ""),)),
-            ),
-        })
-
     enabled = sum(1 for r in out if r["state"] in ("working", "idle"))
     return View(
         key="fleet", title="Fleet",
@@ -1806,9 +1851,173 @@ def fleet(conn: psycopg.Connection, tenant_id: str) -> View:
     )
 
 
+def _unmanifested_row(kind: str, run: dict[str, Any], errors: int,
+                      cost: Decimal) -> dict[str, Any]:
+    """A worker with runs and no manifest. Listed rather than dropped: a worker nobody
+    declared is exactly the thing you want to find out about from the screen that
+    claims to show the fleet."""
+    return {
+            "id": kind, "agent": kind, "state": "unmanifested", "leased": "0",
+            "bar": _bar(0), "work": "—", "scope": "—",
+            "rate": str(int(run.get("last_hour") or 0)),
+            "spark": "▁▁▁▁▁▁▁", "errors": str(errors),
+            "insp": (
+                Section("Unmanifested worker", "kv", (
+                    ("name", kind), ("runs recorded", str(int(run.get("total") or 0))),
+                    ("failed", str(errors)),
+                    ("refused by the gate", str(int(run.get("refused") or 0))),
+                    ("last run", _since(run.get("last_run"))),
+                    ("est. cost to date", f"${cost:.4f}"),
+                )),
+                Section("Note", "note", (
+                    "This name has agent_run rows and no row in agent_manifest, so nothing "
+                    "describes what it claims, what it may write or whether it is allowed to "
+                    "run. `ingest-cli` is the expected one — it is the CLI worker, which "
+                    "claims leads under its own name and dispatches to whichever agent the "
+                    "lead's kind selects. A name here that is not the CLI is worth chasing.",
+                )),
+                Section("", "actions", (("Runs", "/runs", ""),)),
+            ),
+    }
+
+
+def implemented_agents() -> set[str]:
+    """What the deployed code can actually run.
+
+    Deliberately imported inside the function rather than at module scope: `agents`
+    imports the embedding adapters, and a console page should not fail to render
+    because an optional provider SDK is missing from the bundle.
+
+    An unimportable registry yields the empty set, which is *not* a silent fallback —
+    it is a fact the caller renders: every manifest then reads `declared`, which is
+    exactly what "the database says these exist and this process can run none of them"
+    should look like.
+    """
+    try:
+        from rtf_platform.agents import REGISTRY
+        return set(REGISTRY)
+    except Exception:  # noqa: BLE001 — an unimportable registry is a fact to display
+        return set()
+
+
+def rows_agent_manifests(conn: psycopg.Connection) -> list[dict[str, Any]]:
+    """`agent_manifest` is global rather than tenant-scoped — the fleet is a property
+    of the deployment, not of a label — so this statement carries no tenant predicate
+    and correctly does not appear in `test_tenant_scoping`'s scoped-table list."""
+    return _rows(conn, """
+        SELECT kind, work_table, claim_state, scope_kinds, adapters, writes,
+               batch_size, per_artist_cap, lease_seconds, max_attempts,
+               requires_human, enabled, updated_at
+          FROM agent_manifest
+         ORDER BY enabled DESC, kind""", ())
+
+
+def rows_agent_runs(conn: psycopg.Connection, tenant_id: str) -> dict[str, dict[str, Any]]:
+    """Run totals per agent kind, keyed by kind."""
+    return {r["agent_kind"]: r for r in _rows(conn, """
+        SELECT agent_kind,
+               count(*) AS total,
+               count(*) FILTER (WHERE started_at > now() - INTERVAL '1 hour') AS last_hour,
+               count(*) FILTER (WHERE state = 'failed') AS errors,
+               count(*) FILTER (WHERE state = 'refused') AS refused,
+               max(started_at) AS last_run,
+               sum(cost_micro_usd) AS cost_micro
+          FROM agent_run
+         WHERE tenant_id = %s
+         GROUP BY agent_kind""", (tenant_id,))}
+
+
+def rows_agent_leases(conn: psycopg.Connection, tenant_id: str) -> dict[str, int]:
+    """Live leases per owner. `lease_expires_at > now()` and not merely
+    `owner_agent IS NOT NULL`: a lapsed lease is not a worker holding anything."""
+    return {r["owner_agent"]: int(r["n"]) for r in _rows(conn, """
+        SELECT owner_agent, count(*) AS n
+          FROM lead
+         WHERE tenant_id = %s AND owner_agent IS NOT NULL
+           AND lease_expires_at > now()
+         GROUP BY owner_agent""", (tenant_id,))}
+
+
+def counts_work_waiting(conn: psycopg.Connection, tenant_id: str) -> dict[str, int]:
+    """Work waiting per claim table, so "idle" can be read as "idle with nothing to do"
+    rather than "idle with a backlog" — very different bugs."""
+    return {
+        "lead": int(_one(conn, "SELECT count(*) AS n FROM lead WHERE tenant_id = %s "
+                               "AND state = 'pending' AND next_action_at <= now()",
+                         (tenant_id,)).get("n", 0)),
+        "thread": int(_one(conn, "SELECT count(*) AS n FROM thread WHERE tenant_id = %s "
+                                 "AND state = 'approved'", (tenant_id,)).get("n", 0)),
+        "outbox": count_outbox_pending(conn, tenant_id),
+        "message": int(_one(conn, "SELECT count(*) AS n FROM message WHERE tenant_id = %s "
+                                  "AND direction = 'inbound' AND intent = ''",
+                            (tenant_id,)).get("n", 0)),
+    }
+
+
+def fleet_agents(conn: psycopg.Connection, tenant_id: str, *,
+                 waiting: dict[str, int] | None = None) -> list[dict[str, Any]]:
+    """Every agent the deployment knows about, with the state it is actually in.
+
+    The four-way state is **domain logic, not presentation**, which is why it is
+    computed here rather than in either surface. `off` and `declared` look almost
+    identical on a screen and mean opposite things — one is a switch somebody threw,
+    the other is a manifest ahead of its implementation — and two front ends deriving
+    that independently is two chances to get it backwards.
+
+    Order matters and is load-bearing: `off` wins over `declared` because a disabled
+    agent will not claim whether or not code exists for it, and `declared` wins over
+    `working` because an agent with no implementation cannot be the thing holding a
+    lease of that name.
+
+    A `manifest` of `None` marks an `unmanifested` worker — one with `agent_run` rows
+    and no row in `agent_manifest`. `None` here is the answer, not a missing value.
+
+    `waiting` is passed in by a caller that already has it, and fetched otherwise. It
+    is four count queries, and the fleet screen wants the same four for its header — a
+    cluster that scales to zero is billed per round trip, and paying twice for the same
+    four counts on one page render is exactly the kind of quiet waste this file's other
+    "one query for the whole tenant" comments exist to avoid.
+    """
+    implemented = implemented_agents()
+    manifests = rows_agent_manifests(conn)
+    runs = rows_agent_runs(conn, tenant_id)
+    leases = rows_agent_leases(conn, tenant_id)
+    if waiting is None:
+        waiting = counts_work_waiting(conn, tenant_id)
+
+    out: list[dict[str, Any]] = []
+    for m in manifests:
+        kind = m["kind"]
+        held = leases.get(kind, 0)
+        has_code = kind in implemented
+        if not m["enabled"]:
+            state = "off"
+        elif not has_code:
+            state = "declared"
+        elif held:
+            state = "working"
+        else:
+            state = "idle"
+        out.append({
+            "kind": kind, "state": state, "manifest": m, "has_code": has_code,
+            "leases_held": held, "work_waiting": waiting.get(m["work_table"], 0),
+            "runs": runs.get(kind, {}),
+        })
+
+    known = {m["kind"] for m in manifests}
+    for kind, run in sorted(runs.items()):
+        if kind in known:
+            continue
+        out.append({
+            "kind": kind, "state": "unmanifested", "manifest": None, "has_code": False,
+            "leases_held": 0, "work_waiting": 0, "runs": run,
+        })
+    return out
+
+
 # ------------------------------------------------------------------ campaigns
 
-def campaigns(conn: psycopg.Connection, tenant_id: str) -> View:
+def rows_campaigns(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
     """One track, one channel, one goal — and the funnel underneath it.
 
     Every count here is derived from `thread` and `message` rather than stored on the
@@ -1817,7 +2026,7 @@ def campaigns(conn: psycopg.Connection, tenant_id: str) -> View:
     counting is free. When it is not, the fix is a materialised view, not a column
     somebody has to remember to increment.
     """
-    rows = _rows(conn, """
+    return _rows(conn, """
         SELECT c.id, c.name, c.channel, c.state, c.goal,
                c.started_at, c.created_at,
                p.name AS artist,
@@ -1855,6 +2064,10 @@ def campaigns(conn: psycopg.Connection, tenant_id: str) -> View:
          WHERE c.tenant_id = %s
          ORDER BY c.created_at DESC
          LIMIT %s""", (tenant_id, LIMIT))
+
+
+def campaigns(conn: psycopg.Connection, tenant_id: str) -> View:
+    rows = rows_campaigns(conn, tenant_id)
 
     out = []
     for r in rows:
@@ -1924,15 +2137,15 @@ def campaigns(conn: psycopg.Connection, tenant_id: str) -> View:
 
 # -------------------------------------------------------------------- threads
 
-def threads(conn: psycopg.Connection, tenant_id: str) -> View:
+def rows_threads(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
     """Every conversation and where it stands.
 
-    The `open` stat counts exactly the rows inside `one_open_thread_per_counterparty`,
-    which is what makes it more than a number: it is how many counterparties are
-    currently locked, and therefore how much of the shortlist is unavailable to any
-    other campaign.
+    The `open` count derived from this is exactly the rows inside
+    `one_open_thread_per_counterparty`, which is what makes it more than a number: it is
+    how many counterparties are currently locked, and therefore how much of the
+    shortlist is unavailable to any other campaign.
     """
-    rows = _rows(conn, """
+    return _rows(conn, """
         SELECT t.id, t.state, t.reason, t.created_at, t.updated_at, t.closed_at,
                t.owner_agent, t.lease_expires_at, t.attempts, t.last_error,
                cp.name AS who, cp.contact_state,
@@ -1954,18 +2167,40 @@ def threads(conn: psycopg.Connection, tenant_id: str) -> View:
          ORDER BY (t.state = 'awaiting_human') DESC, t.updated_at DESC
          LIMIT %s""", (tenant_id, LIMIT))
 
-    # Where each state sits on the fourteen-step walk, so the bar reads as progress
-    # rather than as a second copy of the state chip.
-    order = ["discovered", "shortlisted", "approved", "drafted", "awaiting_human",
-             "queued", "sent", "awaiting_reply", "replied", "negotiating", "agreed",
-             "delivered", "verified"]
+
+#: Where each state sits on the walk to a close, so progress can be read as progress
+#: rather than as a second copy of the state chip. Not `outreach.ALLOWED`'s keys: this
+#: is the *forward* path only, and the three closed states are deliberately absent
+#: because reaching one is an outcome rather than a position.
+THREAD_PROGRESS_ORDER: tuple[str, ...] = (
+    "discovered", "shortlisted", "approved", "drafted", "awaiting_human",
+    "queued", "sent", "awaiting_reply", "replied", "negotiating", "agreed",
+    "delivered", "verified",
+)
+
+
+def thread_progress(state: str) -> int:
+    """How far along a thread is, 0–100.
+
+    `closed_won` is 100 and the other two closed states are 0 — not because nothing
+    happened, but because progress towards a yes is what this measures, and a thread
+    that ended in a no has none of it left.
+    """
+    if state == "closed_won":
+        return 100
+    if state in ("closed_lost", "closed_no_reply"):
+        return 0
+    place = THREAD_PROGRESS_ORDER.index(state) + 1 if state in THREAD_PROGRESS_ORDER else 0
+    return _pct(place, len(THREAD_PROGRESS_ORDER))
+
+
+def threads(conn: psycopg.Connection, tenant_id: str) -> View:
+    rows = rows_threads(conn, tenant_id)
 
     out = []
     for r in rows:
         state = r["state"]
-        progress = 100 if state == "closed_won" else (
-            0 if state in ("closed_lost", "closed_no_reply")
-            else _pct(order.index(state) + 1 if state in order else 0, len(order)))
+        progress = thread_progress(state)
         out.append({
             "id": str(r["id"]), "who": r["who"], "channel": r["channel"],
             "artist": r["artist"], "track": r["track"] or "—",
@@ -2052,7 +2287,25 @@ def approvals(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, 
     draft stays in `message` and a redraft is a second row, so "newest" is what
     distinguishes the current pitch from the history of what was refused.
     """
-    rows = _rows(conn, """
+    rows = rows_approvals(conn, tenant_id)
+
+    out = []
+    for r in rows:
+        out.append(_approval_card(r, rows_draft_basis(conn, tenant_id, r["thread_id"])))
+
+    oldest = _since(rows[0]["created_at"]) if rows else "—"
+    queued = count_outbox_pending(conn, tenant_id)
+    stats = (("waiting", str(len(out)), ""),
+             ("oldest", oldest, ""),
+             ("queued, unsent", str(queued), ""),
+             ("sender", "not wired", ""),
+             ("sends today", "0", ""))
+    return out, stats
+
+
+def rows_approvals(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
+    """Every thread on `awaiting_human`, joined to its newest unsent draft."""
+    return _rows(conn, """
         SELECT t.id AS thread_id, t.state, t.updated_at,
                m.id AS message_id, m.subject, m.body, m.created_at, m.channel,
                m.idempotency_key,
@@ -2077,26 +2330,38 @@ def approvals(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, 
          ORDER BY m.created_at
          LIMIT %s""", (tenant_id, LIMIT))
 
-    out = []
-    for r in rows:
-        # What the draft could have stood on. Shown as what exists rather than as what
-        # the drafter actually read, because nothing records the latter yet and claiming
-        # otherwise would be the drift failure this product is most exposed to.
-        # `status = 'live'` matters: a superseded fact is one the system has already
-        # replaced, and showing it as something a pitch stands on would be quoting a
-        # retracted claim back at the operator approving the send.
-        basis = _rows(conn, """
-            SELECT dimension, value_text, provenance, confidence
-              FROM party_fact
-             WHERE tenant_id = %s AND status = 'live' AND party_id = (
-                   SELECT c.party_id FROM campaign c
-                     JOIN thread t ON t.tenant_id = c.tenant_id
-                                  AND t.campaign_id = c.id
-                    WHERE c.tenant_id = %s AND t.id = %s)
-             ORDER BY confidence DESC NULLS LAST
-             LIMIT 6""", (tenant_id, tenant_id, r["thread_id"]))
+def rows_draft_basis(conn: psycopg.Connection, tenant_id: str,
+                     thread_id: Any) -> list[dict[str, Any]]:
+    """What a draft on this thread could have stood on.
 
-        out.append({
+    What *exists* rather than what the drafter actually read, because nothing records
+    the latter yet and claiming otherwise would be the drift failure this product is
+    most exposed to. Any surface rendering this owes the reader that distinction.
+
+    `status = 'live'` matters: a superseded fact is one the system has already replaced,
+    and showing it as something a pitch stands on would be quoting a retracted claim
+    back at the operator approving the send.
+    """
+    return _rows(conn, """
+        SELECT dimension, value_text, provenance, confidence
+          FROM party_fact
+         WHERE tenant_id = %s AND status = 'live' AND party_id = (
+               SELECT c.party_id FROM campaign c
+                 JOIN thread t ON t.tenant_id = c.tenant_id
+                              AND t.campaign_id = c.id
+                WHERE c.tenant_id = %s AND t.id = %s)
+         ORDER BY confidence DESC NULLS LAST
+         LIMIT 6""", (tenant_id, tenant_id, thread_id))
+
+
+def count_outbox_pending(conn: psycopg.Connection, tenant_id: str) -> int:
+    """Sends that are fully prepared and have not happened. Nothing claims `outbox`."""
+    return int(_one(conn, "SELECT count(*) AS n FROM outbox WHERE tenant_id = %s "
+                          "AND state = 'pending'", (tenant_id,)).get("n", 0))
+
+
+def _approval_card(r: dict[str, Any], basis: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
             "id": str(r["message_id"]), "thread_id": str(r["thread_id"]),
             "who": r["who"], "channel": r["campaign_channel"],
             "artist": r["artist"], "track": r["track"] or "—",
@@ -2137,17 +2402,7 @@ def approvals(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, 
                     ("Thread", f"/threads?sel={r['thread_id']}", ""),
                 )),
             ),
-        })
-
-    oldest = _since(rows[0]["created_at"]) if rows else "—"
-    queued = _one(conn, "SELECT count(*) AS n FROM outbox WHERE tenant_id = %s "
-                        "AND state = 'pending'", (tenant_id,)).get("n", 0)
-    stats = (("waiting", str(len(out)), ""),
-             ("oldest", oldest, ""),
-             ("queued, unsent", str(queued), ""),
-             ("sender", "not wired", ""),
-             ("sends today", "0", ""))
-    return out, stats
+    }
 
 
 # ---------------------------------------------------------------------- inbox
@@ -2179,19 +2434,7 @@ def inbox(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]
     `outreach.record_reply` is the writer, and it works — the tests drive it. What is
     absent is the thing that would call it.
     """
-    rows = _rows(conn, """
-        SELECT m.id, m.subject, m.body, m.intent, m.confidence, m.received_at,
-               m.channel, m.thread_id,
-               t.state AS thread_state,
-               cp.name AS who, p.name AS artist, c.name AS campaign
-          FROM message m
-          JOIN thread t ON t.tenant_id = m.tenant_id AND t.id = m.thread_id
-          JOIN party cp ON cp.tenant_id = t.tenant_id AND cp.id = t.counterparty_id
-          JOIN campaign c ON c.tenant_id = t.tenant_id AND c.id = t.campaign_id
-          JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id
-         WHERE m.tenant_id = %s AND m.direction = 'inbound'
-         ORDER BY m.received_at DESC
-         LIMIT %s""", (tenant_id, LIMIT))
+    rows = rows_inbox(conn, tenant_id)
 
     out = []
     for r in rows:
@@ -2223,10 +2466,36 @@ def inbox(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]
              ("needs you", str(needs), _bar(_pct(needs, len(out) or 1))),
              ("classified", str(sum(1 for r in rows if r["intent"])), ""),
              ("inbound adapter", "not wired", ""),
-             ("threads awaiting reply",
-              str(_one(conn, "SELECT count(*) AS n FROM thread WHERE tenant_id = %s "
-                             "AND state = 'awaiting_reply'", (tenant_id,)).get("n", 0)), ""))
+             ("threads awaiting reply", str(count_awaiting_reply(conn, tenant_id)), ""))
     return out, stats
+
+
+def rows_inbox(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
+    """Inbound messages, newest first.
+
+    **Nothing writes these yet.** There is no mail provider and no inbound adapter, so
+    an empty result is the correct answer and not a failed query. Any surface reading
+    this owes its reader that distinction.
+    """
+    return _rows(conn, """
+        SELECT m.id, m.subject, m.body, m.intent, m.confidence, m.received_at,
+               m.channel, m.thread_id,
+               t.state AS thread_state,
+               cp.name AS who, p.name AS artist, c.name AS campaign
+          FROM message m
+          JOIN thread t ON t.tenant_id = m.tenant_id AND t.id = m.thread_id
+          JOIN party cp ON cp.tenant_id = t.tenant_id AND cp.id = t.counterparty_id
+          JOIN campaign c ON c.tenant_id = t.tenant_id AND c.id = t.campaign_id
+          JOIN party p ON p.tenant_id = c.tenant_id AND p.id = c.party_id
+         WHERE m.tenant_id = %s AND m.direction = 'inbound'
+         ORDER BY m.received_at DESC
+         LIMIT %s""", (tenant_id, LIMIT))
+
+
+def count_awaiting_reply(conn: psycopg.Connection, tenant_id: str) -> int:
+    """Threads that have been sent to and not answered."""
+    return int(_one(conn, "SELECT count(*) AS n FROM thread WHERE tenant_id = %s "
+                          "AND state = 'awaiting_reply'", (tenant_id,)).get("n", 0))
 
 
 # ---------------------------------------------- creating outreach by hand

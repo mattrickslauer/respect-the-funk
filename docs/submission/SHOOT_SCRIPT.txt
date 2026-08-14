@@ -81,7 +81,7 @@ SCREEN
         SELECT count(*) FROM party WHERE party_class = 'counterparty';
          count
         --------
-         175000        <- FILM THE REAL NUMBER ON THE DAY
+          14170        <- FILM THE REAL NUMBER ON THE DAY
 
     Cut to a shortlist for one artist. Five rows, genre beside each.
 
@@ -97,9 +97,20 @@ WHY
     moral constraint rather than a performance metric, which is what licenses
     the whole rest of the video.
 
-DEPENDS ON  W6 (corpus to ~175k).
-FALLBACK    Say the true number. "Fourteen thousand" works identically —
-            the beat is about the ratio, not the magnitude. Never round up.
+DEPENDS ON  W6, and as of 2026-08-13 W6 IS BLOCKED, so the fallback is the
+            script. The Podcast Index adapter, its migration, its ingest stage
+            and its worker are all built and tested; ingesting needs an API key
+            (PODCASTINDEX_API_KEY / PODCASTINDEX_API_SECRET) that nobody has
+            requested yet. Signing up is free and takes minutes — if somebody
+            does it, the corpus moves and this number moves with it.
+FALLBACK    Say fourteen thousand, which is what the cluster holds. It works
+            identically, because the beat is about the RATIO — a few hundred
+            that matter out of everything — and not about the magnitude. Never
+            round up, and do not say "and growing" unless it is.
+
+            The evidence corpus behind R2 is a separate and genuinely complete
+            number worth having ready if asked: 22,057 chunks over 14,018
+            parties, every one of them embedded on 2026-08-13.
 
 
 ===============================================================================

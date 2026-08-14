@@ -17,22 +17,48 @@ import {
   useMutation, useQuery, useQueryClient, type UseQueryResult,
 } from "@tanstack/react-query";
 import { get, post, ApiError } from "./client";
-import type { Campaign, CampaignSummary, GateState, IntentPlan, Proposal } from "./types";
+import type {
+  Budget, Campaign, CampaignSummary, FleetAgent, IntentPlan, Proposal, Summary,
+} from "./types";
 
 /** Work lands on Today when an agent finishes; a few seconds late is fine. */
 const TODAY_MS = 5_000;
 /** A campaign's stages move as workers claim leases. This is the live one. */
 const CAMPAIGN_MS = 2_500;
-/** The gate changes when a provider is wired, which is a deploy, not a minute. */
-const GATE_MS = 60_000;
+/** Eleven numbers in one round trip — what the API recommends polling. */
+const SUMMARY_MS = 10_000;
 
-export function useGate(): UseQueryResult<GateState, ApiError> {
+/**
+ * The counts, and whether a sender exists at all.
+ *
+ * This is the endpoint the API explicitly recommends polling in place of holding a
+ * changefeed open — one statement for eleven numbers, and cheaper at a few seconds'
+ * interval than a feed per browser tab. The console's send-gate indicator is built
+ * from `sender_wired` and `queued_unsent` here rather than from a bespoke endpoint.
+ */
+export function useSummary(): UseQueryResult<Summary, ApiError> {
   return useQuery({
-    queryKey: ["gate"],
-    queryFn: () => get<GateState>("/gate"),
-    refetchInterval: GATE_MS,
-    // The gate is chrome: a failure here must not blank the surface behind it.
+    queryKey: ["summary"],
+    queryFn: () => get<Summary>("/summary"),
+    refetchInterval: SUMMARY_MS,
+    // Chrome: a failure here must not blank the surface behind it.
     retry: 1,
+  });
+}
+
+export function useFleet(): UseQueryResult<{ agents: FleetAgent[] }, ApiError> {
+  return useQuery({
+    queryKey: ["fleet"],
+    queryFn: () => get<{ agents: FleetAgent[] }>("/fleet"),
+    staleTime: 30_000,
+  });
+}
+
+export function useBudgets(): UseQueryResult<{ budgets: Budget[] }, ApiError> {
+  return useQuery({
+    queryKey: ["budgets"],
+    queryFn: () => get<{ budgets: Budget[] }>("/budgets"),
+    staleTime: 30_000,
   });
 }
 
@@ -78,7 +104,7 @@ export function useAct() {
       post<{ ok: true; outcome?: string }>(`/proposals/${id}/${action}`),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["today"] });
-      void qc.invalidateQueries({ queryKey: ["gate"] });
+      void qc.invalidateQueries({ queryKey: ["summary"] });
     },
   });
 }
@@ -105,30 +131,38 @@ export function useRerunStage(campaignId: string) {
   });
 }
 
-/** The intent surface asks the server what a stated goal would actually do. */
-export function usePlanIntent() {
-  return useMutation({
-    mutationFn: (draft: {
-      goal: string; artistId: string; channel: string; recordingId?: string | null;
-    }) => post<IntentPlan>("/intent/plan", draft),
-  });
-}
-
+/**
+ * Create the campaign a plan describes.
+ *
+ * The plan itself is composed on the client from `/fleet` and `/budgets` — see
+ * `IntentPlan` — so the only thing that crosses the wire here is the campaign, and
+ * it is created as a draft that opens nothing. Running it stays a second,
+ * deliberate act.
+ */
 export function useCommitIntent() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (plan: IntentPlan) =>
-      post<{ campaignId: string }>("/intent/commit", plan),
+      post<{ id: string }>("/campaigns", {
+        artist_id: plan.artistId,
+        channel: plan.channel,
+        goal: plan.goal,
+        recording_id: plan.recordingId ?? null,
+        cap_micro_usd: plan.capMicroUsd,
+      }),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["campaigns"] });
     },
   });
 }
 
-export function useArtists(): UseQueryResult<{ artists: { id: string; name: string }[] }, ApiError> {
+export function useArtists(): UseQueryResult<
+  { artists: { id: string; name: string; status: string }[] }, ApiError
+> {
   return useQuery({
     queryKey: ["artists"],
-    queryFn: () => get<{ artists: { id: string; name: string }[] }>("/artists"),
+    queryFn: () =>
+      get<{ artists: { id: string; name: string; status: string }[] }>("/artists"),
     staleTime: 60_000,
   });
 }

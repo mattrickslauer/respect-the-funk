@@ -64,17 +64,57 @@ export interface ProposalAction {
   refusedBecause?: string;
 }
 
+// ------------------------------------------------------------------ summary ---
+
+/**
+ * The eleven numbers `/summary` returns — one round trip, and the endpoint the API
+ * recommends polling instead of holding a changefeed open.
+ *
+ * `sender_wired` and `inbound_adapter_wired` are stated rather than implied, which
+ * is what lets the console say *why* nothing has left: "3 queued" and "0 sent" is
+ * ambiguous until you know whether a provider exists at all.
+ *
+ * Snake case, because it is the wire's own shape and translating it would create a
+ * second vocabulary for the same eleven facts.
+ */
+export interface Summary {
+  awaiting_human: number;
+  open_threads: number;
+  inbound: number;
+  queued_unsent: number;
+  running_campaigns: number;
+  leads_pending: number;
+  leads_failed: number;
+  leads_due: number;
+  suggestions_pending: number;
+  sender_wired: boolean;
+  inbound_adapter_wired: boolean;
+}
+
 // ---------------------------------------------------------------- campaigns ---
+
+/** The funnel, grouped on the wire because it is one thing and wants an order. */
+export interface Funnel {
+  threads: number;
+  open_threads: number;
+  awaiting: number;
+  queued: number;
+  sent: number;
+  replied: number;
+  agreed: number;
+  delivered: number;
+}
 
 export interface CampaignSummary {
   id: string;
   name: string;
-  artist: string;
+  artist: string | null;
+  track: string | null;
   channel: Channel;
   state: string;
-  openThreads: number;
-  awaitingApproval: number;
-  sent: number;
+  goal: string;
+  started_at: string | null;
+  funnel: Funnel;
 }
 
 /** A real fleet stage, not a metaphor. Counts come from the tables. */
@@ -87,7 +127,6 @@ export interface Stage {
 }
 
 export interface Campaign extends CampaignSummary {
-  goal: string;
   stages: Stage[];
   shortlist: RankedContact[];
   /** Null when the campaign has never been ranked, not zero. */
@@ -106,31 +145,63 @@ export interface RankedContact {
   vetoed?: boolean;
 }
 
-// -------------------------------------------------------------------- gate ---
+// ------------------------------------------------------------------- fleet ---
 
 /**
- * Whether anything can physically leave. The console states this persistently
- * because it is the product's central claim, and because "0 sent" is ambiguous
- * between "nothing was ready" and "the wire is not connected".
+ * One worker, as `/fleet` reports it.
+ *
+ * `manifest` being null is the answer rather than a missing value: it means a
+ * worker with runs and no declaration — one nobody declared.
  */
-export interface GateState {
-  /** Always true today, and not switchable from inside the console. */
-  humanApprovalRequired: boolean;
-  /** False until a mail provider is wired. */
-  senderConnected: boolean;
-  queued: number;
-  sentEver: number;
+export interface FleetAgent {
+  kind: string;
+  state: "working" | "idle" | "off" | "declared" | string;
+  has_implementation: boolean;
+  leases_held: number;
+  work_waiting: number;
+  manifest: {
+    work_table: string;
+    writes: string[];
+    requires_human: boolean;
+    enabled: boolean;
+    per_artist_cap: number | null;
+    batch_size: number | null;
+  } | null;
+  runs: {
+    total: number;
+    last_hour: number;
+    failed: number;
+    refused: number;
+    last_run: string | null;
+    cost_micro_usd: number;
+  };
+}
+
+export interface Budget {
+  id: string;
+  name: string;
+  cap: number;
+  paused: boolean;
+  spent: number;
+  pending: number;
+  cost_micro_usd_24h: number;
 }
 
 // ------------------------------------------------------------------ intent ---
 
 /**
- * A campaign before it exists: a stated goal, decomposed into the stages that
- * would run and what each is allowed to spend.
+ * A campaign before it exists: a stated goal, and the stages that would actually
+ * run against it.
  *
- * This is not a plan the model invents. The stages are the fleet's real stages and
- * the caps are `spend.py`'s real caps; the surface's job is to show them before you
- * commit rather than after, and to let you change them.
+ * Nothing here is invented, and that is the whole point of the surface. The stages
+ * are the fleet's declared agents read from `/fleet`; `gate` is the manifest's own
+ * `requires_human` rather than an assumption this client makes; and the per-run cost
+ * is measured — total spend divided by total runs — with an em-dash where a stage has
+ * never run, because a stage with no history has no honest estimate.
+ *
+ * Composed on the client rather than asked for as `/intent/plan`, because every
+ * input already has an endpoint and a server-side planner would be a second place
+ * that knows what a campaign does.
  */
 export interface IntentPlan {
   goal: string;
@@ -145,11 +216,18 @@ export interface IntentPlan {
 export interface PlannedStage {
   key: string;
   name: string;
-  /** What it would do, in the operator's language. */
+  /** What the stage does, in the operator's language. */
   detail: string;
-  /** Null when the cost genuinely cannot be estimated before the stage runs. */
-  estimateMicroUsd: number | null;
+  /**
+   * Whether this stage can actually run right now, and why not when it cannot.
+   *
+   * `blocked` is the honest one and the reason the surface earns its place: the
+   * send stage is blocked today because no mail provider is wired, and a plan that
+   * did not say so would promise something the system cannot do. Derived from
+   * `/summary` and `/fleet`, never asserted by the client.
+   */
+  feasibility: "ready" | "blocked" | "unknown";
+  note: string | null;
   /** A stage that waits for a person. Cannot be switched off. */
-  gate?: boolean;
-  enabled: boolean;
+  gate: boolean;
 }

@@ -15,26 +15,30 @@
 // The rail says so out loud rather than pretending this is the whole console.
 
 import { NavLink, Route, Routes } from "react-router-dom";
-import { useGate, useToday } from "./api/queries";
+import { useSummary, useToday } from "./api/queries";
 import { Gate } from "./components/primitives";
 import Now from "./surfaces/Now";
 import Workbench from "./surfaces/Workbench";
 import Intent from "./surfaces/Intent";
 
 function TopBar() {
-  const gate = useGate();
+  const summary = useSummary();
   return (
     <div className="topbar">
       <span className="spacer" />
-      {/* Chrome must not assert what it does not know. While the gate is loading or
-          unreachable it says nothing at all, rather than showing a reassuring
-          default — a gate indicator that reads "held" when it has not been checked
-          is worse than no indicator. */}
-      {gate.data ? (
+      {/* Chrome must not assert what it does not know. While the summary is loading
+          or unreachable this says nothing at all, rather than showing a reassuring
+          default — a gate indicator reading "held" when it has not been checked is
+          worse than no indicator.
+
+          `humanApprovalRequired` is passed as a constant because it is one: the
+          operator manual states the gate cannot be switched off from inside the
+          console, and there is no setting behind it to read. */}
+      {summary.data ? (
         <Gate
-          humanApprovalRequired={gate.data.humanApprovalRequired}
-          senderConnected={gate.data.senderConnected}
-          queued={gate.data.queued}
+          humanApprovalRequired
+          senderConnected={summary.data.sender_wired}
+          queued={summary.data.queued_unsent}
         />
       ) : null}
     </div>

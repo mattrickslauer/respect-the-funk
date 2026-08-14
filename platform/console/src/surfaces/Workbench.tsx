@@ -179,8 +179,8 @@ function CampaignView({ id }: { id: string }) {
         <aside className="panel">
           <h2>This campaign</h2>
           <p className="sub" style={{ margin: 0 }}>
-            {c.openThreads} open {c.openThreads === 1 ? "thread" : "threads"} ·{" "}
-            {c.awaitingApproval} awaiting approval · {c.sent} sent
+            {c.funnel.open_threads} open {c.funnel.open_threads === 1 ? "thread" : "threads"} ·{" "}
+            {c.funnel.awaiting} awaiting approval · {c.funnel.sent} sent
           </p>
           <p className="sub">
             {c.rankedAt === null
@@ -220,7 +220,7 @@ function CampaignList() {
             </span>
             <span className="chip">{c.state}</span>
             <span className="d">
-              {c.openThreads} open · {c.sent} sent
+              {c.funnel.open_threads} open · {c.funnel.sent} sent
             </span>
           </li>
         ))}

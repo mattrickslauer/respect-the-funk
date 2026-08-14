@@ -173,25 +173,11 @@ def _q(text: str) -> str:
     return quote_plus(text[:300])
 
 
-def _thread_of(conn: psycopg.Connection, tenant_id: str | None,
-               message_id: str) -> str | None:
-    """The thread a draft belongs to, or None if it is not an unsent outbound draft.
-
-    The action routes take a message id because that is what the operator selected, but
-    every write in `outreach` is scoped by thread. Resolving it here — rather than
-    trusting a hidden form field — means a posted id that has already been approved,
-    belongs to another tenant or does not exist all end up in the same place: a message
-    on the approvals screen, not a traceback.
-    """
-    if tenant_id is None:
-        return None
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT thread_id FROM message WHERE tenant_id = %s AND id = %s "
-            "AND direction = 'outbound' AND sent_at IS NULL",
-            (tenant_id, message_id))
-        row = cur.fetchone()
-    return str(row["thread_id"]) if row else None
+#: The thread a draft belongs to. Moved to `research.py` when the JSON API needed the
+#: same resolution before the same `outreach` writes — one definition, so a rule about
+#: which drafts are still actionable cannot come to differ between the two surfaces.
+#: Kept as a name here because this file reads better for it.
+_thread_of = research.thread_of_unsent_draft
 
 
 def _nav(conn: psycopg.Connection | None, tenant_id: str | None
@@ -1850,13 +1836,9 @@ def campaigns_open_thread(principal: Operator, campaign_id: str,
     # A counterparty who is not on the shortlist at all yields no decision, and the thread
     # honestly reads as hand-opened. See `agents.rank_of`.
     decided = None
-    with conn.cursor() as cur:
-        cur.execute("SELECT party_id FROM campaign WHERE tenant_id = %s AND id = %s",
-                    (tenant_id, campaign_id))
-        campaign_row = cur.fetchone()
-    if campaign_row is not None:
-        hlc, ranking = agents.shortlist_with_instant(
-            conn, tenant_id, str(campaign_row["party_id"]))
+    party_id = research.campaign_party_id(conn, tenant_id, campaign_id)
+    if party_id is not None:
+        hlc, ranking = agents.shortlist_with_instant(conn, tenant_id, party_id)
         placed = agents.rank_of(ranking, counterparty_id)
         if placed is not None:
             decided = (hlc, placed[0], placed[1])

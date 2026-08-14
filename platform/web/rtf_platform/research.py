@@ -1506,6 +1506,97 @@ def counterparties(conn: psycopg.Connection, tenant_id: str) -> View:
 
 # ----------------------------------------------------------------------- today
 
+def rows_parked_leads(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
+    """Leads that failed enough times to be parked rather than retried.
+
+    Capped at 20 rather than `LIMIT`, because this feeds a needs-you queue and a
+    needs-you queue with two hundred entries is a backlog report. The cap is a product
+    decision and not a page size — there is no "next 20" and there should not be; if
+    there are more than twenty parked leads the answer is `/queue`, not scrolling.
+    """
+    return _rows(conn, """
+        SELECT l.id, l.kind, l.platform, l.last_error, l.attempts, p.name AS party_name
+          FROM lead l LEFT JOIN party p ON p.tenant_id = l.tenant_id AND p.id = l.party_id
+         WHERE l.tenant_id = %s AND l.state = 'failed'
+         ORDER BY l.updated_at DESC LIMIT 20""", (tenant_id,))
+
+
+#: A suggestion at or above this is an exact-looking match; below it is a shortlist of
+#: maybes. The two are different acts for an operator — one is a confirmation, the other
+#: is a judgement — and the threshold is here, once, because both surfaces draw the
+#: distinction and neither should own it.
+CONFIDENT_MATCH = 0.7
+
+
+def today_items(conn: psycopg.Connection, tenant_id: str) -> list[dict[str, Any]]:
+    """The needs-you queue as domain items: everything asking something of a person.
+
+    Two things land here and both are things the fleet genuinely will not decide — an
+    inferred match that needs confirming, and a lead parked because it failed for a
+    reason a human has to remove. Everything else the fleet already did, and an empty
+    queue is the correct and common state.
+
+    **Suggestions are grouped per artist, and the grouping is the point.** Five
+    candidate Deezer pages for one artist is *one* decision made five times, and a queue
+    that showed it as five items would make an operator feel behind when they are not.
+    That rule lives here rather than in either surface, because it is a judgement about
+    what constitutes a decision and two front ends deriving it separately would show
+    different queue lengths for the same cluster.
+
+    Each item carries its raw material — `suggestions` or `lead` — so a surface can
+    shape it without going back to the database. `refused_because` is deliberately *not*
+    computed here: it is `repo.why_unacceptable` applied per candidate, it is pure, and
+    the console does not use it, so paying for it on every Jinja render would be a cost
+    with no reader.
+    """
+    items: list[dict[str, Any]] = []
+
+    by_party: dict[str, list[dict[str, Any]]] = {}
+    for row in pending_suggestions(conn, tenant_id):
+        by_party.setdefault(str(row["party_id"]), []).append(row)
+
+    for party_id, group in by_party.items():
+        name = group[0]["party_name"]
+        best = max(g["confidence"] for g in group)
+        platforms = sorted({(g["payload"] or {}).get("platform", "") for g in group} - {""})
+        items.append({
+            "id": f"sug-{party_id}",
+            "kind": "suggestion_group",
+            "tone": "act" if best >= CONFIDENT_MATCH else "warn",
+            "subject_kind": "party",
+            "subject_id": party_id,
+            "subject_name": name,
+            "head": f"{len(group)} candidate {'surface' if len(group) == 1 else 'surfaces'}"
+                    f" for {name}",
+            "sub": f"{', '.join(platforms) or 'search'} · best match {best:.2f}"
+                   f" · found by search, not asserted",
+            "best_confidence": float(best),
+            "platforms": platforms,
+            "suggestions": group,
+        })
+
+    for row in rows_parked_leads(conn, tenant_id):
+        items.append({
+            "id": f"lead-{row['id']}",
+            "kind": "parked_lead",
+            # Always `warn` and never `act`: a parked lead needs a cause removed
+            # somewhere outside this product — a credential, a disabled source — so it
+            # is not a decision waiting on a click, and dressing it as one would put it
+            # at the top of a queue nothing in the console can empty.
+            "tone": "warn",
+            "subject_kind": "lead",
+            "subject_id": str(row["id"]),
+            "subject_name": row["party_name"],
+            "head": f"{row['kind']} parked" + (f" for {row['party_name']}"
+                                               if row["party_name"] else ""),
+            "sub": f"{row['platform'] or 'no platform'} · {row['attempts']} attempts"
+                   f" · {row['last_error'][:70]}",
+            "lead": row,
+        })
+
+    return items
+
+
 def today(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]],
                                                              tuple[tuple[str, str], ...]]:
     """The needs-you queue, from rows rather than fixtures.
@@ -1519,72 +1610,49 @@ def today(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]
     Deezer pages for one artist is *one* decision made five times, and a queue that shows
     it as five items makes an operator feel behind when they are not.
     """
-    items: list[dict[str, Any]] = []
+    items = []
+    for item in today_items(conn, tenant_id):
+        if item["kind"] == "suggestion_group":
+            party_id, group = item["subject_id"], item["suggestions"]
+            items.append({
+                "id": item["id"], "sev": item["tone"],
+                "icon": "◇", "kind": "Confirm",
+                "head": item["head"], "sub": item["sub"],
+                "cta": "Review", "href": f"/artists?sel={party_id}",
+                "insp": (
+                    Section("Why this is here", "note", (
+                        "An agent searched a source by name and found these. A name match "
+                        "is inference, so none of them has been written as a surface — two "
+                        "acts can share a name, and a wrong accept quietly attaches "
+                        "somebody else's catalogue to your artist.",
+                    )),
+                    suggestions_section(group, back="/"),
+                    Section("", "actions",
+                            (("Open the artist", f"/artists?sel={party_id}", ""),)),
+                ),
+            })
+        else:
+            row = item["lead"]
+            items.append({
+                "id": item["id"], "sev": item["tone"], "icon": "⚡", "kind": "Blocked",
+                "head": item["head"], "sub": item["sub"],
+                "cta": "Open", "href": "/queue",
+                "insp": (
+                    Section("Why this is here", "note", (
+                        "The lead failed enough times to be parked rather than retried. It "
+                        "is here because the cause is something outside the fleet — a "
+                        "missing credential, a disabled source — and no amount of backoff "
+                        "removes it.",
+                    )),
+                    Section("Lead", "kv", (
+                        ("kind", row["kind"]), ("platform", row["platform"] or "—"),
+                        ("attempts", str(row["attempts"])),
+                        ("error", row["last_error"][:200]),
+                    )),
+                ),
+            })
 
-    rows = pending_suggestions(conn, tenant_id)
-    by_party: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        by_party.setdefault(str(row["party_id"]), []).append(row)
-
-    for party_id, group in by_party.items():
-        name = group[0]["party_name"]
-        best = max(g["confidence"] for g in group)
-        platforms = sorted({(g["payload"] or {}).get("platform", "") for g in group} - {""})
-        items.append({
-            "id": f"sug-{party_id}",
-            # An exact-looking match is a different act from a shortlist of maybes.
-            "sev": "act" if best >= 0.7 else "warn",
-            "icon": "◇", "kind": "Confirm",
-            "head": f"{len(group)} candidate {'surface' if len(group) == 1 else 'surfaces'}"
-                    f" for {name}",
-            "sub": f"{', '.join(platforms) or 'search'} · best match {best:.2f}"
-                   f" · found by search, not asserted",
-            "cta": "Review", "href": f"/artists?sel={party_id}",
-            "insp": (
-                Section("Why this is here", "note", (
-                    "An agent searched a source by name and found these. A name match is "
-                    "inference, so none of them has been written as a surface — two acts "
-                    "can share a name, and a wrong accept quietly attaches somebody "
-                    "else's catalogue to your artist.",
-                )),
-                suggestions_section(group, back=f"/"),
-                Section("", "actions", (("Open the artist", f"/artists?sel={party_id}", ""),)),
-            ),
-        })
-
-    parked = _rows(conn, """
-        SELECT l.id, l.kind, l.platform, l.last_error, l.attempts, p.name AS party_name
-          FROM lead l LEFT JOIN party p ON p.tenant_id = l.tenant_id AND p.id = l.party_id
-         WHERE l.tenant_id = %s AND l.state = 'failed'
-         ORDER BY l.updated_at DESC LIMIT 20""", (tenant_id,))
-    for row in parked:
-        items.append({
-            "id": f"lead-{row['id']}", "sev": "warn", "icon": "⚡", "kind": "Blocked",
-            "head": f"{row['kind']} parked" + (f" for {row['party_name']}"
-                                               if row["party_name"] else ""),
-            "sub": f"{row['platform'] or 'no platform'} · {row['attempts']} attempts"
-                   f" · {row['last_error'][:70]}",
-            "cta": "Open", "href": "/queue",
-            "insp": (
-                Section("Why this is here", "note", (
-                    "The lead failed enough times to be parked rather than retried. It is "
-                    "here because the cause is something outside the fleet — a missing "
-                    "credential, a disabled source — and no amount of backoff removes it.",
-                )),
-                Section("Lead", "kv", (
-                    ("kind", row["kind"]), ("platform", row["platform"] or "—"),
-                    ("attempts", str(row["attempts"])), ("error", row["last_error"][:200]),
-                )),
-            ),
-        })
-
-    counts = _one(conn, """
-        SELECT (SELECT count(*) FROM lead WHERE tenant_id = %s AND state = 'pending') AS pending,
-               (SELECT count(*) FROM party_chunk WHERE tenant_id = %s) AS chunks,
-               (SELECT count(*) FROM party_fact WHERE tenant_id = %s AND status = 'live') AS facts,
-               (SELECT count(*) FROM agent_run WHERE tenant_id = %s
-                 AND started_at > now() - INTERVAL '24 hours') AS runs
-    """, (tenant_id, tenant_id, tenant_id, tenant_id))
+    counts = counts_today(conn, tenant_id)
     quiet = (
         ("leads waiting", str(counts["pending"])),
         ("live facts", str(counts["facts"])),
@@ -1592,6 +1660,17 @@ def today(conn: psycopg.Connection, tenant_id: str) -> tuple[list[dict[str, Any]
         ("runs / 24h", str(counts["runs"])),
     )
     return items, quiet
+
+
+def counts_today(conn: psycopg.Connection, tenant_id: str) -> dict[str, Any]:
+    """What is ticking over while nothing needs you. One statement for four numbers."""
+    return _one(conn, """
+        SELECT (SELECT count(*) FROM lead WHERE tenant_id = %s AND state = 'pending') AS pending,
+               (SELECT count(*) FROM party_chunk WHERE tenant_id = %s) AS chunks,
+               (SELECT count(*) FROM party_fact WHERE tenant_id = %s AND status = 'live') AS facts,
+               (SELECT count(*) FROM agent_run WHERE tenant_id = %s
+                 AND started_at > now() - INTERVAL '24 hours') AS runs
+    """, (tenant_id, tenant_id, tenant_id, tenant_id))
 
 
 # ------------------------------------------------------------------- artists
@@ -2352,6 +2431,48 @@ def rows_draft_basis(conn: psycopg.Connection, tenant_id: str,
                 WHERE c.tenant_id = %s AND t.id = %s)
          ORDER BY confidence DESC NULLS LAST
          LIMIT 6""", (tenant_id, tenant_id, thread_id))
+
+
+def thread_of_unsent_draft(conn: psycopg.Connection, tenant_id: str | None,
+                           message_id: str) -> str | None:
+    """The thread a draft belongs to, or None if it is not an unsent outbound draft.
+
+    The action routes take a message id because that is what the operator selected, but
+    every write in `outreach` is scoped by thread. Resolving it here — rather than
+    trusting a hidden form field or a client-supplied body — means a posted id that has
+    already been approved, belongs to another tenant or does not exist all end up in
+    the same place: one refusal, not a traceback and not a write against somebody
+    else's row.
+
+    `tenant_id` of None returns None rather than running an unscoped statement. That is
+    the console's fresh-deployment case, and a query with a NULL tenant predicate would
+    match nothing anyway — but silently, which is the failure this returns early to
+    avoid.
+    """
+    if tenant_id is None:
+        return None
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT thread_id FROM message WHERE tenant_id = %s AND id = %s "
+            "AND direction = 'outbound' AND sent_at IS NULL",
+            (tenant_id, message_id))
+        row = cur.fetchone()
+    return str(row["thread_id"]) if row else None
+
+
+def campaign_party_id(conn: psycopg.Connection, tenant_id: str,
+                      campaign_id: str) -> str | None:
+    """The artist a campaign is for, or None if there is no such campaign here.
+
+    Its own function because both surfaces need it before opening a thread, and for the
+    same purpose: recomputing the shortlist server-side so the decision provenance is
+    what was true when the button was pressed rather than what the caller said it was.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT party_id FROM campaign WHERE tenant_id = %s AND id = %s",
+                    (tenant_id, campaign_id))
+        row = cur.fetchone()
+    return str(row["party_id"]) if row else None
 
 
 def count_outbox_pending(conn: psycopg.Connection, tenant_id: str) -> int:

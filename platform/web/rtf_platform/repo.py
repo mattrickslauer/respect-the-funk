@@ -305,6 +305,45 @@ class SuggestionUnacceptable(ValueError):
         super().__init__(f"suggestion {suggestion_id}: {reason}")
 
 
+#: The one reason `accept_suggestion` declines by *returning False* rather than by
+#: raising. A sentinel object rather than a matched string, so the caller below branches
+#: on identity and not on prose that will be rewritten.
+NO_PLATFORM = "this suggestion names no platform, so there is nothing to write"
+
+
+def why_unacceptable(payload: dict[str, Any] | None) -> str | None:
+    """Why `accept_suggestion` would not promote this payload, or None if it would.
+
+    A pure function of the payload — no connection, no row, no side effect — which is
+    what makes it useful twice. `accept_suggestion` calls it to decide whether to refuse,
+    and the read side calls it to *predict* the refusal: `/api/v1/today` puts the answer
+    on the item as `refused_because`, so a console can disable the Accept control and
+    say why, instead of making an operator discover it by pressing.
+
+    It exists as one function rather than as a check in each place for the obvious
+    reason: two copies of "which suggestions are acceptable" would disagree the first
+    time `Presence.parse` gained a required field, and the disagreeing version would be
+    the one telling the operator the button was safe to press.
+
+    Every reason is checked in the same order `accept_suggestion` needs them, and the
+    order is load-bearing — an unlabelled-kind payload with no platform must report the
+    kind, which is the actionable half.
+    """
+    payload = payload or {}
+    kind = payload.get("kind", "")
+    if kind != "presence":
+        return f"a {kind or 'unlabelled'} suggestion has no accept path yet"
+    if not payload.get("platform", ""):
+        return NO_PLATFORM
+    try:
+        harvested.Presence.parse(payload, adapter=payload["platform"])
+    except harvested.HarvestInvalid as exc:
+        return (f"this suggestion is missing {exc.field!r} and cannot be "
+                "accepted automatically — it was written before that field "
+                "became required")
+    return None
+
+
 def accept_suggestion(conn: psycopg.Connection, tenant_id: str,
                       suggestion_id: str, *, by: str = "operator") -> bool:
     """Promote an inferred match to an asserted surface, and queue the mapping.
@@ -350,24 +389,18 @@ def accept_suggestion(conn: psycopg.Connection, tenant_id: str,
                 return False
 
             payload = row["payload"] or {}
-            kind = payload.get("kind", "")
-            if kind != "presence":
-                raise SuggestionUnacceptable(
-                    suggestion_id,
-                    f"a {kind or 'unlabelled'} suggestion has no accept path yet")
-
-            platform = payload.get("platform", "")
-            if not platform:
+            # One definition of "acceptable", shared with the read side that predicts
+            # this refusal. `NO_PLATFORM` is the one reason that has always declined by
+            # returning False rather than raising, and it keeps doing so — compared by
+            # identity, so improving the prose cannot change the control flow.
+            reason = why_unacceptable(payload)
+            if reason is NO_PLATFORM:
                 return False
+            if reason is not None:
+                raise SuggestionUnacceptable(suggestion_id, reason)
 
-            try:
-                presence = harvested.Presence.parse(payload, adapter=platform)
-            except harvested.HarvestInvalid as exc:
-                raise SuggestionUnacceptable(
-                    suggestion_id,
-                    f"this suggestion is missing {exc.field!r} and cannot be "
-                    "accepted automatically — it was written before that field "
-                    "became required") from exc
+            platform = payload["platform"]
+            presence = harvested.Presence.parse(payload, adapter=platform)
 
             upsert_presence(
                 conn, tenant_id, str(row["party_id"]),

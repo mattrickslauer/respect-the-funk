@@ -322,6 +322,10 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+/* A chip is content-width. As a direct grid child it stretches to fill its track,
+   and a full-width bordered box with a word in it is not a chip — it reads as an
+   empty text input, which invites a click that does nothing. */
+.ranked li > .chip { justify-self: start; }
 
 /* --------------------------------------------------------------- controls --- */
 .b {

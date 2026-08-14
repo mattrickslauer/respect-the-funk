@@ -121,6 +121,30 @@
 -- same arithmetic: four pages at a 20-second timeout is 80 seconds of worst case, and the
 -- rest is headroom.
 --
+-- ## What was verified against the live cluster, and one thing learned by accident
+--
+-- Every statement below was executed against `respect-the-funk` on 2026-08-13 inside an
+-- explicit transaction that was then rolled back, to prove the SQL parses and binds
+-- before anybody applies it for real. The two `INSERT`s rolled back cleanly and
+-- `agent_manifest` was unchanged afterwards.
+--
+-- **The three `ALTER TABLE`s did not.** CockroachDB runs a schema change as a job outside
+-- the transaction's control, so `ADD COLUMN IF NOT EXISTS contact_country` and
+-- `ADD CONSTRAINT route_country_shape` were still on the table after the `ROLLBACK`. They
+-- were removed again immediately — `contact_route` holds one row and the column held no
+-- data — and `contact_route` is back to its `018` shape. Recorded here rather than
+-- quietly fixed, for two reasons: a rolled-back transaction is not a dry run for DDL on
+-- this engine, which is worth knowing before somebody else tries the same check; and the
+-- column having briefly existed and been dropped is a fact about this cluster's history
+-- that a reader of `SHOW JOBS` would otherwise find unexplained.
+--
+-- Until this file is applied for real, `contacts._write_harvest_contacts` fails on the
+-- missing column with an `UndefinedColumn` naming `contact_country`. No preflight check
+-- was added for that, on `024`'s own reasoning about the same requirement: the missing
+-- column is *"the most useful error the database can produce"*, and a Python guard would
+-- restate it less precisely and once per lead.
+--
+--
 -- `cadence_seconds` is deliberately absent, which makes these leads terminal rather than
 -- polling. A station that publishes a new address next year is a re-harvest somebody asks
 -- for with `--requeue harvest_contacts`, on the same argument `ingest.requeue` makes: a

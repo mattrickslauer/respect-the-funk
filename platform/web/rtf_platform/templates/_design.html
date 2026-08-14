@@ -107,9 +107,14 @@
 }
 
 /* Paper follows the reader at night. Only the values move; no rule below this
-   line may introduce a colour that is not defined in one of these three blocks. */
+   line may introduce a colour that is not defined in one of these three blocks.
+
+   Guarded on `[data-ground]` being absent rather than on it not being one
+   particular value. Naming `transmitter` here would put that string in the file
+   twice — once as a guard and once as the real block below — and the first
+   occurrence is not the one a reader (or a test scanning for the block) wants. */
 @media (prefers-color-scheme:dark){
-  :root:not([data-ground="paper-light"]):not([data-ground="transmitter"]){
+  :root:not([data-ground]){
     --ground:#0a0e14; --panel:#121924; --panel-2:#18202c;
     --rule:#242f3d; --rule-soft:#1b2330;
     --ink:#e9eef6; --ink-2:#c3cdda; --dim:#8b99ab; --faint:#667486;

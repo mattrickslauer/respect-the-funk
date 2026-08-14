@@ -146,6 +146,20 @@ def test_manual_legend_matches_what_the_console_draws(ground: str) -> None:
         design_block = _rule_body(design, 'data-ground="transmitter"')
 
     con, des = _tokens(console_block), _tokens(design_block)
+
+    # Prove we grabbed the block we meant to before comparing anything in it.
+    # An earlier version of this test matched `data-ground="transmitter"` where it
+    # first appears, which was inside a `:not(...)` guard on the dark media query
+    # rather than the transmitter rule itself. It passed — the two blocks agree on
+    # these three colours — but it was checking the wrong thing, and would have gone
+    # on passing if the transmitter block had drifted. A block assertion is cheap
+    # and it is what makes the comparison below mean anything.
+    expected_ground = "#faf8f4" if ground == "light" else "#080b11"
+    assert des["--ground"] == expected_ground, (
+        f"{ground}: matched the wrong rule in _design.html — "
+        f"--ground is {des['--ground']}, expected {expected_ground}"
+    )
+
     for long_name, short_name in PROVENANCE.items():
         assert f"--{short_name}" in con, f"console lost --{short_name}"
         assert con[f"--{short_name}"] == des[f"--{long_name}"], (

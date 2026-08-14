@@ -197,7 +197,7 @@ function CampaignList() {
   const q = useCampaigns();
   if (q.isPending) return <div className="state">Asking the cluster…</div>;
   if (q.isError) return <Failure error={q.error} />;
-  if (q.data.campaigns.length === 0) {
+  if (q.data.rows.length === 0) {
     return (
       <Empty title="No campaigns yet.">
         A campaign is one artist, one channel, one goal. Start one on{" "}
@@ -209,7 +209,7 @@ function CampaignList() {
   return (
     <div className="ranked">
       <ul>
-        {q.data.campaigns.map((c) => (
+        {q.data.rows.map((c) => (
           <li key={c.id}>
             <span className="rank" />
             <span>

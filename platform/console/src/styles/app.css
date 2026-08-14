@@ -15,7 +15,10 @@
 /* ------------------------------------------------------------------ shell --- */
 .shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* An explicit height on the top row, not `auto`. Under `auto` the row collapses to
+     the height of its tallest child, and both children are single lines of small
+     text — so the chrome renders as a 20px sliver that reads as a broken page. */
+  grid-template-rows: 44px minmax(0, 1fr);
   grid-template-columns: 172px minmax(0, 1fr);
   grid-template-areas: "brand top" "rail surface";
   height: 100vh;
@@ -159,8 +162,15 @@
   margin-bottom: 0.5rem;
   max-width: 96ch;
 }
-.proposal.act { border-left-color: var(--phosphor); }
+/* Severity, matching `_console.html`'s `.qrow` exactly rather than approximately.
+   An earlier version had act on --phosphor and warn on --warn: #ffb340 against
+   #d2a24c, two ambers eleven hue-degrees apart, which is not a distinction anyone
+   reads at a glance down a list. The Jinja console had already settled this — act is
+   the red one, because it is the row that is actually asking — and a second console
+   inventing its own severity scale is how an operator learns to distrust both. */
+.proposal.act { border-left-color: var(--err); }
 .proposal.warn { border-left-color: var(--warn); }
+.proposal.info { border-left-color: var(--rule); }
 .proposal.done { border-left-color: var(--rule); opacity: 0.72; }
 .proposal .kind {
   font: 600 9.5px/1 var(--face-display);

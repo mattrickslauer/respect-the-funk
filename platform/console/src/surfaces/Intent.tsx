@@ -74,15 +74,15 @@ export default function Intent() {
   const commit = useCommitIntent();
   const navigate = useNavigate();
 
+  const [name, setName] = useState("");
   const [goal, setGoal] = useState("");
   const [artistId, setArtistId] = useState("");
   const [channel, setChannel] = useState<Channel>("radio");
-  const [capDollars, setCapDollars] = useState("5.00");
   const [shown, setShown] = useState(false);
 
-  const ready = goal.trim().length > 0 && artistId !== "";
+  const ready = name.trim().length > 0 && goal.trim().length > 0 && artistId !== "";
   const stages = planStages(channel, summary.data);
-  const artistBudget = budgets.data?.budgets.find((b) => b.id === artistId);
+  const artistBudget = budgets.data?.rows.find((b) => b.id === artistId);
 
   return (
     <section className="surface">
@@ -101,6 +101,15 @@ export default function Intent() {
           <h2>The goal</h2>
 
           <label className="field">
+            <span>Name</span>
+            <input
+              value={name}
+              placeholder="Something you will recognise in a list of thirty"
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+
+          <label className="field">
             <span>Artist</span>
             {artists.isPending ? (
               <input disabled value="loading…" />
@@ -109,7 +118,7 @@ export default function Intent() {
             ) : (
               <select value={artistId} onChange={(e) => setArtistId(e.target.value)}>
                 <option value="">Choose an artist…</option>
-                {artists.data.artists.map((a) => (
+                {artists.data.rows.map((a) => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </select>
@@ -141,20 +150,22 @@ export default function Intent() {
             />
           </label>
 
-          <label className="field">
-            <span>Cap for this campaign (US$)</span>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={capDollars}
-              onChange={(e) => setCapDollars(e.target.value)}
-            />
-          </label>
-          {artistBudget ? (
-            <p className="sub" style={{ marginTop: "-.3rem" }}>
-              This artist has spent {money(artistBudget.cost_micro_usd_24h)} in the
-              last day{artistBudget.paused ? " and is currently paused" : ""}.
+          {/* No cap field. Caps are per artist in `party_budget`, not per campaign,
+              and the API refused to accept a campaign cap it would have had to
+              ignore — a field the server silently drops is worse than an absent one,
+              because the operator who typed it believes it took effect. So this
+              shows the real budget the campaign will actually run under. */}
+          {artistId && artistBudget ? (
+            <p className="sub">
+              Runs under {artistBudget.name}’s budget:{" "}
+              {money(artistBudget.cost_micro_usd_24h)} spent in the last day
+              {artistBudget.paused ? ", and it is currently paused" : ""}. Caps are
+              set per artist, not per campaign.
+            </p>
+          ) : artistId && budgets.isSuccess ? (
+            <p className="sub" style={{ color: "var(--warn)" }}>
+              This artist has no budget row, so paid stages will be refused before
+              they cost anything. That is the cap working, not a fault.
             </p>
           ) : null}
 
@@ -196,9 +207,8 @@ export default function Intent() {
           </div>
 
           <p className="sub">
-            Capped at {money(Math.round(Number(capDollars || 0) * 1_000_000))}.
-            Nothing exceeds a cap; a request that would is refused before it costs
-            anything.
+            Spending runs against the artist's cap. Nothing exceeds it; a request
+            that would is refused before it costs anything.
           </p>
 
           <button
@@ -206,13 +216,7 @@ export default function Intent() {
             disabled={commit.isPending}
             onClick={() =>
               commit.mutate(
-                {
-                  goal,
-                  artistId,
-                  channel,
-                  capMicroUsd: Math.round(Number(capDollars || 0) * 1_000_000),
-                  stages,
-                },
+                { name, goal, artistId, channel, stages },
                 { onSuccess: (r) => navigate(`/campaigns/${r.id}`) },
               )
             }

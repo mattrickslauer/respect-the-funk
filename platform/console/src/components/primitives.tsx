@@ -138,7 +138,7 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
  * verbatim underneath, because that text is what an operator quotes when they ask
  * for help.
  */
-export function Failure({ error }: { error: unknown }) {
+export function Failure({ error, title }: { error: unknown; title?: string }) {
   if (!(error instanceof ApiError)) {
     return (
       <div className="state bad">
@@ -172,9 +172,14 @@ export function Failure({ error }: { error: unknown }) {
   };
   const s = say[error.kind] ?? say["broken"]!;
 
+  // A caller may override the headline when it knows something the kind does not.
+  // The shape-mismatch case is the reason: it arrives as `broken`, but "the server
+  // failed" is false — the server answered perfectly well, in a dialect this console
+  // does not speak, and telling an operator the server is down would send them to
+  // look at the wrong thing.
   return (
     <div className={`state ${error.kind === "missing" ? "" : "bad"}`}>
-      <b>{s.title}</b>
+      <b>{title ?? s.title}</b>
       {s.next}
       {error.detail ? <code>{error.detail}</code> : null}
     </div>

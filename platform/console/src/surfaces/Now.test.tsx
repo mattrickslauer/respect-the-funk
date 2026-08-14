@@ -1,7 +1,7 @@
-// The proposal stream's two honest states.
+// The proposal stream's honest states.
 //
-// These are the tests that matter for this surface, because the two states look
-// identical if you get them wrong — a blank screen — and mean opposite things.
+// These are the tests that matter for this surface, because several of these states
+// look identical if you get them wrong — a blank screen — and mean opposite things.
 
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -26,70 +26,110 @@ function reply(body: unknown, init: ResponseInit = {}) {
   });
 }
 
+const EMPTY = { rows: [], returned: 0, quiet: { leads_pending: 2626 } };
+
+const GROUP = {
+  rows: [{
+    id: "sug-1",
+    kind: "suggestion_group",
+    tone: "act",
+    head: "3 candidate surfaces for Hallow Youth",
+    sub: "deezer · best match 0.70 · found by search, not asserted",
+    why: [{ label: "how it was found", value: "an agent searched a source by name",
+            provenance: "inferred" }],
+    candidates: [
+      { id: "c1", party_id: "p", party_name: "Hallow Youth", party_slug: "hy",
+        kind: "presence", payload: { label: "Hallow Youth", confidence: 0.7 } },
+      { id: "c2", party_id: "p", party_name: "Hallow Youth", party_slug: "hy",
+        kind: "presence", payload: { label: "Hallow Yth", confidence: 0.4 } },
+    ],
+    actions: [
+      { key: "accept", label: "Accept", style: "primary",
+        endpoint: "/api/v1/suggestions/{id}/accept", per: "candidate" },
+      { key: "reject", label: "Reject", style: "danger",
+        endpoint: "/api/v1/suggestions/{id}/reject", per: "candidate" },
+    ],
+  }],
+  returned: 1,
+  quiet: {},
+};
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Now", () => {
   it("says nothing needs you when the stream is genuinely empty", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => reply({ proposals: [] })));
+    vi.stubGlobal("fetch", vi.fn(async () => reply(EMPTY)));
     mount();
     await waitFor(() =>
       expect(screen.getByText(/Nothing needs you/)).toBeTruthy());
     expect(screen.getByText(/decided everything it was allowed to decide/)).toBeTruthy();
   });
 
+  it("shows the quiet counters alongside an empty list", async () => {
+    // "Nothing needs you" reads very differently next to "2,626 leads pending".
+    vi.stubGlobal("fetch", vi.fn(async () => reply(EMPTY)));
+    mount();
+    await waitFor(() => expect(screen.getByText("2,626")).toBeTruthy());
+  });
+
   it("does NOT say nothing needs you when the endpoint is missing", async () => {
-    // The load-bearing one. An unbuilt or broken endpoint rendering as "nothing
-    // needs you" would tell an operator their queue is clear when it is unknown —
-    // and this screen exists precisely so they do not have to check the others.
+    // An unbuilt or broken endpoint rendering as "nothing needs you" would tell an
+    // operator their queue is clear when it is unknown — and this screen exists
+    // precisely so they do not have to check the others.
     vi.stubGlobal("fetch", vi.fn(async () => reply({ detail: "no route" }, { status: 404 })));
     mount();
-    await waitFor(() =>
-      expect(screen.getByText(/not built yet/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/not built yet/)).toBeTruthy());
     expect(screen.queryByText(/Nothing needs you/)).toBeNull();
   });
 
-  it("renders a proposal with its reasoning and its controls", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => reply({
-      proposals: [{
-        id: "p1",
-        kind: "profile_suggestion",
-        head: "Three candidate pages for Hallow Youth",
-        sub: "Accept or reject the lot.",
-        tone: "act",
-        why: [
-          { label: "source", value: "spotify search", provenance: "inferred" },
-          { label: "distance", value: "0.0912" },
-        ],
-        actions: [
-          { key: "accept", label: "Accept", style: "primary" },
-          { key: "reject", label: "Reject", style: "danger" },
-        ],
-      }],
-    })));
+  it("does NOT say nothing needs you when the body is the wrong shape", async () => {
+    // The regression for the outage that produced this boundary: the API returned
+    // its listing envelope, the client read `.proposals`, and one undefined property
+    // unmounted the whole application. Now an unrecognised shape is reported as one.
+    vi.stubGlobal("fetch", vi.fn(async () => reply({ proposals: [] })));
     mount();
     await waitFor(() =>
-      expect(screen.getByText(/Three candidate pages/)).toBeTruthy());
+      expect(screen.getByText(/shape this console does not understand/)).toBeTruthy());
+    expect(screen.queryByText(/Nothing needs you/)).toBeNull();
+  });
 
-    expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Reject" })).toBeTruthy();
-    // The reasoning is present and one keystroke away, not on another page.
+  it("renders a group with its reasoning, its candidates and its controls", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => reply(GROUP)));
+    mount();
+    await waitFor(() =>
+      expect(screen.getByText(/3 candidate surfaces/)).toBeTruthy());
+
     expect(screen.getByText("why")).toBeTruthy();
-    expect(screen.getByText("spotify search")).toBeTruthy();
+    expect(screen.getByText(/an agent searched a source by name/)).toBeTruthy();
+    expect(screen.getByText("the 2 candidates")).toBeTruthy();
+  });
+
+  it("says how many a group action applies to, because one press means the lot", async () => {
+    // The operator manual is explicit that a suggestion group is one decision per
+    // artist. A button reading plain "Accept" next to five candidates invites the
+    // reading that it accepts one of them.
+    vi.stubGlobal("fetch", vi.fn(async () => reply(GROUP)));
+    mount();
+    const accept = await waitFor(() =>
+      screen.getByRole("button", { name: /Accept all 2/ }));
+    expect(accept.getAttribute("title")).toMatch(/all 2 candidates, in one go/);
   });
 
   it("disables an action the server has already refused, and says why", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => reply({
-      proposals: [{
-        id: "p2", kind: "draft", head: "Pitch to KEXP", tone: "act", why: [],
+    const refused = {
+      ...GROUP,
+      rows: [{
+        ...GROUP.rows[0],
         actions: [{
-          key: "approve", label: "Approve & queue", style: "primary",
+          key: "accept", label: "Accept", style: "primary",
+          endpoint: "/api/v1/suggestions/{id}/accept", per: "row",
           refusedBecause: "Already queued.",
         }],
       }],
-    })));
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => reply(refused)));
     mount();
-    const btn = await waitFor(() =>
-      screen.getByRole("button", { name: /Approve & queue/ }));
+    const btn = await waitFor(() => screen.getByRole("button", { name: /Accept/ }));
     expect((btn as HTMLButtonElement).disabled).toBe(true);
     expect(btn.getAttribute("title")).toBe("Already queued.");
   });

@@ -162,6 +162,48 @@ export async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * Every collection endpoint answers in one envelope, and this is the only thing
+ * that unwraps it.
+ *
+ * Written after the same bug twice. The client had guessed `{proposals: [...]}` and
+ * `{budgets: [...]}`; the API sends `{rows, limit, returned, total, truncated, ...}`
+ * for all of them. Both mistakes surfaced as `Cannot read properties of undefined`
+ * inside a render, which unmounts the React tree and serves a blank page — a 200
+ * response, a healthy server, and no clue anywhere on screen.
+ *
+ * The fix is not three corrected property names. It is that no call site names the
+ * array at all: `rows` is unwrapped here, checked here, and a body that does not
+ * carry one is an `ApiError` the surfaces already know how to render. A future
+ * endpoint that answers in some other shape now produces a sentence rather than a
+ * black rectangle.
+ */
+export async function getListing<T>(path: string): Promise<Listing<T>> {
+  const body = await get<unknown>(path);
+  const rows = (body as { rows?: unknown } | null)?.rows;
+
+  if (!Array.isArray(rows)) {
+    throw new ApiError(
+      "broken",
+      `${path} did not answer with a listing.`,
+      {
+        detail: `expected an object with a "rows" array, got: ` +
+          `${JSON.stringify(body)?.slice(0, 300)}`,
+      },
+    );
+  }
+  return { ...(body as object), rows: rows as T[] } as Listing<T>;
+}
+
+export interface Listing<T> {
+  rows: T[];
+  limit: number;
+  returned: number;
+  total: number;
+  truncated: boolean;
+  truncated_is_exact: boolean;
+}
+
 export function post<T>(path: string, body?: unknown): Promise<T> {
   return request<T>(path, {
     method: "POST",

@@ -16,9 +16,10 @@
 import {
   useMutation, useQuery, useQueryClient, type UseQueryResult,
 } from "@tanstack/react-query";
-import { get, post, ApiError } from "./client";
+import { get, getListing, post, ApiError, type Listing } from "./client";
 import type {
-  Budget, Campaign, CampaignSummary, FleetAgent, IntentPlan, Proposal, Summary,
+  Budget, Campaign, CampaignSummary, FleetAgent, IntentPlan, Summary, TodayAction,
+  TodayResponse, TodayRow,
 } from "./types";
 
 /** Work lands on Today when an agent finishes; a few seconds late is fine. */
@@ -46,34 +47,34 @@ export function useSummary(): UseQueryResult<Summary, ApiError> {
   });
 }
 
-export function useFleet(): UseQueryResult<{ agents: FleetAgent[] }, ApiError> {
+export function useFleet(): UseQueryResult<Listing<FleetAgent>, ApiError> {
   return useQuery({
     queryKey: ["fleet"],
-    queryFn: () => get<{ agents: FleetAgent[] }>("/fleet"),
+    queryFn: () => getListing<FleetAgent>("/fleet"),
     staleTime: 30_000,
   });
 }
 
-export function useBudgets(): UseQueryResult<{ budgets: Budget[] }, ApiError> {
+export function useBudgets(): UseQueryResult<Listing<Budget>, ApiError> {
   return useQuery({
     queryKey: ["budgets"],
-    queryFn: () => get<{ budgets: Budget[] }>("/budgets"),
+    queryFn: () => getListing<Budget>("/budgets"),
     staleTime: 30_000,
   });
 }
 
-export function useToday(): UseQueryResult<{ proposals: Proposal[] }, ApiError> {
+export function useToday(): UseQueryResult<TodayResponse, ApiError> {
   return useQuery({
     queryKey: ["today"],
-    queryFn: () => get<{ proposals: Proposal[] }>("/today"),
+    queryFn: () => get<TodayResponse>("/today"),
     refetchInterval: TODAY_MS,
   });
 }
 
-export function useCampaigns(): UseQueryResult<{ campaigns: CampaignSummary[] }, ApiError> {
+export function useCampaigns(): UseQueryResult<Listing<CampaignSummary>, ApiError> {
   return useQuery({
     queryKey: ["campaigns"],
-    queryFn: () => get<{ campaigns: CampaignSummary[] }>("/campaigns"),
+    queryFn: () => getListing<CampaignSummary>("/campaigns"),
     refetchInterval: TODAY_MS,
   });
 }
@@ -100,8 +101,49 @@ export function useCampaign(id: string | undefined): UseQueryResult<Campaign, Ap
 export function useAct() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, action }: { id: string; action: string }) =>
-      post<{ ok: true; outcome?: string }>(`/proposals/${id}/${action}`),
+    mutationFn: async ({ row, action }: { row: TodayRow; action: TodayAction }) => {
+      // The server sends the address; the client substitutes the id and posts. A
+      // route can move without a client release, and there is no second place that
+      // knows what the URL for "accept a suggestion" is.
+      //
+      // `per: "candidate"` fans the press out across the group. The operator manual
+      // is explicit that a suggestion group is one decision per artist — "accept or
+      // reject the lot, in one go" — so a single press must mean the lot, not the
+      // first of five.
+      const ids = action.per === "candidate"
+        ? (row.candidates ?? []).map((c) => c.id)
+        : [row.id];
+
+      if (ids.length === 0) {
+        throw new Error(
+          "This row has no candidates to act on. Nothing was sent.",
+        );
+      }
+
+      // Sequential, not `Promise.all`. These are writes against a cluster that
+      // enforces its own constraints, and a partial failure has to be reportable as
+      // "three of five went through" rather than as one rejected promise hiding the
+      // rest. The counts are small — a suggestion group is single digits.
+      const done: string[] = [];
+      for (const id of ids) {
+        const path = action.endpoint
+          .replace(/^\/api\/v1/, "")
+          .replace("{id}", encodeURIComponent(id));
+        try {
+          await post<unknown>(path);
+          done.push(id);
+        } catch (err) {
+          if (done.length > 0) {
+            throw new Error(
+              `${done.length} of ${ids.length} went through, then: ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+          throw err;
+        }
+      }
+      return { applied: done.length };
+    },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["today"] });
       void qc.invalidateQueries({ queryKey: ["summary"] });
@@ -134,21 +176,25 @@ export function useRerunStage(campaignId: string) {
 /**
  * Create the campaign a plan describes.
  *
- * The plan itself is composed on the client from `/fleet` and `/budgets` — see
- * `IntentPlan` — so the only thing that crosses the wire here is the campaign, and
- * it is created as a draft that opens nothing. Running it stays a second,
- * deliberate act.
+ * No cap crosses the wire, and that is the API's correction rather than an
+ * omission: there is no campaign-level cap column, because caps are per artist in
+ * `party_budget`. The API refused to accept a `cap_micro_usd` and ignore it, which
+ * is right — a field the server silently drops is worse than one that is absent,
+ * since the operator who typed it believes it took effect. The surface shows the
+ * artist's real budget from `/budgets` instead.
+ *
+ * Created as a draft that opens nothing. Running it stays a second, deliberate act.
  */
 export function useCommitIntent() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (plan: IntentPlan) =>
       post<{ id: string }>("/campaigns", {
+        name: plan.name,
         artist_id: plan.artistId,
         channel: plan.channel,
         goal: plan.goal,
         recording_id: plan.recordingId ?? null,
-        cap_micro_usd: plan.capMicroUsd,
       }),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: ["campaigns"] });
@@ -156,13 +202,18 @@ export function useCommitIntent() {
   });
 }
 
-export function useArtists(): UseQueryResult<
-  { artists: { id: string; name: string; status: string }[] }, ApiError
-> {
+export interface ArtistRow {
+  id: string;
+  name: string;
+  status: string;
+  type: string;
+  slug: string;
+}
+
+export function useArtists(): UseQueryResult<Listing<ArtistRow>, ApiError> {
   return useQuery({
     queryKey: ["artists"],
-    queryFn: () =>
-      get<{ artists: { id: string; name: string; status: string }[] }>("/artists"),
+    queryFn: () => getListing<ArtistRow>("/artists"),
     staleTime: 60_000,
   });
 }

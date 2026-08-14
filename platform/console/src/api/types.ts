@@ -27,24 +27,35 @@ export type ContactState = "contactable" | "in_thread" | "declined" | "stale";
 /**
  * A thing the system wants to do, or a decision it cannot make alone.
  *
- * This is the unit the console is built around. It deliberately carries its own
- * reasoning (`why`) and its own controls (`actions`) rather than leaving the
- * operator to reconstruct either — the whole difference between this console and a
- * table of rows is that a row makes you go and find out why it is there.
+ * This is the unit the console is built around. It carries its own reasoning
+ * (`why`) and its own controls (`actions`) rather than leaving the operator to
+ * reconstruct either — the whole difference between this console and a table of
+ * rows is that a row makes you go and find out why it is there.
  */
-export interface Proposal {
+export interface TodayRow {
   id: string;
-  /** `suggestion` — a match to confirm. `parked` — work stopped for a person. */
+  /** `suggestion_group` today. Others will appear as the fleet grows. */
   kind: string;
   /** One line, in the operator's language, not the system's. */
   head: string;
-  sub?: string;
+  sub?: string | null;
   /** Drives the left border: how much this is asking of you. */
   tone: "act" | "warn" | "info";
   why: TraceStep[];
-  actions: ProposalAction[];
-  /** Set once acted on, so the row can settle rather than vanish. */
-  settled?: { outcome: string; at: string } | null;
+  actions: TodayAction[];
+  /** What the row is about — an artist, a recording, a counterparty. */
+  subject?: { kind: string; id: string; name: string } | null;
+  /** The individual matches behind a group. Absent on rows that are not groups. */
+  candidates?: Candidate[];
+}
+
+export interface Candidate {
+  id: string;
+  party_id: string;
+  party_name: string;
+  party_slug: string;
+  kind: string;
+  payload: Record<string, unknown>;
 }
 
 export interface TraceStep {
@@ -54,14 +65,43 @@ export interface TraceStep {
   provenance?: Provenance;
 }
 
-export interface ProposalAction {
-  /** Stable key the client posts back. */
+export interface TodayAction {
+  /** Stable key. */
   key: string;
   /** What the button says. Active voice, and the same word the result will use. */
   label: string;
   style?: "primary" | "quiet" | "danger";
+  /**
+   * The URL to post to, with `{id}` still in it.
+   *
+   * The server sends the address rather than the client deriving it, which means a
+   * route can move without a client release. `{id}` is substituted with the id of
+   * whatever `per` names.
+   */
+  endpoint: string;
+  /**
+   * What one press applies to. `candidate` means the action is per individual
+   * match, and the console fans it out across the group — the operator manual is
+   * explicit that a suggestion group is "a single decision per artist — accept or
+   * reject the lot, in one go", so one press must mean the lot.
+   */
+  per?: "candidate" | "row";
   /** Present when the action is refused before it is attempted, with the reason. */
   refusedBecause?: string;
+}
+
+/**
+ * `/today`, in the API's standard listing envelope.
+ *
+ * `quiet` is the background the console shows underneath: work that is proceeding
+ * without anyone, which is context rather than a demand. It is what makes an empty
+ * list legible — "nothing needs you" reads very differently next to "2,626 leads
+ * pending" than next to nothing at all.
+ */
+export interface TodayResponse {
+  rows: TodayRow[];
+  returned: number;
+  quiet: Record<string, number>;
 }
 
 // ------------------------------------------------------------------ summary ---
@@ -204,13 +244,13 @@ export interface Budget {
  * that knows what a campaign does.
  */
 export interface IntentPlan {
+  /** `campaign.name` is NOT NULL. Give it something recognisable in a list of 30. */
+  name: string;
   goal: string;
   artistId: string;
   channel: Channel;
   recordingId?: string | null;
   stages: PlannedStage[];
-  /** Micro-USD, matching the server. Rendered as dollars, never rounded up. */
-  capMicroUsd: number;
 }
 
 export interface PlannedStage {

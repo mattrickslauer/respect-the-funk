@@ -47,7 +47,11 @@ function TopBar() {
 
 function Rail() {
   const today = useToday();
-  const waiting = today.data?.proposals.filter((p) => !p.settled).length;
+  // `?? []` and not `?.rows.length`. The optional chain guards `data` and stops
+  // there, so a shape that lacks `rows` throws inside the rail and React unmounts
+  // the whole application — which is exactly what happened when the API returned
+  // its listing envelope and this line read `data?.proposals.filter(...)`.
+  const waiting = (today.data?.rows ?? []).length;
 
   return (
     <nav className="rail">

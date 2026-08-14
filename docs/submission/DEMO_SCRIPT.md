@@ -1,8 +1,9 @@
 ---
 title: "Demo script — three minutes, one argument"
 subtitle: "Every beat exists to answer one question: why is CockroachDB irreplaceable here? Nothing else is discussed. Supersedes VIDEO_SCRIPT.md, which was written before the sponsor audit."
-status: "BINDING for the shoot. Runtime budget 2:45 against a 3:00 hard cap. §5 lists what must be true before the camera rolls."
+status: "BINDING for the shoot. Runtime 2:55 against a 3:00 hard cap. The pre-shoot checklist lists what must be true before the camera rolls."
 date: "2026-08-11"
+amended: "2026-08-14 — §3 rewritten. Migrations 023 and 026–032 were applied and the first contact harvest ran, taking `contact_route` from 1 row to 2,351 across three channels. The beat that argued restraint from the schema now argues it from evidence, and gained 0:14 to do so. Telegram and WhatsApp are named as what the channel model is *for*; the rule that they may never be implied as integrations is in 'What must not be said'. Also corrects a claim that had been in this file since it was written: §3 told the shoot to film a `contact_route` row in `opted_out`, and that state has never held a row."
 ---
 
 ## The thesis, in one sentence
@@ -57,30 +58,69 @@ highlighted. Hold long enough to read.
 > model, whether they are a counterparty, whether they are contactable — are *inside* the
 > index prefix, so the search happens in the filtered subspace. Not a scan with a filter
 > bolted on afterwards. A test asserts this plan on every run, because a query that
-> quietly degrades to a full scan still returns rows that look correct.
+> quietly degrades to a full scan still returns rows that look correct. And a trap single
+> never reaches a classical broadcaster, because what they play is inside the text we
+> embed.
 
 **Why this beat.** It is the sponsor's own listed use case, and the prefix-span detail is
 the part a technical judge recognises as real rather than decorative.
 
 ---
 
-## 3. Tailored, not blasted — and the database enforces it (0:55–1:25)
+## 3. Three people, thousands of conversations — and the database is the discipline (0:55–1:39)
 
-**Screen.** Split: a station row showing `genre: classical` next to an artist tagged
-`trap`, and the shortlist *not* containing it. Then the `contact_route` table showing a row
-in `opted_out`.
+**Runtime.** This beat was 0:30 and is now 0:44. Fourteen seconds come from the 2:45/3:00
+headroom and four from the duplicated line cut out of §4. The cut now runs **2:55**. If it
+runs long on the day, take it back out of here and not out of §5 — §5 is the only
+Postgres-impossible beat in the video.
 
-**VO.**
-> Genre comes from three sources into the text we embed, so a trap single does not get
-> pitched to a classical broadcaster. That is the difference between outreach and blast
-> radius. And when someone tells us to stop, `opted_out` is a terminal state no discovery
-> stage can overwrite — not a rule we remember, a constraint the database keeps. The
-> sender also refuses any address we merely guessed at. Sustainable outreach is a schema
-> property here, not a policy document.
+**Screen, in three holds.** Hold each long enough to read; this beat is evidence, not
+montage.
+
+1. `SELECT channel, count(*) FROM contact_route GROUP BY 1;` → `email 1622 · phone 501 ·
+   form 228`. Then one counterparty expanded, carrying several routes at once.
+2. The harvest log scrolling, stopping on a refusal:
+   `robots.txt on https://khns.org/ disallows respect-the-funk/1.0`
+3. `\d contact_route` — the `route_channel_known` CHECK visible
+   (`email, phone, form, postal, social`) beside the partial unique index
+   `one_open_thread_per_counterparty`.
+
+**VO.** *(96 words — 0:44 at 130 wpm.)*
+> A label is three people. They cannot hold thousands of conversations, so the database
+> holds them. Each counterparty carries every route they publish — enquiries, a music
+> director, a submissions form. Postal and social share that column, which is where
+> Telegram and WhatsApp land when a label needs them: a new channel inherits every rule,
+> because the rules are constraints, not code. We harvested twenty-three hundred routes
+> from public pages. Seven robots files said no, and the agents stopped. Nothing was
+> guessed. One open conversation per counterparty, label-wide, is a partial unique
+> index — respect is a predicate every agent inherits.
+
+**Why this beat, and why it is not a compliance slide.** Three claims, each visible as
+output rather than asserted:
+
+- **Many routes, one boundary.** `contact_route` is many-per-party by design — `018`
+  argues that a single column would force a write-time choice about which address is
+  "the" contact, and that choice belongs to the outreach stage. `channel` is closed
+  (`email, phone, form, postal, social`) *because it selects the sender adapter*. That is
+  the honest Telegram/WhatsApp story: the model is channel-agnostic and the consent
+  boundary is one SQL predicate, so adding a DM channel is a column value and an adapter,
+  not a second compliance regime.
+- **Restraint you can see.** 7 robots refusals and 0 fabricated addresses across 1,622
+  emails is stronger than any sentence about being responsible. Show the refusal.
+- **Distributed, in the sense that matters here.** `sender._prepare` puts the route
+  predicate in SQL "rather than in Python so that no caller can forget it" — an
+  allowlist, `state IN ('unverified','verified')`, excluding `bounced`, `invalid` and
+  `opted_out` by construction. Every worker in the fleet inherits it regardless of which
+  agent or node is running. There is no rogue agent that forgot the rule, because the
+  rule is not in the agent.
+
+**Genre precision moved out of this beat** — it now sits in §2, where the vector index is
+already on screen, in one line: *"a trap single does not reach a classical broadcaster,
+because genre is inside the text we embed."*
 
 ---
 
-## 4. The send is irreversible, so the database is the system of record (1:25–2:05)
+## 4. The send is irreversible, so the database is the system of record (1:39–2:15)
 
 **This is the centrepiece. Give it the most time.**
 
@@ -92,9 +132,13 @@ next drain does **not** pick it up. Then the test suite: `22 passed`.
 > Sending is the one thing this system cannot take back. So the claim commits before the
 > network call, and a worker that dies mid-send leaves a row that is never automatically
 > retried. A missed pitch costs nothing. A second pitch to a curator who already got one
-> costs us that curator. One open thread per counterparty is a partial unique index. One
-> outbox row per message is a constraint. Not conventions — things the database will not
-> let us get wrong.
+> costs us that curator. One outbox row per message is a constraint — not a convention,
+> a thing the database will not let us get wrong.
+
+> **Cut from this beat, deliberately.** The old read also said *"one open thread per
+> counterparty is a partial unique index"* here. §3 now says it, and saying it twice
+> spends four seconds the runtime does not have while making the second mention sound
+> like a point the script could not find a home for.
 
 **Then, immediately — the token.**
 
@@ -115,7 +159,7 @@ terminal 2 completes          -> OK
 
 ---
 
-## 5. Why did you email them? (2:05–2:35)
+## 5. Why did you email them? (2:15–2:45)
 
 **The irreplaceable beat. Nothing else in the video is Postgres-impossible; this is.**
 
@@ -131,7 +175,7 @@ terminal 2 completes          -> OK
 
 ---
 
-## 6. Close (2:35–2:45)
+## 6. Close (2:45–2:55)
 
 **Screen.** `SELECT sum(cost_micro_usd)/1e6 FROM agent_run;` → a number under four cents.
 Then `node_count: 0`.
@@ -156,6 +200,18 @@ that is not true on the day.**
       different rankings to show. Today `lesson` holds zero rows.
 - [ ] **Re-run `EXPLAIN`** on the day. The plan is asserted by a test, but film the real
       output, not this file's copy of it.
+- [ ] **An `opted_out` route must exist before §3 can show one.** Measured 2026-08-14:
+      `contact_route` holds 2,350 `unverified` and 1 `verified`, and **zero `opted_out`**.
+      The previous version of this beat instructed the shoot to film a row in that state,
+      which was true of the design and never of the table. Either mark one route
+      `opted_out` by hand beforehand — it is a real state a real request would produce —
+      or film the `route_state_known` CHECK and the sender's allowlist instead and say
+      the state exists, which is what §3 above now does. **Do not point a camera at an
+      empty filter and narrate it.**
+- [ ] **Re-run the channel counts on the day.** §3 quotes `email 1622 · phone 501 ·
+      form 228` and "two thousand three hundred routes", measured 2026-08-14. Another
+      harvest pass will move them. The rounded spoken figure must not exceed the count on
+      screen.
 
 ## What must not be said
 
@@ -176,6 +232,21 @@ that is not true on the day.**
   in the roadmap, not in the video.
 - **No podcasts.** The adapter and migration 023 exist, the stage has no worker, and no
   podcast has been ingested. Radio is the second channel. Say radio.
+- **Telegram and WhatsApp are a *model* claim, never an integration claim.** §3 names them
+  deliberately and the wording is load-bearing: *"where Telegram and WhatsApp arrive the
+  day a label needs them."* That is true — `channel` already admits `social`, the consent
+  boundary is one SQL predicate, and a DM channel is a column value plus an adapter. What
+  is **not** true, and may not be said or implied: that we message anyone on either
+  platform, that any counterparty holds a `social` route, or that an adapter exists.
+  Measured 2026-08-14: `contact_route` holds `email`, `phone` and `form` and **zero**
+  `social` rows. Do not put a messenger logo on screen; a judge reads a logo as an
+  integration. If the beat cannot be filmed without one, cut the sentence — the
+  channel-agnostic point survives on `\d contact_route` alone, and an unbacked platform
+  claim is exactly the failure §1 of the sponsor audit says loses.
+- **"Compliant" is not a legal claim.** §3 says the database enforces our own rules and
+  shows them. It does not say we are GDPR-, PECR- or CAN-SPAM-compliant, and neither
+  should anyone on camera: `contact_country` landed on 2026-08-14 and nothing has yet made
+  a jurisdiction decision with it. Show the constraint; do not name a statute.
 - **No scale claims.** Fourteen thousand rows is not a distributed-systems problem, and
   saying so invites the one comparison we lose. Volunteer that pgvector could serve the
   retrieval — then show the thing it cannot do. Conceding the replaceable parts is what

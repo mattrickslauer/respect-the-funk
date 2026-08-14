@@ -119,12 +119,18 @@ NOT_JUSTIFIED = "not_justified"
 #: answers to somebody asking why they were contacted.
 HISTORY_EXPIRED = "history_expired"
 
+#: The request did not parse: a missing body field, a value of the wrong type, a query
+#: parameter that is not the boolean it claims. Raised by FastAPI's validation rather
+#: than by a handler — see `handle_validation` for why it is translated rather than left
+#: in the framework's own shape.
+MALFORMED_REQUEST = "malformed_request"
+
 #: Every code above, for the test that proves no handler raises one that is not here.
 CODES: frozenset[str] = frozenset({
     NOT_AUTHENTICATED, READ_ONLY, NOT_CONFIGURED, NO_TENANT, NOT_FOUND,
     NOT_ALLOWED_VALUE, TRANSITION_REFUSED, ALREADY_QUEUED, THREAD_OCCUPIED,
     NO_DRAFT_WAITING, NOTHING_QUEUED, NO_MASTER, SUGGESTION_UNACCEPTABLE,
-    NOT_JUSTIFIED, HISTORY_EXPIRED,
+    NOT_JUSTIFIED, HISTORY_EXPIRED, MALFORMED_REQUEST,
 })
 
 
@@ -156,7 +162,19 @@ class Refusal(Exception):
 
     @property
     def body(self) -> dict[str, Any]:
-        return {"error": {"code": self.code, "message": self.message}}
+        """The wire shape.
+
+        `error.message` is canonical. The top-level `message` is the same string,
+        mirrored — one line, derived here so the two cannot drift, and it exists
+        because every HTTP client already has a habit for where the human-readable
+        half lives. A client that reaches for a top-level field finds the sentence
+        rather than an object it will render as `[object Object]`, and one that
+        branches on `error.code` is unaffected.
+        """
+        return {
+            "error": {"code": self.code, "message": self.message},
+            "message": self.message,
+        }
 
 
 def handle(request: Request, exc: Exception) -> JSONResponse:
@@ -170,3 +188,40 @@ def handle(request: Request, exc: Exception) -> JSONResponse:
     """
     assert isinstance(exc, Refusal)      # only ever registered for Refusal
     return JSONResponse(exc.body, status_code=exc.status_code)
+
+
+def handle_validation(request: Request, exc: Exception) -> JSONResponse:
+    """FastAPI's own request-validation failures, translated into the envelope above.
+
+    Without this there would be **two error shapes on one API**: everything a handler
+    refuses would arrive as `{"error": {...}}`, and everything the framework rejected
+    before reaching a handler — a missing body field, a string where a boolean was
+    asked for — would arrive as `{"detail": [ ... ]}` with a 422. A client would need
+    two parsers, and would find that out from the second one in production.
+
+    The framework's own list is preserved under `error.fields` rather than discarded.
+    It is the only part of the response that says *which* field was wrong, and this
+    module's rule about not passing driver text through does not apply to it: it
+    describes the caller's own request, not the schema.
+
+    The status stays 422. It is the correct code and clients already know it.
+    """
+    from fastapi.exceptions import RequestValidationError
+
+    assert isinstance(exc, RequestValidationError)
+    fields = exc.errors()
+    named = ", ".join(
+        ".".join(str(part) for part in err.get("loc", ()) if part != "body")
+        for err in fields) or "the request"
+    refusal = Refusal(
+        422, MALFORMED_REQUEST,
+        f"The request could not be read: {named}. Check the shape against "
+        f"docs/reference/api-v1.md.")
+    body = refusal.body
+    # `jsonable_encoder` because a validation error can carry a `ValueError` in `ctx`,
+    # which `json.dumps` cannot serialise — the same class of failure `shapes.scalar`
+    # raises on, handled here rather than allowed to turn a 422 into a 500.
+    from fastapi.encoders import jsonable_encoder
+
+    body["error"]["fields"] = jsonable_encoder(fields)
+    return JSONResponse(body, status_code=422)

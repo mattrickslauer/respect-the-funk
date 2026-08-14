@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import datetime as dt
+import json
 import re
 import unittest
 import uuid
@@ -200,7 +201,52 @@ class TheRefusalEnvelope(unittest.TestCase):
 
     def test_every_code_is_declared(self) -> None:
         self.assertIn(errors.ALREADY_QUEUED, errors.CODES)
-        self.assertEqual(15, len(errors.CODES))
+        self.assertEqual(16, len(errors.CODES))
+
+    def test_the_sentence_is_mirrored_at_the_top_level(self) -> None:
+        """`error.message` is canonical; the mirror exists so a client reaching for a
+        top-level field finds a string rather than an object. Derived in one place, so
+        the two cannot drift."""
+        refusal = errors.Refusal(409, errors.ALREADY_QUEUED, "Already queued — …")
+        self.assertEqual(refusal.body["message"], refusal.body["error"]["message"])
+
+    def test_the_api_has_exactly_one_error_shape(self) -> None:
+        """FastAPI's own validation failures are translated into the same envelope.
+
+        Without the second handler an API client would need two parsers — one for
+        `{"error": ...}` and one for the framework's `{"detail": [...]}` — and would
+        find out about the second in production.
+        """
+        from fastapi.exceptions import RequestValidationError
+
+        self.assertIn(RequestValidationError, api.exception_handlers)
+        self.assertIs(errors.handle_validation,
+                      api.exception_handlers[RequestValidationError])
+
+    def test_a_validation_failure_names_the_field_and_keeps_the_envelope(self) -> None:
+        from fastapi.exceptions import RequestValidationError
+
+        exc = RequestValidationError([
+            {"type": "missing", "loc": ("body", "counterparty_id"),
+             "msg": "Field required", "input": {}}])
+        response = errors.handle_validation(None, exc)
+        body = json.loads(response.body)
+        self.assertEqual(422, response.status_code)
+        self.assertEqual(errors.MALFORMED_REQUEST, body["error"]["code"])
+        self.assertIn("counterparty_id", body["error"]["message"])
+        self.assertIn("counterparty_id", json.dumps(body["error"]["fields"]))
+        self.assertNotIn("detail", body)
+
+    def test_a_validation_failure_carrying_an_exception_does_not_become_a_500(self) -> None:
+        """A pydantic validation error can carry a `ValueError` in `ctx`, which
+        `json.dumps` cannot serialise. Encoding it is what keeps a 422 a 422."""
+        from fastapi.exceptions import RequestValidationError
+
+        exc = RequestValidationError([
+            {"type": "value_error", "loc": ("body", "x"), "msg": "bad", "input": {},
+             "ctx": {"error": ValueError("boom")}}])
+        body = json.loads(errors.handle_validation(None, exc).body)
+        self.assertEqual(errors.MALFORMED_REQUEST, body["error"]["code"])
 
     def test_an_undeclared_code_cannot_be_raised(self) -> None:
         """Not a fallback to something generic. An unknown code is a bug in this
@@ -211,7 +257,8 @@ class TheRefusalEnvelope(unittest.TestCase):
     def test_the_body_carries_both_halves(self) -> None:
         refusal = errors.Refusal(409, errors.ALREADY_QUEUED, "Already queued — …")
         self.assertEqual(
-            {"error": {"code": "already_queued", "message": "Already queued — …"}},
+            {"error": {"code": "already_queued", "message": "Already queued — …"},
+             "message": "Already queued — …"},
             refusal.body)
 
     def test_the_handler_is_registered_on_the_api_application(self) -> None:

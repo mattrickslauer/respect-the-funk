@@ -107,6 +107,7 @@ sub-project.
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 
 from rtf_platform.api import actions, errors, reads
 
@@ -124,6 +125,10 @@ api = FastAPI(
 )
 
 api.add_exception_handler(errors.Refusal, errors.handle)
+# So the API has exactly one error shape. Without this, a handler's refusal and the
+# framework's own request-validation failure would arrive in two different envelopes,
+# and a client would discover the second one in production.
+api.add_exception_handler(RequestValidationError, errors.handle_validation)
 
 api.include_router(reads.router, prefix="/v1")
 api.include_router(actions.router, prefix="/v1")

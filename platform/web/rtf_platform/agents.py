@@ -34,8 +34,8 @@ import psycopg
 from psycopg.types.json import Json
 
 from rtf_platform import (
-    embed, fcc, fleet, harvested, lessons, podcastindex, radiobrowser, repo,
-    settings as settings_mod, sources, spend, wikipedia,
+    contacts, embed, fcc, fleet, harvested, lessons, podcastindex, radiobrowser, repo,
+    settings as settings_mod, sources, spend, streams, wikipedia,
 )
 
 #: Target chunk size in characters. ~400 tokens at four characters per token, which is
@@ -2519,4 +2519,12 @@ REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     "index_streams": index_streams,
     "enrich_genre": enrich_genre,
     "index_podcasts": index_podcasts,
+    # These three live in their own modules rather than in this file — `streams.py` and
+    # `contacts.py` — so the only thing they need from here is a line in the registry. The
+    # fleet reads this mapping and nothing else; an agent is a pair of callables and is
+    # not obliged to be defined next to its neighbours. Keeping them out also keeps this
+    # file, which several workstreams touch at once, down to a four-line diff.
+    "refresh_stream": streams.refresh_stream,
+    "harvest_contacts": contacts.harvest_contacts,
+    "harvest_feed_contacts": contacts.harvest_feed_contacts,
 }

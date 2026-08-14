@@ -124,6 +124,7 @@ bundle without a dependency the zip has to carry.
 from __future__ import annotations
 
 import hashlib
+import html as html_module
 import json
 import os
 import re
@@ -323,6 +324,141 @@ def _get(path: str, params: dict[str, Any] | None = None, *,
             f"Podcast Index reported failure for {path}: status={status!r} "
             f"description={body.get('description')!r}", permanent=False)
     return body
+
+
+def feed_by_id(feed_id: int, *, timeout: int = 60) -> dict[str, Any]:
+    """One feed's record, by the index's own ID. Raises rather than returning `{}`.
+
+    The reason this exists is narrow and worth stating: the block endpoints this module
+    already uses return a feed's `url` alongside everything else, but `index_podcasts`
+    stores only the *identifiers* — `podcastindex_feed_id`, `podcastGuid`, `itunesId` —
+    and the show's website as a `presence`. The feed URL itself is not written anywhere,
+    so a later stage that wants to read the feed has to ask for it again. One call, on an
+    endpoint documented for exactly this, is cheaper than a migration that reshapes what
+    an already-run stage stored.
+
+    A `feeds`-shaped envelope is accepted as well as a `feed`-shaped one because
+    `/podcasts/byfeedid` has returned both spellings across versions; a missing feed
+    raises `Refused(permanent=True)`, because an ID the index does not know will not
+    become known on the next attempt.
+    """
+    body = _get("/podcasts/byfeedid", {"id": int(feed_id)}, timeout=timeout)
+    feed = body.get("feed")
+    if isinstance(feed, list):
+        feed = feed[0] if feed else None
+    if not isinstance(feed, dict) or not feed:
+        raise Refused(
+            f"Podcast Index has no feed {feed_id}. It was in the index when "
+            "`index_podcasts` read it, so it has been removed since; the party stays and "
+            "gets no route.", permanent=True)
+    return feed
+
+
+#: `<itunes:owner>` and the two children that matter. Read with a regex rather than an XML
+#: parser, and that is a security decision rather than laziness: a podcast feed is a
+#: document a stranger controls, `xml.etree.ElementTree` is documented as vulnerable to
+#: entity-expansion attacks, and `defusedxml` is not in the bundle — this module is
+#: stdlib-only so it fits in the console Lambda. Two elements do not need a parse tree.
+#: `wikipedia.py` reads its `format =` line the same way for the same shape of reason.
+#:
+#: The namespace prefix is matched loosely (`(?:\w+:)?`) because a feed may bind the
+#: iTunes namespace to any prefix it likes, and a fixed `itunes:` would silently miss
+#: those — silently being the problem, since the result is a show with no owner rather
+#: than an error.
+OWNER = re.compile(r"<(?:\w+:)?owner\b[^>]*>(.*?)</(?:\w+:)?owner\s*>",
+                   re.IGNORECASE | re.DOTALL)
+OWNER_EMAIL = re.compile(r"<(?:\w+:)?email\b[^>]*>(.*?)</(?:\w+:)?email\s*>",
+                         re.IGNORECASE | re.DOTALL)
+OWNER_NAME = re.compile(r"<(?:\w+:)?name\b[^>]*>(.*?)</(?:\w+:)?name\s*>",
+                        re.IGNORECASE | re.DOTALL)
+
+#: Hosting platforms whose own address is templated into every feed they serve. `023`'s
+#: whole argument for podcasts is that there is *"no programming department between a
+#: pitch and the ear that hears it"*; `feeds@spreaker.com` is a programming department
+#: made of nobody, reached by tens of thousands of shows at once, and writing it as a
+#: route for each of them would put one inbox in the index eighty thousand times.
+#: `14-counterparty-sources.md` §4a measured two of forty sampled feeds carrying one.
+BOILERPLATE_HOSTS = frozenset({
+    "spreaker.com", "anchor.fm", "podbean.com", "buzzsprout.com", "libsyn.com",
+    "simplecast.com", "transistor.fm", "captivate.fm", "redcircle.com",
+    "megaphone.fm", "acast.com", "blubrry.com", "soundcloud.com", "podomatic.com",
+})
+
+
+def owner(feed_xml: str) -> tuple[str, str]:
+    """`(email, name)` from `<itunes:owner>`, or `('', '')`.
+
+    **This is the one contact route in this codebase that is unambiguously `measured`.**
+    `018` reserves that class for *"a route the source published"*, and Apple requires
+    this element in a submitted feed precisely so the directory can reach the owner. It is
+    not an address found on a page and reasoned about; it is an element whose only purpose
+    is to say where to write. `14-counterparty-sources.md` §4b makes the argument at
+    length and this function is it.
+
+    Returns `('', '')` — not a raised error — when the element is absent or names a
+    hosting platform. A feed without an owner email is a real, common answer (five of
+    forty-five in §4a's sample), and the caller writes nothing for it, exactly as
+    `wikipedia.formats` omits a call sign whose article has no format line.
+    """
+    block_match = OWNER.search(feed_xml)
+    if block_match is None:
+        return "", ""
+    inner = block_match.group(1)
+    email_match = OWNER_EMAIL.search(inner)
+    if email_match is None:
+        return "", ""
+    address = _text(email_match.group(1))
+    if "@" not in address:
+        return "", ""
+    domain = address.rsplit("@", 1)[-1].lower()
+    # A subdomain of a hosting platform is the same platform; `feeds.megaphone.fm` and
+    # `megaphone.fm` reach the same nobody.
+    if any(domain == host or domain.endswith(f".{host}") for host in BOILERPLATE_HOSTS):
+        return "", ""
+    name_match = OWNER_NAME.search(inner)
+    return address, _text(name_match.group(1)) if name_match else ""
+
+
+def _text(raw: str) -> str:
+    """One XML text node into a plain string: CDATA unwrapped, entities resolved, trimmed.
+
+    `html.unescape` rather than an XML entity table because feeds in the wild carry HTML
+    entities in XML text nodes constantly, and the five XML ones are a subset of what it
+    handles. A feed that carries a literal `&amp;` in an address is a feed with a broken
+    address either way.
+    """
+    value = raw.strip()
+    if value.startswith("<![CDATA[") and value.endswith("]]>"):
+        value = value[9:-3]
+    return " ".join(html_module.unescape(value).split())
+
+
+def fetch_feed(url: str, *, timeout: int = 30, max_bytes: int = 2_000_000) -> str:
+    """The raw feed document, as text. Raises `Refused`, never returns an empty string.
+
+    Bounded at two megabytes: a feed carries every episode a show has ever published and
+    a decade-old daily show runs large, while `<itunes:owner>` is in the channel header
+    within the first few kilobytes. The bound is a guard on a pathological feed, not a
+    sampling policy, and truncating the tail cannot lose the element being read.
+
+    No credentials: the feed is the publisher's own document on the publisher's own host,
+    not a Podcast Index endpoint. That is also why this does not go through `_get`.
+    """
+    request = urllib.request.Request(url, headers={
+        "User-Agent": USER_AGENT, "Accept": "application/rss+xml, application/xml, */*"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read(max_bytes)
+    except urllib.error.HTTPError as exc:
+        raise Refused(f"{url} -> {exc.code}",
+                      permanent=exc.code in (400, 401, 403, 404, 410)) from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise Refused(f"{url} unreachable: {exc}", permanent=False) from exc
+    except ValueError as exc:
+        raise Refused(f"{url} is not fetchable: {exc}", permanent=True) from exc
+    if not raw:
+        raise Refused(f"{url} returned an empty document", permanent=False)
+    return raw.decode("utf-8", "replace")
 
 
 def newest_feed_id(*, timeout: int = 60) -> int:

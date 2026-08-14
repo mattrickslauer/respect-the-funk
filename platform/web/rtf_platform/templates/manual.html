@@ -1,0 +1,817 @@
+{# =============================================================================
+   manual.html — the operator manual, served
+   =============================================================================
+
+   Written for label staff and artist managers, not for engineers, and not for a
+   hackathon judge. `/` is the judge's page and stays that way; this is the other
+   half of the public surface and it has a different reader, so it gets a different
+   ground (paper, following the reader's system setting) and a different measure.
+
+   What the two pages share is `_design.html`, and that sharing is the point rather
+   than a convenience. The three provenance marks this document teaches — ● measured,
+   ○ inferred, ◆ asserted — are rendered here by the same rules that render them in
+   the console's tables. A manual that taught a legend for a differently-coloured
+   instrument would be worse than no manual.
+
+   ## The figures are live
+
+   Two numbers in this document are facts about the cluster rather than prose: the
+   size of the counterparty index, and how much of it carries a genre. They are
+   queried on page load. When the cluster does not answer, the sentence says so —
+   it does not fall back to the number that was true when this was written. A manual
+   that quietly prints a stale figure is exactly the failure this product exists to
+   refuse, and it would be embarrassing to commit it in the document that explains
+   the refusal.
+   ============================================================================= #}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Operator manual — Respect the Funk</title>
+<meta name="description" content="The working manual for the Respect the Funk console: what each screen is for, the order you use them in, and what to expect back.">
+{% include "_design.html" %}
+<style>
+  /* Page-specific only. Anything reusable belongs in `_design.html`. */
+  .masthead{border-bottom:1px solid var(--rule);background:var(--panel)}
+  .masthead .wrap{padding-top:34px;padding-bottom:38px}
+  .brandline{
+    display:flex;align-items:center;gap:12px;
+    font:600 11px/1 var(--face-display);letter-spacing:.2em;text-transform:uppercase;
+    color:var(--phosphor);
+  }
+  .brandline .bar{flex:0 0 26px;height:2px;background:var(--phosphor-bright)}
+  .masthead h1{font-size:var(--step-4);line-height:1.06;margin:20px 0 0;max-width:20ch}
+  .standfirst{margin:18px 0 0;max-width:60ch;color:var(--dim);font-size:var(--step-2);line-height:1.6}
+  .issued{
+    margin-top:26px;display:flex;flex-wrap:wrap;gap:8px 26px;
+    font:var(--step--1)/1.5 var(--face-display);color:var(--faint);letter-spacing:.03em;
+  }
+  .issued b{color:var(--ink-2);font-weight:600}
+
+  .shell{display:grid;grid-template-columns:1fr;gap:clamp(28px,4vw,44px);padding:44px 0 90px}
+  @media (min-width:1020px){.shell{grid-template-columns:210px minmax(0,1fr);gap:56px}}
+
+  .toc{display:none}
+  @media (min-width:1020px){
+    .toc{position:sticky;top:28px;align-self:start;display:flex;flex-direction:column;
+         gap:22px;max-height:calc(100vh - 56px);overflow-y:auto}
+  }
+  .toc h2{
+    font:600 10px/1 var(--face-display);letter-spacing:.2em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:14px;
+  }
+  .toc ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+  .toc a{
+    display:block;padding:5px 0 5px 12px;border-left:2px solid var(--rule-soft);
+    color:var(--dim);text-decoration:none;font-size:14px;line-height:1.35;
+  }
+  .toc a:hover{color:var(--ink);border-left-color:var(--phosphor-bright)}
+
+  /* The legend rail. The three marks, pinned beside the text for the whole read,
+     in the exact form the console draws them. This document's job is to make the
+     instrument readable; the legend belongs in view, not in section seven. */
+  .rail-legend{border-top:1px solid var(--rule);padding-top:16px}
+  .rail-legend ul{list-style:none;margin:8px 0 0;padding:0;display:flex;
+                  flex-direction:column;gap:7px}
+  .rail-legend li{font:11px/1.3 var(--face-display);color:var(--dim)}
+
+  .doc{max-width:var(--measure);display:flex;flex-direction:column;gap:52px}
+  .doc > section{scroll-margin-top:24px}
+  .doc h2.head{font-size:var(--step-3);line-height:1.15}
+  .doc h3{font-size:var(--step-2);line-height:1.3;margin-top:34px}
+  .doc h4{font-family:var(--face-body);font-size:16px;letter-spacing:0;margin-top:26px}
+  .doc p{margin:14px 0 0;color:var(--ink-2)}
+  .doc > section > p:first-of-type{color:var(--ink)}
+  .doc ul,.doc ol{margin:14px 0 0;padding-left:22px;color:var(--ink-2)}
+  .doc li{margin-top:7px}
+  .doc li::marker{color:var(--faint)}
+  .lede{font-size:18.5px;color:var(--dim);max-width:62ch}
+
+  /* A figure read off the cluster at page load, marked so it reads as a
+     measurement rather than as prose somebody typed. */
+  .live-figure{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+
+  footer{border-top:1px solid var(--rule);background:var(--panel)}
+  footer .wrap{padding:30px 0 44px}
+  footer p{color:var(--faint);font-size:14px;max-width:70ch}
+  footer a{color:var(--carrier)}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <div class="brandline"><span class="bar"></span>Respect the Funk · Operator manual</div>
+    <h1>Getting a record in front of the people who can play it.</h1>
+    <p class="standfirst">
+      This is the working manual for the console: what each screen is for, the order you
+      use them in, and what you should expect to get back. No technical knowledge is
+      needed to run any of it.
+    </p>
+    <div class="issued">
+      <span><b>For</b> label staff and artist managers</span>
+      <span><b>Covers</b> the console, end to end</span>
+      <span><b>Reading time</b> about 15 minutes</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap shell">
+  <nav class="toc" aria-label="Contents">
+    <div>
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#what">What this does</a></li>
+        <li><a href="#before">Before you start</a></li>
+        <li><a href="#map">The screens</a></li>
+        <li><a href="#setup">Setting up your catalogue</a></li>
+        <li><a href="#contacts">Who you can reach</a></li>
+        <li><a href="#campaign">Running a campaign</a></li>
+        <li><a href="#marks">How to read the marks</a></li>
+        <li><a href="#ask">Asking a question</a></li>
+        <li><a href="#watch">Keeping an eye on it</a></li>
+        <li><a href="#expect">What to expect</a></li>
+        <li><a href="#limits">Limits and switches</a></li>
+        <li><a href="#trouble">If something looks wrong</a></li>
+        <li><a href="#glossary">Glossary</a></li>
+      </ol>
+    </div>
+    <div class="rail-legend">
+      <h2>The marks</h2>
+      <ul>
+        <li><span class="prov measured">measured</span></li>
+        <li><span class="prov inferred">inferred</span></li>
+        <li><span class="prov asserted">asserted</span></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="doc">
+
+    <section id="what">
+      <div class="eyebrow">Section one</div>
+      <h2 class="head">What this does</h2>
+      <p class="lede">
+        It takes one artist's catalogue to the people who can do something with it —
+        radio programmers, playlist curators, writers, creators, sync supervisors — and
+        keeps every conversation in one place.
+      </p>
+      <p>
+        The idea behind it is simple. A track is listened to <strong>once</strong>, and
+        what that listening establishes — its tempo, its character, its genre — is then
+        reused by every outreach effort you ever run on it. You never re-do the work, and
+        the second release is cheaper to push than the first because everything the label
+        learned on the first one is still there: who replied, who said yes, who asked for
+        a shorter edit, who would work with this artist again.
+      </p>
+      <p>
+        Everything you see on screen comes from that shared record. Nothing is invented to
+        fill a page: if a screen is empty, it is because nothing has happened yet, and the
+        screen will tell you which.
+      </p>
+      <div class="callout">
+        <span class="label">The one rule worth knowing</span>
+        <p>
+          Nothing leaves the building without a person pressing a button. Drafts are
+          written, shortlists are ranked, contacts are found — but the message itself
+          waits for you on <span class="screen">Approvals</span>. That gate is deliberate
+          and it cannot be switched off from inside the console.
+        </p>
+      </div>
+    </section>
+
+    <section id="before">
+      <div class="eyebrow">Section two</div>
+      <h2 class="head">Before you start</h2>
+      <p>Four things, and you will have been given the first two.</p>
+      <ul>
+        <li><strong>A web address</strong> for the console. It opens in any browser; there is nothing to install.</li>
+        <li><strong>An access token.</strong> This is your key. Treat it like a password — anyone holding it sees your roster, your contacts and your campaigns.</li>
+        <li><strong>Audio files</strong> for the tracks you want to work — the finished masters, in the quality you would send to a distributor.</li>
+        <li><strong>A rough idea of the goal.</strong> "Specialist radio for the new single" is enough. You will type it into the campaign in your own words, and a person reads it, not a machine.</li>
+      </ul>
+      <h3>Signing in</h3>
+      <p>
+        Open the address. You will see a public page describing the system — that is what
+        anyone without a token sees. Choose <span class="btn">Sign in</span>, paste your
+        token, and the same address now shows your work instead. Bookmark it once; the
+        bookmark keeps working before and after you have a token.
+      </p>
+      <p>
+        Everything except the front page is private. If you are signed out mid-task you
+        will land back on that public page rather than an error.
+      </p>
+    </section>
+
+    <section id="map">
+      <div class="eyebrow">Section three</div>
+      <h2 class="head">The screens</h2>
+      <p>
+        The menu on the left has four groups, and they are ordered by why you opened the
+        console: <em>something needs me</em>, <em>what do we know</em>,
+        <em>what are we running</em>, <em>is it healthy</em>.
+      </p>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Group</th><th>Screen</th><th>What it is for</th></tr>
+          </thead>
+          <tbody>
+            <tr><td rowspan="3">Work</td><td>Today</td><td>The only list that is asking something of you. Start here.</td></tr>
+            <tr><td>Approvals</td><td>Drafted messages waiting for your yes or no.</td></tr>
+            <tr><td>Inbox</td><td>Replies that have come back.</td></tr>
+            <tr><td rowspan="6">Knowledge</td><td>Artists</td><td>Your roster. One entry per act.</td></tr>
+            <tr><td>Tracks</td><td>The recordings, their masters, and what listening to them established.</td></tr>
+            <tr><td>Statements</td><td>Distributor exports, for real stream counts.</td></tr>
+            <tr><td>Facts</td><td>Everything the system holds, and where each item came from.</td></tr>
+            <tr><td>Counterparties</td><td>Everyone you could take a record to.</td></tr>
+            <tr><td>Ask</td><td>A plain-English question about your own catalogue.</td></tr>
+            <tr><td rowspan="2">Campaigns</td><td>Campaigns</td><td>One artist, one channel, one goal — and how it is going.</td></tr>
+            <tr><td>Threads</td><td>Every individual conversation and where it stands.</td></tr>
+            <tr><td rowspan="4">System</td><td>Fleet</td><td>The background workers and whether each is switched on.</td></tr>
+            <tr><td>Queue</td><td>Work waiting to be done, and anything parked for you.</td></tr>
+            <tr><td>Runs &amp; errors</td><td>What has run recently, and what failed.</td></tr>
+            <tr><td>Budgets</td><td>Spending caps, per artist.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Every screen has the same shape: a list in the middle, and a panel on the right
+        that stays put. That right-hand panel is where you read the detail of whatever you
+        have selected — and it is also where you act. Buttons live there, not scattered
+        through the list.
+      </p>
+    </section>
+
+    <section id="setup">
+      <div class="eyebrow">Section four · in order</div>
+      <h2 class="head">Setting up your catalogue</h2>
+      <p>
+        Do this once per artist and once per track. It is the foundation everything else
+        queries, so it is worth twenty careful minutes.
+      </p>
+
+      <ol class="steps">
+        <li>
+          <div class="n">1</div>
+          <div class="body">
+            <h3>Add the artist</h3>
+            <p>
+              <span class="screen">Artists</span> → <span class="btn">New artist</span>.
+              A name and a type. There are fourteen kinds in two groups — groups (band,
+              duo, trio, collective, orchestra, ensemble, choir) and individuals (solo
+              artist, singer, singer-songwriter, rapper, DJ, producer, composer). Pick the
+              closest; it is a label, not a contract, and you can change it later without
+              anything being reclassified behind your back.
+            </p>
+            <p>
+              You do not need to create your label first. Saving your first artist creates
+              it for you.
+            </p>
+          </div>
+        </li>
+
+        <li>
+          <div class="n">2</div>
+          <div class="body">
+            <h3>Point at where they already exist</h3>
+            <p>
+              In the artist's panel, add their public pages — Spotify, Apple Music,
+              Deezer, YouTube, Instagram, TikTok, SoundCloud, Bandcamp, or a press page.
+              Each one you add gives the system something real to read about the act.
+            </p>
+            <p>
+              It will sometimes come back with pages it believes belong to your artist but
+              is not certain about. Those arrive on <span class="screen">Today</span> as a
+              single decision per artist — accept or reject the lot, in one go. Reject
+              generously: a wrong page quietly bends everything downstream.
+            </p>
+          </div>
+        </li>
+
+        <li>
+          <div class="n">3</div>
+          <div class="body">
+            <h3>Add the track</h3>
+            <p>
+              <span class="screen">Tracks</span> → <span class="btn">New recording</span>.
+              A title is enough to start. Add the ISRC if you have one; an empty ISRC just
+              means nobody has registered it yet, and it is not treated as an error.
+            </p>
+            <p>
+              Then credit at least one person or act on the recording. This matters more
+              than it looks: the system will not analyse a recording nobody is credited on,
+              because it would have no idea whose catalogue the result belongs to.
+            </p>
+          </div>
+        </li>
+
+        <li>
+          <div class="n">4</div>
+          <div class="body">
+            <h3>Upload the master</h3>
+            <p>
+              In the track's panel, choose the audio file. It uploads straight to storage
+              rather than through the page, so large files are fine. Once it lands, the
+              system checks that the file it received is exactly the file you sent before
+              accepting it.
+            </p>
+            <p>
+              Uploading a master starts the analysis on its own. You do not have to ask
+              for it. Upload the same file twice and it will not analyse twice.
+            </p>
+          </div>
+        </li>
+
+        <li>
+          <div class="n">5</div>
+          <div class="body">
+            <h3>Read what came back</h3>
+            <p>
+              Within a few minutes the track's panel fills in. You get its
+              <strong>tempo</strong> in BPM and a confidence figure for that tempo, a
+              measure of how <strong>bright</strong> the recording is, and a
+              <strong>genre and style</strong> read off the audio itself — not off a tag
+              somebody typed.
+            </p>
+            <p>
+              Underneath, the panel says what it listened to: which file, how long it was,
+              and which version of the analysis produced the numbers. If you later replace
+              the master with a remaster and analyse again, the old figures are not erased
+              — they are kept, superseded, so "why did we think it was 84 BPM in March" is
+              always a question with an answer.
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="callout carrier">
+        <span class="label">If the analysis does not appear</span>
+        <p>
+          Open <span class="screen">Queue</span>. Work waiting its turn shows as
+          <em>pending</em>, which is normal. If it says <em>failed</em>, the reason is
+          written next to it in plain words — most often no master stored, or nobody
+          credited on the recording. Fix the cause and press
+          <span class="btn">Analyse</span> in the track's panel to try again.
+        </p>
+      </div>
+    </section>
+
+    <section id="contacts">
+      <div class="eyebrow">Section five</div>
+      <h2 class="head">Who you can reach</h2>
+      <p>
+        <span class="screen">Counterparties</span> is the address book, and it is already
+        substantial:
+        {% if counterparties %}
+          <span class="live-figure">{{ "{:,}".format(counterparties) }}</span> counterparties,
+          {% if with_genre %}<span class="live-figure">{{ "{:,}".format(with_genre) }}</span>
+          of them carrying a genre,{% endif %}
+          built from the public licence register, an open station directory, and
+          encyclopaedia entries.
+        {% else %}
+          the index is built from the public licence register, an open station directory,
+          and encyclopaedia entries. <span class="chip warn">count unavailable — the
+          cluster did not answer</span>
+        {% endif %}
+        Radio is the channel that is fully stocked today; the same list holds curators,
+        writers, creators and sync contacts as those are added.
+      </p>
+      <p>Two columns on that screen are worth understanding, because they decide who you can actually work.</p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Column</th><th>Reads</th><th>Means</th></tr></thead>
+          <tbody>
+            <tr><td>Contact state</td><td class="num">contactable</td><td>Free to approach. Nobody in the label has an open conversation with them.</td></tr>
+            <tr><td></td><td class="num">in thread</td><td>Someone is already talking to them. Off limits until that closes.</td></tr>
+            <tr><td></td><td class="num">declined</td><td>They said no. Left visible on purpose.</td></tr>
+            <tr><td>Searchable</td><td class="num">yes / no</td><td>Whether they can be matched to a track by character. A contact marked <em>no</em> is still there and still reachable by hand — it just will not surface in a ranked shortlist.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <span class="label">Contact discipline</span>
+        <p>
+          One open conversation per contact, across the whole label — not per campaign,
+          not per artist. If a station is being worked for one release, a second campaign
+          simply cannot open a second conversation with them. That is enforced by the
+          system, not by anyone remembering. Closing the first conversation releases them
+          immediately.
+        </p>
+      </div>
+    </section>
+
+    <section id="campaign">
+      <div class="eyebrow">Section six · in order</div>
+      <h2 class="head">Running a campaign</h2>
+      <p>
+        A campaign is one artist, one channel, one goal. Two campaigns on different
+        channels run at the same time without interfering with each other.
+      </p>
+
+      <ol class="steps">
+        <li>
+          <div class="n">1</div>
+          <div class="body">
+            <h3>Create it</h3>
+            <p>
+              <span class="screen">Campaigns</span> → <span class="btn">New campaign</span>.
+              Give it a name you will recognise in a list of thirty. Choose the artist and,
+              if there is one, the recording — a profile feature or a residency
+              announcement is a real campaign with no single track behind it, so this is
+              optional.
+            </p>
+            <p>
+              Choose the channel: curator, UGC, press, radio or sync. Then write the goal
+              in your own words — "playlist adds on editorial-adjacent lists" is a good
+              goal. Nothing parses it; the next person to open the campaign reads it.
+            </p>
+            <p>
+              It is created as a draft and opens nothing. Running it is a second,
+              deliberate press.
+            </p>
+          </div>
+        </li>
+
+        <li>
+          <div class="n">2</div>
+          <div class="body">
+            <h3>Look at the shortlist</h3>
+            <p>
+              The campaign's panel ranks contacts by how well they suit
+              <em>this</em> artist, and shows why each one is on the list. Anyone already
+              in conversation with another campaign is absent — not greyed out, absent —
+              so what you are reading is a list of people you can genuinely approach right
+              now.
+            </p>
+            <p>
+              You can also see the ranking as it stood at an earlier moment, which is how
+              you answer "why did we write to them in the first place" weeks later.
+            </p>
+          </div>
+        </li>
+
+        <li>
+          <div class="n">3</div>
+          <div class="body">
+            <h3>Open conversations, one at a time</h3>
+            <p>
+              There is one button per contact and no button for the batch. That is on
+              purpose: opening a conversation takes that contact off the market for every
+              other campaign in the label, and a bulk control would hide that cost at
+              exactly the moment you incur it.
+            </p>
+            <p>
+              Each one you open appears on <span class="screen">Threads</span>.
+            </p>
+          </div>
+        </li>
+
+        <li>
+          <div class="n">4</div>
+          <div class="body">
+            <h3>Write the pitch</h3>
+            <p>
+              Open the conversation on <span class="screen">Threads</span> and write the
+              subject and the message in its panel. What the artist is, what the track is,
+              what you are asking for.
+            </p>
+            <p>
+              The panel also shows what the system knows that is relevant here — the
+              track's measured character, and lessons carried over from previous campaigns
+              for this artist. That is the compounding: campaign five starts with what
+              campaigns one to four found out.
+            </p>
+          </div>
+        </li>
+
+        <li>
+          <div class="n">5</div>
+          <div class="body">
+            <h3>Approve it</h3>
+            <p>
+              The draft moves to <span class="screen">Approvals</span>. This screen shows
+              the message in full, not as a row in a table — you cannot judge a pitch from
+              a row.
+            </p>
+            <p>
+              <span class="btn">Approve &amp; queue</span> prepares the send and records
+              it as prepared. <span class="btn">Reject</span> sends it back; the rejected
+              version is kept, and a rewrite is a new draft alongside it rather than an
+              overwrite.
+            </p>
+            <p>
+              The button says <em>queue</em> rather than <em>send</em> because that is
+              precisely what it does. See <a href="#limits">Limits and switches</a> for
+              what has to be switched on before a queued message physically leaves.
+            </p>
+          </div>
+        </li>
+
+        <li>
+          <div class="n">6</div>
+          <div class="body">
+            <h3>Handle the reply, then close</h3>
+            <p>
+              Replies land on <span class="screen">Inbox</span> and move the conversation
+              along. When it is finished, close it from the conversation's panel with
+              <span class="btn">Close won</span>, <span class="btn">Close lost</span> or
+              <span class="btn">No reply</span>.
+            </p>
+            <p>
+              Closing matters for more than tidiness: it releases that contact so another
+              campaign can approach them, and it is the moment the outcome becomes a
+              lesson the next campaign inherits. A conversation left open forever is a
+              contact quietly withheld from the rest of the label.
+            </p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="marks">
+      <div class="eyebrow">Section seven</div>
+      <h2 class="head">How to read the marks</h2>
+      <p>
+        Every piece of information in the system carries a mark saying how it was
+        obtained. This is the single most useful habit to pick up, because facts of
+        different kinds age at wildly different speeds and look identical without it.
+      </p>
+      <div class="marks">
+        <div class="mark measured">
+          <div class="glyph">●</div>
+          <div>
+            <b>Measured</b>
+            <span>Computed from the thing itself — a tempo taken off the audio. Deterministic and permanent. Trust it.</span>
+          </div>
+        </div>
+        <div class="mark inferred">
+          <div class="glyph">○</div>
+          <div>
+            <b>Inferred</b>
+            <span>An estimate. A genre read off the sound, an audience guess, a confidence score. Useful, provisional, and expected to be revised.</span>
+          </div>
+        </div>
+        <div class="mark asserted">
+          <div class="glyph">◆</div>
+          <div>
+            <b>Asserted</b>
+            <span>A person stated it — rights, splits, a rate agreed on a call, a genre tag typed by a directory contributor. Only as good as who said it, and the system records who.</span>
+          </div>
+        </div>
+      </div>
+      <p>
+        An estimate never overwrites a measurement. Where something has been revised, the
+        earlier version is kept underneath rather than deleted, so you can always walk
+        back to what was true when a decision was made.
+      </p>
+      <p>
+        <span class="screen">Facts</span> is the whole of it in one list, newest first,
+        filterable by mark. Items marked <em>stale</em> or <em>retracted</em> are shown
+        rather than hidden — knowing something has gone off is more useful than not seeing
+        it.
+      </p>
+      <div class="callout carrier">
+        <span class="label">The same three marks, everywhere</span>
+        <p>
+          These glyphs and these colours are what the console draws in its own tables.
+          They are pinned beside this text for the whole document, and they are the same
+          three you will meet on <span class="screen">Facts</span>,
+          <span class="screen">Tracks</span> and <span class="screen">Counterparties</span>.
+          Learn them once here and the instrument is readable everywhere.
+        </p>
+      </div>
+    </section>
+
+    <section id="ask">
+      <div class="eyebrow">Section eight</div>
+      <h2 class="head">Asking a question</h2>
+      <p>
+        <span class="screen">Ask</span> answers questions about your own catalogue in
+        plain English. It offers a set list of questions rather than a free-text box, and
+        each answer comes with a note explaining exactly what it counted.
+      </p>
+      <ul>
+        <li>How many contacts do we know, and what kind are they?</li>
+        <li>What genres do the stations we know actually play?</li>
+        <li>Which stations play a particular genre, such as jazz or hip-hop?</li>
+        <li>What is the discovery queue doing — how much is pending or failed?</li>
+        <li>What recordings are in our catalogue, and do they have an ISRC?</li>
+        <li>Which contacts did we learn about most recently?</li>
+      </ul>
+      <p>
+        Read the note under each answer. It is where the honest qualification lives —
+        that a search for "jazz" also matches "smooth jazz" and "jazz fusion", for
+        instance, or that a contact can hold more than one role so the categories do not
+        sum to the total.
+      </p>
+      <div class="callout carrier">
+        <span class="label">Why a set list</span>
+        <p>
+          A question that could be phrased any way at all can be answered wrongly in ways
+          nobody notices. These questions have known, checked answers. If you need one
+          that is not here, it can be added — ask.
+        </p>
+      </div>
+    </section>
+
+    <section id="watch">
+      <div class="eyebrow">Section nine</div>
+      <h2 class="head">Keeping an eye on it</h2>
+      <p>
+        Four screens under <em>System</em>. You do not need them daily, and each answers
+        one question.
+      </p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Screen</th><th>Answers</th><th>What to look for</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Queue</td><td>What is waiting?</td>
+              <td><em>Pending</em> is work not reached yet, not work that is stuck.
+                  <em>Failed</em> is the parked pile a person is meant to look at, and
+                  each entry carries its reason.</td>
+            </tr>
+            <tr>
+              <td>Runs &amp; errors</td><td>What has happened?</td>
+              <td>Every piece of work that ran, what it cost, and any error in full. This
+                  is where you go when something did not turn out as expected.</td>
+            </tr>
+            <tr>
+              <td>Fleet</td><td>What is switched on?</td>
+              <td>Each worker reads as <em>working</em> (busy now), <em>idle</em> (on,
+                  nothing to do), <em>off</em> (switched off), or <em>declared</em> —
+                  planned and not yet built, which is not a switch you can flip.</td>
+            </tr>
+            <tr>
+              <td>Budgets</td><td>What can it spend?</td>
+              <td>A cap per artist, what has been used in the last hour and day, and a
+                  pause. Nothing exceeds a cap; a request that would is refused before it
+                  costs anything.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <span class="screen">Today</span> exists so you do not need to check the other
+        three. Two kinds of thing land there: a match that needs confirming, and work that
+        has been parked for a reason a person has to clear. An empty
+        <span class="screen">Today</span> is the normal, correct state — it means
+        everything that could be decided without you already was.
+      </p>
+    </section>
+
+    <section id="expect">
+      <div class="eyebrow">Section ten</div>
+      <h2 class="head">What to expect</h2>
+      <p>Realistic outcomes, in the order you will meet them.</p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>You do this</th><th>You get</th><th>How long</th></tr></thead>
+          <tbody>
+            <tr><td>Add an artist and their pages</td><td>A roster entry, plus candidate pages to confirm or reject</td><td class="num">immediate</td></tr>
+            <tr><td>Upload a master</td><td>Tempo, tempo confidence, brightness, genre and style — with the file they came from named</td><td class="num">a few minutes</td></tr>
+            <tr><td>Open <span class="screen">Counterparties</span></td>
+                <td>{% if counterparties %}{{ "{:,}".format(counterparties) }}{% else %}The whole{% endif %}
+                    contacts, with genre tags and contact state</td><td class="num">already there</td></tr>
+            <tr><td>Create a campaign</td><td>A ranked shortlist of contacts suited to this artist, excluding anyone already in conversation</td><td class="num">immediate</td></tr>
+            <tr><td>Open a conversation</td><td>That contact reserved label-wide; a place to write and track the pitch</td><td class="num">immediate</td></tr>
+            <tr><td>Approve a draft</td><td>The message recorded and queued to send, once and only once</td><td class="num">immediate</td></tr>
+            <tr><td>Close a conversation</td><td>The contact released, and the outcome carried into the next campaign for that artist</td><td class="num">immediate</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>What it will not do</h3>
+      <p>
+        These are deliberate. Each one is a claim the evidence does not support, and the
+        system refuses to make it rather than showing you a number that flatters.
+      </p>
+      <ul>
+        <li><strong>It will not make anything go viral.</strong> Breakout is a lottery. What this improves is the number of good attempts you can make and the cost of each one.</li>
+        <li><strong>It will not tell you which outreach caused which streams.</strong> That link cannot be established honestly with the data anyone has, so no screen claims it.</li>
+        <li><strong>It will not tell you which pitch style wins.</strong> Where the evidence is thin, you get the raw counts and the sample size, not a recommendation dressed as one.</li>
+        <li><strong>It will not buy engagement or seed anything artificially.</strong> Out of scope, and known to lose money.</li>
+        <li><strong>It will not contact anyone twice.</strong> The single-conversation rule and the send record between them make a duplicate approach structurally impossible, not merely unlikely.</li>
+      </ul>
+
+      <h3>Where the real numbers come from</h3>
+      <p>
+        Stream counts come from <span class="screen">Statements</span> — the export files
+        your distributor produces. Upload one and the system reads it, but it will refuse
+        to import until you have confirmed once that its columns mean what it thinks they
+        mean. That confirmation is recorded with the import. It is one minute of work per
+        distributor format, and it is the difference between a number you can act on and a
+        number that is quietly wrong.
+      </p>
+    </section>
+
+    <section id="limits">
+      <div class="eyebrow">Section eleven</div>
+      <h2 class="head">Limits and switches</h2>
+      <p>
+        Three things are built and deliberately switched off. None of them is broken; each
+        is a decision with a cost attached, and each is yours to make.
+      </p>
+
+      <h3>Sending</h3>
+      <p>
+        Approving a draft prepares the send completely and records it. The message
+        physically leaves once a mail provider is connected. Until then a campaign can be
+        running, with drafts approved and queued, and still read <em>zero sent</em> — that
+        gap is the gate doing its job, and the campaign screen says so where it appears.
+      </p>
+
+      <h3>Incoming replies</h3>
+      <p>
+        <span class="screen">Inbox</span> is connected to the real record of messages, and
+        it is empty because no mail is being received into it yet. It says exactly that,
+        rather than showing you invented replies. It fills the moment sending and
+        receiving are connected — the two are the same piece of work.
+      </p>
+
+      <h3>Paid analysis</h3>
+      <p>
+        Features that call a paid AI service are off by default. Turning them on is a
+        deliberate step with a daily ceiling and a per-request ceiling attached, and the
+        ceilings are set outside the console so raising one is visible. Anything that
+        would exceed a ceiling is refused before it is charged, and every refusal is
+        recorded with what it would have cost — so a quiet screen never means "there was
+        nothing to do" when it actually means "we chose not to spend".
+      </p>
+
+      <div class="callout warn">
+        <span class="label">Read this before you publish the address</span>
+        <p>
+          The public front page carries a "request a demo" form, and it is the one place a
+          stranger can write to. It has no rate limiting today. That is fine while the
+          address is shared privately; it needs a limit in front of it before the address
+          is published anywhere public.
+        </p>
+      </div>
+    </section>
+
+    <section id="trouble">
+      <div class="eyebrow">Section twelve</div>
+      <h2 class="head">If something looks wrong</h2>
+      <p>
+        The console explains refusals in plain words rather than error codes. Here are the
+        ones you are most likely to meet.
+      </p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>You see</th><th>It means</th><th>Do this</th></tr></thead>
+          <tbody>
+            <tr><td>"Already queued"</td><td>You clicked approve twice. The first click prepared the send and the second was refused.</td><td>Nothing. This is the duplicate protection working.</td></tr>
+            <tr><td>"Nothing was queued"</td><td>Either this master is already waiting to be analysed, or nobody is credited on the recording.</td><td>Add a credit on the track, then press Analyse.</td></tr>
+            <tr><td>"There is no stored master to analyse"</td><td>The track has no audio file yet.</td><td>Upload the master. Analysis starts from the upload itself.</td></tr>
+            <tr><td>A contact you want is missing from a shortlist</td><td>They are in conversation with another campaign, or they have no character profile yet so cannot be ranked.</td><td>Check <span class="screen">Counterparties</span>. Close the other conversation, or approach them by hand.</td></tr>
+            <tr><td>An empty screen</td><td>Genuinely nothing there yet — and the screen names what is missing.</td><td>Read the sentence on it. It is the most useful text on the page.</td></tr>
+            <tr><td>A worker reading <em>declared</em></td><td>Planned, not yet built. Its job is being done by a person through the console meanwhile.</td><td>Nothing to switch. Carry on by hand.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        If none of these fits, <span class="screen">Runs &amp; errors</span> has the full
+        text of what failed, and that text is what to quote when you ask for help.
+      </p>
+    </section>
+
+    <section id="glossary">
+      <div class="eyebrow">Section thirteen</div>
+      <h2 class="head">Glossary</h2>
+      <dl class="gloss">
+        <dt>Artist</dt><dd>An act on your roster. Everything hangs off it — tracks, contacts, campaigns and everything the label has learned.</dd>
+        <dt>Recording</dt><dd>One track. It holds the master, what listening to it established, and who is credited.</dd>
+        <dt>Master</dt><dd>The finished audio file. Analysis reads this and nothing else.</dd>
+        <dt>Counterparty</dt><dd>Anyone you might take a record to: a station, a programmer, a curator, a writer, a creator, a supervisor. One word for all of them, because they behave the same way — a taste, an audience, a way to be contacted, and a history with you.</dd>
+        <dt>Campaign</dt><dd>One artist, one channel, one goal. It opens conversations; it does not send anything by itself.</dd>
+        <dt>Channel</dt><dd>The kind of outreach: curator, UGC, press, radio, sync. Channels run side by side without colliding.</dd>
+        <dt>Thread</dt><dd>One conversation with one contact, from first approach to closed. One open thread per contact across the whole label.</dd>
+        <dt>Contact state</dt><dd>Whether a contact is free to approach, already in conversation, stale, or has declined.</dd>
+        <dt>Lesson</dt><dd>Something a campaign found out that the next one should know. Attached to the artist and inherited by every later release.</dd>
+        <dt>Queue</dt><dd>Work the background workers have to do. Pending is waiting; failed is parked for a person.</dd>
+        <dt>Supersede</dt><dd>What happens when a value is revised. The new one becomes current, the old one stays readable underneath. Nothing is overwritten.</dd>
+      </dl>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>
+      Respect the Funk · Operator manual. Every figure and behaviour described here is
+      taken from the console as built. Where something is prepared but not switched on,
+      this document says so rather than describing what it will eventually do.
+    </p>
+    <p style="margin-top:18px">
+      <a href="/">The public front page</a> ·
+      <a href="/signin">Operator sign-in</a>
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>

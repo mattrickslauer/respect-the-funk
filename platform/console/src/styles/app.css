@@ -1,0 +1,420 @@
+/* =============================================================================
+   app.css — what the console adds on top of the shared system
+   =============================================================================
+
+   The palette, the type scale, the meter, the provenance marks, the chips and the
+   callouts all come from `design.generated.css`, which is generated from the same
+   file the landing page and the operator manual include. Nothing in here may
+   declare a colour. If a rule below needs a hue that is not already a token, the
+   token is missing from the system and belongs there, not here.
+
+   This file owns layout and the components that only exist in a console: the
+   shell, the proposal card, the stage chain, the trace disclosure.
+   ============================================================================= */
+
+/* ------------------------------------------------------------------ shell --- */
+.shell {
+  display: grid;
+  /* An explicit height on the top row, not `auto`. Under `auto` the row collapses to
+     the height of its tallest child, and both children are single lines of small
+     text — so the chrome renders as a 20px sliver that reads as a broken page. */
+  grid-template-rows: 44px minmax(0, 1fr);
+  grid-template-columns: 172px minmax(0, 1fr);
+  grid-template-areas: "brand top" "rail surface";
+  height: 100vh;
+  overflow: hidden;
+}
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+}
+
+.brand {
+  grid-area: brand;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.9rem;
+  border-bottom: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  background: var(--panel);
+  font: 600 13px/1 var(--face-display);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.brand .spark {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--carrier);
+  flex: none;
+}
+@media (max-width: 900px) {
+  .brand .wordmark { display: none; }
+}
+
+/* The top bar carries the one fact that must never be ambiguous. See `Gate`. */
+.topbar {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--panel);
+}
+.topbar .spacer { margin-left: auto; }
+
+.rail {
+  grid-area: rail;
+  border-right: 1px solid var(--rule);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  padding: 0.6rem 0.4rem;
+  gap: 1px;
+  overflow-y: auto;
+}
+.rail a {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--r-sm);
+  color: var(--dim);
+  text-decoration: none;
+  font-size: 13px;
+}
+.rail a:hover { background: var(--panel-2); color: var(--ink); }
+.rail a[aria-current="page"] {
+  background: var(--phosphor-wash);
+  color: var(--phosphor);
+  font-weight: 560;
+}
+.rail a .count {
+  margin-left: auto;
+  font: 10px/1.6 var(--face-data);
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+.rail a[aria-current="page"] .count { color: inherit; }
+.rail .railgap { margin-top: auto; }
+.rail .railnote {
+  padding: 0.6rem 0.55rem 0;
+  border-top: 1px solid var(--rule);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--faint);
+}
+@media (max-width: 900px) {
+  .rail a .label, .rail .railnote { display: none; }
+  .rail a { justify-content: center; }
+}
+
+.surface {
+  grid-area: surface;
+  overflow-y: auto;
+  padding: 1.1rem 1.3rem 4rem;
+}
+.surface > header { margin-bottom: 1.1rem; max-width: 78ch; }
+.surface > header h1 { font-size: 20px; letter-spacing: -0.02em; }
+.surface > header p {
+  margin: 0.4rem 0 0;
+  color: var(--dim);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* ------------------------------------------------------------------- gate --- */
+/* Nothing leaves without a person pressing a button. That is the product's
+   central claim, so it is stated persistently rather than discovered on the
+   Approvals screen. When sending is not connected it says so — it does not read
+   as healthy just because nothing has gone wrong. */
+.gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font: 10.5px/1.6 var(--face-data);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.gate b { color: var(--ink); font-weight: 600; }
+.gate .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.gate.held .dot { background: var(--phosphor); }
+.gate.dark .dot { background: var(--faint); }
+
+/* --------------------------------------------------------------- proposal --- */
+/* The unit of the whole console. Not a table row: a thing the system wants to do,
+   with its reasoning attached and its controls in reach. */
+.proposal {
+  border: 1px solid var(--rule);
+  border-left-width: 2px;
+  border-radius: var(--r);
+  background: var(--panel);
+  padding: 0.75rem 0.85rem;
+  margin-bottom: 0.5rem;
+  max-width: 96ch;
+}
+/* Severity, matching `_console.html`'s `.qrow` exactly rather than approximately.
+   An earlier version had act on --phosphor and warn on --warn: #ffb340 against
+   #d2a24c, two ambers eleven hue-degrees apart, which is not a distinction anyone
+   reads at a glance down a list. The Jinja console had already settled this — act is
+   the red one, because it is the row that is actually asking — and a second console
+   inventing its own severity scale is how an operator learns to distrust both. */
+.proposal.act { border-left-color: var(--err); }
+.proposal.warn { border-left-color: var(--warn); }
+.proposal.info { border-left-color: var(--rule); }
+.proposal.done { border-left-color: var(--rule); opacity: 0.72; }
+.proposal .kind {
+  font: 600 9.5px/1 var(--face-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.proposal .head {
+  font-size: 14px;
+  font-weight: 560;
+  margin: 0.25rem 0 0;
+  letter-spacing: -0.01em;
+}
+.proposal .sub {
+  font-size: 12.5px;
+  color: var(--dim);
+  margin: 0.2rem 0 0;
+  line-height: 1.5;
+}
+.proposal .row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.proposal .acts {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+
+/* ------------------------------------------------------------------ trace --- */
+/* "Why" is a disclosure, not a tooltip and not another page: an operator reads it
+   while deciding, and a tooltip cannot be read and compared at the same time. */
+.trace {
+  margin-top: 0.55rem;
+  border-top: 1px solid var(--rule);
+  padding-top: 0.5rem;
+}
+.trace summary {
+  cursor: pointer;
+  font: 10px/1 var(--face-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  list-style: none;
+}
+.trace summary::-webkit-details-marker { display: none; }
+.trace summary::before { content: "▸ "; }
+.trace[open] summary::before { content: "▾ "; }
+.trace summary:hover { color: var(--ink); }
+.trace ol {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  font: 11.5px/1.6 var(--face-data);
+  color: var(--dim);
+}
+.trace li {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 0.6rem;
+  padding: 0.12rem 0;
+}
+.trace li > span:first-child {
+  color: var(--faint);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding-top: 0.2rem;
+}
+
+/* ------------------------------------------------------------ stage chain --- */
+/* The workbench signature. A campaign drawn as the signal chain it is, with each
+   stage's count under it. Stages are real fleet stages, not a metaphor. */
+.chain {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--panel);
+  padding: 0.75rem 0.5rem;
+}
+.stage {
+  flex: 1 1 0;
+  min-width: 116px;
+  padding: 0 0.6rem;
+  border-right: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.stage:last-child { border-right: 0; }
+.stage .name {
+  font: 600 9.5px/1 var(--face-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.stage .n {
+  font: 600 19px/1 var(--face-data);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.stage.idle .n { color: var(--faint); }
+.stage .note { font-size: 10.5px; color: var(--dim); line-height: 1.4; }
+.stage .pip { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--rule); }
+.stage.running .pip { background: var(--carrier); animation: pulse 1.6s ease-in-out infinite; }
+.stage.blocked .pip { background: var(--phosphor); }
+.stage.done .pip { background: var(--ok); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .stage.running .pip { animation: none; }
+}
+
+/* ----------------------------------------------------------------- ranked --- */
+/* The shortlist. The meter is the shared one; everything here is layout. */
+.ranked { border: 1px solid var(--rule); border-radius: var(--r); overflow: hidden; }
+.ranked li {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 128px auto;
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.42rem 0.7rem;
+  border-bottom: 1px solid var(--rule-soft);
+  background: var(--panel);
+}
+.ranked li:last-child { border-bottom: 0; }
+.ranked li.vetoed { opacity: 0.45; }
+.ranked li.pinned { box-shadow: inset 2px 0 0 var(--phosphor); }
+.ranked ol, .ranked ul { list-style: none; margin: 0; padding: 0; }
+.ranked .rank {
+  font: 10.5px/1 var(--face-data);
+  color: var(--faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ranked .who { font: 12.5px/1.35 var(--face-data); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ranked .d {
+  font: 10.5px/1 var(--face-data);
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* A chip is content-width. As a direct grid child it stretches to fill its track,
+   and a full-width bordered box with a word in it is not a chip — it reads as an
+   empty text input, which invites a click that does nothing. */
+.ranked li > .chip { justify-self: start; }
+
+/* --------------------------------------------------------------- controls --- */
+.b {
+  font: 500 11.5px/1 var(--face-body);
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--r-sm);
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+}
+.b:hover:not(:disabled) { border-color: var(--faint); }
+.b:disabled { opacity: 0.45; cursor: not-allowed; }
+.b.p {
+  background: var(--phosphor);
+  border-color: var(--phosphor);
+  color: var(--ground);
+  font-weight: 600;
+}
+.b.q { background: transparent; border-color: transparent; color: var(--dim); }
+.b.q:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); }
+.b.d { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, transparent); }
+
+.field { display: block; margin: 0 0 0.55rem; }
+.field > span {
+  display: block;
+  font: 9.5px/1.6 var(--face-display);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.field input, .field select, .field textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 0.34rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--ground);
+  color: var(--ink);
+}
+.field textarea { line-height: 1.55; resize: vertical; min-height: 6rem; }
+.field input:focus, .field select:focus, .field textarea:focus {
+  outline: 2px solid var(--phosphor);
+  outline-offset: -1px;
+}
+
+/* ------------------------------------------------------------ empty/error --- */
+/* An empty screen names what is missing; that sentence is the most useful text on
+   the page. An error says what failed and what to do, and never apologises. */
+.state {
+  border: 1px dashed var(--rule);
+  border-radius: var(--r);
+  padding: 1.6rem 1.2rem;
+  text-align: center;
+  color: var(--dim);
+  font-size: 13px;
+  line-height: 1.6;
+  max-width: 72ch;
+}
+.state b { display: block; color: var(--ink); font-weight: 560; margin-bottom: 0.3rem; }
+.state.bad { border-style: solid; border-color: var(--err); background: var(--err-wash); }
+.state code {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  display: block;
+  margin-top: 0.5rem;
+  white-space: pre-wrap;
+  text-align: left;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+  gap: 1.1rem;
+  align-items: start;
+}
+@media (max-width: 1100px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+
+.panel {
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--panel);
+  padding: 0.8rem 0.9rem;
+}
+.panel > h2 {
+  font: 600 9.5px/1 var(--face-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 0.6rem;
+}

@@ -27,7 +27,7 @@ from psycopg.rows import dict_row
 
 from rtf_platform import (
     agents, fcc, fleet, mail, outreach, podcastindex, profiles, radiobrowser, sender,
-    spend,
+    spend, streams,
 )
 
 
@@ -386,6 +386,136 @@ def index_podcasts(conn: psycopg.Connection, tenant_id: str, *, start: int = 0,
             )
             queued += cur.rowcount
     return queued
+
+
+def refresh_streams(conn: psycopg.Connection, tenant_id: str) -> int:
+    """Queue one `refresh_stream` lead per UUID bucket that still has stations in it.
+
+    Sixteen buckets, keyed on the first hex character of the Radio Browser station UUID,
+    and only the ones with work — read from the index rather than enumerated, exactly as
+    `enrich_genre` reads its call-sign prefixes, so this queues no empty leads and a bucket
+    that finishes stops being seeded.
+
+    `031_stream_refresh.sql` argues what the stage is for. The short version is that
+    `index_streams` stored the tags and the homepage from Radio Browser's payload and let
+    `countrycode`, `state` and `language` go, and the first of those is what
+    `contacts.country_for` needs before a contact route may be written at all.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT DISTINCT left(i.value, 1) AS bucket
+                 FROM party_identifier i
+                 JOIN party p ON p.tenant_id = i.tenant_id AND p.id = i.party_id
+                WHERE i.tenant_id = %s AND i.kind = 'radiobrowser_uuid'
+                  AND p.party_class = 'counterparty'
+                  AND NOT EXISTS (SELECT 1 FROM party_fact f
+                                   WHERE f.tenant_id = i.tenant_id
+                                     AND f.party_id = i.party_id
+                                     AND f.dimension = 'country_code')
+                ORDER BY 1""",
+            (tenant_id,),
+        )
+        buckets = [r["bucket"] for r in cur.fetchall() if r["bucket"] in streams.BUCKETS]
+
+        queued = 0
+        for bucket in buckets:
+            cur.execute(
+                """INSERT INTO lead (tenant_id, scope_kind, kind, mode, adapter,
+                                     target, target_hash, platform, reason, score)
+                   VALUES (%s, 'tenant', 'refresh_stream', 'auto', 'radio_browser', %s,
+                           %s, 'radio_browser', %s, 0.6)
+                   ON CONFLICT (tenant_id, target_hash) DO NOTHING""",
+                (tenant_id, bucket, f"refresh_stream:{bucket}",
+                 f"stations with UUIDs starting {bucket} have no country, market or "
+                 "language recorded"),
+            )
+            queued += cur.rowcount
+    return queued
+
+
+def harvest_contacts(conn: psycopg.Connection, tenant_id: str) -> int:
+    """Queue one `harvest_contacts` lead per counterparty this stage can actually work.
+
+    Two predicates, and the second is the one worth explaining.
+
+    **A `web` presence**, because that is the only page this stage is allowed to read —
+    the counterparty's own site, which `index_streams` wrote as a presence precisely
+    because a homepage is a surface to read and not an endpoint to send to.
+
+    **Country evidence already on the row.** A party with neither an `fcc_facility_id`
+    identifier nor a live `country_code` fact would be claimed by a worker,
+    `contacts.country_for` would raise `LeadFailed(permanent=True)`, and the lead would
+    park. Seeding those is the failure `index_podcasts` refuses when it demands
+    credentials before its first INSERT: a frontier full of leads nobody can work buries
+    the one sentence saying why. Measured on 2026-08-13 it is not a rounding error —
+    6,314 counterparties have a homepage and only 872 have country evidence — so seeding
+    blind would park 5,442 leads. `--refresh-streams` is what turns the rest into work,
+    and re-running this afterwards picks them up.
+
+    Idempotent on `(tenant_id, target_hash)` like every other producer here, so running it
+    twice queues nothing the second time and running it after a refresh queues only what
+    the refresh unblocked.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO lead (tenant_id, scope_kind, party_id, kind, mode, adapter,
+                                 target, target_hash, platform, reason, score)
+               SELECT p.tenant_id, 'party', p.id, 'harvest_contacts', 'auto',
+                      'station_website', p.id::STRING,
+                      'harvest_contacts:' || p.id::STRING, 'web',
+                      'counterparty publishes a website and has no contact route', 0.7
+                 FROM party p
+                WHERE p.tenant_id = %s AND p.party_class = 'counterparty'
+                  AND p.status = 'active'
+                  AND EXISTS (SELECT 1 FROM presence pr
+                               WHERE pr.tenant_id = p.tenant_id
+                                 AND pr.subject_kind = 'party' AND pr.subject_id = p.id
+                                 AND pr.platform = 'web' AND pr.state = 'present'
+                                 AND pr.url != '')
+                  AND (EXISTS (SELECT 1 FROM party_identifier i
+                                WHERE i.tenant_id = p.tenant_id AND i.party_id = p.id
+                                  AND i.kind = 'fcc_facility_id')
+                       OR EXISTS (SELECT 1 FROM party_fact f
+                                   WHERE f.tenant_id = p.tenant_id AND f.party_id = p.id
+                                     AND f.dimension = 'country_code'
+                                     AND f.status = 'live'))
+               ON CONFLICT (tenant_id, target_hash) DO NOTHING""",
+            (tenant_id,),
+        )
+        return cur.rowcount
+
+
+def harvest_feed_contacts(conn: psycopg.Connection, tenant_id: str) -> int:
+    """Queue one `harvest_feed_contacts` lead per indexed podcast show.
+
+    The selection is "carries a `podcastindex_feed_id`", which is the identifier
+    `index_podcasts` writes for every show it creates and the only thing this stage needs.
+    No country predicate, unlike `harvest_contacts`: a feed cannot say where its owner is
+    established, the route is written with `contact_country` NULL, and
+    `032_feed_contact_harvest.sql` explains why that is honest and what it blocks.
+
+    **Expect zero today.** The live cluster holds no podcast counterparties — `023` and
+    `027` are unapplied and `index_podcasts` has never run — so this returns 0 until that
+    stage has produced rows. That is reported by the caller rather than hidden.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO lead (tenant_id, scope_kind, party_id, kind, mode, adapter,
+                                 target, target_hash, platform, reason, score)
+               SELECT p.tenant_id, 'party', p.id, 'harvest_feed_contacts', 'auto',
+                      'podcast_index', p.id::STRING,
+                      'harvest_feed_contacts:' || p.id::STRING, 'podcast_index',
+                      'podcast show indexed, its feed may declare an owner address', 0.8
+                 FROM party p
+                WHERE p.tenant_id = %s AND p.party_class = 'counterparty'
+                  AND p.status = 'active'
+                  AND EXISTS (SELECT 1 FROM party_identifier i
+                               WHERE i.tenant_id = p.tenant_id AND i.party_id = p.id
+                                 AND i.kind = 'podcastindex_feed_id')
+               ON CONFLICT (tenant_id, target_hash) DO NOTHING""",
+            (tenant_id,),
+        )
+        return cur.rowcount
 
 
 def enrich_genre(conn: psycopg.Connection, tenant_id: str) -> int:
@@ -824,6 +954,19 @@ def main() -> int:
                              "whole four-million-feed index. Default is the whole "
                              "index. Needs PODCASTINDEX_API_KEY and "
                              "PODCASTINDEX_API_SECRET.")
+    parser.add_argument("--refresh-streams", action="store_true",
+                        help="re-read the Radio Browser entries already indexed and "
+                             "store the country, market and language the first pass "
+                             "dropped. The country is what a contact route needs before "
+                             "it may be written at all.")
+    parser.add_argument("--harvest-contacts", action="store_true",
+                        help="read each counterparty's own website and write the contact "
+                             "routes it publishes. Only published addresses are written; "
+                             "nothing is guessed from a domain.")
+    parser.add_argument("--harvest-feed-contacts", action="store_true",
+                        help="read each indexed podcast's own RSS feed and write the "
+                             "owner address it declares in <itunes:owner>. Needs shows "
+                             "in the index first — see --index-podcasts.")
     parser.add_argument("--embed-evidence", action="store_true",
                         help="queue chunking for every evidence document, so R2 has a corpus")
     parser.add_argument("--recompose-profiles", action="store_true",
@@ -940,6 +1083,28 @@ def main() -> int:
             queued = enrich_genre(conn, tenant_id)
             print(f"queued {queued} enrich_genre lead(s)")
 
+        if args.refresh_streams:
+            queued = refresh_streams(conn, tenant_id)
+            print(f"queued {queued} refresh_stream lead(s)")
+
+        if args.harvest_contacts:
+            queued = harvest_contacts(conn, tenant_id)
+            print(f"queued {queued} harvest_contacts lead(s)")
+            if not queued:
+                # Zero is ambiguous — every candidate is already queued, or no candidate
+                # has country evidence — and the two need opposite next actions. Saying
+                # which is what stops an operator concluding the index has no websites.
+                print("  (nothing new: either every candidate is already queued, or no "
+                      "counterparty with a website has country evidence yet — run "
+                      "--refresh-streams first)")
+
+        if args.harvest_feed_contacts:
+            queued = harvest_feed_contacts(conn, tenant_id)
+            print(f"queued {queued} harvest_feed_contacts lead(s)")
+            if not queued:
+                print("  (no podcast shows are indexed yet — this stage reads a feed "
+                      "`index_podcasts` has already created a party for)")
+
         if args.embed_evidence:
             queued = embed_evidence(conn, tenant_id)
             print(f"queued {queued} embed_document lead(s) over evidence documents")
@@ -976,6 +1141,8 @@ def main() -> int:
                 or args.requeue or args.index_stations is not None
                 or args.index_streams is not None or args.enrich_genre
                 or args.index_podcasts is not None
+                or args.refresh_streams or args.harvest_contacts
+                or args.harvest_feed_contacts
                 or args.close_thread):
             print("draining the frontier")
             kinds = args.kinds.split(",") if args.kinds else None

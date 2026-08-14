@@ -1,7 +1,7 @@
 ---
 title: "Demo script — three minutes, one argument"
 subtitle: "Every beat exists to answer one question: why is CockroachDB irreplaceable here? Nothing else is discussed. Supersedes VIDEO_SCRIPT.md, which was written before the sponsor audit."
-status: "BINDING for the shoot. Runtime 2:55 against a 3:00 hard cap. The pre-shoot checklist lists what must be true before the camera rolls."
+status: "BINDING for the shoot. Runtime 2:59 against a 3:00 hard cap, with the §1 trim applied. The pre-shoot checklist lists what must be true before the camera rolls."
 date: "2026-08-11"
 amended: "2026-08-14 — §3 rewritten. Migrations 023 and 026–032 were applied and the first contact harvest ran, taking `contact_route` from 1 row to 2,351 across three channels. The beat that argued restraint from the schema now argues it from evidence, and gained 0:14 to do so. Telegram and WhatsApp are named as what the channel model is *for*; the rule that they may never be implied as integrations is in 'What must not be said'. Also corrects a claim that had been in this file since it was written: §3 told the shoot to film a `contact_route` row in `opted_out`, and that state has never held a row."
 ---
@@ -28,20 +28,25 @@ two things:
 
 ---
 
-## 1. Cold open — the problem is precision, not reach (0:00–0:20)
+## 1. Cold open — the problem is precision, not reach (0:00–0:15)
 
 **Screen.** Terminal. A single query returning a count: `14170`. Then the shortlist for one
 artist, top five, each with a genre beside it.
 
-**VO.**
+**VO.** *(52 words — 0:24 as written. Read the trimmed version below unless §3 is cut.)*
 > A label with a new single has to find the few hundred people, out of tens of thousands,
 > who might actually play it. Get that wrong and you are spam. We built the index that
-> gets it right: fourteen thousand radio stations and curators, from public registers,
-> each one embedded with what they actually play.
+> gets it right: fourteen thousand stations and curators, each one embedded with what
+> they actually play.
+
+**Marked trim, applied by default.** The original read *"fourteen thousand radio stations
+and curators, **from public registers**, each one embedded…"*. Both cuts are free now that
+§3 shows the harvest and names the sources on screen — saying it twice spends five seconds
+this cut does not have. Restore the longer line only if §3 is dropped.
 
 ---
 
-## 2. It is a vector search, and the filters are inside the index (0:20–0:55)
+## 2. It is a vector search, and the filters are inside the index (0:15–0:50)
 
 **Screen.** `EXPLAIN` output, full frame, with `vector search` and `prefix spans`
 highlighted. Hold long enough to read.
@@ -67,12 +72,24 @@ the part a technical judge recognises as real rather than decorative.
 
 ---
 
-## 3. Three people, thousands of conversations — and the database is the discipline (0:55–1:39)
+## 3. Three people, thousands of conversations — and the database is the discipline (0:50–1:43)
 
-**Runtime.** This beat was 0:30 and is now 0:44. Fourteen seconds come from the 2:45/3:00
-headroom and four from the duplicated line cut out of §4. The cut now runs **2:55**. If it
-runs long on the day, take it back out of here and not out of §5 — §5 is the only
-Postgres-impossible beat in the video.
+**Runtime — read this before recording.** This beat was 0:30 and is now **0:53**. Fifteen
+seconds come from the 2:45/3:00 headroom, four from the duplicated line cut out of §4, and
+**four are borrowed**: the cut runs **3:04** as written, which is over the cap.
+
+Take the four seconds from §1, which is the one beat that is already over its own slot
+(57 words is 0:26 in a 0:20 hole). The marked trim is in §1 — cutting *"from public
+registers,"* and *"radio stations and curators"* → *"stations and curators"* returns 0:05
+and costs nothing, because §3 now says where the data came from and shows it.
+
+**Do not** take it out of §5. §5 is the only Postgres-impossible beat in the video and the
+tie-breaker criterion rests on it.
+
+This beat carries both arguments on purpose. It is not the old §3 replaced — it is the old
+§3 (blast radius, `opted_out`, no guessed addresses, "a schema property, not a policy
+document") with the contactability evidence that did not exist when it was written folded
+in underneath. Nothing was dropped except one line that §2 now says better.
 
 **Screen, in three holds.** Hold each long enough to read; this beat is evidence, not
 montage.
@@ -85,15 +102,17 @@ montage.
    (`email, phone, form, postal, social`) beside the partial unique index
    `one_open_thread_per_counterparty`.
 
-**VO.** *(96 words — 0:44 at 130 wpm.)*
+**VO.** *(114 words — 0:53 at 130 wpm.)*
 > A label is three people. They cannot hold thousands of conversations, so the database
 > holds them. Each counterparty carries every route they publish — enquiries, a music
 > director, a submissions form. Postal and social share that column, which is where
 > Telegram and WhatsApp land when a label needs them: a new channel inherits every rule,
 > because the rules are constraints, not code. We harvested twenty-three hundred routes
 > from public pages. Seven robots files said no, and the agents stopped. Nothing was
-> guessed. One open conversation per counterparty, label-wide, is a partial unique
-> index — respect is a predicate every agent inherits.
+> guessed — the sender refuses an address we inferred rather than read. And when someone
+> tells us to stop, opted-out is a state no discovery stage can overwrite. One open
+> conversation per counterparty, label-wide, is a partial unique index. Sustainable
+> outreach is a schema property here, not a policy document.
 
 **Why this beat, and why it is not a compliance slide.** Three claims, each visible as
 output rather than asserted:
@@ -120,7 +139,7 @@ because genre is inside the text we embed."*
 
 ---
 
-## 4. The send is irreversible, so the database is the system of record (1:39–2:15)
+## 4. The send is irreversible, so the database is the system of record (1:43–2:19)
 
 **This is the centrepiece. Give it the most time.**
 
@@ -159,7 +178,7 @@ terminal 2 completes          -> OK
 
 ---
 
-## 5. Why did you email them? (2:15–2:45)
+## 5. Why did you email them? (2:19–2:49)
 
 **The irreplaceable beat. Nothing else in the video is Postgres-impossible; this is.**
 
@@ -175,7 +194,7 @@ terminal 2 completes          -> OK
 
 ---
 
-## 6. Close (2:45–2:55)
+## 6. Close (2:49–2:59)
 
 **Screen.** `SELECT sum(cost_micro_usd)/1e6 FROM agent_run;` → a number under four cents.
 Then `node_count: 0`.

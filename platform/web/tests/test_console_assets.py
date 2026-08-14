@@ -9,6 +9,55 @@ from __future__ import annotations
 from rtf_platform import console_assets
 
 
+# --------------------------------------------------------------- where it looks
+#
+# The bug these cover is not hypothetical: `/console` 404'd in production for as long
+# as the build was only ever looked for at the checkout path, which cannot exist in a
+# Lambda that has no `platform/` directory.
+
+def test_the_bundled_build_is_inside_the_package() -> None:
+    """The whole reason this path exists.
+
+    `infra/build.sh` vendors `rtf_platform/` and nothing else. A build copied to a
+    sibling directory is not in the archive, so the only location that can work in
+    Lambda is one under the package itself.
+    """
+    package = console_assets.Path(console_assets.__file__).resolve().parent
+    assert console_assets.BUNDLED.parent == package
+    assert console_assets.BUNDLED.name == "console_dist"
+
+
+def test_the_checkout_build_is_where_vite_writes() -> None:
+    assert console_assets.CHECKOUT.parts[-3:] == ("platform", "console", "dist")
+
+
+def test_the_bundled_build_is_searched_before_the_checkout() -> None:
+    """Order matters in exactly one place — a developer who has both. The zip is
+    what the deployed function runs, so it is what the deployed function trusts."""
+    assert console_assets.SEARCHED == (console_assets.BUNDLED,
+                                       console_assets.CHECKOUT)
+
+
+def test_a_directory_without_a_shell_is_not_a_build(tmp_path, monkeypatch) -> None:
+    """An interrupted build leaves the directory and no `index.html`. Serving out of
+    it would 404 the shell, which reads as a broken deployment rather than a broken
+    build."""
+    empty, real = tmp_path / "empty", tmp_path / "real"
+    empty.mkdir()
+    real.mkdir()
+    (real / "index.html").write_text("<!doctype html>")
+
+    monkeypatch.setattr(console_assets, "SEARCHED", (empty, real))
+    assert console_assets._dist() == real
+
+
+def test_with_no_build_anywhere_it_names_the_checkout(tmp_path, monkeypatch) -> None:
+    """`npm run build` writes to the checkout, so that is the path the instruction on
+    the not-built page is about."""
+    monkeypatch.setattr(console_assets, "SEARCHED", (tmp_path / "a", tmp_path / "b"))
+    assert console_assets._dist() == console_assets.CHECKOUT
+
+
 # ------------------------------------------------------------- the missing build
 
 def test_not_built_page_is_503_and_says_what_to_run() -> None:
@@ -22,6 +71,15 @@ def test_not_built_page_is_503_and_says_what_to_run() -> None:
     assert str(console_assets.DIST) in body
     # It must not read as a general outage: the server-rendered console is fine.
     assert "Nothing is broken" in body
+
+
+def test_not_built_page_names_every_place_it_looked() -> None:
+    """A deployment and a checkout fail here for different reasons — a packaging step
+    that did not run, against a build step that did not. Printing one path sends half
+    the readers to fix the wrong thing."""
+    body = console_assets.not_built_page().body.decode()
+    for path in console_assets.SEARCHED:
+        assert str(path) in body
 
 
 def test_not_built_page_uses_the_design_system_ground() -> None:

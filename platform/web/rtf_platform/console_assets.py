@@ -38,10 +38,21 @@ that was never served. That is a genuinely horrible hour, and it is one `if` to 
 ## Deployment
 
 `handler.py` runs this under Mangum in Lambda, which means `dist/` has to be inside
-the deployment package for `/console` to serve anything there. It is not today. Until
-the packaging step includes it, a deployed `/console` will correctly render the
-not-built page rather than pretending. That is the honest state and it is visible
-rather than silent, which is the point of the arrangement above.
+the deployment package for `/console` to serve anything there. It is, as of
+`infra/build.sh` copying it in — but it does not land where a checkout keeps it, and
+that is the reason there are two candidate paths below rather than one.
+
+In a checkout the Vite output is at `platform/console/dist`, two directories up from
+this file. In the zip there is no `platform/` and no sibling `console/`: `build.sh`
+vendors `rtf_platform/` to the archive root, so the same expression resolves to
+`/console/dist` — an absolute path outside `/var/task` that will never exist. A build
+copied anywhere outside the package is simply not in the deployment package.
+
+So the build is copied *inside* the package, at `rtf_platform/console_dist`, and both
+locations are checked. Neither is a fallback for the other in the sense this codebase
+refuses: they are two layouts of the same artefact, only one of which exists at a
+time, and when neither does the not-built page names both places it looked instead of
+guessing which reader it has.
 """
 
 from __future__ import annotations
@@ -52,9 +63,41 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-#: `platform/console/dist`, resolved from this file rather than the working
-#: directory, because the app is started from at least three of them.
-DIST = Path(__file__).resolve().parent.parent.parent / "console" / "dist"
+#: `rtf_platform/console_dist` — the deployed layout. `infra/build.sh` copies the
+#: Vite output here precisely because it is inside the package, and the package is
+#: the only thing that goes in the zip.
+BUNDLED = Path(__file__).resolve().parent / "console_dist"
+
+#: `platform/console/dist` — the checkout layout, where `npm run build` writes.
+#: Resolved from this file rather than the working directory, because the app is
+#: started from at least three of them.
+CHECKOUT = Path(__file__).resolve().parent.parent.parent / "console" / "dist"
+
+#: Where a build is looked for, in order. See the module docstring for why there are
+#: two of them and why that is not a fallback.
+SEARCHED = (BUNDLED, CHECKOUT)
+
+
+def _dist() -> Path:
+    """The first searched directory holding a real build.
+
+    `index.html` is the test rather than the directory existing, because an empty
+    `dist/` left behind by an interrupted build is not a build, and answering out of
+    it would serve 404s for the shell itself.
+
+    With no build anywhere this returns the checkout path, which is the one the
+    not-built page's `npm run build` instruction is about. That page prints every
+    path in `SEARCHED`, so the choice made here decides nothing a reader is told.
+    """
+    for candidate in SEARCHED:
+        if (candidate / "index.html").is_file():
+            return candidate
+    return CHECKOUT
+
+
+#: The build being served. Read at call time by `resolve_asset`, so a test may point
+#: it somewhere else.
+DIST = _dist()
 
 _NOT_BUILT = """<!doctype html>
 <html lang="en" data-ground="transmitter">
@@ -79,7 +122,8 @@ _NOT_BUILT = """<!doctype html>
 <body><main>
   <h1>The console has not been built.</h1>
   <p>This address serves a compiled application, and there is nothing compiled at
-     <code>{dist}</code></p>
+     either place one is kept:</p>
+  <code>{dist}</code>
   <p>Build it:</p>
   <code>cd platform/console &amp;&amp; npm install &amp;&amp; npm run build</code>
   <p>The server-rendered console is unaffected and is at
@@ -96,8 +140,14 @@ def not_built_page() -> HTMLResponse:
     available, which is exactly what the status code means. A 404 would say the
     console does not exist, and a reader who has just cloned the repository would
     believe it.
+
+    Every path in `SEARCHED` is printed, not just the one `DIST` settled on. A
+    deployed function and a checkout fail here for different reasons — a packaging
+    step that did not run, against a build step that did not — and naming one path
+    would send half the readers to fix the wrong thing.
     """
-    return HTMLResponse(_NOT_BUILT.format(dist=DIST), status_code=503)
+    looked = "\n".join(str(path) for path in SEARCHED)
+    return HTMLResponse(_NOT_BUILT.format(dist=looked), status_code=503)
 
 
 def looks_like_a_file(spa_path: str) -> bool:

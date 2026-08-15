@@ -15,16 +15,74 @@ variable "database_url" {
   description = "CockroachDB connection string. From .env — never committed."
 }
 
-variable "admin_token" {
+# `admin_token` was declared here until 2026-08-15. It was the shared operator secret,
+# and it is gone with the operator role: sign-in is an emailed six-digit code and nothing
+# else. Setting PLATFORM_ADMIN_TOKEN on the function now does nothing at all.
+#
+# If it is still in your terraform.tfvars, delete the line — that file is gitignored and
+# holds the only copy of a secret that no longer authenticates anything.
+
+variable "tenant_slug" {
+  type = string
+  # NOT the tenant a signed-in request is scoped to. That comes off the caller's own
+  # `account` row now, and `routes._tenant_id` has no fallback left.
+  #
+  # What survives is the *showcase* tenant: the one whose counters the landing page
+  # prints, whose two figures the manual cites in prose, and which `GET /demo/r1` answers
+  # from so a judge with no credential can reproduce R1. `routes._showcase_tenant_id` is
+  # the only reader, and it is a separate function from `_tenant_id` precisely so this
+  # cannot drift back into being an authentication fallback.
+  default = "respect-the-funk"
+}
+
+# ------------------------------------------------------------------------- mail
+#
+# **Mail is now the only way anybody signs in.** Until 2026-08-15 the sender was
+# deliberately unwired — see the note above `aws_iam_role.changefeed` in main.tf, which
+# still stands for the outbox worker — and `settings.mail_configured` was false, so
+# nothing could mail a curator by accident. Email-OTP sign-in changes the stakes: a
+# deployment with no verified SES identity is one nobody can enter, because `otp.py`
+# refuses to issue a code rather than falling back to showing one.
+#
+# All four default to empty, and empty is still a legitimate state — it plans and applies
+# cleanly, creates no SES resources, and yields a console whose sign-in page names the
+# three variables it needs. What it does not do is pretend.
+
+variable "mail_domain" {
   type        = string
-  sensitive   = true
-  description = "Shared operator secret. Empty means the console is read-only for everyone, which is the safe default for an unconfigured deployment."
+  description = "Domain to verify with SES, e.g. respectthefunk.com. Empty creates no SES resources at all."
   default     = ""
 }
 
-variable "tenant_slug" {
-  type    = string
-  default = "respect-the-funk"
+variable "mail_route53_zone_id" {
+  type        = string
+  description = <<-EOT
+    Route 53 hosted zone for mail_domain. Set it and the DKIM CNAMEs are created for you;
+    leave it empty and they are emitted as the `ses_dkim_records` output for you to add
+    wherever the domain's DNS actually lives.
+
+    Empty is not a lesser path — plenty of domains are not in Route 53 — but it does mean
+    verification is a manual step, and the runbook says so.
+  EOT
+  default     = ""
+}
+
+variable "mail_sender" {
+  type        = string
+  description = "The From address. Must be at mail_domain, or SES rejects every send once the identity is verified."
+  default     = ""
+}
+
+variable "mail_reply_to" {
+  type        = string
+  description = "Where a reply goes. Required: mail.py refuses to construct a mailer without one, because a pitch a curator cannot reply to is worse than no pitch."
+  default     = ""
+}
+
+variable "mail_postal_address" {
+  type        = string
+  description = "Physical postal address. CAN-SPAM 7704(a)(5) requires it in every commercial message; mail.compliant_body appends it. Sign-in codes are transactional and do NOT carry it — see otp.py."
+  default     = ""
 }
 
 variable "memory_mb" {

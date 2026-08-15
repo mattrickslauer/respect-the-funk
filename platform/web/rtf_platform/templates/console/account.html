@@ -1,0 +1,189 @@
+{% extends "_console.html" %}
+{# The only console page whose subject is the reader rather than the catalogue.
+
+   Reached from the foot of the rail, not from `demo.NAV` — the nav groups are the work,
+   and an account is not work.
+
+   The rule this page follows, stated once because it is what makes it honest: **it does
+   not offer a control for anything that is not built.** No email change, no device list,
+   no account deletion. Each of those is named below in words, with the reason, rather
+   than rendered as a box that silently does nothing. #}
+{% block title %}Account{% endblock %}
+{% block h1 %}Account{% endblock %}
+{% block blurb %}
+  Who you are signed in as, what this label is on, and what it has spent today.
+{% endblock %}
+
+{% block centre %}
+<div class="acctpage">
+  {% if error %}<p class="ederr">{{ error }}</p>{% endif %}
+  {% if sent %}<p class="ednote">{{ sent }}</p>{% endif %}
+
+  <section class="apanel">
+    <h2>Signing in</h2>
+    <dl class="kv">
+      <dt>Email</dt>
+      <dd>
+        {{ account.email }}
+        <p class="hint">
+          This is the address a sign-in code is mailed to, and it is how this account is
+          identified. Changing it would mean proving the new address before the old one
+          stopped working, which is a flow that is not built — so there is no field for
+          it here rather than one that appears to work.
+        </p>
+      </dd>
+      <dt>Signed in since</dt>
+      <dd>{{ account.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC
+        <p class="hint">Sessions last 90 days. Signing in again anywhere replaces this
+          one — there is one session per account.</p>
+      </dd>
+    </dl>
+  </section>
+
+  <section class="apanel">
+    <h2>Label</h2>
+    <form method="post" action="/account/name" class="arow">
+      <input type="text" name="name" value="{{ account.tenant_name }}" required
+             aria-label="Label name" maxlength="120">
+      <button type="submit">Rename</button>
+    </form>
+    <p class="hint">
+      The display name. The identifier in the address bar stays <code>{{ tenant_slug }}</code> —
+      other rows and any bookmark already carry it, and rewriting it would change an
+      identifier nobody asked to change.
+    </p>
+  </section>
+
+  <section class="apanel">
+    <h2>Plan</h2>
+    <p class="now">
+      <b>{{ tier.name }}</b>
+      {% if tier.price_usd_month is not none %}
+        · ${{ tier.price_usd_month }}/month
+      {% else %}
+        · priced per catalogue
+      {% endif %}
+    </p>
+    <p class="hint">{{ tier.summary }}</p>
+
+    <dl class="kv">
+      <dt>Conversations</dt>
+      <dd>
+        {{ conversations }} opened this month{% if tier.open_conversations is not none %}
+          of {{ tier.open_conversations }}{% else %} · unlimited{% endif %}
+      </dd>
+      <dt>Artists</dt>
+      <dd>{% if tier.unlimited_artists %}Unlimited{% else %}{{ tier.artists }}{% endif %}</dd>
+      <dt>Sending</dt>
+      <dd>{% if tier.sends_enabled %}Enabled{% else %}Not on this tier — drafts only{% endif %}</dd>
+      <dt>Spent today</dt>
+      <dd>
+        ${{ '%.4f'|format(spent_today) }}
+        {% if ceiling is not none %}
+          of ${{ '%.2f'|format(ceiling) }}
+        {% else %}
+          · no ceiling row
+        {% endif %}
+        {% if paused %}<b class="paused">paused</b>{% endif %}
+        <p class="hint">
+          The money ceiling is enforced by the spend gate before every paid call, and it
+          predates billing entirely — it is not a display of what the plan permits, it is
+          the number that actually refuses work.
+          {% if ceiling is none %}
+            This tenant has no <code>tenant_budget</code> row, which is not the same as a
+            ceiling of zero: the environment policy applies instead.
+          {% endif %}
+          {% if paused %}
+            <b>Paused</b> is a switch somebody threw, distinct from having spent the
+            allowance — nothing will run until it is cleared.
+          {% endif %}
+        </p>
+      </dd>
+    </dl>
+  </section>
+
+  <section class="apanel">
+    <h2>Change plan</h2>
+    {% if stripe_configured %}
+      <div class="tiers">
+        {% for t in tiers %}
+          {% if t.purchasable and t.key != tier.key %}
+            <form method="post" action="/billing/checkout">
+              <input type="hidden" name="plan" value="{{ t.key }}">
+              <button type="submit">{{ t.name }} — ${{ t.price_usd_month }}/mo</button>
+            </form>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% if stripe_test_mode %}
+        <p class="hint"><b>Test mode.</b> The key on this deployment is a Stripe test key,
+          so no card is charged.</p>
+      {% endif %}
+    {% else %}
+      {# Says so here rather than after a click, which is the same choice the pricing
+         table on the landing page makes and for the same reason. #}
+      <p class="hint">
+        Checkout is not configured on this deployment. Missing:
+        <code>{{ stripe_missing|join(', ') }}</code>.
+      </p>
+    {% endif %}
+    <p class="hint">
+      Nothing on this page has ever been billed. Changing a plan writes a tier and a
+      ceiling; it is the webhook that grants, and the spend gate that enforces.
+    </p>
+  </section>
+
+  <section class="apanel danger">
+    <h2>Sign out everywhere</h2>
+    <p class="hint">
+      This issues a new token and invalidates the current one, which signs out every
+      browser holding it — including this one. It is the only revocation there is:
+      the account has a single token, so "sign out everywhere" and "sign out" are the
+      same act, and this page will not pretend otherwise by showing a device list.
+      You will be sent back to sign-in and can get a new code immediately.
+    </p>
+    <form method="post" action="/account/rotate">
+      <button type="submit" class="danger">Sign out everywhere</button>
+    </form>
+  </section>
+</div>
+
+<style>
+  .acctpage { padding:.9rem; overflow:auto; display:grid; gap:.75rem; max-width:70ch; }
+  .apanel {
+    border:1px solid var(--line); border-radius:7px; background:var(--panel);
+    padding:.75rem .85rem;
+  }
+  .apanel h2 {
+    font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--faint); margin:0 0 .55rem; font-weight:600;
+  }
+  .apanel .now { margin:0 0 .3rem; font-size:14px; color:var(--ink); }
+  .apanel .hint { color:var(--dim); font-size:11.5px; margin:.35rem 0 0; max-width:74ch; }
+  .apanel code { font-family:ui-monospace,monospace; color:var(--carrier); font-size:11px; }
+  .acctpage .kv { display:grid; grid-template-columns:11rem 1fr; gap:.4rem .8rem; margin:0; }
+  .acctpage .kv dt { color:var(--faint); font-size:11.5px; }
+  .acctpage .kv dd { margin:0; color:var(--ink); font-size:12.5px; min-width:0; }
+  .arow { display:flex; gap:.4rem; align-items:center; }
+  .arow input {
+    flex:1; min-width:0; background:var(--sunk); color:var(--ink);
+    border:1px solid var(--line); border-radius:5px; padding:.35rem .5rem; font:inherit;
+    font-size:12.5px;
+  }
+  .arow button, .tiers button, .apanel button {
+    font:inherit; font-size:12px; cursor:pointer; padding:.35rem .6rem;
+    background:var(--panel); color:var(--ink);
+    border:1px solid var(--line2); border-radius:5px;
+  }
+  .arow button:hover, .tiers button:hover { border-color:var(--carrier); }
+  .tiers { display:flex; flex-wrap:wrap; gap:.4rem; }
+  /* The one destructive control on the page is the one control that looks it. */
+  .apanel.danger { border-color:color-mix(in srgb, var(--err) 40%, var(--line)); }
+  .apanel button.danger { border-color:var(--err); color:var(--err); }
+  .apanel button.danger:hover { background:var(--err); color:#fff; }
+  .acctpage .paused {
+    margin-left:.4rem; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase;
+    color:#fff; background:var(--err); border-radius:8px; padding:1px 5px;
+  }
+</style>
+{% endblock %}

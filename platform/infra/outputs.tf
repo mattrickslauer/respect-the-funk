@@ -30,3 +30,32 @@ output "changefeed_webhook_url" {
   value       = length(aws_lambda_function_url.changefeed) > 0 ? aws_lambda_function_url.changefeed[0].function_url : ""
   description = "The changefeed's webhook sink. Empty until changefeed_webhook_token is set. Feed it to `python -m rtf_platform.changefeed --dry-run --url <this>` to render the exact CREATE CHANGEFEED statement — which a human then runs, because a changefeed draws request units continuously and nothing in this repo is allowed to start one on its own."
 }
+
+# The DKIM records, for the case where the domain's DNS is not in Route 53 and
+# `aws_route53_record.ses_dkim` therefore created nothing. Three CNAMEs; add them at the
+# registrar and SES verifies the domain on its own within the hour.
+#
+# Empty when `mail_domain` is unset, and empty when the zone id *is* set — in the second
+# case the records already exist and printing them would invite somebody to add them
+# twice. See docs/runbooks/ses-sign-in-mail.md.
+output "ses_dkim_records" {
+  description = "CNAMEs to add manually when mail_route53_zone_id is unset."
+  value = (
+    var.mail_domain == "" || var.mail_route53_zone_id != ""
+    ? []
+    : [for token in aws_ses_domain_dkim.mail[0].dkim_tokens : {
+      name  = "${token}._domainkey.${var.mail_domain}"
+      type  = "CNAME"
+      value = "${token}.dkim.amazonses.com"
+    }]
+  )
+}
+
+# Whether this deployment can send at all — and therefore whether anybody can sign in,
+# now that an emailed code is the only credential. Printed after every apply because the
+# answer is not obvious from the resources: the identity can exist while the domain is
+# still unverified and while the account is still in the SES sandbox.
+output "mail_configured" {
+  description = "True when all three PLATFORM_MAIL_* values are set on the console function."
+  value       = var.mail_sender != "" && var.mail_reply_to != "" && var.mail_postal_address != ""
+}

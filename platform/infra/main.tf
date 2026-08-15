@@ -115,6 +115,64 @@ data "aws_iam_policy_document" "masters" {
   }
 }
 
+# ---------------------------------------------------------------------------- SES
+#
+# Count-gated on `mail_domain` so a checkout with no domain plans and applies cleanly and
+# creates nothing. That is the same shape the classifier and the changefeed use, and it
+# keeps "unconfigured" a first-class state rather than a broken one.
+#
+# **Two things this cannot do for you, both named in docs/runbooks/ses-sign-in-mail.md:**
+#
+#   1. **Verification is DNS.** With `mail_route53_zone_id` set the CNAMEs below are
+#      created and verification completes on its own. Without it, Terraform emits the
+#      three records as an output and somebody adds them wherever the domain's DNS lives.
+#      There is no third option and no way to skip it.
+#   2. **A new SES account is in the sandbox**, which will only deliver to addresses that
+#      have themselves been verified. That is a support request with a turnaround, it
+#      cannot be expressed as a resource, and until it clears **sign-in works only for
+#      addresses verified in the AWS console.** On a deployment where sign-in is the only
+#      door, that is worth knowing before the first person tries it rather than after.
+
+resource "aws_ses_domain_identity" "mail" {
+  count  = var.mail_domain == "" ? 0 : 1
+  domain = var.mail_domain
+}
+
+resource "aws_ses_domain_dkim" "mail" {
+  count  = var.mail_domain == "" ? 0 : 1
+  domain = aws_ses_domain_identity.mail[0].domain
+}
+
+# Three CNAMEs, which is what DKIM signing needs. Created only when the zone is here to
+# create them in; otherwise `ses_dkim_records` in outputs.tf carries them out.
+resource "aws_route53_record" "ses_dkim" {
+  count   = var.mail_domain == "" || var.mail_route53_zone_id == "" ? 0 : 3
+  zone_id = var.mail_route53_zone_id
+  name    = "${aws_ses_domain_dkim.mail[0].dkim_tokens[count.index]}._domainkey.${var.mail_domain}"
+  type    = "CNAME"
+  ttl     = 600
+  records = ["${aws_ses_domain_dkim.mail[0].dkim_tokens[count.index]}.dkim.amazonses.com"]
+}
+
+# The console may send, and only from the verified identity. Scoped to the identity ARN
+# rather than "*" so a bug — or a stolen set of credentials — cannot send as a domain this
+# deployment does not own, which is the difference between an incident and a spam
+# incident somebody else's reputation pays for.
+resource "aws_iam_role_policy" "console_send_mail" {
+  count = var.mail_domain == "" ? 0 : 1
+  name  = "${local.name}-send-mail"
+  role  = aws_iam_role.console.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ses:SendEmail", "ses:SendRawEmail"]
+      Resource = [aws_ses_domain_identity.mail[0].arn]
+    }]
+  })
+}
+
 resource "aws_iam_role_policy" "masters" {
   name   = "${local.name}-masters"
   role   = aws_iam_role.console.id
@@ -283,9 +341,26 @@ resource "aws_lambda_function" "console" {
 
   environment {
     variables = {
-      DATABASE_URL         = var.database_url
-      PLATFORM_ADMIN_TOKEN = var.admin_token
+      DATABASE_URL = var.database_url
+
+      # PLATFORM_ADMIN_TOKEN was set here until 2026-08-15 and is gone with the operator
+      # role. Sign-in is an emailed code; `auth.py` records what the shared secret was
+      # buying and what its removal cost.
+      #
+      # PLATFORM_TENANT_SLUG stays, doing only its other job: naming the tenant whose
+      # figures the landing page, the manual and `GET /demo/r1` cite. No signed-in request
+      # is scoped by it any more.
       PLATFORM_TENANT_SLUG = var.tenant_slug
+
+      # The three the sender needs, and now the three sign-in needs. `mail_configured` is
+      # all-or-nothing on purpose (settings.py argues it): a verified sender with no
+      # postal address is a message that violates CAN-SPAM, and a sender with no reply-to
+      # is one a curator cannot answer. Empty here means the console refuses to issue
+      # sign-in codes and names these variables on the page, rather than sending nothing
+      # and reporting success.
+      PLATFORM_MAIL_SENDER         = var.mail_sender
+      PLATFORM_MAIL_REPLY_TO       = var.mail_reply_to
+      PLATFORM_MAIL_POSTAL_ADDRESS = var.mail_postal_address
       # Empty is a legitimate state in a checkout that has never applied this stack,
       # and `settings.storage_configured` reports it. Here it is always set, so the
       # console offers uploads. AWS_REGION is provided by the runtime itself, which
@@ -524,11 +599,18 @@ resource "aws_cloudwatch_log_group" "changefeed" {
 # from the environment and needs no AWS authority at all.
 #
 # The Sender is deliberately NOT reachable from here: no PLATFORM_MAIL_* variables are set
-# below, so `settings.mail_configured` is false and `changefeed.lambda_handler` reports an
-# outbox wake as "no sender attached" rather than mailing a curator because a row
-# appeared. `ingest.py` keeps `--send` separate from draining for that reason and a
-# changefeed must not quietly undo it. Wiring SES here is a decision to take on purpose,
-# with `sender.py` open.
+# on *this* function, so `settings.mail_configured` is false in the changefeed and
+# `changefeed.lambda_handler` reports an outbox wake as "no sender attached" rather than
+# mailing a curator because a row appeared. `ingest.py` keeps `--send` separate from
+# draining for that reason and a changefeed must not quietly undo it.
+#
+# **This note used to end "wiring SES here is a decision to take on purpose". That decision
+# was taken on 2026-08-15, and only half of it.** SES is now wired to the *console*
+# function, because email-OTP sign-in made mail the only way anybody gets in. It is
+# deliberately not wired here, and the distinction is the whole point of leaving this
+# paragraph rather than deleting it: a person signing in asks for the message they are
+# about to receive, and a curator does not. The console may send because a human just
+# clicked; the changefeed may not send because a row appeared.
 resource "aws_iam_role" "changefeed" {
   count              = var.changefeed_webhook_token == "" ? 0 : 1
   name               = "${local.name}-changefeed"

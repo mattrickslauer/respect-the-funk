@@ -218,9 +218,28 @@ def _showcase_tenant_id(conn: psycopg.Connection) -> str | None:
     the callers render a page without counters rather than failing, and each says so at
     its call site. Scoping a *signed-in* request this way is what must never happen again,
     and no caller of this function is one.
+
+    ## Why the oldest tenant, and not a configured slug
+
+    This read `SETTINGS.tenant_slug` until 2026-08-15, and `Settings` has no such
+    attribute — `PLATFORM_TENANT_SLUG` was removed when the operator principal was, and
+    this line was not. Every call therefore raised `AttributeError`. It was invisible
+    because the two page callers wrap it in `except Exception` to protect the page, so
+    the landing page and the manual quietly dropped their counters instead of failing;
+    `/demo/tune` has no such wrapper and was returning a 500 to exactly the judge it
+    exists for.
+
+    The replacement takes no configuration. The deployment's own tenant is the **first
+    one created** — it predates `POST /claim`, which is the only other thing that makes a
+    tenant, so every claimed account is strictly newer. That is a fact about the data
+    rather than a setting somebody has to remember to set, which is what makes it
+    unbreakable in the way the removed setting was not: there is no environment in which
+    it is unset, and no way for a stranger claiming an account to become the showcase.
     """
-    tenant = repo.get_tenant(conn, SETTINGS.tenant_slug)
-    return str(tenant["id"]) if tenant else None
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM tenant ORDER BY created_at, id LIMIT 1")
+        row = cur.fetchone()
+    return str(row["id"]) if row else None
 
 
 
@@ -354,6 +373,12 @@ def _ctx(request: Request, principal: auth.Principal, *,
         # anonymous, which is to say never usefully, and leaving it would put the
         # deployment's label one template change away from being rendered to a stranger.
         "tenant_slug": principal.tenant_slug,
+        # The tier's display name for the rail's account block, resolved here so every
+        # page has it without a query. `plans.tier` raises on a key it does not define,
+        # which is the loud direction and the one `plans.py` argues for — but it must not
+        # take down every page for an anonymous principal, whose plan is legitimately the
+        # empty string. So the empty case is tested for explicitly rather than caught.
+        "plan_name": plans.tier(principal.plan).name if principal.plan else "",
         "type_groups": ArtistType.grouped(),
         "default_type": DEFAULT_TYPE,
         # Stored value -> what a human reads. A row whose type is absent here is
@@ -602,7 +627,7 @@ def public_index(request: Request) -> JSONResponse:
                                 headers={"Cache-Control": "public, max-age=30"})
 
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _showcase_tenant_id(conn)
     if tenant_id is None:
         return _refusal_json(503, api_errors.NOT_CONFIGURED,
                              "This deployment has no tenant, so there is no index to "
@@ -615,6 +640,43 @@ def public_index(request: Request) -> JSONResponse:
     # a minute of confidently-served emptiness.
     _public_index_cache = (now, payload)
     return JSONResponse(payload, headers={"Cache-Control": "public, max-age=30"})
+
+
+#: The vendored country outlines the world map draws. Natural Earth 1:110m admin-0,
+#: which is public domain, reduced to ISO alpha-2 keys and integer coordinates at one
+#: decimal place — 0.1° is about a quarter of a pixel on a 1000px-wide world map, so the
+#: rounding is invisible and takes the file from 820KB to 90KB (34KB over the wire).
+#:
+#: Vendored rather than fetched from a CDN because the landing page must not depend on a
+#: third party being up, and because a tile server is a running cost for a map that never
+#: changes. 175 of Natural Earth's 177 features carry an ISO code and are kept; the two
+#: that do not (N. Cyprus, Somaliland) have no code to join our counts on.
+WORLD_PATH = Path(__file__).parent / "static" / "world.json"
+
+#: Read once per process. The file is 90KB and immutable; re-reading it per request would
+#: be 90KB of disk per reader for bytes that cannot have changed.
+_world_cache: str | None = None
+
+
+@router.get("/public/world.json")
+def public_world() -> Response:
+    """The country outlines, as a long-cached static body.
+
+    A route rather than a `StaticFiles` mount because this application has no static
+    mount and adding one to serve a single immutable file would be a new piece of
+    surface area for less code than this docstring.
+
+    Cached for a day at the edge: the outlines change when a country does, which is not
+    a timescale HTTP caching needs to worry about.
+    """
+    global _world_cache
+    if _world_cache is None:
+        # No try/except. If this file is missing the deployment is broken and a 500 that
+        # names it is the fastest possible diagnosis; a map that silently renders no
+        # countries would be debugged for an hour.
+        _world_cache = WORLD_PATH.read_text(encoding="utf-8")
+    return Response(_world_cache, media_type="application/json",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/public/search")
@@ -632,7 +694,7 @@ def public_search(request: Request, cc: str = "", platform: str = "", q: str = "
     cache keyed on all three would be a dictionary that only ever grows.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _showcase_tenant_id(conn)
     if tenant_id is None:
         return _refusal_json(503, api_errors.NOT_CONFIGURED,
                              "This deployment has no tenant, so there is nothing to "
@@ -2286,6 +2348,97 @@ def signout() -> Response:
     that invalidates the credential itself.
     """
     response = RedirectResponse("/", status_code=303)
+    response.delete_cookie(auth.COOKIE_NAME)
+    return response
+
+
+# ------------------------------------------------------------------- account
+#
+# Reached from the foot of the rail rather than from `demo.NAV`, and deliberately not
+# added to it: the nav groups are the work, and an account is not work. It is also the
+# only console page whose subject is the reader rather than the catalogue.
+
+@router.get("/account", response_class=HTMLResponse)
+def account_page(request: Request, principal: SignedIn, sent: str = "",
+                 error: str = "") -> Response:
+    """Who you are signed in as, what you are on, and what it costs.
+
+    Every figure is read live rather than carried on the principal. The principal holds
+    the plan *key* because authentication needs it on every request; the tier's numbers,
+    today's spend and the tenant's ceiling are three more reads, and a page nobody loads
+    in a loop is the right place to pay for them.
+    """
+    conn = _conn()
+    tenant_id = _tenant_id(principal)
+    account = accounts.get_account(conn, tenant_id)
+    if account is None:
+        # Authenticated means a row in `account` resolved the cookie, so this cannot
+        # happen without the row being deleted mid-session. Loud rather than an empty
+        # page: it means the session outlived its account.
+        raise HTTPException(
+            status_code=409,
+            detail="This session's account row no longer exists. Sign in again.")
+
+    tier = plans.tier(str(account["plan"]))
+    # `(ceiling, paused)`, and both halves are rendered. `None` means the tenant has no
+    # `tenant_budget` row at all, which is a different state from a ceiling of zero —
+    # `spend.py` argues the distinction at length and the page keeps it rather than
+    # collapsing the two into one number a reader would misread.
+    ceiling, paused = spend.tenant_ceiling(conn, tenant_id)
+    return templates.TemplateResponse(
+        request, "console/account.html",
+        _ctx(request, principal, conn=conn, tenant_id=tenant_id, here="account",
+             account=account,
+             tier=tier,
+             tiers=plans.TIERS,
+             # `stripe_configured`, `stripe_missing` and `stripe_test_mode` are already
+             # on every context from `_ctx`; the upgrade control reads them from there.
+             spent_today=spend.spent_today(conn, tenant_id),
+             ceiling=ceiling, paused=paused,
+             conversations=accounts.conversations_opened_this_period(conn, tenant_id),
+             sent=sent, error=error),
+    )
+
+
+@router.post("/account/name")
+def account_rename(principal: SignedIn,
+                   name: Annotated[str, Form()] = "") -> Response:
+    """Rename the label. The slug is not touched, and that is on purpose.
+
+    The slug is what appears in the rail and what `_tenant_slug` made unique with a
+    random suffix; renaming the display name is cosmetic, and rewriting the slug would
+    change an identifier other rows and bookmarks already carry for no gain a person
+    asked for.
+    """
+    _require_write(principal)
+    label = name.strip()
+    if not label:
+        return RedirectResponse(
+            "/account?error=" + _q("A label needs a name. Nothing was changed."),
+            status_code=303)
+    conn = _conn()
+    with conn.cursor() as cur:
+        cur.execute("UPDATE tenant SET name = %s WHERE id = %s",
+                    (label, _tenant_id(principal)))
+    return RedirectResponse("/account?sent=" + _q("Label renamed."), status_code=303)
+
+
+@router.post("/account/rotate")
+def account_rotate(principal: SignedIn) -> Response:
+    """Issue a new token, invalidating the one every existing session holds.
+
+    **This is the only revocation this schema has**, and the page says so in those words
+    rather than offering a device list that does not exist. `account.token_hash` is a
+    single column, so writing a new digest is what revokes the old one — migration 033
+    wrote that down as the accepted cost of one row per tenant.
+
+    The signing-out is total, including this browser, so the response drops the cookie
+    too. Leaving it would hand the person a cookie carrying a token that no longer
+    resolves, and every subsequent page would bounce them to sign-in with no explanation.
+    """
+    conn = _conn()
+    accounts.rotate_token(conn, _tenant_id(principal))
+    response = RedirectResponse("/signin", status_code=303)
     response.delete_cookie(auth.COOKIE_NAME)
     return response
 

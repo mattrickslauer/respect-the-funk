@@ -125,9 +125,33 @@
     .navitem[aria-current=page] .b { background:rgba(0,0,0,.25); color:inherit; }
     .navitem .b.hot { background:var(--err); color:#fff; }
     .railfoot {
-      margin-top:auto; padding:.6rem .75rem; border-top:1px solid var(--line);
+      margin-top:auto; padding:.5rem .6rem; border-top:1px solid var(--line);
       font-size:10.5px; color:var(--faint); line-height:1.5;
+      display:flex; align-items:center; gap:.4rem;
     }
+    /* The account link takes the space and the sign-out button takes what it needs, so
+       a long email truncates rather than pushing the button out of the rail. */
+    .railfoot .acct {
+      flex:1; min-width:0; display:grid; gap:1px; padding:.3rem .35rem;
+      border-radius:5px; color:var(--dim); text-decoration:none;
+    }
+    .railfoot .acct:hover { background:var(--panel); color:var(--ink); }
+    .railfoot .acct[aria-current=page] { background:var(--sel); color:var(--selink); }
+    /* Both lines ellipsize. An email is arbitrary length and the rail is not, and the
+       failure without this is the sign-out button leaving the viewport entirely. */
+    .railfoot .who, .railfoot .sub {
+      display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .railfoot .who { font-size:11.5px; font-weight:560; color:inherit; }
+    .railfoot .sub { font-size:10px; color:var(--faint); }
+    .railfoot .acct[aria-current=page] .sub { color:inherit; opacity:.75; }
+    .acctout { flex:none; margin:0; }
+    .acctout button {
+      font:inherit; font-size:10px; cursor:pointer; padding:.3rem .45rem;
+      background:transparent; color:var(--faint);
+      border:1px solid var(--line); border-radius:5px;
+    }
+    .acctout button:hover { color:var(--ink); border-color:var(--line2); }
     /* The rule that used to sit here hid `.navitem span.t` and `.navitem .b` at
        1180px — which is to say it hid the only two children a nav item has. The
        result was fifteen identical blank boxes on every laptop under 1180px, and
@@ -577,10 +601,30 @@
         </a>
       {% endfor %}
     {% endfor %}
+    {# The account block. Sits at the foot of the rail because `.railfoot` already has
+       `margin-top:auto`, and because that is where an account lives in every console
+       anyone has used.
+
+       It replaces a foot that carried the tenant slug, the word "operator" or
+       "read-only", and a link to the roster form. Two of those three are gone with the
+       operator role — every principal writes, and there is no shared token to be
+       read-only under — and the roster link moves into the account page rather than
+       being the one link the product's chrome offers.
+
+       **Sign out is new, and its absence was a real gap:** `POST /signout` has existed
+       since the console did, and nothing in the rail ever linked to it. #}
     <div class="railfoot">
-      {{ tenant_slug }}<br>
-      {% if principal.may_write %}operator{% else %}read-only{% endif %} ·
-      <a href="/roster" style="color:var(--dim)">roster form</a>
+      <a class="acct" href="/account" {% if here == 'account' %}aria-current="page"{% endif %}>
+        {# The email, which is what a person recognises as "me". `principal.subject` is
+           the address the code was mailed to; it is not a secret to whoever holds the
+           cookie, and naming it is how somebody notices they are signed in as the wrong
+           account before they write something into it. #}
+        <span class="who">{{ principal.subject }}</span>
+        <span class="sub">{{ tenant_slug }}{% if plan_name %} · {{ plan_name }}{% endif %}</span>
+      </a>
+      <form method="post" action="/signout" class="acctout">
+        <button type="submit">Sign out</button>
+      </form>
     </div>
   </aside>
 

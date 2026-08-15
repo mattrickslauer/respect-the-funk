@@ -4,7 +4,7 @@
 // look identical if you get them wrong — a blank screen — and mean opposite things.
 
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Now from "./Now";
 
@@ -132,5 +132,51 @@ describe("Now", () => {
     const btn = await waitFor(() => screen.getByRole("button", { name: /Accept/ }));
     expect((btn as HTMLButtonElement).disabled).toBe(true);
     expect(btn.getAttribute("title")).toBe("Already queued.");
+  });
+
+  it("puts the busy state on the control that was pressed, not the whole row", async () => {
+    // The row locks while a decision is in flight — a proposal is one decision, and
+    // accepting it while a reject is out would be two. But only one of these controls
+    // was pressed, and an operator watching five candidates fan out needs to know
+    // which. Before this, both went equally inert and the row reported only that
+    // *something* was happening.
+    let release: (r: Response) => void = () => {};
+    const pending = new Promise<Response>((res) => { release = res; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/accept") ? pending : reply(GROUP)));
+
+    mount();
+    const accept = await waitFor(() =>
+      screen.getByRole("button", { name: /Accept all 2/ }));
+    fireEvent.click(accept);
+
+    await waitFor(() => expect(accept.getAttribute("aria-busy")).toBe("true"));
+    expect(accept.className).toContain("busy");
+
+    const reject = screen.getByRole("button", { name: /Reject all 2/ });
+    expect((reject as HTMLButtonElement).disabled).toBe(true); // locked…
+    expect(reject.className).not.toContain("busy");            // …but not working
+    expect(reject.getAttribute("aria-busy")).toBe("false");
+
+    release(reply({ ok: true }));
+  });
+
+  it("keeps an action's label steady across a press", async () => {
+    // The label is the only record of what was pressed while the write is out.
+    let release: (r: Response) => void = () => {};
+    const pending = new Promise<Response>((res) => { release = res; });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/accept") ? pending : reply(GROUP)));
+
+    mount();
+    const accept = await waitFor(() =>
+      screen.getByRole("button", { name: /Accept all 2/ }));
+    fireEvent.click(accept);
+
+    await waitFor(() => expect(accept.getAttribute("aria-busy")).toBe("true"));
+    expect(accept.textContent).toBe("Accept all 2");
+    expect(screen.queryByText(/working/i)).toBeNull();
+
+    release(reply({ ok: true }));
   });
 });

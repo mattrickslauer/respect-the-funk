@@ -62,12 +62,14 @@
             {% if section.is_hook_material and not primary %}
               <button class="btn btn-quiet"
                       hx-post="/ui/songs/{{ song.id }}/sections/{{ section.id }}/primary"
-                      hx-target="#song-hooks" hx-swap="outerHTML">Make hook</button>
+                      hx-target="#song-hooks" hx-swap="outerHTML"
+                      hx-disabled-elt="this">Make hook</button>
             {% endif %}
             <button class="btn btn-quiet danger"
                     hx-delete="/ui/songs/{{ song.id }}/sections/{{ section.id }}"
                     hx-confirm="Remove {{ section.display_name }}?"
-                    hx-target="#song-hooks" hx-swap="outerHTML">Remove</button>
+                    hx-target="#song-hooks" hx-swap="outerHTML"
+                    hx-disabled-elt="this">Remove</button>
           </div>
 
           {# Folded away, because reading the list is the common act and re-cutting a
@@ -78,7 +80,8 @@
             <summary>Edit window</summary>
             <form class="form-inline tight"
                   hx-post="/ui/songs/{{ song.id }}/sections/{{ section.id }}"
-                  hx-target="#song-hooks" hx-swap="outerHTML">
+                  hx-target="#song-hooks" hx-swap="outerHTML"
+                  hx-disabled-elt="find button">
               <label>Start <span class="hint">ms</span>
                 <input name="start_ms" type="number" value="{{ section.start_ms }}" required></label>
               <label>End <span class="hint">ms</span>
@@ -110,7 +113,8 @@
     <form class="form form-inline"
           hx-post="/ui/songs/{{ song.id }}/sections"
           hx-target="#song-hooks" hx-swap="outerHTML"
-          hx-on::after-request="if(event.detail.successful) this.reset()">
+          hx-on::after-request="if(event.detail.successful) this.reset()"
+          hx-disabled-elt="find button">
       <label>Start <span class="hint">ms</span><input name="start_ms" type="number" required placeholder="124784"></label>
       <label>End <span class="hint">ms</span><input name="end_ms" type="number" required placeholder="131184"></label>
       <label>Role

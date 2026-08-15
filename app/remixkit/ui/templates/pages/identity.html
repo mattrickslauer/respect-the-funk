@@ -174,7 +174,8 @@
             {% if state != identity.approval.value %}
               <button class="btn-ghost" type="button"
                       hx-post="/ui/identities/{{ identity.id }}/approval"
-                      hx-vals='{"state": "{{ state }}"}'>Mark {{ state }}</button>
+                      hx-vals='{"state": "{{ state }}"}'
+                      hx-disabled-elt="this">Mark {{ state }}</button>
             {% endif %}
           {% endfor %}
         </div>
@@ -198,7 +199,13 @@
             hx-post="/ui/identities/{{ identity.id }}/frames"
             hx-target="#frames" hx-swap="outerHTML"
             hx-encoding="multipart/form-data"
-            hx-on::after-request="if(event.detail.successful){this.reset();this.closest('dialog').close()}">
+            hx-on::after-request="if(event.detail.successful){this.reset();this.closest('dialog').close()}"
+            {# The button that submits this form sits in the sheet foot, outside the
+               form, bound to it by `form=`. So both the busy trace and the lock have
+               to name it — `find` searches descendants and would come back empty,
+               leaving an upload with no sign it had started. #}
+            hx-indicator="button[form=add-frame-form]"
+            hx-disabled-elt="button[form=add-frame-form]">
         <label>Image <input name="file" type="file" accept="image/*" required></label>
         <div class="form-row">
           <label>Class
@@ -241,7 +248,10 @@
         versions, its own reference frames, and its own compiled prompt.
       </p>
       <form class="form" id="new-line-form"
-            hx-post="/ui/artists/{{ artist.id }}/identity">
+            hx-post="/ui/artists/{{ artist.id }}/identity"
+            {# Submitted from the sheet foot, outside the form — see add-frame-form. #}
+            hx-indicator="button[form=new-line-form]"
+            hx-disabled-elt="button[form=new-line-form]">
         {# Creating a line should land you on it — otherwise the modal closes and the
            page still shows whoever you were editing before. #}
         <input type="hidden" name="redirect" value="1">
@@ -286,12 +296,14 @@
           <div class="vrow-acts">
             {% if v.id != identity.id %}
               <button class="btn-ghost" type="button"
-                      hx-post="/ui/identities/{{ v.id }}/restore">Restore</button>
+                      hx-post="/ui/identities/{{ v.id }}/restore"
+                      hx-disabled-elt="this">Restore</button>
             {% endif %}
             {% if identities|length > 1 %}
               <button class="btn-ghost btn-danger" type="button"
                       hx-delete="/ui/identities/{{ v.id }}"
-                      hx-confirm="Delete v{{ v.version }}? Frames no other version uses are deleted with it.">
+                      hx-confirm="Delete v{{ v.version }}? Frames no other version uses are deleted with it."
+                      hx-disabled-elt="this">
                 Delete
               </button>
             {% endif %}

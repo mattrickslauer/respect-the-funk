@@ -74,7 +74,8 @@
     {% if kit.status.value == "failed" %}
       <button class="btn btn-quiet"
               hx-post="/ui/kits/{{ kit.id }}/retry"
-              {% if overlay %}hx-target="#layer" hx-swap="innerHTML"{% else %}hx-swap="none"{% endif %}>
+              {% if overlay %}hx-target="#layer" hx-swap="innerHTML"{% else %}hx-swap="none"{% endif %}
+              hx-disabled-elt="this">
         Retry run
       </button>
     {% endif %}
@@ -181,7 +182,7 @@
       <p class="hint">A label does not auto-publish AI content about its own artists.</p>
       {% if kit.status.value == "ready" %}
         <form class="form-inline" hx-post="/ui/kits/{{ kit.id }}/approval"
-              hx-target="#kit-{{ kit.id }}" hx-swap="outerHTML">
+              hx-target="#kit-{{ kit.id }}" hx-swap="outerHTML" hx-disabled-elt="find button">
           <select name="state">
             {% for s in ("draft", "approved", "published") %}
               <option value="{{ s }}" {{ "selected" if kit.approval.value == s }}>{{ s }}</option>

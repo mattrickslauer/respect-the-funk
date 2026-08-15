@@ -47,7 +47,7 @@
           <div class="row-actions">
             {% if candidate.has_suggestion %}
               <form hx-post="/ui/songs/{{ song.id }}/sections/{{ candidate.section.id }}/primary"
-                    hx-target="#song-hooks" hx-swap="outerHTML">
+                    hx-target="#song-hooks" hx-swap="outerHTML" hx-disabled-elt="find button">
                 <input type="hidden" name="start_ms" value="{{ candidate.suggested_start_ms }}">
                 <input type="hidden" name="end_ms" value="{{ candidate.suggested_end_ms }}">
                 <button class="btn btn-primary" type="submit">
@@ -62,7 +62,8 @@
             {% elif song.primary_section_id != candidate.section.id %}
               <button class="btn btn-quiet"
                       hx-post="/ui/songs/{{ song.id }}/sections/{{ candidate.section.id }}/primary"
-                      hx-target="#song-hooks" hx-swap="outerHTML">Use as hook</button>
+                      hx-target="#song-hooks" hx-swap="outerHTML"
+                      hx-disabled-elt="this">Use as hook</button>
             {% else %}
               <span class="badge badge-primary">hook of record</span>
             {% endif %}

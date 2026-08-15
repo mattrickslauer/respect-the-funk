@@ -50,7 +50,8 @@
     <form class="form-inline tight"
           hx-post="/ui/kits/{{ kit.id }}/approval"
           hx-target="#kit-{{ kit.id }}"
-          hx-swap="outerHTML">
+          hx-swap="outerHTML"
+          hx-disabled-elt="find button">
       <select name="state">
         <option value="draft" {{ "selected" if kit.approval.value == "draft" }}>draft</option>
         <option value="approved" {{ "selected" if kit.approval.value == "approved" }}>approved</option>
@@ -77,7 +78,8 @@
       <button class="btn btn-quiet"
               hx-post="/ui/kits/{{ kit.id }}/retry"
               hx-target="#kit-{{ kit.id }}"
-              hx-swap="outerHTML">
+              hx-swap="outerHTML"
+              hx-disabled-elt="this">
         Retry run
       </button>
     {% endif %}
@@ -85,7 +87,8 @@
             hx-delete="/ui/kits/{{ kit.id }}{% if kit.approval.value != 'draft' %}?force=true{% endif %}"
             hx-target="#kits"
             hx-swap="outerHTML"
-            hx-confirm="{% if kit.approval.value != 'draft' %}{{ kit.name }} is {{ kit.approval.value }} and may already have been published. Delete it and its {{ kit.assets|length }} asset(s) anyway?{% else %}Delete {{ kit.name }} and its {{ kit.assets|length }} asset(s) from the bucket?{% endif %}">
+            hx-confirm="{% if kit.approval.value != 'draft' %}{{ kit.name }} is {{ kit.approval.value }} and may already have been published. Delete it and its {{ kit.assets|length }} asset(s) anyway?{% else %}Delete {{ kit.name }} and its {{ kit.assets|length }} asset(s) from the bucket?{% endif %}"
+            hx-disabled-elt="this">
       Delete
     </button>
   </div>

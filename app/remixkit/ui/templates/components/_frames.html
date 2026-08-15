@@ -53,7 +53,8 @@
                 <button type="button" class="del" title="Remove this frame"
                         hx-delete="/ui/identities/{{ identity.id }}/frames/{{ position }}"
                         hx-target="#frames" hx-swap="outerHTML"
-                        hx-confirm="Remove this {{ angle.label }} frame?">×</button>
+                        hx-confirm="Remove this {{ angle.label }} frame?"
+                        hx-disabled-elt="this">×</button>
               </div>
               <figcaption class="small">
                 <span class="method">{{ frame.lighting }}</span>

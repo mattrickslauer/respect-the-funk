@@ -7,9 +7,43 @@
 // landing page and the operator manual looking like one product: the manual teaches
 // `● measured` and this file is what draws it.
 
-import type { ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import type { Provenance, TraceStep } from "../api/types";
 import { ApiError } from "../api/client";
+
+// ----------------------------------------------------------------- button ---
+
+/**
+ * A control that writes, and can say so while it is waiting.
+ *
+ * `busy` is deliberately per-*button*, not per-mutation. A react-query mutation
+ * hook is shared by every control it serves — one `useShortlistAct` backs pin,
+ * veto and open on every row — so `isPending` is true on all of them at once.
+ * Wiring the visual state to that is what produced the old behaviour: press pin,
+ * and all three controls on the row went equally inert, which reported that
+ * *something* was in flight but not which thing. Callers pass `busy` by
+ * comparing `mutation.variables` against the press this button represents.
+ *
+ * Busy implies disabled, because the alternative is a second POST for a write
+ * the server may already have applied. It does not imply the disabled *look*:
+ * the stylesheet keeps this one at full strength while its neighbours fade, and
+ * that contrast is the answer to "which one did I press".
+ */
+export function Button({
+  busy = false,
+  className = "b",
+  disabled,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { busy?: boolean }) {
+  return (
+    <button
+      {...rest}
+      className={busy ? `${className} busy` : className}
+      disabled={disabled || busy}
+      aria-busy={busy}
+    />
+  );
+}
 
 // ------------------------------------------------------------------ meter ---
 

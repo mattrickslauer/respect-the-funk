@@ -192,7 +192,7 @@
           the number is.
         </p>
         <form class="form" hx-post="/ui/songs/{{ song.id }}/measurement"
-              hx-target="#song-measurement" hx-swap="outerHTML">
+              hx-target="#song-measurement" hx-swap="outerHTML" hx-disabled-elt="find button">
           <label>BPM
             <input name="bpm" type="number" step="0.01" value="{{ song.bpm or '' }}" required>
           </label>
@@ -226,7 +226,7 @@
           hook is a loop a fan cannot cut to. Songs with several hooks mark them as sections.
         </p>
         <form class="form" hx-post="/ui/songs/{{ song.id }}/hook-window"
-              hx-target="#song-hook" hx-swap="outerHTML">
+              hx-target="#song-hook" hx-swap="outerHTML" hx-disabled-elt="find button">
           <label>Start (ms) <input name="start_ms" type="number" value="{{ song.hook.start_ms }}"></label>
           <label>End (ms) <input name="end_ms" type="number" value="{{ song.hook.end_ms }}"></label>
           <button class="btn btn-primary" type="submit">Set hook</button>

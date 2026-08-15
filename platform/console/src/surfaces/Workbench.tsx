@@ -20,7 +20,7 @@ import {
   useCampaign, useCampaigns, useRerunStage, useShortlistAct,
 } from "../api/queries";
 import {
-  Empty, Failure, Meter, Trace, scaleDistances,
+  Button, Empty, Failure, Meter, Trace, scaleDistances,
 } from "../components/primitives";
 import type { Campaign, RankedContact, Stage } from "../api/types";
 
@@ -40,20 +40,26 @@ function StageChain({ campaign }: { campaign: Campaign }) {
             <div className="n">{s.count === null ? "—" : s.count.toLocaleString()}</div>
             {s.note ? <div className="note">{s.note}</div> : null}
             {s.status !== "running" ? (
-              <button
+              // Every stage in the chain shares one mutation hook, so `isPending`
+              // locks the whole chain. Without the `variables` comparison the
+              // operator gets six identically-inert buttons and no way to tell
+              // which stage they just restarted — on the one surface whose job is
+              // showing where work currently is.
+              <Button
                 className="b q"
                 style={{ alignSelf: "start" }}
+                busy={rerun.isPending && rerun.variables === s.key}
                 disabled={rerun.isPending}
                 onClick={() => rerun.mutate(s.key)}
               >
                 re-run from here
-              </button>
+              </Button>
             ) : null}
           </div>
         ))}
       </div>
       {rerun.isError ? (
-        <p className="sub" style={{ color: "var(--err)", marginTop: ".5rem" }}>
+        <p className="sub" role="status" style={{ color: "var(--err)", marginTop: ".5rem" }}>
           {rerun.error instanceof Error ? rerun.error.message : "That was declined."}
         </p>
       ) : null}
@@ -79,6 +85,15 @@ function Shortlist({ campaign }: { campaign: Campaign }) {
 
   const scale = scaleDistances(list.map((r) => r.distance));
 
+  // One hook serves three controls on every row in the list, so `isPending` alone
+  // cannot say which press is in flight. This can, because the shortlist is not
+  // optimistic: `r.pinned` still reads its pre-press value while the write is out,
+  // so the action string computed here is the same one that was sent.
+  const busyOn = (contactId: string, action: string) =>
+    act.isPending
+    && act.variables?.contactId === contactId
+    && act.variables.action === action;
+
   return (
     <div className="ranked">
       <ol>
@@ -98,26 +113,29 @@ function Shortlist({ campaign }: { campaign: Campaign }) {
             />
             <span className="row">
               <span className="d">{r.distance.toFixed(4)}</span>
-              <button
+              <Button
                 className="b q"
+                busy={busyOn(r.id, r.pinned ? "unpin" : "pin")}
                 disabled={act.isPending}
                 onClick={() => act.mutate({
                   contactId: r.id, action: r.pinned ? "unpin" : "pin",
                 })}
               >
                 {r.pinned ? "unpin" : "pin"}
-              </button>
-              <button
+              </Button>
+              <Button
                 className="b q"
+                busy={busyOn(r.id, r.vetoed ? "unveto" : "veto")}
                 disabled={act.isPending}
                 onClick={() => act.mutate({
                   contactId: r.id, action: r.vetoed ? "unveto" : "veto",
                 })}
               >
                 {r.vetoed ? "unveto" : "veto"}
-              </button>
-              <button
+              </Button>
+              <Button
                 className="b"
+                busy={busyOn(r.id, "open")}
                 disabled={act.isPending || r.vetoed || r.contactState !== "contactable"}
                 title={
                   r.contactState !== "contactable"
@@ -127,11 +145,22 @@ function Shortlist({ campaign }: { campaign: Campaign }) {
                 onClick={() => act.mutate({ contactId: r.id, action: "open" })}
               >
                 open
-              </button>
+              </Button>
             </span>
           </li>
         ))}
       </ol>
+      {/* A press that ends in nothing is worse than one that ends in a refusal:
+          the trace stops, the list re-fetches unchanged, and the operator is left
+          to work out whether the write failed or the server simply agreed with
+          what was already there. `open` is refused by a unique index whenever
+          another campaign holds the contact, so this is a routine outcome and it
+          needs a sentence. */}
+      {act.isError ? (
+        <p className="sub" role="status" style={{ color: "var(--err)", margin: ".5rem .7rem" }}>
+          {act.error instanceof Error ? act.error.message : "That was declined."}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -1,7 +1,49 @@
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ApiError } from "../api/client";
-import { Failure, Gate, money, scaleDistances } from "./primitives";
+import { Button, Failure, Gate, money, scaleDistances } from "./primitives";
+
+describe("Button", () => {
+  const btn = () => screen.getByRole("button") as HTMLButtonElement;
+
+  it("keeps its label while busy", () => {
+    // The label is what the operator reads back to know which of pin/veto/open
+    // they pressed. Swapping it for "working…" spends that in exchange for
+    // information the trace already carries.
+    render(<Button busy>veto</Button>);
+    expect(btn().textContent).toBe("veto");
+  });
+
+  it("marks itself busy for the stylesheet and for assistive tech", () => {
+    render(<Button busy className="b q">veto</Button>);
+    expect(btn().className).toBe("b q busy");
+    expect(btn().getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("refuses a second press of a write already in flight", () => {
+    const onClick = vi.fn();
+    render(<Button busy onClick={onClick}>open</Button>);
+    fireEvent.click(btn());
+    expect(onClick).not.toHaveBeenCalled();
+    expect(btn().disabled).toBe(true);
+  });
+
+  it("carries no busy marker when idle, so the trace is not always on", () => {
+    render(<Button className="b p">Create campaign</Button>);
+    expect(btn().className).toBe("b p");
+    expect(btn().getAttribute("aria-busy")).toBe("false");
+    expect(btn().disabled).toBe(false);
+  });
+
+  it("stays disabled for a caller's own reason without claiming to be busy", () => {
+    // A refused action and a working one look nothing alike and must not be
+    // conflated: one is waiting on the server, the other will never be pressed.
+    render(<Button disabled>accept</Button>);
+    expect(btn().disabled).toBe(true);
+    expect(btn().className).toBe("b");
+    expect(btn().getAttribute("aria-busy")).toBe("false");
+  });
+});
 
 describe("money", () => {
   it("rounds down, never up", () => {

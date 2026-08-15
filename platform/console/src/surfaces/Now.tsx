@@ -18,14 +18,15 @@
 
 import { useAct, useToday } from "../api/queries";
 import { ApiError } from "../api/client";
-import { Empty, Failure, Trace } from "../components/primitives";
+import { Button, Empty, Failure, Trace } from "../components/primitives";
 import type { TodayAction, TodayRow } from "../api/types";
 
 function Action({
-  action, row, pending, onAct,
+  action, row, busy, pending, onAct,
 }: {
   action: TodayAction;
   row: TodayRow;
+  busy: boolean;
   pending: boolean;
   onAct: () => void;
 }) {
@@ -39,9 +40,16 @@ function Action({
   // A refusal the server already knows about is shown on the control itself rather
   // than discovered by pressing it. The button stays visible — hiding it would leave
   // an operator wondering why an action they expected is absent.
+  //
+  // The label is the same word before, during and after the press. It used to
+  // become "working…", which cost the operator the one fact worth reading back —
+  // a group action can be a fan-out of five POSTs, and "did I press accept or
+  // reject on this lot" is not a question the interface should make them hold in
+  // their head while they wait. The trace under the label carries the waiting.
   return (
-    <button
+    <Button
       className={cls}
+      busy={busy}
       disabled={pending || Boolean(action.refusedBecause) || count === 0}
       title={
         action.refusedBecause ??
@@ -51,10 +59,10 @@ function Action({
       }
       onClick={onAct}
     >
-      {pending ? "working…" : action.label}
+      {action.label}
       {action.per === "candidate" && count > 1 ? ` all ${count}` : ""}
       {action.refusedBecause ? " · refused" : ""}
-    </button>
+    </Button>
   );
 }
 
@@ -99,6 +107,10 @@ function RowCard({ row }: { row: TodayRow }) {
             key={a.key}
             action={a}
             row={row}
+            // The whole row locks — a proposal is one decision, and accepting it
+            // while a reject is still in flight is not a thing to allow. Only the
+            // pressed control carries the trace.
+            busy={pending && act.variables?.action.key === a.key}
             pending={pending}
             onAct={() => act.mutate({ row, action: a })}
           />
@@ -107,13 +119,16 @@ function RowCard({ row }: { row: TodayRow }) {
 
       {/* A refusal that arrives from the server is rendered where the decision was
           made, not as a toast that disappears before it is read. */}
+      {/* `role="status"` because a disabled button is not focusable and so its
+          `aria-busy` may never be read. The outcome is what a screen reader
+          needs announced, and it is already the thing rendered here. */}
       {mine && act.isError ? (
-        <p className="sub" style={{ marginTop: ".5rem", color: "var(--err)" }}>
+        <p className="sub" role="status" style={{ marginTop: ".5rem", color: "var(--err)" }}>
           {act.error instanceof Error ? act.error.message : "That was declined."}
         </p>
       ) : null}
       {mine && act.isSuccess ? (
-        <p className="sub" style={{ marginTop: ".5rem", color: "var(--ok)" }}>
+        <p className="sub" role="status" style={{ marginTop: ".5rem", color: "var(--ok)" }}>
           {act.data.applied} applied.
         </p>
       ) : null}

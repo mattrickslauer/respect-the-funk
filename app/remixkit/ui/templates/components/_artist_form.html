@@ -5,7 +5,8 @@
       hx-post="/ui/artists"
       hx-target="#roster"
       hx-swap="outerHTML"
-      hx-on::after-request="if(event.detail.successful) this.reset()">
+      hx-on::after-request="if(event.detail.successful) this.reset()"
+      hx-disabled-elt="find button">
   <h3>Register an artist</h3>
   <label>Name <input name="name" required placeholder="Nocturnal"></label>
   <label>Bio <input name="bio" placeholder="One line. What they sound like."></label>

@@ -38,7 +38,8 @@
   <form class="form-inline tight"
         hx-post="/ui/songs/{{ song.id }}/hook"
         hx-target="#song-{{ song.id }}"
-        hx-swap="outerHTML">
+        hx-swap="outerHTML"
+        hx-disabled-elt="find button">
     <label>Hook start <span class="hint">ms</span><input name="start_ms" type="number" value="{{ song.hook.start_ms }}" required></label>
     <label>end <span class="hint">ms</span><input name="end_ms" type="number" value="{{ song.hook.end_ms }}" required></label>
     <button class="btn btn-quiet" type="submit">Set</button>

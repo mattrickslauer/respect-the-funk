@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from rtf_platform import console_assets
 from rtf_platform.api import api
 from rtf_platform.routes import router
 
@@ -27,9 +26,8 @@ app.include_router(router)
 # `rtf_platform/api/__init__.py` for the rest of the argument.
 app.mount("/api", api)
 
-# The React console's compiled assets, behind `/console`. Mounted unconditionally:
-# when there is no build, the address serves a page saying so and giving the command,
-# rather than a 404 an operator would read as a missing route. `console_assets` has
-# the argument, and the reason a file request must never fall through to the
-# application shell.
-console_assets.mount(app)
+# `/console` used to be here, serving the React console's compiled assets out of
+# `console_assets`. Both were removed on 2026-08-15: the server-rendered console
+# answers the same need, and maintaining two of them meant two design systems and two
+# places for every screen to drift. `/console` is now a plain 404, which is the honest
+# answer — the address does not exist rather than being temporarily unavailable.

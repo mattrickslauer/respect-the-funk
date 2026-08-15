@@ -39,7 +39,7 @@ from rtf_platform.api import ROUTERS, actions, api, deps, errors, reads, shapes
 def _dependency_calls(dependant: Dependant) -> set:
     """Every callable in a route's dependency tree, flattened.
 
-    Recursive because `Writer` depends on `require_operator` depends on
+    Recursive because `Writer` depends on `require_signed_in` depends on
     `current_principal`, and a check that only looked one level deep would miss exactly
     the composition that makes the write gate imply the read gate.
     """
@@ -71,12 +71,12 @@ class EveryRouteIsGated(unittest.TestCase):
         # and `_routes()` starts yielding nothing.
         self.assertGreaterEqual(len(list(_routes())), 20)
 
-    def test_every_route_requires_an_operator(self) -> None:
+    def test_every_route_requires_a_signed_in_principal(self) -> None:
         for route in _routes():
             with self.subTest(path=route.path, methods=sorted(route.methods)):
                 self.assertIn(
-                    deps.require_operator, _dependency_calls(route.dependant),
-                    f"{route.path} is not behind require_operator")
+                    deps.require_signed_in, _dependency_calls(route.dependant),
+                    f"{route.path} is not behind require_signed_in")
 
     def test_every_write_route_also_requires_a_writer(self) -> None:
         for route in _routes():
@@ -106,25 +106,22 @@ class EveryRouteIsGated(unittest.TestCase):
         """Not a restatement of the two tests above.
 
         Those assert both dependencies are present. This asserts they cannot come
-        apart: `require_writer` reaches `require_operator` through its own signature, so
+        apart: `require_writer` reaches `require_signed_in` through its own signature, so
         there is no way to annotate a handler with the write gate alone.
         """
         writer = Dependant(call=deps.require_writer)
         from fastapi.dependencies.utils import get_dependant
 
         resolved = get_dependant(path="/", call=deps.require_writer)
-        self.assertIn(deps.require_operator, _dependency_calls(resolved))
+        self.assertIn(deps.require_signed_in, _dependency_calls(resolved))
         self.assertIsNotNone(writer)
 
 
 class TheGateItself(unittest.TestCase):
 
-    def setUp(self) -> None:
-        self._token = deps.SETTINGS.admin_token
-
     def test_anonymous_is_refused_with_a_code_and_a_sentence(self) -> None:
         with self.assertRaises(errors.Refusal) as caught:
-            deps.require_operator(auth.ANONYMOUS)
+            deps.require_signed_in(auth.ANONYMOUS)
         refusal = caught.exception
         self.assertEqual(401, refusal.status_code)
         self.assertEqual(errors.NOT_AUTHENTICATED, refusal.code)
@@ -133,19 +130,31 @@ class TheGateItself(unittest.TestCase):
     def test_a_401_and_not_a_redirect(self) -> None:
         """The one deliberate divergence from the console, pinned.
 
-        `routes.require_operator` raises 303 with a Location so a browser lands on the
+        `routes.require_signed_in` raises 303 with a Location so a browser lands on the
         landing page. An API client following that gets a 200 full of markup and reads
         it as success. If somebody ever "fixes" this to match the console, this fails.
         """
         with self.assertRaises(errors.Refusal) as caught:
-            deps.require_operator(auth.ANONYMOUS)
+            deps.require_signed_in(auth.ANONYMOUS)
         self.assertEqual(401, caught.exception.status_code)
         self.assertNotEqual(303, caught.exception.status_code)
 
-    def test_an_operator_passes(self) -> None:
-        principal = auth.Principal(tenant_id=None, subject="operator", authenticated=True)
-        self.assertIs(principal, deps.require_operator(principal))
+    def test_a_signed_in_tenant_passes(self) -> None:
+        """Carries a real `tenant_id`, because every authenticated principal now does.
+        There is no longer a principal with `tenant_id=None` that passes this gate —
+        that was the operator, and it is gone."""
+        principal = auth.Principal(tenant_id="t-1", subject="a@example.com",
+                                   authenticated=True, plan="free")
+        self.assertIs(principal, deps.require_signed_in(principal))
         self.assertIs(principal, deps.require_writer(principal))
+
+    def test_the_tenant_dependency_returns_the_principals_own_tenant(self) -> None:
+        """The whole of `current_tenant` now. It used to fall back to
+        `SETTINGS.tenant_slug` for the operator; nothing reaches that branch because the
+        branch is gone, and this pins that the answer comes off the principal."""
+        principal = auth.Principal(tenant_id="t-42", subject="a@example.com",
+                                   authenticated=True, plan="free")
+        self.assertEqual("t-42", deps.current_tenant(principal))
 
     def test_a_principal_that_may_not_write_is_refused_by_the_write_gate(self) -> None:
         """`may_write` is `authenticated` today, so this principal cannot arrive through
@@ -156,7 +165,7 @@ class TheGateItself(unittest.TestCase):
             def may_write(self) -> bool:
                 return False
 
-        principal = ReadOnly(tenant_id=None, subject="reader", authenticated=True)
+        principal = ReadOnly(tenant_id="t-1", subject="reader", authenticated=True)
         with self.assertRaises(errors.Refusal) as caught:
             deps.require_writer(principal)
         self.assertEqual(403, caught.exception.status_code)
@@ -187,8 +196,8 @@ class WhereTheCredentialComesFrom(unittest.TestCase):
     def test_an_empty_bearer_is_not_a_token(self) -> None:
         """`Bearer ` with nothing after it must not become the empty string. `auth`
         treats a falsy token as anonymous, so this is belt and braces — but an empty
-        string reaching `hmac.compare_digest` alongside an empty `admin_token` is the
-        one shape that could authenticate nobody into somebody."""
+        string reaching the resolver is the one shape that could look up a stored digest
+        of the empty string and authenticate nobody into somebody."""
         self.assertIsNone(deps._token(None, "Bearer "))
         self.assertIsNone(deps._token(None, "Bearer"))
 
@@ -201,12 +210,15 @@ class TheRefusalEnvelope(unittest.TestCase):
 
     def test_every_code_is_declared(self) -> None:
         self.assertIn(errors.ALREADY_QUEUED, errors.CODES)
-        # Sixteen until per-tenant accounts landed; twenty now. The four added are
-        # `plan_limit_reached`, `billing_not_configured`, `billing_signature_invalid`
-        # and `claim_refused`. The number is asserted rather than the set because the
-        # point of the check is that adding a code is a deliberate act — a client
-        # branches on this vocabulary and it must not grow by accident.
-        self.assertEqual(20, len(errors.CODES))
+        # Sixteen until per-tenant accounts landed, then twenty, and eighteen now.
+        # The two removed with email-OTP sign-in are `no_tenant` — unreachable once
+        # every authenticated principal carries a tenant — and `claim_refused`, which
+        # belonged to `POST /claim`. `errors.py` keeps a comment where each one was.
+        #
+        # The number is asserted rather than the set because the point of the check is
+        # that changing this vocabulary is a deliberate act: a client branches on it,
+        # and it must neither grow nor shrink by accident.
+        self.assertEqual(18, len(errors.CODES))
 
     def test_the_sentence_is_mirrored_at_the_top_level(self) -> None:
         """`error.message` is canonical; the mirror exists so a client reaching for a

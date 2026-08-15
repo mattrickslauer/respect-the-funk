@@ -27,20 +27,21 @@ exist.
 
 **The console is private.** Five routes are public — `/` (the landing page), `/manual`
 (the operator manual), `/signin`, `POST /demo` and `/healthz` — and everything else is
-behind `require_operator`, which
+behind `require_signed_in`, which
 303s a visitor to the landing page rather than showing them a wall. An earlier build
 served the console to anonymous readers so a hackathon judge would see the product
 rather than a login box; that is reversed deliberately, and judges get a token instead.
 
 The gate is a dependency rather than a call at the top of each handler, so a new console
-route is private by the act of annotating its principal `Operator`. Writes additionally
+route is private by the act of annotating its principal `SignedIn`. Writes additionally
 require `may_write`, checked in `_require_write`.
 """
 
 from __future__ import annotations
 
+import time
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote_plus
@@ -53,8 +54,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 
 from rtf_platform import (
-    accounts, agents, auth, billing, db, demo, fleet, mcp, outreach, plans, repo,
-    research, settings as settings_mod, spend, statements,
+    accounts, agents, auth, billing, db, demo, fleet, mail, mcp, otp, outreach, plans,
+    platforms, repo, research, settings as settings_mod, spend, statements,
 )
 # The refusal envelope, borrowed rather than reinvented. `/billing/checkout` and
 # `/billing/webhook` are machine-to-machine endpoints on a router that otherwise speaks
@@ -98,27 +99,34 @@ def _resolve_account(token: str) -> Any:
 def current_principal(
     rtf_session: Annotated[str | None, Cookie()] = None,
 ) -> auth.Principal:
-    """Who is asking: the shared operator token first, then a per-tenant token by hash.
+    """Who is asking: a per-tenant token, by hash. There is no second credential.
 
-    The resolver is passed here and in `require_operator` and nowhere else — those two
-    are the console's only composition roots for a principal, and `auth.py` explains why
-    it is injected rather than imported.
+    The resolver is passed here and nowhere else in this module — this is the console's
+    only composition root for a principal, and `auth.py` explains why it is injected
+    rather than imported.
+
+    The shared `PLATFORM_ADMIN_TOKEN` used to be compared first, ahead of any database
+    work, so that an operator could get in when the `account` table could not be read.
+    That path is gone; `auth.py` records what was given up with it.
     """
-    return auth.principal_from_cookie(rtf_session, SETTINGS.admin_token,
-                                      _resolve_account)
+    return auth.principal_from_cookie(rtf_session, _resolve_account)
 
 
 Principal = Annotated[auth.Principal, Depends(current_principal)]
 
 
-def require_operator(
+def require_signed_in(
     principal: Annotated[auth.Principal, Depends(current_principal)],
 ) -> auth.Principal:
     """The gate. All but the public routes sit behind it.
 
     Public, and enumerated in one place so the list cannot grow silently: `/` (the
-    landing page), `/manual`, `/signin`, `POST /demo`, `POST /claim`,
-    `POST /billing/webhook` and `/healthz`.
+    landing page), `/manual`, `/signin`, `POST /signin/code`, `POST /signin/verify`,
+    `GET /demo/r1`, `POST /demo`, `POST /billing/webhook` and `/healthz`.
+
+    The two `/signin` POSTs are public by necessity — they are how a person stops being
+    anonymous — and they are the reason `otp.py` carries its own bounds rather than
+    relying on this gate for any of them.
 
     A 303 with a Location rather than a 401: an unauthenticated browser should land on
     the page that explains what this is and offers a way in, not on a wall. Declared as
@@ -130,7 +138,7 @@ def require_operator(
     cookie itself. Not tidying: two places building a principal is two places that can
     come to build it from different credentials, and the per-tenant path is exactly the
     kind of thing that would get added to one of them. FastAPI caches the dependency
-    within a request, so a page that annotates both `Principal` and `Operator` still
+    within a request, so a page that annotates both `Principal` and `SignedIn` still
     resolves once and makes at most one lookup.
     """
     if not principal.authenticated:
@@ -140,7 +148,7 @@ def require_operator(
     return principal
 
 
-Operator = Annotated[auth.Principal, Depends(require_operator)]
+SignedIn = Annotated[auth.Principal, Depends(require_signed_in)]
 
 
 def _require_write(principal: auth.Principal) -> None:
@@ -161,52 +169,59 @@ def _conn() -> psycopg.Connection:
         return db.connect(SETTINGS.database_url)
 
 
-def _tenant_id(conn: psycopg.Connection,
-               principal: auth.Principal | None = None) -> str | None:
-    """Whose rows this request may see.
+def _tenant_id(principal: auth.Principal) -> str:
+    """Whose rows this request may see. Always the principal's own tenant.
 
-    A signed-in tenant carries its own id on the principal, resolved from `account` by
-    the token in the cookie, and that id wins. Everything downstream of this function
-    already scopes by whatever it is handed — `repo.py`'s first rule — so this one line
-    is what turns thirty-two migrations' worth of `tenant_id` columns into an enforced
-    boundary rather than a column.
+    One line, and it is the line that turns thirty-four migrations' worth of `tenant_id`
+    columns into an enforced boundary rather than a column. Everything downstream scopes
+    by whatever it is handed — `repo.py`'s first rule — so there is no handler that could
+    be written to see another tenant's rows without going around this function.
 
-    Falling through to `SETTINGS.tenant_slug` is the **operator** path and nothing else.
-    An operator principal carries no tenant by construction (`auth.py` keeps it that
-    way), so the shared admin token continues to see the deployment's configured label
-    exactly as it did before accounts existed. `principal=None` — the handful of call
-    sites below that have no principal in scope — resolves the same way, and each of
-    those is annotated with why that is correct rather than left to look like an
-    oversight.
+    **It used to be able to return `None`, and could fall through to
+    `SETTINGS.tenant_slug`. Both are gone, and their absence is the point.** That
+    fall-through was the operator path and nothing else: an operator principal carried no
+    tenant by construction, so the shared admin token resolved to the deployment's
+    configured label. With email-OTP sign-in there is no principal without an `account`
+    row, so the branch became unreachable — and an unreachable branch that scopes a query
+    to a tenant nobody signed in as is exactly the branch to delete rather than leave for
+    someone to make reachable again.
 
-    None until the first artist is saved. Read pages render an empty state rather than
-    erroring, so a fresh deployment is browsable before it has data.
+    Raises rather than returning `None` for an unauthenticated principal. Every caller is
+    behind `require_signed_in`, so this cannot fire from a route; if it ever does, it means
+    a handler was annotated `Principal` instead of `SignedIn` and is one refactor away from
+    reading somebody else's rows. That must be a 500 in the logs, not an empty page.
     """
-    if principal is not None and principal.tenant_id:
-        return principal.tenant_id
+    if not principal.tenant_id:
+        raise HTTPException(
+            status_code=500,
+            detail=("A route asked which tenant to scope to for a principal that is not "
+                    "signed in. Annotate it `SignedIn` rather than `Principal`."))
+    return principal.tenant_id
+
+
+def _showcase_tenant_id(conn: psycopg.Connection) -> str | None:
+    """The deployment's own tenant — the one whose numbers the *public* pages cite.
+
+    Three surfaces need this and none of them is scoped to a reader: the landing page's
+    counters, the manual's two figures, and `GET /demo/r1`, which is the public
+    reproduction of R1 that a judge with no credential can run.
+
+    **This is what is left of `PLATFORM_TENANT_SLUG`, and it is deliberately a separate
+    function from `_tenant_id` rather than a default inside it.** The setting used to do
+    two unrelated jobs: name the showcase tenant, and stand in as the tenant for anybody
+    holding the shared admin token. The second job is gone with the operator, and keeping
+    both behind one name is how it would quietly come back — the next person needing "a
+    tenant when there is no principal" would find `_tenant_id` obliging them. Here the
+    name says what it is, and it is unreachable from any authenticated path.
+
+    `None` when that tenant does not exist, which is a real answer on a fresh deployment:
+    the callers render a page without counters rather than failing, and each says so at
+    its call site. Scoping a *signed-in* request this way is what must never happen again,
+    and no caller of this function is one.
+    """
     tenant = repo.get_tenant(conn, SETTINGS.tenant_slug)
     return str(tenant["id"]) if tenant else None
 
-
-def _tenant_id_for_write(conn: psycopg.Connection,
-                         principal: auth.Principal) -> str:
-    """`_tenant_id`, but for the three writes that may legitimately create the tenant.
-
-    `repo.py`'s header: "There is no seed file. The label row is created by
-    `ensure_tenant` the first time somebody saves an artist." That is still true, and it
-    is true only of the operator. A signed-in tenant's row was created by `POST /claim`
-    before it ever had a cookie, so the `ensure_tenant` branch is unreachable for it —
-    and reaching it would be a bug of the worst available kind, quietly writing one
-    tenant's artist into another's rows.
-
-    Extracted rather than repeated at the three call sites (`artists_create`,
-    `roster_create`, `imports_upload`) because the version of this that gets it wrong is
-    the one somebody writes from memory at the fourth.
-    """
-    tenant_id = _tenant_id(conn, principal)
-    if tenant_id is not None:
-        return tenant_id
-    return str(repo.ensure_tenant(conn, SETTINGS.tenant_slug, "Respect the Funk")["id"])
 
 
 #: Value -> chip tone. One mapping for the whole product, so `failed` in the queue and
@@ -328,11 +343,17 @@ def _ctx(request: Request, principal: auth.Principal, *,
     return {
         "request": request,
         "principal": principal,
-        # The signed-in tenant's own slug when there is one, so a claimed account sees
-        # its label in the header rather than the deployment's. Empty for the operator
-        # and for anonymous, both of which are looking at the configured tenant — the
-        # same fallback `_tenant_id` makes and for the same reason.
-        "tenant_slug": principal.tenant_slug or SETTINGS.tenant_slug,
+        # The signed-in tenant's own slug, and nothing else's. Empty for anonymous, which
+        # sees only the landing page, the manual and the sign-in pages — none of which
+        # render it.
+        #
+        # This used to fall back to `SETTINGS.tenant_slug`, because the operator principal
+        # carried no slug and was looking at the configured tenant. Anonymous took the
+        # same branch and so was shown the deployment's label in a header it never
+        # displayed. With the operator gone the fallback would only ever fire for
+        # anonymous, which is to say never usefully, and leaving it would put the
+        # deployment's label one template change away from being rendered to a stranger.
+        "tenant_slug": principal.tenant_slug,
         "type_groups": ArtistType.grouped(),
         "default_type": DEFAULT_TYPE,
         # Stored value -> what a human reads. A row whose type is absent here is
@@ -494,7 +515,7 @@ def demo_tune(artist: str = "hallow-youth", window: str = "now") -> JSONResponse
     # differently depending on who happened to be signed in, which is the opposite of a
     # reproducible demo, and scoping it to *any* caller's tenant would need a principal
     # this route deliberately does not ask for.
-    tenant_id = _tenant_id(conn)
+    tenant_id = _showcase_tenant_id(conn)
     if tenant_id is None:
         return JSONResponse({"error": "no tenant"}, status_code=503)
     with conn.cursor() as cur:
@@ -529,6 +550,103 @@ def demo_tune(artist: str = "hallow-youth", window: str = "now") -> JSONResponse
     })
 
 
+# ------------------------------------------------------------- the public index
+#
+# Two unauthenticated reads behind the world map on `/`. Both are pinned to the
+# deployment's own tenant for `demo_tune`'s reason: the page argues about *this* index,
+# and answering it differently depending on who happens to be signed in would make the
+# sentences around it false.
+#
+# Neither can write, neither spends, and neither takes a principal.
+
+#: How long `/public/index` may serve a computed answer before recomputing it. The query
+#: behind it is a full pass over 43,191 counterparties — 0.94s measured against the live
+#: cluster — and the page polls it every thirty seconds per open tab. Without this, ten
+#: readers cost ten full scans a minute for a number that moves when an agent finishes a
+#: batch, which is minutes apart at best.
+#:
+#: Sixty seconds rather than five minutes because the counter is the point of the page:
+#: it has to be *seen* to move. A cache longer than the poll interval would make the
+#: animation a lie told at a slower rate.
+PUBLIC_INDEX_TTL_SECONDS = 60
+
+#: `(computed_at, payload)`, or `None` before the first successful read. Process-local, so
+#: each Lambda container warms its own — which is correct rather than a limitation: a
+#: shared cache would need a store, and the thing being cached is cheap to recompute and
+#: identical for every caller.
+_public_index_cache: tuple[float, dict[str, Any]] | None = None
+
+
+@router.get("/public/index")
+def public_index(request: Request) -> JSONResponse:
+    """Counterparties by country and by platform, plus the daily history. Public.
+
+    This is the whole payload the world map draws from: the choropleth reads
+    `countries`, the counter reads `total`, the strip reads `platforms` and the sparkline
+    reads `history`. One request rather than four, because they are four renderings of
+    one `GROUP BY` and fetching them separately is how a page ends up showing a total
+    that does not equal the sum of its own map.
+
+    **A failure is a 503, not an empty map.** `_landing` swallows a counter failure
+    because a landing page is worth more than its numbers; this endpoint does the
+    opposite, because a map drawn from `{"countries": []}` does not look broken — it
+    looks like a company with no counterparties. Returning nothing and saying why is the
+    only honest failure mode a data endpoint has.
+    """
+    global _public_index_cache
+    now = time.time()
+    if _public_index_cache is not None:
+        computed_at, payload = _public_index_cache
+        if now - computed_at < PUBLIC_INDEX_TTL_SECONDS:
+            return JSONResponse(payload,
+                                headers={"Cache-Control": "public, max-age=30"})
+
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return _refusal_json(503, api_errors.NOT_CONFIGURED,
+                             "This deployment has no tenant, so there is no index to "
+                             "describe.")
+
+    payload = platforms.totals(conn, tenant_id)
+    payload["history"] = platforms.history(conn, tenant_id)
+    payload["generated_at"] = datetime.now(timezone.utc).isoformat()
+    # Cached only on success. A cache that stored failures would turn one bad minute into
+    # a minute of confidently-served emptiness.
+    _public_index_cache = (now, payload)
+    return JSONResponse(payload, headers={"Cache-Control": "public, max-age=30"})
+
+
+@router.get("/public/search")
+def public_search(request: Request, cc: str = "", platform: str = "", q: str = "",
+                  offset: int = 0) -> JSONResponse:
+    """Search the counterparty index without an account. Public facts, contact counts.
+
+    What a stranger may see is decided in `platforms.search` and is a closed allow-list:
+    the name, the country, the platform, six public fact dimensions, and *how many*
+    contact routes we hold. Never a contact route's value. The index is assembled from
+    public record and showing what is in it costs nothing; the addresses are the asset.
+
+    Not cached. Unlike `/public/index` there is no single answer to hold — the query
+    space is every country crossed with every platform crossed with free text — and a
+    cache keyed on all three would be a dictionary that only ever grows.
+    """
+    conn = _conn()
+    tenant_id = _tenant_id(conn)
+    if tenant_id is None:
+        return _refusal_json(503, api_errors.NOT_CONFIGURED,
+                             "This deployment has no tenant, so there is nothing to "
+                             "search.")
+    try:
+        result = platforms.search(conn, tenant_id, country=cc, platform=platform,
+                                  q=q, offset=offset)
+    except ValueError as exc:
+        # An unknown platform key is the caller's mistake and is named as such. Falling
+        # back to "no filter" would answer a question nobody asked with the whole index.
+        return _refusal_json(400, api_errors.MALFORMED_REQUEST, str(exc))
+    return JSONResponse(result)
+
+
 def _landing(request: Request, principal: auth.Principal, *,
              sent: str = "", error: str = "",
              form: dict[str, str] | None = None) -> Response:
@@ -545,7 +663,7 @@ def _landing(request: Request, principal: auth.Principal, *,
     # them everywhere.
     try:
         conn = _conn()
-        stats = _demo_stats(conn, _tenant_id(conn) or "")
+        stats = _demo_stats(conn, _showcase_tenant_id(conn) or "")
     except Exception:  # noqa: BLE001 — a counter is not worth losing the page over
         stats = {}
     return templates.TemplateResponse(
@@ -571,7 +689,7 @@ def home(request: Request, principal: Principal, sel: str = "") -> Response:
     # nothing rather than falling back to fixtures. A fixture on the home screen is the
     # one place a demo is most likely to be mistaken for the product.
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     items, quiet = research.today(conn, tenant_id) if tenant_id else ([], ())
     row = demo.select(items, sel or None)
     return templates.TemplateResponse(
@@ -602,7 +720,7 @@ def manual(request: Request, principal: Principal) -> Response:
         # The deployment's tenant, for the same reason `_landing` uses it: these two
         # figures are cited in the manual's prose as facts about this system's index, and
         # rewriting them per reader would make the sentences around them false.
-        stats = _demo_stats(conn, _tenant_id(conn) or "")
+        stats = _demo_stats(conn, _showcase_tenant_id(conn) or "")
     except Exception:  # noqa: BLE001 — the document is worth more than its counters
         stats = {}
     return templates.TemplateResponse(
@@ -653,7 +771,7 @@ def demo_request(
 def _cards(request: Request, principal: auth.Principal, *, here: str, template: str,
            build, key: str, kicker: str, error: str = "") -> Response:
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     rows, stats = ([], ()) if tenant_id is None else build(conn, tenant_id)
     sel_id = request.query_params.get("sel", "")
     row = demo.select(rows, sel_id or None)
@@ -666,7 +784,7 @@ def _cards(request: Request, principal: auth.Principal, *, here: str, template: 
 
 
 @router.get("/approvals", response_class=HTMLResponse)
-def approvals(request: Request, principal: Operator, error: str = "") -> Response:
+def approvals(request: Request, principal: SignedIn, error: str = "") -> Response:
     """The send gate, live from `thread` and `message`.
 
     Empty is the normal state and it means the fleet is not blocked on anybody, which is
@@ -677,12 +795,12 @@ def approvals(request: Request, principal: Operator, error: str = "") -> Respons
 
 
 @router.post("/approvals/{message_id}/approve", response_class=HTMLResponse)
-def approvals_approve(request: Request, principal: Operator, message_id: str) -> Response:
+def approvals_approve(request: Request, principal: SignedIn, message_id: str) -> Response:
     """Prepare the send. This is the irreversible half of the product and it is a POST
     from a form, never a link — see the note in the inspector's actions block."""
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     thread_id = _thread_of(conn, tenant_id, message_id)
     if thread_id is None:
         return RedirectResponse("/approvals?error=That+draft+is+no+longer+waiting.",
@@ -706,10 +824,10 @@ def approvals_approve(request: Request, principal: Operator, message_id: str) ->
 
 
 @router.post("/approvals/{message_id}/reject", response_class=HTMLResponse)
-def approvals_reject(request: Request, principal: Operator, message_id: str) -> Response:
+def approvals_reject(request: Request, principal: SignedIn, message_id: str) -> Response:
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     thread_id = _thread_of(conn, tenant_id, message_id)
     if thread_id is None:
         return RedirectResponse("/approvals?error=That+draft+is+no+longer+waiting.",
@@ -723,7 +841,7 @@ def approvals_reject(request: Request, principal: Operator, message_id: str) -> 
 
 
 @router.get("/inbox", response_class=HTMLResponse)
-def inbox(request: Request, principal: Operator, error: str = "") -> Response:
+def inbox(request: Request, principal: SignedIn, error: str = "") -> Response:
     """Replies, live from `message`.
 
     Nothing writes inbound messages yet — there is no mail provider — so this reads a
@@ -750,7 +868,7 @@ def _live(request: Request, principal: auth.Principal, build, sel_id: str | None
     operator keeps the row they were looking at instead of landing on an error page.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         empty = demo.View(key="", title="", blurb="", stats=(), cols=(), rows=(),
                           empty="Nothing here yet — save an artist first.")
@@ -782,7 +900,7 @@ def _artists_page(
     the field instead of on an error page that loses their place.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     creating = sel == "new"
 
     if tenant_id is None:
@@ -818,13 +936,13 @@ def _artists_page(
 
 
 @router.get("/artists", response_class=HTMLResponse)
-def artists_console(request: Request, principal: Operator, sel: str = "",
+def artists_console(request: Request, principal: SignedIn, sel: str = "",
                     confirm: str = "") -> Response:
     return _artists_page(request, principal, sel=sel, confirm=confirm)
 
 
 @router.post("/artists", response_class=HTMLResponse)
-def artists_create(request: Request, principal: Operator,
+def artists_create(request: Request, principal: SignedIn,
                    name: Annotated[str, Form()] = "",
                    type: Annotated[str, Form()] = DEFAULT_TYPE.value) -> Response:
     _require_write(principal)
@@ -843,7 +961,7 @@ def artists_create(request: Request, principal: Operator,
                              error=str(exc.detail), status_code=400)
 
     conn = _conn()
-    tenant_id = _tenant_id_for_write(conn, principal)
+    tenant_id = _tenant_id(principal)
     try:
         created = repo.create_party(conn, tenant_id, name=name, type_=artist_type)
     except psycopg.errors.UniqueViolation:
@@ -854,7 +972,7 @@ def artists_create(request: Request, principal: Operator,
 
 
 @router.post("/artists/{artist_id}", response_class=HTMLResponse)
-def artists_update(request: Request, principal: Operator, artist_id: str,
+def artists_update(request: Request, principal: SignedIn, artist_id: str,
                    name: Annotated[str, Form()] = "",
                    type: Annotated[str, Form()] = DEFAULT_TYPE.value,
                    status: Annotated[str, Form()] = "active") -> Response:
@@ -868,7 +986,7 @@ def artists_update(request: Request, principal: Operator, artist_id: str,
                              error=f"{status!r} is not a supported status.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     current = repo.get_party(conn, tenant_id, artist_id) if tenant_id else None
     if current is None:
         raise HTTPException(status_code=404, detail="No such artist.")
@@ -894,18 +1012,18 @@ def artists_update(request: Request, principal: Operator, artist_id: str,
 
 
 @router.post("/artists/{artist_id}/delete")
-def artists_delete(principal: Operator, artist_id: str) -> Response:
+def artists_delete(principal: SignedIn, artist_id: str) -> Response:
     """Reached only from the confirmation step, which names what cascades with it."""
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is not None:
         repo.delete_party(conn, tenant_id, artist_id)
     return RedirectResponse("/artists", status_code=303)
 
 
 @router.post("/artists/{artist_id}/profiles", response_class=HTMLResponse)
-def artist_profile_add(request: Request, principal: Operator, artist_id: str,
+def artist_profile_add(request: Request, principal: SignedIn, artist_id: str,
                        platform: Annotated[str, Form()] = "",
                        mode: Annotated[str, Form()] = "",
                        handle: Annotated[str, Form()] = "",
@@ -922,7 +1040,7 @@ def artist_profile_add(request: Request, principal: Operator, artist_id: str,
                              profile_error=f"{mode!r} is not a supported mode.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None or repo.get_party(conn, tenant_id, artist_id) is None:
         raise HTTPException(status_code=404, detail="No such artist.")
 
@@ -951,7 +1069,7 @@ def _safe_back(back: str, fallback: str = "/") -> str:
 #: exactly where you were — the needs-you queue or the artist. Adding a `/suggestions`
 #: page would make an operator go somewhere to do something they were already looking at.
 @router.post("/suggestions/{suggestion_id}/accept")
-def suggestion_accept(principal: Operator, suggestion_id: str,
+def suggestion_accept(principal: SignedIn, suggestion_id: str,
                       back: str = "/") -> Response:
     """Confirm a match. Writes the surface and queues the mapping in one transaction.
 
@@ -965,7 +1083,7 @@ def suggestion_accept(principal: Operator, suggestion_id: str,
     """
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is not None:
         try:
             repo.accept_suggestion(conn, tenant_id, suggestion_id,
@@ -976,11 +1094,11 @@ def suggestion_accept(principal: Operator, suggestion_id: str,
 
 
 @router.post("/suggestions/{suggestion_id}/reject")
-def suggestion_reject(principal: Operator, suggestion_id: str,
+def suggestion_reject(principal: SignedIn, suggestion_id: str,
                       back: str = "/") -> Response:
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is not None:
         repo.reject_suggestion(conn, tenant_id, suggestion_id,
                                by=principal.subject or "operator")
@@ -988,10 +1106,10 @@ def suggestion_reject(principal: Operator, suggestion_id: str,
 
 
 @router.post("/artists/{artist_id}/profiles/{profile_id}/delete")
-def artist_profile_delete(principal: Operator, artist_id: str, profile_id: str) -> Response:
+def artist_profile_delete(principal: SignedIn, artist_id: str, profile_id: str) -> Response:
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is not None:
         repo.delete_presence(conn, tenant_id, artist_id, profile_id)
     return RedirectResponse(f"/artists?sel={artist_id}", status_code=303)
@@ -1015,7 +1133,7 @@ def _imports_page(request: Request, principal: auth.Principal, *,
     a second click on a screen that is usually empty gets it missed.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     view = (research.imports(conn, tenant_id) if tenant_id
             else demo.View(key="imports", title="Statements",
                            blurb=_IMPORTS_BLURB, stats=(), cols=(), rows=(),
@@ -1039,13 +1157,13 @@ _IMPORTS_BLURB = ("What the distributor actually paid, per recording per territo
 
 
 @router.get("/imports", response_class=HTMLResponse)
-def imports_console(request: Request, principal: Operator, sel: str = "") -> Response:
+def imports_console(request: Request, principal: SignedIn, sel: str = "") -> Response:
     return _imports_page(request, principal, sel=sel)
 
 
 @router.post("/imports", response_class=HTMLResponse)
 async def imports_upload(
-    request: Request, principal: Operator,
+    request: Request, principal: SignedIn,
     file: Annotated[UploadFile, File()],
     distributor: Annotated[str, Form()] = "",
     confirm_unverified: Annotated[str, Form()] = "",
@@ -1076,7 +1194,7 @@ async def imports_upload(
 
     conn = _conn()
     report = statements.load(
-        conn, _tenant_id_for_write(conn, principal), text,
+        conn, _tenant_id(principal), text,
         filename=(file.filename or "")[:200], distributor=distributor,
         imported_by=principal.subject,
         allow_unverified=confirmed,
@@ -1117,19 +1235,19 @@ def _report_note(report: statements.Report) -> str:
 
 
 @router.get("/facts", response_class=HTMLResponse)
-def facts(request: Request, principal: Operator, sel: str = "") -> Response:
+def facts(request: Request, principal: SignedIn, sel: str = "") -> Response:
     return _live(request, principal, research.facts, sel or None, "claim", "dimension")
 
 
 @router.get("/queue", response_class=HTMLResponse)
-def queue(request: Request, principal: Operator, sel: str = "",
+def queue(request: Request, principal: SignedIn, sel: str = "",
           error: str = "") -> Response:
     return _live(request, principal, research.queue, sel or None, "lead", "target",
                  error=error)
 
 
 @router.post("/queue/{lead_id}/run", response_class=HTMLResponse)
-def queue_run_now(principal: Operator, lead_id: str) -> Response:
+def queue_run_now(principal: SignedIn, lead_id: str) -> Response:
     """Run now: bring this lead's next action forward so the next claim takes it.
 
     A POST from a form rather than a link, for the reason the inspector's actions block
@@ -1142,7 +1260,7 @@ def queue_run_now(principal: Operator, lead_id: str) -> Response:
     """
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         return RedirectResponse(
             "/queue?error=" + _q("There is no tenant yet, so there is no frontier."),
@@ -1160,12 +1278,12 @@ def queue_run_now(principal: Operator, lead_id: str) -> Response:
 #: reaches for `fleet.expedite` and gets an `AttributeError` on a function object at
 #: runtime. Named like `artists_console` and `imports_console` for the same reason.
 @router.get("/fleet", response_class=HTMLResponse)
-def fleet_console(request: Request, principal: Operator, sel: str = "") -> Response:
+def fleet_console(request: Request, principal: SignedIn, sel: str = "") -> Response:
     return _live(request, principal, research.fleet, sel or None, "agent", "agent")
 
 
 @router.post("/fleet/{kind}/toggle", response_class=HTMLResponse)
-def fleet_toggle(principal: Operator, kind: str) -> Response:
+def fleet_toggle(principal: SignedIn, kind: str) -> Response:
     """Turn an agent off, or back on.
 
     An UPDATE rather than a deploy, which combined with the lease is a clean drain: the
@@ -1182,17 +1300,17 @@ def fleet_toggle(principal: Operator, kind: str) -> Response:
 
 
 @router.get("/budgets", response_class=HTMLResponse)
-def budgets(request: Request, principal: Operator, sel: str = "") -> Response:
+def budgets(request: Request, principal: SignedIn, sel: str = "") -> Response:
     return _live(request, principal, research.budgets, sel or None, "budget", "artist")
 
 
 @router.get("/runs", response_class=HTMLResponse)
-def runs(request: Request, principal: Operator, sel: str = "") -> Response:
+def runs(request: Request, principal: SignedIn, sel: str = "") -> Response:
     return _live(request, principal, research.runs, sel or None, "run", "what")
 
 
 @router.get("/counterparties", response_class=HTMLResponse)
-def counterparties(request: Request, principal: Operator, sel: str = "") -> Response:
+def counterparties(request: Request, principal: SignedIn, sel: str = "") -> Response:
     return _live(request, principal, research.counterparties, sel or None,
                  "counterparty", "who")
 
@@ -1224,7 +1342,7 @@ def _threads_page(request: Request, principal: auth.Principal, *, sel: str = "",
     press the button that would be refused, because it is not drawn.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         view = demo.View(key="threads", title="Threads", blurb="", stats=(), cols=(),
                          rows=(), empty="Nothing here yet — save an artist first.")
@@ -1263,13 +1381,13 @@ def _threads_page(request: Request, principal: auth.Principal, *, sel: str = "",
 
 
 @router.get("/threads", response_class=HTMLResponse)
-def threads(request: Request, principal: Operator, sel: str = "",
+def threads(request: Request, principal: SignedIn, sel: str = "",
             error: str = "") -> Response:
     return _threads_page(request, principal, sel=sel, error=error)
 
 
 @router.post("/threads/{thread_id}/advance/{to}", response_class=HTMLResponse)
-def threads_advance(principal: Operator, thread_id: str, to: str) -> Response:
+def threads_advance(principal: SignedIn, thread_id: str, to: str) -> Response:
     """One forward step, refused if the machine does not allow it.
 
     The route validates against `ALLOWED` rather than against `_THREAD_STEPS`, because
@@ -1278,7 +1396,7 @@ def threads_advance(principal: Operator, thread_id: str, to: str) -> Response:
     """
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     try:
         outreach.advance(conn, tenant_id, thread_id, to,
                          reason=f"moved by {principal.subject}")
@@ -1289,7 +1407,7 @@ def threads_advance(principal: Operator, thread_id: str, to: str) -> Response:
 
 
 @router.post("/threads/{thread_id}/draft", response_class=HTMLResponse)
-def threads_draft(request: Request, principal: Operator, thread_id: str,
+def threads_draft(request: Request, principal: SignedIn, thread_id: str,
                   subject: Annotated[str, Form()] = "",
                   body: Annotated[str, Form()] = "") -> Response:
     """Write the pitch by hand — the Drafter's job, done by a person.
@@ -1305,7 +1423,7 @@ def threads_draft(request: Request, principal: Operator, thread_id: str,
                              error="A draft needs a subject and a body.",
                              status_code=400)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     try:
         outreach.draft(conn, tenant_id, thread_id, subject=subject, body=body)
     except outreach.TransitionRefused as exc:
@@ -1315,7 +1433,7 @@ def threads_draft(request: Request, principal: Operator, thread_id: str,
 
 
 @router.post("/threads/{thread_id}/close/{outcome}", response_class=HTMLResponse)
-def threads_close(principal: Operator, thread_id: str, outcome: str) -> Response:
+def threads_close(principal: SignedIn, thread_id: str, outcome: str) -> Response:
     """Close a conversation, which also releases the counterparty.
 
     Both halves happen in `outreach.advance`: the thread leaves the partial unique index
@@ -1327,7 +1445,7 @@ def threads_close(principal: Operator, thread_id: str, outcome: str) -> Response
     if outcome not in outreach.CLOSED:
         raise HTTPException(status_code=400, detail=f"{outcome!r} is not a closing state.")
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     try:
         outreach.advance(conn, tenant_id, thread_id, outcome,
                          reason=f"closed by {principal.subject}")
@@ -1367,7 +1485,7 @@ def _tracks_page(
     places renders every validation failure twice.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     creating = sel == "new"
 
     if tenant_id is None:
@@ -1404,7 +1522,7 @@ def _tracks_page(
 
 
 @router.get("/tracks", response_class=HTMLResponse)
-def tracks(request: Request, principal: Operator, sel: str = "", confirm: str = "",
+def tracks(request: Request, principal: SignedIn, sel: str = "", confirm: str = "",
            error: str = "") -> Response:
     # A GET's `error` only ever arrives from a redirect, so it is a banner. Nothing on
     # this page was just rejected — the form is showing the stored row.
@@ -1454,7 +1572,7 @@ def _validated_recording(title: str, isrc: str, released_on: str) -> tuple[str, 
 
 
 @router.post("/tracks", response_class=HTMLResponse)
-def tracks_create(request: Request, principal: Operator,
+def tracks_create(request: Request, principal: SignedIn,
                   title: Annotated[str, Form()] = "",
                   isrc: Annotated[str, Form()] = "",
                   released_on: Annotated[str, Form()] = "") -> Response:
@@ -1467,7 +1585,7 @@ def tracks_create(request: Request, principal: Operator,
                             error=str(exc), status_code=400)
 
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         return _tracks_page(
             request, principal, sel="new", form=typed, status_code=400,
@@ -1491,7 +1609,7 @@ def tracks_create(request: Request, principal: Operator,
 
 
 @router.post("/tracks/{recording_id}", response_class=HTMLResponse)
-def tracks_update(request: Request, principal: Operator, recording_id: str,
+def tracks_update(request: Request, principal: SignedIn, recording_id: str,
                   title: Annotated[str, Form()] = "",
                   isrc: Annotated[str, Form()] = "",
                   released_on: Annotated[str, Form()] = "",
@@ -1507,7 +1625,7 @@ def tracks_update(request: Request, principal: Operator, recording_id: str,
                             error=f"{status!r} is not a supported status.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None or repo.get_recording(conn, tenant_id, recording_id) is None:
         raise HTTPException(status_code=404, detail="No such recording.")
 
@@ -1525,7 +1643,7 @@ def tracks_update(request: Request, principal: Operator, recording_id: str,
 
 
 @router.post("/tracks/{recording_id}/delete")
-def tracks_delete(principal: Operator, recording_id: str) -> Response:
+def tracks_delete(principal: SignedIn, recording_id: str) -> Response:
     """Reached only from the confirmation step, which names what goes with it.
 
     The bucket is cleaned second and its failure is deliberately not fatal, the same
@@ -1538,7 +1656,7 @@ def tracks_delete(principal: Operator, recording_id: str) -> Response:
 
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         return RedirectResponse("/tracks", status_code=303)
 
@@ -1563,7 +1681,7 @@ def tracks_delete(principal: Operator, recording_id: str) -> Response:
 
 
 @router.post("/tracks/{recording_id}/credits", response_class=HTMLResponse)
-def tracks_credit_add(request: Request, principal: Operator, recording_id: str,
+def tracks_credit_add(request: Request, principal: SignedIn, recording_id: str,
                       party_id: Annotated[str, Form()] = "",
                       role: Annotated[str, Form()] = "") -> Response:
     """Credit an artist. This is what decides whose record it is — and therefore
@@ -1575,7 +1693,7 @@ def tracks_credit_add(request: Request, principal: Operator, recording_id: str,
                                          f"offers.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         raise HTTPException(status_code=404, detail="No such recording.")
     if repo.get_recording(conn, tenant_id, recording_id) is None:
@@ -1595,18 +1713,18 @@ def tracks_credit_add(request: Request, principal: Operator, recording_id: str,
 
 
 @router.post("/tracks/{recording_id}/credits/{credit_id}/delete")
-def tracks_credit_delete(principal: Operator, recording_id: str,
+def tracks_credit_delete(principal: SignedIn, recording_id: str,
                          credit_id: str) -> Response:
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is not None:
         repo.delete_credit(conn, tenant_id, recording_id, credit_id)
     return RedirectResponse(f"/tracks?sel={recording_id}", status_code=303)
 
 
 @router.post("/tracks/{recording_id}/analyse")
-def tracks_analyse(principal: Operator, recording_id: str) -> Response:
+def tracks_analyse(principal: SignedIn, recording_id: str) -> Response:
     """Queue `analyse_recording` against the newest stored master.
 
     The same call `masters_confirm` makes on upload, exposed as a control for the case
@@ -1622,7 +1740,7 @@ def tracks_analyse(principal: Operator, recording_id: str) -> Response:
 
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         return RedirectResponse("/tracks", status_code=303)
 
@@ -1694,7 +1812,7 @@ def _refused(message: str, status: int = 400) -> Response:
 
 
 @router.post("/tracks/{recording_id}/masters")
-async def masters_claim(request: Request, principal: Operator,
+async def masters_claim(request: Request, principal: SignedIn,
                         recording_id: str) -> Response:
     """Reserve a row and hand back a signed PUT URL.
 
@@ -1711,7 +1829,7 @@ async def masters_claim(request: Request, principal: Operator,
         return _refused("that request body was not JSON.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         return _refused("there is no tenant yet — save an artist first.")
     if not _recording_exists(conn, tenant_id, recording_id):
@@ -1760,7 +1878,7 @@ async def masters_claim(request: Request, principal: Operator,
 
 
 @router.post("/tracks/{recording_id}/masters/{asset_id}/confirm")
-def masters_confirm(principal: Operator, recording_id: str, asset_id: str) -> Response:
+def masters_confirm(principal: SignedIn, recording_id: str, asset_id: str) -> Response:
     """Ask the bucket what arrived, and promote the row if it agrees.
 
     The browser saying its PUT succeeded is not evidence: a tab closed mid-transfer
@@ -1771,7 +1889,7 @@ def masters_confirm(principal: Operator, recording_id: str, asset_id: str) -> Re
 
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         return _refused("there is no tenant yet.")
 
@@ -1788,7 +1906,7 @@ def masters_confirm(principal: Operator, recording_id: str, asset_id: str) -> Re
 
 
 @router.post("/tracks/{recording_id}/masters/{asset_id}/delete")
-def masters_delete(principal: Operator, recording_id: str, asset_id: str) -> Response:
+def masters_delete(principal: SignedIn, recording_id: str, asset_id: str) -> Response:
     """Drop the row, and the object with it when nothing else points at those bytes.
 
     A form POST and a redirect, unlike its two siblings, because no bytes move through
@@ -1804,7 +1922,7 @@ def masters_delete(principal: Operator, recording_id: str, asset_id: str) -> Res
 
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         return RedirectResponse(f"/tracks?sel={recording_id}", status_code=303)
 
@@ -1836,7 +1954,7 @@ def _campaigns_page(request: Request, principal: auth.Principal, *, sel: str = "
     every other campaign, and a bulk button makes that consequence invisible.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     creating = sel == "new"
 
     if tenant_id is None:
@@ -1895,7 +2013,7 @@ def _campaigns_page(request: Request, principal: auth.Principal, *, sel: str = "
 
 
 @router.get("/campaigns", response_class=HTMLResponse)
-def campaigns(request: Request, principal: Operator, sel: str = "",
+def campaigns(request: Request, principal: SignedIn, sel: str = "",
               error: str = "", as_of: str = "") -> Response:
     """`as_of` is the scrubber. It is a query parameter rather than a form post because
     reading the shortlist as it stood changes nothing — a judge or an operator should be
@@ -1904,7 +2022,7 @@ def campaigns(request: Request, principal: Operator, sel: str = "",
 
 
 @router.post("/campaigns", response_class=HTMLResponse)
-def campaigns_create(request: Request, principal: Operator,
+def campaigns_create(request: Request, principal: SignedIn,
                      name: Annotated[str, Form()] = "",
                      party_id: Annotated[str, Form()] = "",
                      recording_id: Annotated[str, Form()] = "",
@@ -1923,7 +2041,7 @@ def campaigns_create(request: Request, principal: Operator,
                                error=f"{channel!r} is not a supported channel.",
                                status_code=400)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         return _campaigns_page(request, principal, sel="new", form=typed,
                                error="Add an artist before creating a campaign.",
@@ -1936,7 +2054,7 @@ def campaigns_create(request: Request, principal: Operator,
 
 @router.post("/campaigns/{campaign_id}/thread/{counterparty_id}",
              response_class=HTMLResponse)
-def campaigns_open_thread(principal: Operator, campaign_id: str,
+def campaigns_open_thread(principal: SignedIn, campaign_id: str,
                           counterparty_id: str) -> Response:
     """Open a conversation with one counterparty.
 
@@ -1947,7 +2065,7 @@ def campaigns_open_thread(principal: Operator, campaign_id: str,
     """
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
 
     # The ranking is recomputed here rather than carried from the page that rendered the
     # button, and the difference is the whole value of the record. A hidden field holding
@@ -1987,7 +2105,7 @@ def campaigns_open_thread(principal: Operator, campaign_id: str,
 
 
 @router.post("/campaigns/{campaign_id}/state/{state}", response_class=HTMLResponse)
-def campaigns_set_state(principal: Operator, campaign_id: str, state: str) -> Response:
+def campaigns_set_state(principal: SignedIn, campaign_id: str, state: str) -> Response:
     """Run, pause or close a campaign.
 
     `running` is the state in which the fleet may open threads against it, so starting
@@ -1999,162 +2117,199 @@ def campaigns_set_state(principal: Operator, campaign_id: str, state: str) -> Re
     if state not in ("draft", "running", "paused", "done"):
         raise HTTPException(status_code=400, detail=f"{state!r} is not a campaign state.")
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is not None:
         outreach.set_campaign_state(conn, tenant_id, campaign_id, state)
     return RedirectResponse(f"/campaigns?sel={campaign_id}", status_code=303)
 
 
 # ---------------------------------------------------------------------- auth
+#
+# Two steps, one page. Ask for a code, then type it.
+#
+# What used to be here: a single form taking the shared `PLATFORM_ADMIN_TOKEN`, and — in
+# the section below this one — `POST /claim`, which minted a per-tenant token for whoever
+# typed an email address. Both are gone. `otp.py` and `accounts.sign_in` are what
+# replaced them, and the reason the two are separate modules is that this file calls them
+# in order on one line each: prove the address, then get the account it entitles you to.
+#
+# `POST /claim` deserves a sentence rather than a silent deletion, because it was load
+# bearing and its removal looks like a loosening. It refused a second arrival at a known
+# address, deliberately, because handing a credential to whoever typed an email is
+# account takeover with a form in front of it. Verification is what makes that refusal
+# unnecessary — and the refusal was also what stopped a tenant who lost their cookie from
+# ever getting back in. Signing in now creates the tenant on first arrival and rotates
+# the token on every later one.
+
+#: How long a session cookie lasts. Ninety days.
+#:
+#: The number is carried over from `CLAIM_COOKIE_SECONDS`, which it replaces, but **the
+#: reason for it has changed and the old reason should not be left to rot here.** That
+#: constant documented ninety days as damage control: the raw token was shown once, was
+#: not recoverable, could not be reissued, and there was no verified way back in — so an
+#: expiring cookie did not mean "sign in again", it meant "lose the account".
+#:
+#: That is no longer true. Anyone can prove their address and get a fresh session in two
+#: steps, so expiry costs a person thirty seconds. Ninety days is now ordinary
+#: convenience — the user asked for sign-in to persist — rather than the mitigation of a
+#: defect, and shortening it would be a UX decision rather than a data-loss one.
+SESSION_SECONDS = 60 * 60 * 24 * 90
+
+
+def _set_session(response: Response, token: str) -> None:
+    """Put a minted token in the session cookie, with the flags it has always had.
+
+    `httponly` so console JavaScript cannot read it and an XSS cannot exfiltrate it,
+    `secure` so it never crosses plain HTTP, `samesite=lax` so a link from an email still
+    arrives signed in while a cross-site POST does not.
+
+    One function rather than the three copies this used to be (`/signin`, `/claim`, and
+    the claim JSON path), because a cookie flag that is right in two places out of three
+    is the kind of defect nobody finds by reading.
+    """
+    response.set_cookie(
+        auth.COOKIE_NAME, token, httponly=True, secure=True, samesite="lax",
+        max_age=SESSION_SECONDS,
+    )
+
+
+def _signin_page(request: Request, principal: auth.Principal, *, step: str = "email",
+                 email: str = "", error: str = "",
+                 status_code: int = 200) -> Response:
+    """The sign-in page at whichever of its two steps the caller is on.
+
+    One template and one function for both steps, so the two cannot drift into looking
+    like different pages. `step` is `"email"` or `"code"`; `email` is carried through the
+    second step in a hidden field because the code is worthless without the address it
+    was minted against, and asking the person to type it twice is how they end up
+    verifying a different address from the one that was mailed.
+    """
+    return templates.TemplateResponse(
+        request, "signin.html",
+        _ctx(request, principal, step=step, email=email, error=error,
+             resend_after=int(otp.RESEND_AFTER.total_seconds()),
+             code_minutes=int(otp.TTL.total_seconds() // 60)),
+        status_code=status_code,
+    )
+
 
 @router.get("/signin", response_class=HTMLResponse)
-def signin_form(request: Request, principal: Principal, error: str = "") -> Response:
+def signin_form(request: Request, principal: Principal) -> Response:
     if principal.authenticated:
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(
-        request, "signin.html", _ctx(request, principal, error=error)
-    )
+    return _signin_page(request, principal)
 
 
-@router.post("/signin")
-def signin(request: Request, principal: Principal,
-           token: Annotated[str, Form()]) -> Response:
-    """A wrong token re-renders the form rather than raising.
+@router.post("/signin/code", response_class=HTMLResponse)
+def signin_request_code(request: Request, principal: Principal,
+                        email: Annotated[str, Form()] = "") -> Response:
+    """Mail a code to the address, and move the page to step two.
 
-    A bare 401 page is the wrong answer to a typo — it looks like the site is broken
-    instead of like the token was wrong, and it loses the operator's place.
+    Every refusal re-renders the page with a sentence rather than raising, and stays on
+    the step the person can act from: a malformed address sends them back to the email
+    field, a resend inside the floor leaves them on the code field they are already
+    looking at. A refusal that lost their place would be a worse answer than the one they
+    got wrong.
+
+    **`mail.load()` raising is rendered, not swallowed.** A deployment with no verified
+    SES identity cannot issue codes at all — mail is the only way in now — and the page
+    says which of the three `PLATFORM_MAIL_*` variables are unset. There is no
+    development reveal path; `otp.py` says why at length.
     """
-    if not SETTINGS.admin_token:
-        raise HTTPException(status_code=503, detail="No admin token is configured.")
-    if not auth.principal_from_cookie(token, SETTINGS.admin_token).authenticated:
-        return templates.TemplateResponse(
-            request, "signin.html",
-            _ctx(request, principal, error="That token is not right."),
-            status_code=401,
-        )
-    response = RedirectResponse("/", status_code=303)
-    # httpOnly so console JavaScript cannot read it and an XSS cannot exfiltrate it.
-    response.set_cookie(
-        auth.COOKIE_NAME, token, httponly=True, secure=True, samesite="lax", max_age=60 * 60 * 12
-    )
+    if principal.authenticated:
+        return RedirectResponse("/", status_code=303)
+    try:
+        otp.request_code(_conn(), email, mail.load())
+    except mail.MailNotConfigured as exc:
+        # 503 rather than 400: the request was fine and the deployment is not.
+        return _signin_page(request, principal, email=email, status_code=503,
+                            error=f"No sign-in code can be sent. {exc}")
+    except mail.MailRefused as exc:
+        return _signin_page(request, principal, email=email, status_code=502,
+                            error=f"The mail provider refused the message. {exc}")
+    except otp.OtpRefused as exc:
+        # `too_soon` is the one refusal that means "you are already on step two" — the
+        # code they are waiting for is genuinely on its way.
+        step = "code" if exc.reason == "too_soon" else "email"
+        return _signin_page(request, principal, step=step, email=email,
+                            error=str(exc), status_code=429
+                            if exc.reason in ("too_soon", "rate_limited") else 400)
+    return _signin_page(request, principal, step="code", email=email)
+
+
+@router.post("/signin/verify")
+def signin_verify(request: Request, principal: Principal,
+                  email: Annotated[str, Form()] = "",
+                  code: Annotated[str, Form()] = "") -> Response:
+    """Check the code, sign in, and land in the console.
+
+    The two calls below are the whole of authentication in this product, and their order
+    is the entire security property: `verify_code` proves the person can read mail at the
+    address, and only then does `sign_in` turn that address into an account and a
+    credential. `accounts.sign_in` cannot check this for itself — it takes an address, not
+    a proof — which is why it has exactly one caller and why it is on the next line rather
+    than anywhere else.
+    """
+    if principal.authenticated:
+        return RedirectResponse("/", status_code=303)
+    conn = _conn()
+    try:
+        verified = otp.verify_code(conn, email, code)
+    except otp.OtpRefused as exc:
+        # Back to the code field with the address intact. `no_challenge` and `expired`
+        # both need a new code, and the template offers that button on this step anyway.
+        return _signin_page(request, principal, step="code", email=email,
+                            error=str(exc), status_code=401)
+
+    try:
+        account, token = accounts.sign_in(conn, verified)
+    except accounts.ClaimRefused as exc:
+        # The address is proved and the account still could not be made — the deployment
+        # is full, or the hourly bound is spent. Renders the sentence `accounts.py` wrote
+        # for each, which says which bound was hit rather than "something went wrong".
+        return _signin_page(request, principal, step="code", email=email,
+                            error=str(exc), status_code=409)
+
+    response: Response = RedirectResponse("/", status_code=303)
+    _set_session(response, token)
     return response
 
 
 @router.post("/signout")
 def signout() -> Response:
+    """Drop the cookie. The token stays valid until the next sign-in rotates it.
+
+    Worth being precise about, because it is the difference between this and "sign out
+    everywhere" on the account page: deleting the cookie makes *this browser* forget the
+    token, and anything else still holding it stays signed in. With one session per
+    account there is normally nothing else holding it. `/account/rotate` is the version
+    that invalidates the credential itself.
+    """
     response = RedirectResponse("/", status_code=303)
     response.delete_cookie(auth.COOKIE_NAME)
     return response
 
 
-# ------------------------------------------------------- claiming an account
-#
-# The public half of multi-tenancy. `POST /claim` is the only route on this router that
-# writes without a principal, and the only one that mints a credential.
-#
-# **It works with no Stripe configuration and that is a requirement, not a happy
-# accident.** The free tier is the tier a judge with no card uses, and a signup path that
-# touched a payment provider would fail whenever that provider was unconfigured (which is
-# this deployment's state), unreachable, or having an incident. Nothing below imports
-# `billing`.
-
-#: How long a claimed session lasts. Ninety days rather than the operator cookie's twelve
-#: hours, and the difference deserves stating because it looks like a weaker choice.
-#:
-#: The operator can always sign in again: they hold `PLATFORM_ADMIN_TOKEN` and can type it
-#: back in. A claimed tenant cannot. The raw token is shown once, at claim, and is not
-#: recoverable from the database — only its hash is stored — and there is no email
-#: verification in this build, so `POST /claim` deliberately refuses to re-issue a token
-#: for a known address. An expiring cookie is therefore not "sign in again", it is
-#: "lose the account".
-#:
-#: That is a genuine defect and it is bounded rather than hidden: ninety days, the token
-#: is returned in the response body for any client that asks for JSON so it can be kept,
-#: and the real fix — a signed, expiring link sent to the address — is a different
-#: function that needs a mail sender this build does not have.
-CLAIM_COOKIE_SECONDS = 60 * 60 * 24 * 90
-
+# ------------------------------------------------------- the JSON refusal shape
 
 def _refusal_json(status: int, code: str, message: str) -> JSONResponse:
-    """One refusal shape for the three machine-readable endpoints on this router.
+    """One refusal shape for the machine-readable endpoints on this router.
 
     Borrowed from `api/errors.py` rather than invented here — see the import comment at
     the top of this file. Building the `Refusal` and taking its `.body` (rather than
     writing the dict) is what keeps the envelope identical to the JSON API's, including
     the mirrored top-level `message`, and what makes an undeclared code raise instead of
     shipping.
+
+    Its only callers now are the two billing endpoints below. `POST /claim` was the other
+    one, and `_wants_json` — the Accept-header sniff that decided whether `/claim`
+    answered with a token or a redirect — went with it: sign-in is a two-step browser
+    flow and has no machine-readable form. A script that wants a credential holds the
+    token it was issued and sends it as a bearer header, which `api/deps` resolves.
     """
     refusal = api_errors.Refusal(status, code, message)
     return JSONResponse(refusal.body, status_code=refusal.status_code)
 
-
-def _wants_json(request: Request) -> bool:
-    """Whether the caller is a program rather than a browser.
-
-    Checked on `Accept` alone. A browser sends `text/html` first and never
-    `application/json`, and a script that wants the token has to ask for it — which is
-    the right way round, because the token in a response body is a credential and should
-    be produced deliberately rather than to whoever happened to POST a form.
-    """
-    return "application/json" in (request.headers.get("accept") or "").lower()
-
-
-@router.post("/claim")
-def claim(request: Request, email: Annotated[str, Form()] = "") -> Response:
-    """Create a tenant, mint its token, set the cookie, and land in the console.
-
-    Public and unauthenticated, which is the point and also the risk. What bounds it is
-    written out in full on `accounts.MAX_CLAIMS_PER_HOUR` — four different kinds of bound,
-    what each one stops, and the one thing (per-IP limiting) that is deliberately not done
-    because behind a Function URL it would be theatre. The short version: one tenant per
-    address, twenty an hour cluster-wide, five hundred in total, and a twenty-cent daily
-    money ceiling on every one of them enforced by a spend gate that predates billing.
-
-    Everything that can be refused is refused before anything is written, and a refusal
-    says which of those bounds it hit rather than "something went wrong" — a person who
-    typed a malformed address and a person who arrived during somebody else's burst need
-    different things.
-
-    The response depends on who asked. A browser gets a 303 into the console with an
-    httpOnly cookie, which is the same shape `/signin` uses. A client that sent
-    `Accept: application/json` gets the raw token in the body, **once**, because it is
-    not stored and cannot be reissued; see `CLAIM_COOKIE_SECONDS` for why that matters
-    more here than it would in a system with password reset.
-    """
-    conn = _conn()
-    try:
-        account, token = accounts.claim(conn, email)
-    except accounts.ClaimRefused as exc:
-        if _wants_json(request):
-            return _refusal_json(409, api_errors.CLAIM_REFUSED, str(exc))
-        # The console's own idiom: carry the sentence back to the page the form was on
-        # rather than serving an error page, so the person keeps their place. `/` is the
-        # landing page for an anonymous visitor, which is where the form lives.
-        return RedirectResponse("/?error=" + _q(str(exc)), status_code=303)
-
-    if _wants_json(request):
-        response: Response = JSONResponse({
-            "tenant_id": str(account["tenant_id"]),
-            "tenant_slug": account["tenant_slug"],
-            "email": account["email"],
-            "plan": account["plan"],
-            # Shown once. Not recoverable: only its sha256 is stored.
-            "token": token,
-            "note": ("Keep this token. It is not stored in recoverable form and cannot "
-                     "be reissued, because nothing here verifies that you own the "
-                     "address you typed."),
-        }, status_code=201)
-    else:
-        response = RedirectResponse("/", status_code=303)
-
-    # Same cookie flags as `/signin`: httpOnly so console JavaScript cannot read it and
-    # an XSS cannot exfiltrate it, secure so it never crosses plain HTTP, lax so a link
-    # from an email still arrives signed in while a cross-site POST does not.
-    response.set_cookie(
-        auth.COOKIE_NAME, token, httponly=True, secure=True, samesite="lax",
-        max_age=CLAIM_COOKIE_SECONDS,
-    )
-    return response
 
 
 # --------------------------------------------------------------------- billing
@@ -2165,7 +2320,7 @@ def claim(request: Request, email: Annotated[str, Form()] = "") -> Response:
 # and go on doing it if every webhook in the world is lost.
 
 @router.post("/billing/checkout")
-def billing_checkout(request: Request, principal: Operator,
+def billing_checkout(request: Request, principal: SignedIn,
                      plan: Annotated[str, Form()] = "") -> Response:
     """Start a Stripe Checkout for the signed-in tenant. JSON in, JSON out.
 
@@ -2175,20 +2330,18 @@ def billing_checkout(request: Request, principal: Operator,
     `STRIPE_PRICE_ROSTER` is unset needs to read that string, and a checkout that appeared
     to work and then 404'd at Stripe would cost them an afternoon.
 
-    Refuses the operator principal. The shared admin token is scoped to no tenant by
-    construction, so there is nobody to subscribe — and inventing one (the deployment's
-    configured tenant, say) would attach a real subscription to the wrong party.
+    The tenantless-principal branch that used to guard the top of this function is gone
+    with the operator it guarded against: the shared admin token was scoped to no tenant
+    by construction, so there was nobody to subscribe and inventing one would have
+    attached a real subscription to the wrong party. Every principal reaching here now
+    carries its own tenant, and `_tenant_id` raises rather than returning `None` if that
+    is ever untrue again.
     """
     _require_write(principal)
-    if not principal.tenant_id:
-        return _refusal_json(
-            409, api_errors.BILLING_NOT_CONFIGURED,
-            "This session is the shared operator token, which is not scoped to a tenant "
-            "and so cannot hold a subscription. Sign in with a tenant token, or claim "
-            "an account.")
+    tenant_id = _tenant_id(principal)
 
     conn = _conn()
-    account = accounts.get_account(conn, principal.tenant_id)
+    account = accounts.get_account(conn, tenant_id)
     if account is None:
         return _refusal_json(
             409, api_errors.BILLING_NOT_CONFIGURED,
@@ -2199,7 +2352,7 @@ def billing_checkout(request: Request, principal: Operator,
     try:
         session = billing.checkout_session(
             SETTINGS,
-            tenant_id=principal.tenant_id,
+            tenant_id=tenant_id,
             email=str(account["email"]),
             plan_key=plan.strip(),
             # Stripe substitutes the real id into `{CHECKOUT_SESSION_ID}`, which is what
@@ -2257,9 +2410,9 @@ async def billing_webhook(request: Request) -> Response:
 # ------------------------------------------------------- roster CRUD (real)
 
 @router.get("/roster", response_class=HTMLResponse)
-def roster_page(request: Request, principal: Operator, q: str = "") -> Response:
+def roster_page(request: Request, principal: SignedIn, q: str = "") -> Response:
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     artists = repo.list_parties(conn, tenant_id, q) if tenant_id else []
     return templates.TemplateResponse(
         request, "artists.html", _ctx(request, principal, artists=artists, q=q)
@@ -2267,10 +2420,10 @@ def roster_page(request: Request, principal: Operator, q: str = "") -> Response:
 
 
 @router.get("/roster/rows", response_class=HTMLResponse)
-def roster_rows(request: Request, principal: Operator, q: str = "") -> Response:
+def roster_rows(request: Request, principal: SignedIn, q: str = "") -> Response:
     """The fragment htmx swaps in on search. Same template the full page uses."""
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     artists = repo.list_parties(conn, tenant_id, q) if tenant_id else []
     return templates.TemplateResponse(
         request, "components/_artist_rows.html", _ctx(request, principal, artists=artists, q=q)
@@ -2278,7 +2431,7 @@ def roster_rows(request: Request, principal: Operator, q: str = "") -> Response:
 
 
 @router.get("/roster/new", response_class=HTMLResponse)
-def roster_new(request: Request, principal: Operator) -> Response:
+def roster_new(request: Request, principal: SignedIn) -> Response:
     _require_write(principal)
     return templates.TemplateResponse(
         request, "artist_form.html", _ctx(request, principal, artist=None, legacy_type=None)
@@ -2287,7 +2440,7 @@ def roster_new(request: Request, principal: Operator) -> Response:
 
 @router.post("/roster")
 def roster_create(
-    principal: Operator,
+    principal: SignedIn,
     name: Annotated[str, Form()],
     type: Annotated[str, Form()] = DEFAULT_TYPE.value,
 ) -> Response:
@@ -2300,16 +2453,16 @@ def roster_create(
     artist_type = _validated_type(type)
 
     conn = _conn()
-    tenant_id = _tenant_id_for_write(conn, principal)
+    tenant_id = _tenant_id(principal)
     with _friendly_conflict(name):
         repo.create_party(conn, tenant_id, name=name, type_=artist_type)
     return RedirectResponse("/roster", status_code=303)
 
 
 @router.get("/roster/{artist_id}", response_class=HTMLResponse)
-def roster_detail(request: Request, principal: Operator, artist_id: str) -> Response:
+def roster_detail(request: Request, principal: SignedIn, artist_id: str) -> Response:
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     artist = repo.get_party(conn, tenant_id, artist_id) if tenant_id else None
     if artist is None:
         raise HTTPException(status_code=404, detail="No such artist.")
@@ -2322,7 +2475,7 @@ def roster_detail(request: Request, principal: Operator, artist_id: str) -> Resp
 
 @router.post("/roster/{artist_id}")
 def roster_update(
-    principal: Operator,
+    principal: SignedIn,
     artist_id: str,
     name: Annotated[str, Form()],
     type: Annotated[str, Form()] = DEFAULT_TYPE.value,
@@ -2334,7 +2487,7 @@ def roster_update(
         raise HTTPException(status_code=400, detail="An artist needs a name.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     current = repo.get_party(conn, tenant_id, artist_id) if tenant_id else None
 
     # A type this build no longer defines is kept if the form sent it back
@@ -2353,10 +2506,10 @@ def roster_update(
 
 
 @router.post("/roster/{artist_id}/delete", response_class=HTMLResponse)
-def roster_delete(request: Request, principal: Operator, artist_id: str) -> Response:
+def roster_delete(request: Request, principal: SignedIn, artist_id: str) -> Response:
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is not None:
         repo.delete_party(conn, tenant_id, artist_id)
     artists = repo.list_parties(conn, tenant_id) if tenant_id else []
@@ -2379,7 +2532,7 @@ def _ask_page(request: Request, principal: auth.Principal, *, asked: str = "",
     conn = _conn()
     return templates.TemplateResponse(
         request, "console/ask.html",
-        _ctx(request, principal, conn=conn, tenant_id=_tenant_id(conn, principal), here="ask",
+        _ctx(request, principal, conn=conn, tenant_id=_tenant_id(principal), here="ask",
              live=True, error=error, asked=asked, answer=answer,
              questions=mcp.QUESTIONS,
              mcp_configured=SETTINGS.mcp_configured,
@@ -2408,14 +2561,14 @@ def _mcp_missing() -> str:
 
 
 @router.get("/ask", response_class=HTMLResponse)
-def ask_form(request: Request, principal: Operator) -> Response:
+def ask_form(request: Request, principal: SignedIn) -> Response:
     """The box, and the list of questions beside it. No cluster call and no spend — a GET
     that costs money is one a browser can make by being refreshed."""
     return _ask_page(request, principal)
 
 
 @router.post("/ask", response_class=HTMLResponse)
-def ask_run(request: Request, principal: Operator,
+def ask_run(request: Request, principal: SignedIn,
             q: Annotated[str, Form()] = "") -> Response:
     """Ask the managed MCP server one question.
 
@@ -2432,7 +2585,7 @@ def ask_run(request: Request, principal: Operator,
     """
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn, principal)
+    tenant_id = _tenant_id(principal)
     if tenant_id is None:
         return _ask_page(request, principal, asked=q,
                          error="There is no tenant on this cluster yet, so there is "

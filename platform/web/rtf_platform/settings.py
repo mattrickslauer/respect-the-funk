@@ -16,8 +16,6 @@ from typing import ClassVar
 @dataclass(frozen=True)
 class Settings:
     database_url: str
-    admin_token: str
-    tenant_slug: str
     masters_bucket: str
     region: str
     classifier_function: str
@@ -177,10 +175,16 @@ class Settings:
 def load() -> Settings:
     return Settings(
         database_url=os.environ.get("DATABASE_URL", ""),
-        # Writes require this. Empty means the console is read-only for everyone,
-        # which is the correct posture for a deployment nobody has configured.
-        admin_token=os.environ.get("PLATFORM_ADMIN_TOKEN", ""),
-        tenant_slug=os.environ.get("PLATFORM_TENANT_SLUG", "respect-the-funk"),
+        # `PLATFORM_ADMIN_TOKEN` and `PLATFORM_TENANT_SLUG` were both read here until
+        # 2026-08-15. They went together, because they were two halves of one thing: the
+        # shared operator token authenticated a principal with no tenant, and the slug
+        # was how the console decided which tenant that principal meant. With email-OTP
+        # sign-in every principal carries a real `tenant_id` from its own `account` row,
+        # so neither has anything left to answer. `auth.py` records what was given up
+        # with the operator, which is more than an unused setting.
+        #
+        # Setting either on a deployment now does nothing at all, which is why they are
+        # named here rather than silently absent.
         # Where masters go. Empty is a legitimate state — a checkout that has never
         # run `terraform apply` has no bucket — and the console reports it rather
         # than inventing a local directory nothing else in the system can read.

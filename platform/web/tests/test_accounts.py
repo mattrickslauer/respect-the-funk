@@ -12,11 +12,14 @@ Two layers, the same split every other suite here uses and for the same reason.
     transaction leaving no half-made tenant, a count over `thread.created_at`. A fake
     that returned rows from a dict would prove only that the fake works.
 
-The property this file exists to protect, above the others: **the shared
-`PLATFORM_ADMIN_TOKEN` still authenticates, still carries no tenant, and is still checked
-before anything touches the database.** Six hundred passing tests and one deployed console
-depend on that, and per-tenant accounts were added alongside it rather than in place of
-it. Three tests below hold each half of that sentence.
+The property this file exists to protect, above the others: **every authenticated
+principal carries a real `tenant_id`, and there is no second way to become one.** That is
+what the `SETTINGS.tenant_slug` deletions in `routes._tenant_id` and
+`api/deps.current_tenant` rest on, and `TheAdminTokenIsGone` below holds each half of it.
+
+This file used to say the opposite — that the shared `PLATFORM_ADMIN_TOKEN` still
+authenticated and was still checked before anything touched the database. It was a real
+guarantee and it was given up deliberately on 2026-08-15; `auth.py` records the trade.
 """
 
 from __future__ import annotations
@@ -26,7 +29,9 @@ import unittest
 import uuid
 from decimal import Decimal
 
-from rtf_platform import accounts, auth, outreach, plans
+from rtf_platform import (
+    accounts, auth, outreach, plans, settings as settings_mod,
+)
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 
@@ -106,54 +111,73 @@ class TheEmail(unittest.TestCase):
         self.assertEqual("email_too_long", caught.exception.reason)
 
 
-class TheAdminTokenStillWorks(unittest.TestCase):
-    """The compatibility guarantee, held as tests rather than as a promise in a docstring.
+class TheAdminTokenIsGone(unittest.TestCase):
+    """The removal, held as tests rather than as an absence nobody notices.
 
-    Per-tenant tokens were added *alongside* the shared operator token. Every one of these
-    asserts a property the existing console and the existing suite already relied on, and
-    each would have been broken by the obvious implementation — resolving the tenant first,
-    or replacing the comparison, or giving the operator a tenant so the code path was
-    uniform.
+    This class used to be `TheAdminTokenStillWorks`, and it asserted the opposite of
+    every line below: that the shared `PLATFORM_ADMIN_TOKEN` authenticated, carried no
+    tenant, and was compared *before* the database was touched so the operator could get
+    in when the `account` table could not be read.
+
+    That was a compatibility guarantee and it was deliberately given up on 2026-08-15 when
+    email-OTP sign-in replaced both credentials. `auth.py` records what it cost. These
+    tests exist so the path cannot come back quietly: a re-added admin branch would have
+    to delete a test that says, in its name, that the branch is gone.
     """
 
-    def test_the_admin_token_authenticates_with_no_resolver_at_all(self):
-        """The two-argument call, exactly as every existing caller makes it."""
-        principal = auth.principal_from_cookie(ADMIN, ADMIN)
+    def test_there_is_no_admin_token_setting_left_to_read(self):
+        """The whole path started with a setting. If this attribute returns, so has the
+        credential, and every other test in this class is reachable again."""
+        self.assertFalse(hasattr(settings_mod.load(), "admin_token"))
+
+    def test_the_signature_no_longer_accepts_a_shared_secret(self):
+        """`principal_from_cookie(token, admin_token, resolve)` was the old three-argument
+        form, and forty-odd call sites passed the middle one. Passing anything there now
+        is a TypeError rather than a silently ignored argument — which is what makes a
+        half-finished revert fail loudly instead of authenticating nobody."""
+        with self.assertRaises(TypeError):
+            auth.principal_from_cookie("a-token", "an-admin-token", _resolver({}))
+
+    def test_a_token_that_is_not_an_account_authenticates_nobody(self):
+        """There is no second thing a cookie can be. Previously this string could have
+        matched the shared secret; now the only question asked of it is whether it hashes
+        to a row in `account`."""
+        self.assertFalse(
+            auth.principal_from_cookie("operator-token-for-tests",
+                                       _resolver({})).authenticated)
+
+    def test_no_principal_carries_the_operator_plan(self):
+        """`OPERATOR_PLAN` existed so `plans.tier()` could not resolve the operator into a
+        customer tier and quietly meter them. With no operator there is no such plan, and
+        a stray reference should fail at import rather than resolve to something."""
+        self.assertFalse(hasattr(auth, "OPERATOR_PLAN"))
+
+    def test_there_is_no_is_operator_predicate(self):
+        """It gated the paths that could see across tenants. Nothing may."""
+        self.assertFalse(hasattr(auth.ANONYMOUS, "is_operator"))
+
+    def test_an_authenticated_principal_always_carries_a_tenant(self):
+        """The property every deletion in this change rests on.
+
+        `routes._tenant_id` and `api/deps.current_tenant` both dropped their
+        `SETTINGS.tenant_slug` fallback because the only principal that could reach it was
+        the operator. That is only safe if authentication cannot produce a tenantless
+        principal, so it is asserted here rather than assumed there.
+        """
+        principal = auth.principal_from_cookie(
+            "tenant-token", _resolver({"tenant-token": TheTenantPrincipal.ROW}))
         self.assertTrue(principal.authenticated)
-        self.assertEqual("operator", principal.subject)
-        self.assertIsNone(principal.tenant_id)
-
-    def test_the_admin_token_still_carries_no_tenant_with_a_resolver_present(self):
-        """`tenant_id is None` is what makes the console fall back to
-        `SETTINGS.tenant_slug`. Giving the operator a tenant here would silently
-        repoint the deployed console at whatever tenant happened to be resolved."""
-        principal = auth.principal_from_cookie(ADMIN, ADMIN, _resolver({}))
-        self.assertIsNone(principal.tenant_id)
-        self.assertTrue(principal.is_operator)
-        self.assertEqual(auth.OPERATOR_PLAN, principal.plan)
-
-    def test_the_admin_token_is_checked_before_the_resolver_is_called(self):
-        """The recovery path must not run through the thing being recovered. If the
-        `account` table is missing or the database is down, the operator still gets in —
-        so the resolver must not even be consulted."""
-        def explode(_token: str):
-            raise AssertionError("the resolver was called for the operator token")
-
-        self.assertTrue(auth.principal_from_cookie(ADMIN, ADMIN, explode).authenticated)
-
-    def test_an_unset_admin_token_authenticates_nobody_through_that_path(self):
-        self.assertFalse(auth.principal_from_cookie("anything", "").authenticated)
-        self.assertFalse(auth.principal_from_cookie("", "").authenticated)
+        self.assertTrue(principal.tenant_id)
 
     def test_a_resolver_failure_is_not_silently_anonymous(self):
-        """A database error during authentication must surface. Swallowing it would
-        render as the console signing everybody out during an incident, which is the
-        hardest failure of all to diagnose from the outside."""
+        """Unchanged by any of the above, and more important than it was: with one
+        credential there is no other way in, so swallowing a database error here would
+        render as the console signing everybody out during an incident."""
         def explode(_token: str):
             raise RuntimeError("cluster unreachable")
 
         with self.assertRaises(RuntimeError):
-            auth.principal_from_cookie("some-tenant-token", ADMIN, explode)
+            auth.principal_from_cookie("some-tenant-token", explode)
 
 
 def _resolver(rows: dict[str, dict]):
@@ -170,23 +194,16 @@ class TheTenantPrincipal(unittest.TestCase):
 
     def test_a_known_token_resolves_to_its_tenant_and_plan(self):
         principal = auth.principal_from_cookie(
-            "tenant-token", ADMIN, _resolver({"tenant-token": self.ROW}))
+            "tenant-token", _resolver({"tenant-token": self.ROW}))
         self.assertTrue(principal.authenticated)
         self.assertEqual("11111111-1111-4111-8111-111111111111", principal.tenant_id)
         self.assertEqual("steve@example.com", principal.subject)
         self.assertEqual("label", principal.plan)
         self.assertEqual("steve-a1b2c3", principal.tenant_slug)
 
-    def test_a_tenant_principal_is_not_an_operator(self):
-        """`is_operator` gates the paths that may see the deployment's own tenant. A
-        tenant that satisfied it would be a tenant that can read somebody else's rows."""
-        principal = auth.principal_from_cookie(
-            "tenant-token", ADMIN, _resolver({"tenant-token": self.ROW}))
-        self.assertFalse(principal.is_operator)
-
     def test_an_unknown_token_is_anonymous(self):
         principal = auth.principal_from_cookie(
-            "not-a-token", ADMIN, _resolver({"tenant-token": self.ROW}))
+            "not-a-token", _resolver({"tenant-token": self.ROW}))
         self.assertFalse(principal.authenticated)
 
     def test_an_empty_cookie_never_resolves(self):
@@ -194,15 +211,15 @@ class TheTenantPrincipal(unittest.TestCase):
         def explode(_token: str):
             raise AssertionError("the resolver was called for an empty cookie")
 
-        self.assertFalse(auth.principal_from_cookie("", ADMIN, explode).authenticated)
-        self.assertFalse(auth.principal_from_cookie(None, ADMIN, explode).authenticated)
+        self.assertFalse(auth.principal_from_cookie("", explode).authenticated)
+        self.assertFalse(auth.principal_from_cookie(None, explode).authenticated)
 
-    def test_a_tenant_token_works_when_no_admin_token_is_configured(self):
-        """A deployment that never set `PLATFORM_ADMIN_TOKEN` is read-only for the
-        operator — that behaviour is unchanged — but its tenants must still sign in."""
-        principal = auth.principal_from_cookie(
-            "tenant-token", "", _resolver({"tenant-token": self.ROW}))
-        self.assertTrue(principal.authenticated)
+    def test_a_missing_resolver_authenticates_nobody(self):
+        """The footgun `auth.py` names. It used to be quiet — a caller that forgot the
+        resolver still authenticated operators, so the console worked and only tenants
+        were mysteriously anonymous. Now forgetting it authenticates nobody at all, which
+        fails on the first request instead of looking like a working console."""
+        self.assertFalse(auth.principal_from_cookie("tenant-token").authenticated)
 
 
 class BothCompositionRootsPassTheResolver(unittest.TestCase):

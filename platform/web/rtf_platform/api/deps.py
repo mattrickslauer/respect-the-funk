@@ -8,10 +8,15 @@ is JSON, so nothing here is a helper a handler has to remember to call.
 
 Two annotations carry the whole auth model:
 
-  * `Operator` — signed in. Every read.
-  * `Writer` — signed in *and* `may_write`. Every action. It depends on the operator
-    gate rather than repeating it, so a write route cannot accidentally get the weaker
-    check; there is no way to be a `Writer` without having passed `require_operator`.
+  * `SignedIn` — signed in. Every read.
+  * `Writer` — signed in *and* `may_write`. Every action. It depends on the read gate
+    rather than repeating it, so a write route cannot accidentally get the weaker
+    check; there is no way to be a `Writer` without having passed `require_signed_in`.
+
+Both were called `Operator`/`require_operator` until 2026-08-15. Nothing about the check
+changed in the rename — it only ever tested `authenticated` — but the operator *role* it
+was named after no longer exists, and a gate named for a role that is gone is how the
+next reader concludes there is a superuser somewhere.
 
 `tests/test_api_surface.py` walks every route on the router and asserts one of those
 two is in its dependency tree. That test is the actual guarantee — this docstring is
@@ -19,7 +24,7 @@ only the reason for it.
 
 ## Where this deliberately differs from the console, and why that is not a weakening
 
-**401, not 303.** `require_operator` in `routes.py` raises a 303 to `/` because an
+**401, not 303.** `require_signed_in` in `routes.py` raises a 303 to `/` because an
 unauthenticated *browser* should land on the page that explains what this is rather
 than on a wall. An API client is not a browser: a 303 to an HTML landing page is
 either followed — yielding a 200 full of markup, which reads as success — or reported
@@ -27,17 +32,22 @@ as a redirect the client cannot act on. Both are worse than being told, in one f
 that the credential was missing. The *gate* is identical; only what it says when it
 closes is different, and the gate is the guarantee.
 
-**A bearer token is accepted as well as the cookie.** Same secret, same
-`hmac.compare_digest` in `auth.principal_from_cookie` — no second credential, no
-second comparison, nothing new to get wrong. It is here because a client that is not
-a same-origin browser has no way to present a cookie, and because an API nobody can
+**A bearer token is accepted as well as the cookie.** The same token, resolved by the
+same hash lookup in `accounts.account_for_token` — no second credential, no second
+comparison, nothing new to get wrong. It is here because a client that is not a
+same-origin browser has no way to present a cookie, and because an API nobody can
 reach with `curl` is an API nobody can debug.
+
+This survived the move to email-OTP sign-in without a line changing, which is the
+property `accounts.sign_in` was shaped to give: the session token *is* the account
+token, so verifying an emailed code mints exactly the credential this header already
+accepted.
 
 The honest cost, stated once here and again in `docs/reference/api-v1.md`: an httpOnly
 cookie is unreadable by JavaScript and a bearer token has to be stored somewhere the
-script can read it, which makes it reachable by XSS. For a same-origin React console
-the cookie is the better choice and the bearer path should be left to scripts. The
-server offers both and cannot enforce that judgement; the client author makes it.
+script can read it, which makes it reachable by XSS. A browser client should use the
+cookie and leave the bearer path to scripts. The server offers both and cannot enforce
+that judgement; the client author makes it.
 
 **No CORS.** Not an oversight. Adding permissive CORS to an API that authenticates
 with a cookie is how CSRF gets built by accident, and the correct allow-list depends
@@ -82,18 +92,21 @@ def _token(cookie: str | None, authorization: str | None) -> str | None:
 def _resolve_account(token: str) -> Any:
     """Turn a per-tenant token into its `account` row, for `auth.principal_from_cookie`.
 
-    Opens the connection lazily — inside the function, only when the admin comparison has
-    already failed — so an operator request costs no database work to authenticate and an
-    unconfigured deployment does not raise while working out that somebody is anonymous.
+    Opens the connection lazily — inside the function, and only when a token was actually
+    presented — so an anonymous request costs no database work to be recognised as
+    anonymous.
 
     `SETTINGS.configured` being false returns `None` rather than raising, and that is the
-    one judgement call here. A deployment with no `DATABASE_URL` cannot resolve a tenant
-    token, so nobody holding one is authenticated — but the *operator* path never reaches
-    this function, which means the console still admits the person who can go and set the
-    variable. Raising instead would 500 every request on a fresh checkout, including the
-    landing page, which resolves a principal like everything else. The refusal that
-    matters is not lost: `connection()` below raises `NOT_CONFIGURED` the moment anything
-    tries to read.
+    one judgement call here. A deployment with no `DATABASE_URL` cannot resolve a token, so
+    nobody is authenticated on it. Raising instead would 500 every request on a fresh
+    checkout, including the landing page, which resolves a principal like everything else.
+    The refusal that matters is not lost: `connection()` below raises `NOT_CONFIGURED` the
+    moment anything tries to read.
+
+    **This used to be the second of two credential paths, and is now the only one.** The
+    note that once stood here — that the operator path never reaches this function, so an
+    unconfigured deployment still admits the person who can go and set the variable — is no
+    longer true of anybody. `auth.py` records that trade in full.
     """
     if not SETTINGS.configured:
         return None
@@ -106,19 +119,22 @@ def current_principal(
 ) -> auth.Principal:
     """Who is asking. `auth.ANONYMOUS` when nobody is.
 
-    Two credentials resolve here now, in this order: the shared operator token, compared
-    in constant time against `PLATFORM_ADMIN_TOKEN` exactly as before, and — only if that
-    fails — a per-tenant token looked up by hash in `account`. `auth.py` explains why the
-    order is not negotiable and why the resolver is injected rather than imported.
+    One credential resolves here: a per-tenant token, looked up by hash in `account`. It
+    is the same token `otp.py` and `accounts.sign_in` mint at the end of an email
+    verification, which is what makes the bearer path below work unchanged across that
+    change — the session token and the account token are one object.
+
+    The shared operator token used to be compared first, before any database work.
+    `auth.py` records what was given up when it went.
     """
     return auth.principal_from_cookie(
-        _token(rtf_session, authorization), SETTINGS.admin_token, _resolve_account)
+        _token(rtf_session, authorization), _resolve_account)
 
 
 Principal = Annotated[auth.Principal, Depends(current_principal)]
 
 
-def require_operator(
+def require_signed_in(
     principal: Annotated[auth.Principal, Depends(current_principal)],
 ) -> auth.Principal:
     """The gate. Everything on this router is behind it; there are no public API routes.
@@ -130,20 +146,21 @@ def require_operator(
     if not principal.authenticated:
         raise errors.Refusal(
             401, errors.NOT_AUTHENTICATED,
-            "Sign in first. Send the operator token as the rtf_session cookie, or as "
-            "an Authorization: Bearer header.")
+            "Sign in first. Send your account token as the rtf_session cookie, or as "
+            "an Authorization: Bearer header. A token is issued when you sign in at "
+            "/signin with an emailed code.")
     return principal
 
 
-Operator = Annotated[auth.Principal, Depends(require_operator)]
+SignedIn = Annotated[auth.Principal, Depends(require_signed_in)]
 
 
 def require_writer(
-    principal: Annotated[auth.Principal, Depends(require_operator)],
+    principal: Annotated[auth.Principal, Depends(require_signed_in)],
 ) -> auth.Principal:
     """The second gate, on top of the first rather than beside it.
 
-    Depending on `require_operator` — instead of on `current_principal` and re-checking
+    Depending on `require_signed_in` — instead of on `current_principal` and re-checking
     `authenticated` — is what makes it impossible to annotate a write route in a way
     that skips the read gate. There is no ordering for a caller to get wrong because
     there is no ordering to state.
@@ -190,30 +207,35 @@ Conn = Annotated[psycopg.Connection, Depends(connection)]
 
 
 def current_tenant(
-    conn: Conn,
     principal: Annotated[auth.Principal, Depends(current_principal)],
 ) -> str:
-    """The tenant, or a refusal — never `None` passed onward.
+    """The tenant, which is always the caller's own.
 
-    `routes.py` lets `_tenant_id` return `None` and renders an empty state, which is
-    right for a page: a fresh deployment should be browsable before it has data. It is
-    wrong for an API. A read that returned `{"rows": []}` for "there is no tenant" would
-    be indistinguishable from "the tenant exists and has nothing", and a client would
-    render an empty table for a deployment that has not been set up. Worse, an action
-    would pass `None` into a query as a tenant id and quietly match nothing — a silent
-    default in the exact place this project's standing rule forbids one.
+    **The principal's tenant is the only tenant this router will ever scope to, and that
+    is now true by construction rather than by precedence.** A token resolves to a row in
+    `account`, and that row's `tenant_id` is the only tenant the request may see; every
+    read and every write takes its scope from here, so there is no handler that could be
+    written to see another tenant's rows without going around this dependency.
 
-    So the absence is a refusal with its own code, and the client can say what is
-    actually true.
+    This function used to take a `Conn` and fall back to `repo.get_tenant(conn,
+    SETTINGS.tenant_slug)` — the operator path, for the one principal that carried no
+    tenant by construction — and to raise `NO_TENANT` when even that was absent. All of it
+    is gone with the operator, and the whole dependency is now one field access:
 
-    **The principal's tenant wins when it has one, and this is the line that makes
-    multi-tenancy real on this surface.** A per-tenant token resolves to a row in
-    `account`, and that row's `tenant_id` is the only tenant that request may see; every
-    read and every write on this router takes its scope from here, so there is no handler
-    that could be written to see another tenant's rows without going around this
-    dependency. `PLATFORM_TENANT_SLUG` remains the answer for the operator principal,
-    which carries no tenant by construction — that is the superuser path, unchanged, and
-    it is why `Principal.is_operator` is `tenant_id is None` rather than a flag.
+      * the fallback was the last way a request could be scoped to a tenant nobody signed
+        in as, which is precisely the thing this dependency exists to prevent;
+      * `NO_TENANT` cannot arise. It meant "authenticated, but we cannot work out whose
+        rows these are", and there is no longer a way to be authenticated without an
+        `account` row naming a tenant. A declared refusal code that no code path can
+        produce is worse than no code: a client author writes a branch for it and can
+        never test the branch.
+      * the `Conn` parameter went with the query, so resolving the tenant no longer costs
+        a connection. Reads that need one still ask for `Conn` themselves.
+
+    The gate above still runs first, so an unauthenticated caller gets `NOT_AUTHENTICATED`
+    from `require_signed_in` and never reaches this. `tenant_id` on an authenticated
+    principal is non-empty by construction in `auth.principal_from_cookie`; the assertion
+    states that rather than trusting a reader to go and check.
 
     Note what is *not* re-checked here: whether the tenant row still exists. The account
     row has a foreign key to `tenant` with `ON DELETE CASCADE`, so a tenant that has been
@@ -221,15 +243,10 @@ def current_tenant(
     authentication. Verifying it again would be a second round trip to learn something
     the schema already guarantees.
     """
-    if principal.tenant_id:
-        return principal.tenant_id
-    tenant = repo.get_tenant(conn, SETTINGS.tenant_slug)
-    if tenant is None:
-        raise errors.Refusal(
-            409, errors.NO_TENANT,
-            f"No tenant {SETTINGS.tenant_slug!r} exists yet. Nothing has been created "
-            "on this deployment — save an artist and it will be.")
-    return str(tenant["id"])
+    assert principal.tenant_id, (
+        "an authenticated principal always carries a tenant; see "
+        "auth.principal_from_cookie")
+    return principal.tenant_id
 
 
 Tenant = Annotated[str, Depends(current_tenant)]

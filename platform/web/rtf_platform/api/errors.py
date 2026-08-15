@@ -67,10 +67,13 @@ READ_ONLY = "read_only"
 #: the caller does will help.
 NOT_CONFIGURED = "not_configured"
 
-#: No tenant row exists yet. A fresh deployment before the first artist was saved.
-#: Distinct from an empty result: "there is nowhere to look" and "we looked and found
-#: nothing" are different answers and the console renders them differently too.
-NO_TENANT = "no_tenant"
+# `NO_TENANT` was declared here until 2026-08-15 and is deliberately not replaced.
+# It meant "authenticated, but we cannot work out whose rows these are", which was
+# reachable only through the operator principal — the one principal that carried no
+# tenant. With email-OTP sign-in there is no way to be authenticated without an
+# `account` row naming a tenant, so no handler can produce it. A declared code that
+# no path can raise is worse than no code: a client author writes a branch for it and
+# can never test the branch. `api/deps.current_tenant` carries the same argument.
 
 #: The thing named in the path does not exist in this tenant. Also what a caller gets
 #: for an object belonging to somebody else, and the two are indistinguishable on
@@ -119,12 +122,10 @@ BILLING_NOT_CONFIGURED = "billing_not_configured"
 #: carries the specific `reason`, which is logged rather than returned.
 BILLING_SIGNATURE_INVALID = "billing_signature_invalid"
 
-#: `accounts.ClaimRefused` — a claim the server declined. The address is malformed, the
-#: address already has an account, or a signup bound was reached. One code because every
-#: one of them is "your request was understood and refused for a stated reason", and the
-#: sentence is what differs; `accounts.ClaimRefused.reason` carries the machine-readable
-#: half for anything that needs to branch.
-CLAIM_REFUSED = "claim_refused"
+# `CLAIM_REFUSED` was declared here for `POST /claim`, which no longer exists — sign-in
+# is a two-step browser flow with no machine-readable form, and a script that wants a
+# credential holds the token it was issued. Removed for the same reason as `NO_TENANT`
+# above: nothing can raise it.
 
 #: There is no draft on this thread waiting for a decision — it was approved, rejected
 #: or withdrawn between the read and the write.
@@ -159,12 +160,11 @@ MALFORMED_REQUEST = "malformed_request"
 
 #: Every code above, for the test that proves no handler raises one that is not here.
 CODES: frozenset[str] = frozenset({
-    NOT_AUTHENTICATED, READ_ONLY, NOT_CONFIGURED, NO_TENANT, NOT_FOUND,
+    NOT_AUTHENTICATED, READ_ONLY, NOT_CONFIGURED, NOT_FOUND,
     NOT_ALLOWED_VALUE, TRANSITION_REFUSED, ALREADY_QUEUED, THREAD_OCCUPIED,
     NO_DRAFT_WAITING, NOTHING_QUEUED, NO_MASTER, SUGGESTION_UNACCEPTABLE,
     NOT_JUSTIFIED, HISTORY_EXPIRED, MALFORMED_REQUEST,
     PLAN_LIMIT_REACHED, BILLING_NOT_CONFIGURED, BILLING_SIGNATURE_INVALID,
-    CLAIM_REFUSED,
 })
 
 

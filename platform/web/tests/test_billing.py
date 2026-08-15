@@ -36,7 +36,7 @@ def _settings(**overrides) -> settings_mod.Settings:
     argument is about one level up.
     """
     base = dict(
-        database_url="", admin_token="", tenant_slug="test", masters_bucket="",
+        database_url="", masters_bucket="",
         region="us-east-1", classifier_function="", mail_sender="", mail_reply_to="",
         mail_postal_address="", cockroach_api_key="", cockroach_cluster_id="",
         mcp_url="", openai_api_key="",
@@ -416,15 +416,18 @@ class TheEndpointsThemselves(unittest.TestCase):
         gated = {}
         for route in routes.router.routes:
             if isinstance(route, APIRoute) and route.path in (
-                    "/claim", "/billing/checkout", "/billing/webhook"):
+                    "/signin/code", "/billing/checkout", "/billing/webhook"):
                 names, stack = set(), list(route.dependant.dependencies)
                 while stack:
                     dep = stack.pop()
                     names.add(getattr(dep.call, "__name__", ""))
                     stack.extend(dep.dependencies)
-                gated[route.path] = "require_operator" in names
+                gated[route.path] = "require_signed_in" in names
 
-        self.assertEqual({"/claim": False, "/billing/checkout": True,
+        # `/signin/code` replaces `/claim` as the public, unauthenticated entry point —
+        # it has to be public, because it is how somebody stops being anonymous — and it
+        # carries its own bounds in `otp.py` rather than relying on a gate.
+        self.assertEqual({"/signin/code": False, "/billing/checkout": True,
                           "/billing/webhook": False}, gated)
 
     def test_the_webhook_refuses_a_bad_signature_with_the_declared_code(self):
@@ -467,18 +470,29 @@ class TheEndpointsThemselves(unittest.TestCase):
         self.assertEqual(400, response.status_code)
         self.assertIn("STRIPE_WEBHOOK_SECRET", json.loads(response.body)["message"])
 
-    def test_checkout_refuses_the_operator_principal(self):
-        """The shared admin token is scoped to no tenant, so there is nobody to
-        subscribe. Inventing one would attach a real subscription to the wrong party."""
-        from rtf_platform import auth, routes
-        from rtf_platform.api import errors
+    def test_checkout_refuses_a_principal_with_no_tenant(self):
+        """There used to be a principal that legitimately reached this route with no
+        tenant — the shared admin token, scoped to none by construction — and this route
+        refused it with a 409 rather than attaching a real subscription to the wrong
+        party.
 
-        operator = auth.Principal(tenant_id=None, subject="operator",
-                                  authenticated=True, plan=auth.OPERATOR_PLAN)
-        response = routes.billing_checkout(None, operator, plan="label")
-        self.assertEqual(409, response.status_code)
-        self.assertEqual(errors.BILLING_NOT_CONFIGURED,
-                         json.loads(response.body)["error"]["code"])
+        That principal no longer exists: every authenticated one carries its own tenant.
+        So the guard moved into `_tenant_id`, where it is a 500 rather than a 409, and
+        the difference in status code is the point. A tenantless principal here is not a
+        situation a caller can be in and be told about; it is a route that was annotated
+        `Principal` instead of `SignedIn`, which is a bug in this repository and must
+        look like one in the logs.
+        """
+        from fastapi import HTTPException
+
+        from rtf_platform import auth, routes
+
+        tenantless = auth.Principal(tenant_id=None, subject="nobody",
+                                    authenticated=True)
+        with self.assertRaises(HTTPException) as caught:
+            routes.billing_checkout(None, tenantless, plan="label")
+        self.assertEqual(500, caught.exception.status_code)
+        self.assertIn("SignedIn", caught.exception.detail)
 
     def test_checkout_names_the_missing_variables_rather_than_pretending(self):
         from rtf_platform import accounts, auth, routes

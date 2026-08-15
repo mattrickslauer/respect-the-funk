@@ -42,7 +42,7 @@ from fastapi import APIRouter, Query
 
 from rtf_platform import agents, outreach, research
 from rtf_platform.api import errors, shapes
-from rtf_platform.api.deps import Conn, Operator, Tenant, not_found
+from rtf_platform.api.deps import Conn, SignedIn, Tenant, not_found
 
 router = APIRouter()
 
@@ -50,7 +50,7 @@ router = APIRouter()
 # ------------------------------------------------------------------- summary
 
 @router.get("/summary")
-def summary(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def summary(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """The counts the console draws its nav badges from, in one round trip.
 
     `outreach.counts` is one statement for five numbers, written that way because they
@@ -85,7 +85,7 @@ def summary(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
 
 
 @router.get("/today")
-def today(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def today(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """The needs-you queue: everything asking something of a person, in one list.
 
     `research.today_items` composes it and this shapes it — including the grouping rule,
@@ -121,7 +121,7 @@ def today(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
 # --------------------------------------------------------------- knowledge
 
 @router.get("/artists")
-def artists(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def artists(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """The roster. `profiles` on each row is the count; the surfaces themselves are on
     `/artists/{id}/profiles`, because fetching presence per artist is a query per row
     and the list should not pay for it."""
@@ -129,7 +129,7 @@ def artists(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
 
 
 @router.get("/artists/{artist_id}/profiles")
-def artist_profiles(principal: Operator, conn: Conn, tenant: Tenant,
+def artist_profiles(principal: SignedIn, conn: Conn, tenant: Tenant,
                     artist_id: str) -> dict[str, Any]:
     """Where we look for one artist.
 
@@ -143,7 +143,7 @@ def artist_profiles(principal: Operator, conn: Conn, tenant: Tenant,
 
 
 @router.get("/recordings")
-def recordings(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def recordings(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """Recordings, each with its masters and its credits.
 
     Three queries for the whole tenant and the grouping done in Python, which is what
@@ -160,7 +160,7 @@ def recordings(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any
 
 @router.get("/counterparties")
 def counterparties(
-    principal: Operator, conn: Conn, tenant: Tenant,
+    principal: SignedIn, conn: Conn, tenant: Tenant,
     q: Annotated[str, Query(description="Case-insensitive substring of the name.")] = "",
     contact_state: Annotated[str, Query(description="Exact contact_state.")] = "",
     searchable: Annotated[
@@ -188,7 +188,7 @@ def counterparties(
 
 
 @router.get("/facts")
-def facts(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def facts(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """Everything the fleet believes. `total` here is exact — the counts come from a
     second statement over the whole table, so `truncated` is not a heuristic."""
     counts = research.counts_facts(conn, tenant)
@@ -199,7 +199,7 @@ def facts(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
 
 
 @router.get("/suggestions")
-def suggestions(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def suggestions(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """Pending matches an agent found by inference rather than measurement.
 
     Nothing promotes one automatically, by design. These are the rows the accept and
@@ -212,17 +212,17 @@ def suggestions(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, An
 # ---------------------------------------------------------------- campaigns
 
 @router.get("/campaigns")
-def campaigns(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def campaigns(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     return shapes.listing(research.rows_campaigns(conn, tenant), shapes.campaign)
 
 
 @router.get("/threads")
-def threads(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def threads(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     return shapes.listing(research.rows_threads(conn, tenant), shapes.thread)
 
 
 @router.get("/threads/{thread_id}/justification")
-def justification(principal: Operator, conn: Conn, tenant: Tenant,
+def justification(principal: SignedIn, conn: Conn, tenant: Tenant,
                   thread_id: str) -> dict[str, Any]:
     """Why this counterparty was contacted — the shortlist replayed as it stood.
 
@@ -265,7 +265,7 @@ def justification(principal: Operator, conn: Conn, tenant: Tenant,
 
 
 @router.get("/approvals")
-def approvals(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def approvals(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """The send gate: every thread on `awaiting_human` with its newest unsent draft.
 
     Empty is the normal state and means the fleet is blocked on nobody. `queued_unsent`
@@ -281,7 +281,7 @@ def approvals(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]
 
 
 @router.get("/inbox")
-def inbox(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def inbox(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """Replies, newest first.
 
     **Nothing writes these.** There is no mail provider and no inbound adapter, so an
@@ -297,7 +297,7 @@ def inbox(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
 # ------------------------------------------------------------------- system
 
 @router.get("/queue")
-def queue(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def queue(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     counts = research.counts_queue(conn, tenant)
     return shapes.listing(
         research.rows_queue(conn, tenant), shapes.lead,
@@ -307,7 +307,7 @@ def queue(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
 
 
 @router.get("/runs")
-def runs(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def runs(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """Runs and errors. The counts are over the last 24 hours and the rows are not, so
     `total` is deliberately *not* passed to `listing` — it would make `truncated` mean
     "more than fit in a day" rather than "more than fit in the response"."""
@@ -324,7 +324,7 @@ def runs(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
 
 
 @router.get("/fleet")
-def fleet(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def fleet(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """The fleet: what the manifest declares, what this process can run, what has run.
 
     `state` is computed in `research.fleet_agents` and not here, because `off` and
@@ -338,7 +338,7 @@ def fleet(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
 
 
 @router.get("/budgets")
-def budgets(principal: Operator, conn: Conn, tenant: Tenant) -> dict[str, Any]:
+def budgets(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """Per-artist token caps and what has been spent against them.
 
     Spend is summed from `agent_run` rather than decremented from a counter, and the

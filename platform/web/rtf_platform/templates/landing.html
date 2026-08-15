@@ -554,10 +554,14 @@ footer a{color:var(--carrier)}
         <p class="sum">{{ t.summary }}</p>
         <div class="go">
           {% if t.key == 'free' %}
-            <form class="claim" method="post" action="/claim">
+            {# Posts to the first step of sign-in rather than to the old `POST /claim`.
+               Same field, same one click, and the account is created on the far side of
+               the emailed code instead of on the strength of having typed an address —
+               so this control is now signup and sign-in at once, and says so. #}
+            <form class="claim" method="post" action="/signin/code">
               <input type="email" name="email" required autocomplete="email"
                      placeholder="you@example.com" aria-label="Email for your account">
-              <button type="submit">Claim an account</button>
+              <button type="submit">Email me a code</button>
             </form>
           {% elif t.purchasable %}
             {# Not configured says so, here, rather than after a click. The endpoint
@@ -599,7 +603,7 @@ footer a{color:var(--carrier)}
     <p style="margin-top:18px">
       <a href="/manual">Operator manual</a> — what the console does and how it is run,
       written for the people who run it. ·
-      <a href="/signin">Operator sign-in</a> — the console is private; everything on this
+      <a href="/signin">Sign in</a> — the console is private; everything on this
       page is read-only and needs no account.
     </p>
   </footer>

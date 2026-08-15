@@ -50,7 +50,23 @@ import psycopg
 from psycopg.rows import dict_row
 
 #: Marks the rows this script owns, so `--reset` can be exact.
-SEEDED_BY = "apps/spindle/bin/seed_decisions.py"
+#:
+#: A **name, not a path**. It was a path until 2026-08-15 and the repository restructure
+#: that afternoon rewrote it — which silently orphaned every row already written under
+#: the old string, so `--reset` stopped finding them and re-running would have doubled
+#: the ledger. That is precisely the idempotency this script claims, broken by a file
+#: move it had no reason to care about. An ownership marker must not encode where its
+#: writer happens to live.
+SEEDED_BY = "seed_decisions"
+
+#: Markers this script used before the one above. `--reset` clears these too, so rows
+#: written under a previous name are still reachable rather than stranded forever. New
+#: entries go on the end; nothing is ever removed, because a row written years ago is
+#: exactly the one nobody remembers the marker for.
+LEGACY_MARKERS: tuple[str, ...] = (
+    "platform/bin/seed_decisions.py",
+    "apps/spindle/bin/seed_decisions.py",
+)
 
 
 def _showcase_tenant(conn: psycopg.Connection) -> tuple[str, str] | None:
@@ -223,8 +239,8 @@ def main() -> int:
             if args.reset:
                 cur.execute(
                     """DELETE FROM decision
-                        WHERE tenant_id = %s AND inputs->>'seeded_by' = %s""",
-                    (tenant_id, SEEDED_BY))
+                        WHERE tenant_id = %s AND inputs->>'seeded_by' = ANY(%s)""",
+                    (tenant_id, [SEEDED_BY, *LEGACY_MARKERS]))
                 print(f"\nremoved {cur.rowcount} previously seeded row(s)")
 
             written = 0

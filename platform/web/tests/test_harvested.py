@@ -16,9 +16,9 @@ from __future__ import annotations
 import unittest
 from decimal import Decimal
 
-from rtf_platform import harvested
-from rtf_platform.distributors import StatementError
-from rtf_platform.distributors.base import StatementUnparseable, _to_int, _to_money
+from spindle import harvested
+from spindle.distributors import StatementError
+from spindle.distributors.base import StatementUnparseable, _to_int, _to_money
 
 
 # --------------------------------------------------------------------- Identifier

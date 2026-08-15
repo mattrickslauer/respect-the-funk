@@ -294,7 +294,7 @@ CREATE TABLE IF NOT EXISTS artist_budget (
 );
 
 -- An agent is a row and a function. This is the row; the function is a handler in
--- `rtf_platform/handlers/`. Adding one is an INSERT, and disabling one is an
+-- `spindle/handlers/`. Adding one is an INSERT, and disabling one is an
 -- UPDATE rather than a deploy.
 CREATE TABLE IF NOT EXISTS agent_manifest (
     kind            STRING PRIMARY KEY,

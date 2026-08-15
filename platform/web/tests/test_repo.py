@@ -20,7 +20,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from rtf_platform import repo
+from spindle import repo
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 

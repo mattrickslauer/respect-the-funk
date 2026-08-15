@@ -1,6 +1,6 @@
 ===============================================================================
 SHOT LIST — 2026-08-15 shoot
-Respect the Funk / CockroachDB x AWS Hackathon ONLY
+Spindle / CockroachDB x AWS Hackathon ONLY
 ===============================================================================
 
 SCOPE       CockroachDB and AWS. Nothing is shot for any other submission.
@@ -36,8 +36,9 @@ point of writing them down is that they are falsifiable.
       say the real number. Otherwise the line is re-read. Do not round up.
 
   W2  CHANGEFEED — STILL CUT.
-      Zero rows on 08-10, still zero on 08-13, and VIDEO_SCRIPT.md marks the
-      line CUT. Beat 3 opens on kill -9. The words "a changefeed wakes the
+      Zero rows on 08-10, still zero on 08-13, and the v3 claim ledger marked
+      the line CUT (VIDEO_SCRIPT.md, deleted 2026-08-15; in git history).
+      Beat 3 opens on kill -9. The words "a changefeed wakes the
       next one" are not said tomorrow unless SHOW CHANGEFEED JOBS returns a
       running job in pre-flight, which nobody has authorised the RU draw for.
 

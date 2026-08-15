@@ -6,7 +6,7 @@
 -- chain as DSR, monthly, per ISRC per territory, and what a label actually holds is
 -- whatever its distributor passes on — a raw DSR file, an API, or a spreadsheet
 -- exported from a dashboard. DistroKid is the third kind, which is why
--- `rtf_platform/distributors/` reads files rather than fetching anything.
+-- `spindle/distributors/` reads files rather than fetching anything.
 --
 -- This table is evidence, in the same sense `party_document` is: it records the file
 -- itself, not a claim derived from it. The measurements land in `party_metric` and

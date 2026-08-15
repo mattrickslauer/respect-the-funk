@@ -30,7 +30,7 @@ import unittest
 from decimal import Decimal
 from unittest import mock
 
-from rtf_platform import bedrock, embed, spend
+from spindle import bedrock, embed, spend
 
 
 def _env(**overrides: str):

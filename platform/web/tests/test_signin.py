@@ -27,7 +27,7 @@ import os
 import unittest
 import uuid
 
-from rtf_platform import accounts, auth, mail, otp, routes
+from spindle import accounts, auth, mail, otp, routes
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 

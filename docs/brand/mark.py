@@ -29,7 +29,7 @@ def norm(theta: float) -> float:
 
 
 def main() -> None:
-    print(f'    <g transform="translate({CX:.0f}, {CY:.0f})" fill="#f5b940">')
+    print(f'    <g transform="translate({CX:.0f}, {CY:.0f})" fill="#d97f4a">')
     for i in range(N):
         deg = 360.0 * i / N
         n = norm(math.radians(deg))

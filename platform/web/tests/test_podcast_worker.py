@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from rtf_platform import agents, fleet, podcastindex
+from spindle import agents, fleet, podcastindex
 
 CREDS = {podcastindex.KEY_VAR: "TESTKEY0000000000000",
          podcastindex.SECRET_VAR: "testsecret##0000"}

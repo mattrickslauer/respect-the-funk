@@ -154,7 +154,7 @@
 -- makes it NOT NULL with no default. As of this migration the writers are
 -- `ingest.send_self_test` (which inserts the delivery self-test route) and whatever the
 -- `index_stations` contact-enrichment step grows into; `sender.py` only updates
--- `checked_at` and is unaffected. Those call sites live under `platform/web/rtf_platform/`
+-- `checked_at` and is unaffected. Those call sites live under `platform/web/spindle/`
 -- and are not changed here — this migration is what makes their omission visible, and it
 -- does so as a `NotNullViolation` naming `contact_country`, which is the most useful
 -- error the database can produce. Applying this before those call sites pass a country

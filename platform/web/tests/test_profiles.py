@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import unittest
 
-from rtf_platform import profiles
+from spindle import profiles
 
 
 class ComposeRequiresARole(unittest.TestCase):

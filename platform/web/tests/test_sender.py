@@ -67,7 +67,7 @@ import uuid
 from datetime import datetime, timezone
 from unittest import mock
 
-from rtf_platform import fleet, mail, sender
+from spindle import fleet, mail, sender
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 

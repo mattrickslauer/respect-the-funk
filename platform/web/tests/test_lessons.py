@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import unittest
 
-from rtf_platform import lessons
+from spindle import lessons
 
 
 def candidate(cid: str, distance: float) -> dict:
@@ -219,7 +219,7 @@ class RetrievalIsScoped(unittest.TestCase):
             return str(cur.fetchone()["id"])
 
     def test_a_lesson_from_another_model_is_invisible(self):
-        from rtf_platform import lessons as mod
+        from spindle import lessons as mod
         self._insert(model="other-model")
         found = mod.retrieve_for(self.conn, self.tenant,
                                  query_vector_literal=self._vector(0.1),
@@ -228,7 +228,7 @@ class RetrievalIsScoped(unittest.TestCase):
                          "a vector from a different model is noise, not a near neighbour")
 
     def test_a_lesson_from_the_same_model_is_found(self):
-        from rtf_platform import lessons as mod
+        from spindle import lessons as mod
         self._insert(model="the-model", text="found me")
         found = mod.retrieve_for(self.conn, self.tenant,
                                  query_vector_literal=self._vector(0.1),
@@ -238,7 +238,7 @@ class RetrievalIsScoped(unittest.TestCase):
     def test_a_party_lesson_is_fetched_by_id_not_by_similarity(self):
         # A party-scoped lesson with a deliberately distant embedding must still come
         # back when that party is a candidate — we know who we mean.
-        from rtf_platform import lessons as mod
+        from spindle import lessons as mod
         party_id = str(uuid.uuid4())
         with self.conn.cursor() as cur:
             cur.execute(
@@ -283,7 +283,7 @@ class ShortlistDoesNotDuplicateOnPresence(unittest.TestCase):
         return "[" + ",".join([str(fill)] * 1024) + "]"
 
     def test_a_party_with_three_presence_rows_appears_once(self):
-        from rtf_platform import agents, spend
+        from spindle import agents, spend
 
         model = "the-model"
         with self.conn.cursor() as cur:

@@ -916,7 +916,7 @@ variant spread — so adding a format is adding a record rather than editing the
 
 This is also the answer to a question the repo used to get wrong: RemixKit generates the
 media a release needs, whatever kind that is. It is not a manufacturer of templatable UGC
-bait that happens to do other things — see [PRODUCT.md](../docs/PRODUCT.md) § *What the product
+bait that happens to do other things — see PRODUCT.md (deleted 2026-08-15; in git history) § *What the product
 generates, precisely*. The backdrop below is one row.
 
 Five ship, seeded per tenant on first read (there is no migration step to hang a fixture

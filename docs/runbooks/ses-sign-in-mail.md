@@ -27,6 +27,19 @@ With `mail_domain` set, `terraform apply` creates:
 With `mail_domain` empty it creates none of them and applies cleanly. That is a supported
 state; it is just one where nobody can sign in.
 
+**If the domain is already verified in SES**, do not let Terraform create the identity:
+`VerifyDomainIdentity` issues a *fresh* verification token, which can flip an
+already-verified domain back to `Pending` until the new TXT is published. Import it
+instead, then plan — the create disappears and only the IAM policy is left to add.
+
+```
+terraform -chdir=platform/infra import 'aws_ses_domain_identity.mail[0]' <domain>
+terraform -chdir=platform/infra import 'aws_ses_domain_dkim.mail[0]'     <domain>
+```
+
+Note what importing means afterwards: Terraform now manages an identity it did not
+create, so a future `terraform destroy` would delete it.
+
 ## Step 1 — verify the domain (DNS)
 
 **If the domain's DNS is in Route 53:** set `mail_route53_zone_id` and you are done. The
@@ -89,32 +102,39 @@ aws ses verify-email-identity --email-address someone@example.com
 
 They receive a confirmation link and must click it.
 
-## Step 3 — set the three variables
+## Step 3 — set the mail variables
 
-All three, or none of them count. `settings.mail_configured` is all-or-nothing and
-`mail.load()` refuses with all three named:
+**Sign-in needs two of them; outreach needs three.** That split is real and deliberate:
 
 ```hcl
 mail_domain          = "respectthefunk.com"
 mail_sender          = "hello@respectthefunk.com"    # must be at mail_domain
 mail_reply_to        = "hello@respectthefunk.com"
-mail_postal_address  = "…, …, …"
+# mail_postal_address = "…"                          # only for outreach — see below
 ```
+
+A **sign-in code is transactional**: the recipient asked for it seconds ago and there is
+nothing to unsubscribe from. `settings.transactional_mail_configured` needs only the
+sender and the reply-to, and `mail.load()` checks exactly that.
+
+**Outreach is commercial**, so CAN-SPAM §7704(a)(5) requires a physical postal address in
+the body and `settings.mail_configured` demands all three. With the address unset,
+`sender.py` refuses to claim the outbox and the changefeed attaches no sender — **sign-in
+is unaffected**. That is this deployment's state as of 2026-08-15: people can log in,
+nobody can be pitched.
+
+Do not put a placeholder in `mail_postal_address` to make a check go green. It is
+appended verbatim to the footer of every commercial message by `mail.compliant_body`, so
+a fake address is a fake address on real mail.
 
 `mail_sender` must be at `mail_domain` or SES rejects every send once the identity is
 verified — the identity authorises the domain, not an arbitrary From.
 
-`mail_postal_address` is required because CAN-SPAM §7704(a)(5) requires a physical address
-in every *commercial* message and `mail.compliant_body` appends it. **Sign-in codes do not
-carry it**, and that is deliberate: a login email is transactional, and appending the
-outreach footer would invite somebody to reply STOP to a sign-in code and thereby set
-`contact_route.state = 'opted_out'` on a party they may be in an active campaign with.
-`otp.py` has the argument.
-
 Confirm after applying:
 
 ```
-terraform output mail_configured     # must be true
+terraform output sign_in_mail_configured    # must be true, or nobody can log in
+terraform output outreach_mail_configured   # false is fine unless you are sending pitches
 ```
 
 ## Verifying end to end
@@ -124,7 +144,7 @@ curl -si https://<function-url>/signin/code -d "email=someone@example.com" | hea
 ```
 
 - `200` — a code was minted and handed to SES.
-- `503` — `mail_configured` is false. The body names which variables are unset.
+- `503` — the transport is unconfigured. The body names which variables are unset, and will never ask for `PLATFORM_MAIL_POSTAL_ADDRESS`.
 - `502` — SES refused. Almost always an unverified domain (step 1) or a sandbox recipient
   (step 2); the body carries the SES error code.
 - `429` — the resend floor (30s for one address) or the hourly cap (60 addresses
@@ -139,8 +159,8 @@ To let a known address in when mail is broken, mint a token by hand and set it a
 `rtf_session` cookie:
 
 ```python
-# against the cluster, with rtf_platform importable
-from rtf_platform import accounts, db
+# against the cluster, with spindle importable
+from spindle import accounts, db
 conn = db.connect(DATABASE_URL)
 account, token = accounts.sign_in(conn, "you@example.com")
 print(token)          # set as the rtf_session cookie, or send as a Bearer header

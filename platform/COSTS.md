@@ -1,7 +1,7 @@
 # What can cost money, and what stops it
 
 Every surface in this project that can generate a bill, what currently bounds it, and the
-rules. `web/rtf_platform/spend.py` is the enforcement; this is the argument.
+rules. `web/spindle/spend.py` is the enforcement; this is the argument.
 
 **Current state: nothing paid is enabled.** `RTF_PAID_ENABLED` is unset, which means
 every metered call is refused before it is made. Turning it on is a deliberate act with a

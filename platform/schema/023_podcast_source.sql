@@ -27,7 +27,7 @@
 -- 005's registry comment sets the rule: every row lands disabled, and turning one on is
 -- an UPDATE rather than a deploy. It is the right posture here for a stronger reason than
 -- tidiness — this source **cannot be called at all** without a key and secret, and
--- `rtf_platform.podcastindex.credentials()` raises `NotConfigured` when either is absent
+-- `spindle.podcastindex.credentials()` raises `NotConfigured` when either is absent
 -- rather than returning empty strings. A row enabled before the credential exists would
 -- produce a stage that fails every lead with a perfectly good error message nobody asked
 -- for. `disabled_reason` therefore names the two environment variables, because the

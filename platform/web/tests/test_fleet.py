@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from rtf_platform import fleet, spend
+from spindle import fleet, spend
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 
@@ -803,7 +803,7 @@ class AgentRunNamesTheWork(unittest.TestCase):
     def test_record_run_takes_the_kind_from_the_lead(self) -> None:
         import inspect
 
-        from rtf_platform import fleet
+        from spindle import fleet
 
         source = inspect.getsource(fleet.record_run)
         params = source.split("VALUES")[1]
@@ -822,7 +822,7 @@ class AgentRunNamesTheWork(unittest.TestCase):
         """
         import inspect
 
-        from rtf_platform import fleet
+        from spindle import fleet
 
         params = "\n".join(
             line for line in inspect.getsource(fleet.record_run).split("VALUES")[1].splitlines()

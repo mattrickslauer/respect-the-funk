@@ -35,7 +35,7 @@ terraform {
   # local state is how infrastructure gets destroyed by accident.
   #
   # backend "s3" {
-  #   bucket = "rtf-platform-tfstate"
+  #   bucket = "spindle-tfstate"
   #   key    = "prod/terraform.tfstate"
   #   region = "us-east-1"
   # }
@@ -49,7 +49,7 @@ provider "aws" {
   # separable from RemixKit's in Cost Explorer — group by the Project tag.
   default_tags {
     tags = {
-      Project   = "rtf-platform"
+      Project   = "spindle"
       Env       = var.env
       ManagedBy = "terraform"
       Repo      = "respect-the-funk"
@@ -59,7 +59,7 @@ provider "aws" {
 }
 
 locals {
-  name = "rtf-platform-${var.env}"
+  name = "spindle-${var.env}"
 }
 
 # ------------------------------------------------------------------ the bundle
@@ -314,7 +314,7 @@ resource "aws_cloudwatch_log_group" "console" {
 resource "aws_lambda_function" "console" {
   function_name = "${local.name}-console"
   role          = aws_iam_role.console.arn
-  handler       = "rtf_platform.handler.handler"
+  handler       = "spindle.handler.handler"
 
   # Must stay in lockstep with build.sh's --python-version. Wheels fetched for one
   # minor version and run on another is the failure mode this pairing prevents.
@@ -567,7 +567,7 @@ resource "aws_iam_role_policy" "invoke_classifier" {
 # wakes an agent" — a true sentence rather than a drawing of an intention. As of the
 # 2026-08-10 audit, `SHOW CHANGEFEED JOBS` returned zero rows.
 #
-# `rtf_platform/changefeed.py` is the whole of it; read that module's docstring before
+# `spindle/changefeed.py` is the whole of it; read that module's docstring before
 # changing anything here. Two facts this stack has to respect:
 #
 #   * A wake is permission to look, not a grant of work. This function receives a batch,
@@ -578,10 +578,10 @@ resource "aws_iam_role_policy" "invoke_classifier" {
 #     not because of anything in this file.
 #   * Creating the changefeed itself is NOT done here. A changefeed is a job that draws
 #     request units continuously against a $10 budget, and this stack has no CockroachDB
-#     provider. `python -m rtf_platform.changefeed --dry-run` prints the exact statement;
+#     provider. `python -m spindle.changefeed --dry-run` prints the exact statement;
 #     a human runs it once the URL below exists and the budget has been checked.
 #
-# Same zip as the console — `data.archive_file.bundle` already contains `rtf_platform` —
+# Same zip as the console — `data.archive_file.bundle` already contains `spindle` —
 # so this adds a function and not a build step. Idle cost is zero for the reasons argued
 # at the top of this file. Cost in use is one invocation per *batch*, because the feed is
 # created with `webhook_sink_config` flushing at 50 messages or 5 seconds, plus one
@@ -627,7 +627,7 @@ resource "aws_lambda_function" "changefeed" {
   count         = var.changefeed_webhook_token == "" ? 0 : 1
   function_name = "${local.name}-changefeed"
   role          = aws_iam_role.changefeed[0].arn
-  handler       = "rtf_platform.changefeed.lambda_handler"
+  handler       = "spindle.changefeed.lambda_handler"
   runtime       = "python3.13"
   architectures = ["arm64"]
   memory_size   = var.memory_mb

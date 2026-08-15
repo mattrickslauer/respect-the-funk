@@ -46,7 +46,7 @@ import unittest
 from decimal import Decimal
 from unittest import mock
 
-from rtf_platform import mcp, spend
+from spindle import mcp, spend
 
 #: A tenant id to pin statements to. Any UUID works; this one is deliberately *not* the
 #: production tenant, so a test that somehow reached the cluster would ask about nothing.
@@ -517,9 +517,9 @@ class TheScreen(unittest.TestCase):
 
         from fastapi.templating import Jinja2Templates
 
-        from rtf_platform import demo
+        from spindle import demo
 
-        root = Path(__file__).resolve().parents[1] / "rtf_platform" / "templates"
+        root = Path(__file__).resolve().parents[1] / "spindle" / "templates"
         env = Jinja2Templates(directory=str(root)).env
         env.globals["chip_tone"] = lambda value: ""
         env.globals["prov_abbr"] = lambda value: str(value)

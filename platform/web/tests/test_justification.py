@@ -34,7 +34,7 @@ import uuid
 import psycopg
 from psycopg.rows import dict_row
 
-from rtf_platform import agents, outreach
+from spindle import agents, outreach
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 

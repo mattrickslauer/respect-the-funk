@@ -71,7 +71,7 @@ from pathlib import Path
 from typing import Any, Iterator
 from unittest import mock
 
-from rtf_platform import changefeed as cf, fleet
+from spindle import changefeed as cf, fleet
 
 MODULE = Path(cf.__file__)
 
@@ -664,7 +664,7 @@ class Authentication(unittest.TestCase):
 
     def setUp(self) -> None:
         self.connect = mock.patch(
-            "rtf_platform.db.connect",
+            "spindle.db.connect",
             side_effect=AssertionError("an unauthenticated delivery reached the database"))
         self.connect.start()
         self.addCleanup(self.connect.stop)
@@ -716,7 +716,7 @@ class Authentication(unittest.TestCase):
             {"topic": "thread", "updated": "1.0",
              "after": {"tenant_id": TENANT, "state": "closed_won"}})
 
-        with mock.patch("rtf_platform.db.connect", return_value=cluster), \
+        with mock.patch("spindle.db.connect", return_value=cluster), \
              mock.patch.object(cf, "fleet_worker",
                                return_value=_worker("changefeed-lambda", agent)), \
              mock.patch.dict(os.environ,

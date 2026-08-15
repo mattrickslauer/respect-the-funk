@@ -17,7 +17,7 @@ Read this document as a stop sign on the existing plan documents. They were writ
 
 ## 1. The spine is the artist
 
-Fixed here because it is a partition-key-class decision. [BUILD-SPEC §2b rule 6](./BUILD-SPEC.md) already flagged this category as *"near-impossible to retrofit"* about `tenant`, and it was right; the same applies to the root of the hierarchy.
+Fixed here because it is a partition-key-class decision. BUILD-SPEC §2b rule 6 (deleted 2026-08-15; in git history) already flagged this category as *"near-impossible to retrofit"* about `tenant`, and it was right; the same applies to the root of the hierarchy.
 
 ```
 tenant  →  artist  →  track  →  derived facts
@@ -58,7 +58,7 @@ Three provenance classes, on every fact in the system:
 
 An inferred value may never overwrite a measured one, every fact carries a timestamp, and the interface must render the three classes distinguishably. This is [Pillar 10 §7](./research/10-creator-indexing.md)'s discipline — *"never render an estimated share next to a measured one"* — promoted from one table to a system-wide invariant.
 
-**Rule 2 — processes contribute facts, they do not only consume them.** This is the rule the repo has already failed once, and [MEMORY-SPEC §1](./MEMORY-SPEC.md) diagnosed the failure precisely: *"the identity is a YAML file that is read and never written back to."* "Analyse once" is worth nothing if the analysis is write-once and read-only.
+**Rule 2 — processes contribute facts, they do not only consume them.** This is the rule the repo has already failed once, and MEMORY-SPEC §1 (deleted 2026-08-15; in git history) diagnosed the failure precisely: *"the identity is a YAML file that is read and never written back to."* "Analyse once" is worth nothing if the analysis is write-once and read-only.
 
 The version that works: when radio outreach hears "too long for daytime rotation" three times, that is a fact about the track, discovered by the radio process, that the UGC process and the asset generator both want. Every process is both a reader and a writer of the spine.
 
@@ -81,11 +81,18 @@ The repository currently contains more written material than the new scope has d
 | **This document** | **BINDING** | The current statement of scope |
 | **[`docs/PLATFORM-SPEC.md`](./PLATFORM-SPEC.md)** | **BINDING** | The architecture built on this scope — spine schema, agent fleet, coordination, changefeed topology, twelve-day plan. Resolves open decisions 1, 3 and 5 below. |
 | `docs/research/01–13`, `SYNTHESIS.md`, `STRATEGY-PIVOT.md` | **REFERENCE — findings stand** | These describe the outside world (Meta's targeting deprecation, FTC penalties, the hiQ outcome, creator rates, the measurement wall). Those facts did not change because our scope did. Their *recommendations* are scoped to the old product and are not binding. |
-| `docs/PRODUCT.md` | **VOID as plan** | Scopes the product to a media generation suite with one role. Superseded entirely. |
-| `docs/BUILD-SPEC.md` | **VOID as plan** | Rule 6 (`tenant` as partition key everywhere) is carried forward into §1 above on its own merits. Nothing else survives. |
-| `docs/MEMORY-SPEC.md` | **VOID as plan** | Its memory model is scoped to generation attempts on a 28-clip corpus. §1's diagnosis of the write-back failure is carried forward into §2a rule 2. |
-| `docs/MINDS-SPEC.md` | **VOID as plan** | Email-as-approval-surface is a good idea and likely returns as the fleet's control plane. It returns as a new decision, not as this document. |
-| `docs/PIPELINE-SPEC.md` | **VOID as plan** | Added 2026-08-06; it was missing from this table when the table was first written, which left a thirty-kilobyte spec reading as live. It opens by naming itself a companion to BUILD-SPEC, PRODUCT.md and MEMORY-SPEC — all three void — and specifies a preview plane for kit assembly. Void by the same argument. |
+| `docs/PRODUCT.md` | **VOID — DELETED 2026-08-15** | Scoped the product to a media generation suite with one role. Superseded entirely. |
+| `docs/BUILD-SPEC.md` | **VOID — DELETED 2026-08-15** | Rule 6 (`tenant` as partition key everywhere) is carried forward into §1 above on its own merits. Nothing else survives. |
+| `docs/MEMORY-SPEC.md` | **VOID — DELETED 2026-08-15** | Its memory model was scoped to generation attempts on a 28-clip corpus. §1's diagnosis of the write-back failure is carried forward into §2a rule 2. |
+| `docs/MINDS-SPEC.md` | **VOID — DELETED 2026-08-15** | Email-as-approval-surface is a good idea and likely returns as the fleet's control plane. It returns as a new decision, not as that document. |
+| `docs/PIPELINE-SPEC.md` | **VOID — DELETED 2026-08-15** | Added 2026-08-06; it was missing from this table when the table was first written, which left a thirty-kilobyte spec reading as live. It named itself a companion to BUILD-SPEC, PRODUCT.md and MEMORY-SPEC — all three void — and specified a preview plane for kit assembly. Void by the same argument. |
+
+> **The five VOID documents were deleted on 2026-08-15.** They are recoverable in full from
+> git history — `git show e6c6bd4:docs/PRODUCT.md`, and likewise for the other four. Every
+> piece of reasoning this table marks as *carried forward* is already quoted into this
+> document, so nothing binding was lost with them. Source comments in `app/`, `infra/` and
+> `content/` still cite them by section for design rationale; those citations now point
+> into git history rather than at a file on disk.
 | `content/*-SPEC.md` | **REFERENCE — RemixKit subproject** | Accurate descriptions of the asset generator's file formats. They govern that subproject and nothing above it. |
 | `infra/README.md`, `infra/MEMORY-WORKLOAD.md` | **REFERENCE — costs only** | The measured rates and volumes remain useful. The architectures they describe are void. |
 

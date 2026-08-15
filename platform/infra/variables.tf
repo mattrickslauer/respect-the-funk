@@ -150,7 +150,7 @@ variable "changefeed_webhook_token" {
   # answer 401. Not creating it at all is the better shape.
   #
   # Generate with `openssl rand -hex 32`. Set it here *and* in the CREATE CHANGEFEED
-  # statement that `python -m rtf_platform.changefeed --dry-run --reveal` prints — the two
+  # statement that `python -m spindle.changefeed --dry-run --reveal` prints — the two
   # must be the same string. If they drift, every delivery answers 401 and the feed
   # retries forever, which is the intended alarm and not a leak.
   description = "Shared secret the changefeed sends as webhook_auth_header. Empty leaves the webhook endpoint undeployed."

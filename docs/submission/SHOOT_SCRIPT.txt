@@ -1,6 +1,6 @@
 ===============================================================================
 SHOOT SCRIPT — "What did it believe, when it acted?"
-Respect the Funk / CockroachDB x AWS Hackathon
+Spindle / CockroachDB x AWS Hackathon
 ===============================================================================
 
 STATUS      DRAFT FOR REVIEW. Not binding until the Day-4 gate in the build

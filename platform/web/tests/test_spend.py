@@ -19,7 +19,7 @@ import unittest
 from decimal import Decimal
 from unittest import mock
 
-from rtf_platform import spend
+from spindle import spend
 
 
 def _env(**overrides: str):

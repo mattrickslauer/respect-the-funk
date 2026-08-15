@@ -19,7 +19,7 @@
 # the test cluster from docs/runbooks/environments.md and never at production.
 #
 # **The tests that need no cluster are the ones CI is good at.** 232 of them: the tenant
-# scoping lint that parses every SQL statement in rtf_platform/ and fails if one omits
+# scoping lint that parses every SQL statement in spindle/ and fails if one omits
 # its tenant_id predicate, the spend gate's refusals, the agent registry, and this
 # repository's structural guards. Those catch the class of mistake a second pair of eyes
 # would catch. The cluster-gated tests catch the class of mistake that needs a cluster,

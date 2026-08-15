@@ -34,7 +34,7 @@ import uuid
 import psycopg
 from psycopg.rows import dict_row
 
-from rtf_platform import domain, repo
+from spindle import domain, repo
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 
@@ -300,7 +300,7 @@ class InspectorStates(unittest.TestCase):
         self.rid = str(self.rec["id"])
 
     def _render(self, row: dict) -> str:
-        from rtf_platform import routes
+        from spindle import routes
 
         return routes.templates.env.get_template("console/_inspector.html").render(
             sel=row, insp_kicker="track", insp_title=row.get("title", "—"),
@@ -308,7 +308,7 @@ class InspectorStates(unittest.TestCase):
 
     def _row(self, **kw) -> dict:
         """This test's own row, found by id — the tenant holds every other test's too."""
-        from rtf_platform import research
+        from spindle import research
 
         rows = research.tracks(self.conn, self.tenant, **kw).rows
         return next(r for r in rows if r["id"] == self.rid)
@@ -326,7 +326,7 @@ class InspectorStates(unittest.TestCase):
         self.assertIn('type="date"', html)
 
     def test_the_new_track_form_renders(self) -> None:
-        from rtf_platform import research
+        from spindle import research
 
         html = self._render({"id": "new", "title": "New track",
                              "insp": research.new_recording_sections()})
@@ -373,7 +373,7 @@ class InspectorStates(unittest.TestCase):
         from. Without it the message renders on whichever row the operator clicks."""
         other_id = str(repo.create_recording(
             self.conn, self.tenant, title=f"B Track {uuid.uuid4().hex[:8]}")["id"])
-        from rtf_platform import research
+        from spindle import research
 
         view = research.tracks(self.conn, self.tenant, editing_id=self.rid,
                                error="that ISRC is wrong")
@@ -394,26 +394,26 @@ class IsrcValidation(unittest.TestCase):
         self.assertEqual(domain.canonical_isrc("QZABC250000"), "")   # one digit short
 
     def test_the_route_refuses_it_instead_of_filing_it_as_absent(self) -> None:
-        from rtf_platform.routes import _validated_recording
+        from spindle.routes import _validated_recording
 
         with self.assertRaises(ValueError) as caught:
             _validated_recording("Title", "NOT-AN-ISRC", "")
         self.assertIn("not a well-formed ISRC", str(caught.exception))
 
     def test_a_blank_isrc_is_allowed_because_no_identifier_is_a_real_state(self) -> None:
-        from rtf_platform.routes import _validated_recording
+        from spindle.routes import _validated_recording
 
         title, isrc, released = _validated_recording("Title", "  ", "")
         self.assertEqual((title, isrc, released), ("Title", "", None))
 
     def test_spellings_of_one_isrc_converge(self) -> None:
-        from rtf_platform.routes import _validated_recording
+        from spindle.routes import _validated_recording
 
         for spelling in ("QZ-ABC-25-00001", "qzabc2500001", "QZ ABC 25 00001"):
             self.assertEqual(_validated_recording("T", spelling, "")[1], "QZABC2500001")
 
     def test_a_title_that_has_no_url_safe_form_is_refused(self) -> None:
-        from rtf_platform.routes import _validated_recording
+        from spindle.routes import _validated_recording
 
         with self.assertRaises(ValueError):
             _validated_recording("", "", "")
@@ -421,7 +421,7 @@ class IsrcValidation(unittest.TestCase):
             _validated_recording("日本語", "", "")   # slugify reduces this to nothing
 
     def test_a_release_date_must_be_a_date(self) -> None:
-        from rtf_platform.routes import _validated_recording
+        from spindle.routes import _validated_recording
 
         with self.assertRaises(ValueError) as caught:
             _validated_recording("T", "", "last tuesday")

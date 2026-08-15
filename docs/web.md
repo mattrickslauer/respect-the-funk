@@ -4,7 +4,8 @@
 > [`app/remixkit/ui/templates/pages/landing.html`](../app/remixkit/ui/templates/pages/landing.html),
 > served at `/` by `ui/routes.py:landing`. This file is its documentation — the
 > positioning, the design tokens, and the rule about the numbers all still bind. The
-> wireframe that preceded it is [`docs/wireframe/`](./wireframe/).
+> wireframe that preceded it, `docs/wireframe/`, was deleted on 2026-08-15 and is in git
+> history.
 
 One self-contained HTML file. No build step, no framework, no dependencies.
 
@@ -52,7 +53,20 @@ refuses without one. There is no sign-up — `RK_ALLOWED_EMAILS` is the user tab
 
 ## Design system
 
-Inherited from `docs/deck/remixkit-deck.html` so the deck and the site read as one brand:
+Originally inherited from `docs/deck/remixkit-deck.html`. **That deck was deleted on
+2026-08-15, so the table below is now the source of record for these tokens** — the
+console (`app/remixkit/ui/static/console.css`), the layout shell and
+`content/bin/generate_overlays.py` all describe their values as lifted verbatim from the
+deck, and should be read against this table instead. The deck is in git history if you
+need to check a value against the original.
+
+> **Scope, since the 2026-08-15 rebrand: this table is RemixKit's, not the platform's.**
+> Spindle's tokens live in
+> [`platform/web/spindle/templates/_design.html`](../platform/web/spindle/templates/_design.html)
+> and are a different palette on purpose — copper and verdigris on warm carbon, not gold on
+> purple-black. The brand mark in [`docs/brand/`](./brand/) followed this table until the
+> rebrand and now follows `_design.html`. If you are picking a colour for anything above
+> the subproject, this is the wrong table.
 
 | Token | Value |
 |---|---|
@@ -82,8 +96,8 @@ cost per attempt* — plus honest measurement of what is genuinely countable.
 > to camera, lyric cards, voice-over, and templatable backdrops. This page is written almost
 > entirely around the last of those, because "the song is the substrate, the template is the
 > product" was for a while read as the definition of the product rather than as a finding
-> about how sounds spread ([PRODUCT.md](./PRODUCT.md) § *What the product generates,
-> precisely*). The factual claims about what the product *makes* have been corrected; the
+> about how sounds spread (PRODUCT.md § *What the product generates,
+> precisely*, deleted 2026-08-15; in git history). The factual claims about what the product *makes* have been corrected; the
 > hero, the narrative arc and the evidence section are still UGC-first. **Whether to
 > reposition the page is a go-to-market decision, not a docs fix — it has not been made
 > here.**

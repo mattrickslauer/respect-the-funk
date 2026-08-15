@@ -32,7 +32,7 @@ import unittest
 import urllib.robotparser
 from unittest import mock
 
-from rtf_platform import contacts, podcastindex
+from spindle import contacts, podcastindex
 
 
 class NormalisingAddresses(unittest.TestCase):
@@ -310,7 +310,7 @@ class TheCountryGate(unittest.TestCase):
         self.assertEqual(contacts.country_for(_Conn(fact="de"), "t", "p"), "DE")
 
     def test_no_evidence_raises_and_names_what_would_fix_it(self) -> None:
-        from rtf_platform import fleet
+        from spindle import fleet
 
         with self.assertRaises(fleet.LeadFailed) as caught:
             contacts.country_for(_Conn(), "t", "p")
@@ -319,7 +319,7 @@ class TheCountryGate(unittest.TestCase):
         self.assertIn("refresh_stream", str(caught.exception))
 
     def test_a_malformed_country_is_refused_rather_than_written(self) -> None:
-        from rtf_platform import fleet
+        from spindle import fleet
 
         for value in ("USA", "", "1S"):
             with self.assertRaises(fleet.LeadFailed, msg=value):
@@ -332,7 +332,7 @@ class Registered(unittest.TestCase):
         # `fleet.work_once` dispatches on `agents.REGISTRY` and nothing else, so a stage
         # with a manifest row and no registry entry renders as "declared, not running" —
         # the drift `027_enable_podcasts.sql` was written to close.
-        from rtf_platform import agents, fleet
+        from spindle import agents, fleet
 
         for kind in ("harvest_contacts", "harvest_feed_contacts", "refresh_stream"):
             agent = agents.REGISTRY[kind]

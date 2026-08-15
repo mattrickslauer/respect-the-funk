@@ -33,7 +33,7 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 
-from rtf_platform import agents, embed, fleet, lessons, outreach, spend
+from spindle import agents, embed, fleet, lessons, outreach, spend
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 

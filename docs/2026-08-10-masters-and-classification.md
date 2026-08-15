@@ -38,7 +38,7 @@ labels. Deezer has nothing more specific: both albums carry the same two.
 
 ## 2. What was built, and what it can and cannot say
 
-`rtf_platform/audio.py` (`92a33cc`) measures a Deezer 30-second preview: tempo by the same
+`spindle/audio.py` (`92a33cc`) measures a Deezer 30-second preview: tempo by the same
 spectral-flux comb `content/bin/measure_beat.py` uses, plus spectral centroid. BPM and
 centroid are `measured`; style terms derived from tempo bands are `inferred`, per
 `SCOPE-RESET §2a` rule 1.

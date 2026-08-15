@@ -24,7 +24,7 @@ import unittest
 import uuid
 from datetime import timedelta
 
-from rtf_platform import accounts, mail, otp
+from spindle import accounts, mail, otp
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 

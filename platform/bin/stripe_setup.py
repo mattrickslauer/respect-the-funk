@@ -9,7 +9,7 @@
 
 ## Why this is a script and not a page in the Stripe dashboard
 
-Because the amounts are already written down. `rtf_platform.plans.TIERS` is what the
+Because the amounts are already written down. `spindle.plans.TIERS` is what the
 landing page renders and what `outreach.open_thread` enforces against, so a price
 typed into a dashboard by hand is a fourth copy of a number that already has three
 homes and no way to check them against each other. This reads the tiers and creates
@@ -56,7 +56,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web"))
 
-from rtf_platform import plans  # noqa: E402
+from spindle import plans  # noqa: E402
 
 #: Bumped by hand if a tier's *shape* changes in a way the amount does not capture —
 #: monthly to annual, say. The amount is appended separately below.
@@ -133,7 +133,7 @@ def main() -> int:
             print(f"{t.name}: reusing existing price {price.id}")
         else:
             product = stripe.Product.create(
-                name=f"Respect the Funk — {t.name}",
+                name=f"Spindle — {t.name}",
                 description=t.summary,
                 metadata={"tier": t.key, "created_by": "platform/bin/stripe_setup.py"},
             )

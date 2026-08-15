@@ -26,4 +26,4 @@ fi
 export PLATFORM_ADMIN_TOKEN="${PLATFORM_ADMIN_TOKEN:-dev}"
 
 cd "$here"
-exec .venv/bin/uvicorn rtf_platform.main:app --reload --port "${PORT:-8099}"
+exec .venv/bin/uvicorn spindle.main:app --reload --port "${PORT:-8099}"

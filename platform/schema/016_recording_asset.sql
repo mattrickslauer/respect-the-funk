@@ -5,7 +5,7 @@
 -- `docs/2026-08-10-masters-and-classification.md` §4 is the argument; this is the
 -- schema half of it. The short version: `recording` carries `title`, `isrc`,
 -- `duration_ms`, `released_on` — and no audio. There is no storage port, no bucket and
--- no object key anywhere in `platform/`, which is why `rtf_platform.audio` measures a
+-- no object key anywhere in `platform/`, which is why `spindle.audio` measures a
 -- Deezer 30-second preview and why it deliberately refuses to report anything that a
 -- thirty-second excerpt cannot support (sections, energy curve, hook window).
 --

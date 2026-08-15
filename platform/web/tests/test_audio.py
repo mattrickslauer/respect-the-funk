@@ -6,7 +6,7 @@ Offline and synthetic throughout. A click train at a known tempo is a stronger t
 a real record, because with a real record you are asserting against somebody's opinion of
 what the BPM is; here the ground truth is the thing that generated the signal.
 
-`numpy` is imported by `rtf_platform.audio` lazily and is **not** in `requirements.txt`,
+`numpy` is imported by `spindle.audio` lazily and is **not** in `requirements.txt`,
 so these skip where it is absent — which is the deployed Lambda, and deliberately so.
 The agent that uses this module is drained by a worker, not served by the function.
 
@@ -28,7 +28,7 @@ try:
 except ImportError:  # pragma: no cover - the Lambda path
     HAVE_NUMPY = False
 
-from rtf_platform import audio
+from spindle import audio
 
 
 def _clicks(bpm: float, seconds: float = 20.0, *, jitter: float = 0.0,

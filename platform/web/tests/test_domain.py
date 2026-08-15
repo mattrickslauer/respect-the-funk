@@ -16,7 +16,7 @@ import re
 import unittest
 from pathlib import Path
 
-from rtf_platform.domain import ARTIST_STATUSES, ArtistType, Platform, ProfileMode
+from spindle.domain import ARTIST_STATUSES, ArtistType, Platform, ProfileMode
 
 SCHEMA = Path(__file__).resolve().parents[2] / "schema" / "005_party_first.sql"
 

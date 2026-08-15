@@ -1,4 +1,4 @@
-Respect the Funk
+Spindle
 Copyright 2026 Mattricks Lauer
 
 This product includes software developed for the CockroachDB × AWS Hackathon
@@ -19,3 +19,14 @@ hackathon rules require:
 
 Third-party dependencies retain their own licences; see
 `platform/web/requirements.txt` for the pinned set.
+
+Vendored data:
+
+  * `platform/web/spindle/static/world.json` — country outlines, derived
+    from Natural Earth 1:110m Admin 0 Countries. Natural Earth is public
+    domain (https://www.naturalearthdata.com/about/terms-of-use/); no
+    attribution is required and this note is courtesy. The file is a
+    reduction: ISO alpha-2 keys only, coordinates rounded to one decimal
+    place and stored as integers, which takes it from 820 KB to 90 KB. Two of
+    the 177 source features (N. Cyprus, Somaliland) carry no ISO code and are
+    absent, because there is no code to join counterparty counts on.

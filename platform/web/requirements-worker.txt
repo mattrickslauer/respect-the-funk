@@ -5,12 +5,12 @@
 # `app/pyproject.toml` records the same decision about librosa. numpy is ~20 MB unpacked
 # and an ffmpeg binary is larger still; neither belongs in a function that serves HTML.
 #
-# They belong here instead. `rtf_platform.audio` imports numpy inside its functions, so
-# importing `rtf_platform` costs the Lambda nothing, and the agent that needs it is
+# They belong here instead. `spindle.audio` imports numpy inside its functions, so
+# importing `spindle` costs the Lambda nothing, and the agent that needs it is
 # claimed by a worker drained like this:
 #
 #     pip install -r requirements-worker.txt
-#     python -m rtf_platform.ingest --drain-only --kinds analyse_recording
+#     python -m spindle.ingest --drain-only --kinds analyse_recording
 #
 # That split is the fleet's design paying for itself: a heavyweight agent joins by
 # claiming leases on the same table as every other agent, and no other tier is changed

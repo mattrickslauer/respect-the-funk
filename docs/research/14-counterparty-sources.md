@@ -48,7 +48,7 @@ Every effort estimate below is calibrated against `fcc.py` and `radiobrowser.py`
 
 | Piece | Where | Size |
 |---|---|---|
-| Adapter module, stdlib only | `rtf_platform/<source>.py` | `fcc.py` 312 lines, `radiobrowser.py` 184, `wikipedia.py` 152 |
+| Adapter module, stdlib only | `spindle/<source>.py` | `fcc.py` 312 lines, `radiobrowser.py` 184, `wikipedia.py` 152 |
 | Seeder — one lead per unit of work | `ingest.py` | ~30 lines (`index_streams` is 35) |
 | `_fetch_` / `_write_` agent pair | `agents.py` | ~150–200 lines |
 | Registry entry | `agents.REGISTRY` | 1 line |
@@ -206,7 +206,7 @@ As corroboration that the source is live and the existing measurement was sound:
 `ingest.index_streams` already takes a country list, derives its page count from Radio Browser's own `/json/countries` response rather than a hardcoded number, and is already exposed on the CLI:
 
 ```
-python -m rtf_platform.ingest --index-streams DE,GB,FR,AU,CA,NL,IT,ES,IE,NZ
+python -m spindle.ingest --index-streams DE,GB,FR,AU,CA,NL,IT,ES,IE,NZ
 ```
 
 That command works today. There is **no new adapter, no new agent, no new migration** — the seeder writes one lead per 100-station page and `index_streams` claims them exactly as it does for the US.
@@ -368,4 +368,4 @@ Listed rather than buried, per the house rule.
 - [Radio Browser API](https://api.radio-browser.info/) — terms and UA convention, fetched 2026-08-13
 - Radio Browser `/json/countries` and `/json/stations/search` — measured directly, 2026-08-13
 - iTunes Search API — `https://itunes.apple.com/search?media=podcast` — measured directly, 2026-08-13
-- In-repo: [`SCOPE-RESET.md`](../SCOPE-RESET.md) §2a · [`10-creator-indexing.md`](./10-creator-indexing.md) §1, §4 · `platform/schema/018_contact_route.sql` · `023_podcast_source.sql` · `026_role_backfill.sql` · `027_enable_podcasts.sql` · `rtf_platform/fcc.py`, `radiobrowser.py`, `podcastindex.py`, `ingest.py`
+- In-repo: [`SCOPE-RESET.md`](../SCOPE-RESET.md) §2a · [`10-creator-indexing.md`](./10-creator-indexing.md) §1, §4 · `platform/schema/018_contact_route.sql` · `023_podcast_source.sql` · `026_role_backfill.sql` · `027_enable_podcasts.sql` · `spindle/fcc.py`, `radiobrowser.py`, `podcastindex.py`, `ingest.py`

@@ -26,7 +26,7 @@ import urllib.error
 from typing import Any
 from unittest import mock
 
-from rtf_platform import podcastindex, profiles
+from spindle import podcastindex, profiles
 
 CREDS = {podcastindex.KEY_VAR: "TESTKEY0000000000000",
          podcastindex.SECRET_VAR: "testsecret##0000"}

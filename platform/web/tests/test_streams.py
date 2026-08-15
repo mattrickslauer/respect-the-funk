@@ -27,7 +27,7 @@ import unittest
 from typing import Any
 from unittest import mock
 
-from rtf_platform import streams
+from spindle import streams
 
 
 class _Response:

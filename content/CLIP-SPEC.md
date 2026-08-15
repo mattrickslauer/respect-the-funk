@@ -14,7 +14,7 @@ The clip descriptor is a plain-text sidecar that holds exactly that, in a form b
 
 **Two files, two jobs — do not conflate them:**
 
-| | Clip descriptor (`*.clip.yaml`) | Genblaze manifest (embedded, [BUILD-SPEC §5](../docs/BUILD-SPEC.md)) |
+| | Clip descriptor (`*.clip.yaml`) | Genblaze manifest (embedded, BUILD-SPEC §5, deleted 2026-08-15; in git history) |
 |---|---|---|
 | Answers | *What does this clip mean?* | *How was this file made?* |
 | Authored by | a human (or a vision pass) | the generation pipeline |

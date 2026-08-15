@@ -35,10 +35,10 @@ every document in this repository is required to agree with what that command re
 | Console — thirteen views at `/`, `/facts`, `/fleet`, … | **live**, every view reads the cluster |
 | Outreach — `campaign`, `thread`, `message`, `outbox` | **live**, migration 010 |
 | The send gate at `/approvals` — approve, reject, queue | **live**; see *Still open* for what claims the outbox and what it is allowed to send to |
-| The fleet — lease claiming, backoff, follow-on leads, `agent_run` | **live** in `web/rtf_platform/fleet.py` |
+| The fleet — lease claiming, backoff, follow-on leads, `agent_run` | **live** in `web/spindle/fleet.py` |
 | Vector indexes on `party_chunk`, `party_fact`, `lesson`, `party` | **live**, cosine, prefix-filtered — the plan is asserted by `tests/test_vector_plans.py`, not by a comment |
 | Embeddings | **live**, via the OpenAI adapter. Not Bedrock, and not for want of code — see *Still open* |
-| Retrieval — R2 semantic search over the corpus | **live**, `python -m rtf_platform.ingest --search "…"` |
+| Retrieval — R2 semantic search over the corpus | **live**, `python -m spindle.ingest --search "…"` |
 | The counterparty index — FCC, Radio Browser, Wikipedia | **live**; radio is the channel that is real |
 | Masters — `recording_asset`, S3, presigned upload, `/tracks` inspector | **live**, migration 016; the bucket is deployed, content-addressed by SHA-256 |
 | `analyse_recording` — reads the master, verifies its hash, writes facts | **live**, drained by a worker (`--kinds analyse_recording`) |
@@ -66,7 +66,7 @@ tables, and not one line of `console/table.html`, `approvals.html` or `inbox.htm
 to accommodate them. `demo.py` went from 1,583 lines to 166: the block vocabulary, the
 nav, and the row selector — the parts that were never fiction. The deleted fixtures are
 worth reading as a design record and are one command away:
-`git show 14073d9:platform/web/rtf_platform/demo.py`.
+`git show 14073d9:platform/web/spindle/demo.py`.
 
 **Live is not the same as finished, and the views say which.** A screen that reads a real
 table it has no writer for is still telling the truth, provided it says so:
@@ -142,10 +142,14 @@ database_url = "postgresql://…"   # from .env
 # Mail, and read the runbook before setting it. Since 2026-08-15 sign-in is a
 # six-digit code emailed to your address and nothing else — there is no shared
 # admin token any more — so a deployment that cannot send is one nobody can enter.
-mail_domain         = "example.com"   # empty creates no SES resources, and applies fine
-mail_sender         = "hello@example.com"
-mail_reply_to       = "hello@example.com"
-mail_postal_address = "…"
+mail_domain   = "example.com"   # empty creates no SES resources, and applies fine
+mail_sender   = "hello@example.com"
+mail_reply_to = "hello@example.com"
+
+# mail_postal_address is for *outreach* only. CAN-SPAM requires a physical address in
+# commercial mail; a sign-in code is transactional and does not carry one. Leaving it
+# unset means people can log in and the outbox stays refused — which is a coherent
+# state, not a half-broken one.
 ```
 
 `admin_token` was here until 2026-08-15 and is gone. If your `terraform.tfvars` still
@@ -156,7 +160,7 @@ a file for no reason.
 ./platform/infra/build.sh              # vendors arm64 wheels into infra/build
 terraform -chdir=platform/infra init
 terraform -chdir=platform/infra apply  # read the plan; it is the resource list
-terraform -chdir=platform/infra output mail_configured   # false means nobody can sign in
+terraform -chdir=platform/infra output sign_in_mail_configured   # false means nobody can sign in
 ```
 
 **Two steps Terraform cannot take**, both in
@@ -168,7 +172,7 @@ by hand can sign in at all.
 
 ## What it costs
 
-> **The rules live in [`COSTS.md`](COSTS.md), and `web/rtf_platform/spend.py` enforces
+> **The rules live in [`COSTS.md`](COSTS.md), and `web/spindle/spend.py` enforces
 > them.** Nothing metered is enabled: `RTF_PAID_ENABLED` is unset, so every paid call is
 > refused before it is made. This section covers the infrastructure; that one covers
 > models, ceilings and the kill switch.
@@ -203,7 +207,7 @@ reservation that would leave fewer than 10 unreserved and this account's *total*
 The ceiling is real but account-wide and shared with RemixKit, not per-function. Raising
 the account quota removes it, so raise the quota and add a reservation in the same change.
 
-**Every resource is tagged** `Project=rtf-platform`, `Env`, `ManagedBy=terraform`,
+**Every resource is tagged** `Project=spindle`, `Env`, `ManagedBy=terraform`,
 `Repo=respect-the-funk`, `Component=console`, via provider `default_tags`. Group by
 `Project` in Cost Explorer to separate platform spend from RemixKit's.
 
@@ -407,7 +411,7 @@ comes up, not as a plan.
   the query and reading the RUs off it. It is the older of this project's two unmeasured
   costs, and the cheaper one to close.
 - **Changefeed RU draw** — still unmeasured, and now for a different reason. The sink
-  exists: `web/rtf_platform/changefeed.py` composes the `CREATE CHANGEFEED` for `thread`,
+  exists: `web/spindle/changefeed.py` composes the `CREATE CHANGEFEED` for `thread`,
   `outbox` and `message`, parses the webhook batches, maps each change to the lead kinds
   it can make claimable, and ships the Lambda handler. `--verify` prints the cluster's
   rangefeed setting and its (zero) jobs; `--follow` runs the sinkless fallback in-process

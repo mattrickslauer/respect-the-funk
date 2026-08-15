@@ -7,7 +7,7 @@ date: "2026-08-13"
 
 ## The system in one paragraph
 
-**Respect the Funk** is an agentic OS for a record label. A fleet of agents takes an
+**Spindle** is an agentic OS for a record label. A fleet of agents takes an
 artist's catalogue to the people who can place it — playlist editors, radio
 programmers, curators. No agent calls another agent. Work exists because a row in
 CockroachDB says it does, and an agent picks it up by taking a lease on that row. The
@@ -122,8 +122,8 @@ Two functions, both live in `us-east-1`:
 
 | Function | Package | Memory | Role |
 |---|---|---|---|
-| `rtf-platform-prod-console` | Zip, `python3.13` | 512 MB | The console and its API. FastAPI, served through Mangum. |
-| `rtf-platform-prod-classifier` | Container image (ECR) | 3008 MB | Discogs-EffNet genre classification of masters. |
+| `spindle-prod-console` | Zip, `python3.13` | 512 MB | The console and its API. FastAPI, served through Mangum. |
+| `spindle-prod-classifier` | Container image (ECR) | 3008 MB | Discogs-EffNet genre classification of masters. |
 
 The console is a Lambda **Function URL** (`aws_lambda_function_url.console`,
 `function_url_auth_type = "NONE"`), so the demo URL above is the function itself — there is
@@ -141,7 +141,7 @@ the masters bucket.
 
 ### Amazon S3 — where the audio lives
 
-`rtf-platform-prod-masters`, defined in `platform/infra/main.tf`: public access blocked,
+`spindle-prod-masters`, defined in `platform/infra/main.tf`: public access blocked,
 server-side encryption, versioning, a lifecycle policy, and a CORS rule without which the
 browser's presigned upload fails.
 
@@ -179,7 +179,7 @@ from documentation:
   Quotas publishes the batch limits for every account whether or not the capability is
   switched on, which is why a quota table reads as capability and is not.
 
-`rtf_platform/bedrock.py` implements both paths anyway, because the entitlement is a switch
+`spindle/bedrock.py` implements both paths anyway, because the entitlement is a switch
 AWS throws rather than work anyone here can do, and an untested S3-and-polling pipeline is
 the wrong thing to be writing on the day it clears. But **no Bedrock call has ever produced
 a row on this cluster.** The only embedding model that has is
@@ -229,7 +229,7 @@ Stated here because a page like this is worth nothing if a judge finds the gap t
   because nothing has been sent.
 - **The changefeed is built and not created.** `SHOW CHANGEFEED JOBS` returns **zero rows**,
   and that is the deliberate state rather than an unfinished one.
-  `rtf_platform/changefeed.py` composes the exact `CREATE CHANGEFEED` (three tables,
+  `spindle/changefeed.py` composes the exact `CREATE CHANGEFEED` (three tables,
   `initial_scan = 'no'`, a batched webhook sink and a shared secret), parses the delivered
   batches, maps a change to the lead kinds it can make claimable, and ships the Lambda
   handler and a `--verify`. Nothing in it runs the statement — it prints it. Creating the
@@ -277,10 +277,10 @@ psql "$DATABASE_URL" -c "SHOW CHANGEFEED JOBS;"   # zero rows
 psql "$DATABASE_URL" -c "SHOW REGIONS;"           # aws-us-east-1, and nothing else
 
 # The changefeed statement that would be run, printed rather than executed
-python -m rtf_platform.changefeed --verify
+python -m spindle.changefeed --verify
 
 # The shortlist, end to end
-python -m rtf_platform.ingest --shortlist hallow-youth
+python -m spindle.ingest --shortlist hallow-youth
 
 # What every agent run has ever cost, in total
 psql "$DATABASE_URL" -c "SELECT sum(cost_micro_usd)/1e6 FROM agent_run;"   -- $0.005296

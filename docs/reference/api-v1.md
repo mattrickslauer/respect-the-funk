@@ -6,7 +6,7 @@ It was built for the React console at `platform/console`, which was removed on
 2026-08-15. The API was deliberately kept: it is independently tested, it is the only way
 anything scripts this system, and nothing about it depended on that client.
 
-This document exists so the client author does not read `rtf_platform/api/*.py` to guess
+This document exists so the client author does not read `spindle/api/*.py` to guess
 shapes. Where it says a field can be `null`, it can be `null` and the client has to mean
 something by it — the API never substitutes an em-dash, a zero or an empty string for a
 value that is absent.

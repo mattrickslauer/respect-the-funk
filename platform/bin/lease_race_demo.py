@@ -87,7 +87,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import psycopg  # noqa: E402
 from psycopg.rows import dict_row  # noqa: E402
 
-from rtf_platform import fleet  # noqa: E402
+from spindle import fleet  # noqa: E402
 
 TENANT_SLUG = "respect-the-funk"
 
@@ -339,7 +339,7 @@ def main() -> int:
     say = Narrator(args.slow)
     say.beat("\033[1mCockroachDB lease-token fencing\033[0m — "
              "an agent cannot act on work whose claim it no longer holds")
-    say.beat("schema/013_lease_token.sql · rtf_platform/fleet.py · "
+    say.beat("schema/013_lease_token.sql · spindle/fleet.py · "
              f"lease = {fleet.LEASE_SECONDS}s")
 
     fix = Fixture(url, args.tenant)

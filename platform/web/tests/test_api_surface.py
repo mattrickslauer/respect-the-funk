@@ -32,8 +32,8 @@ from pathlib import Path
 
 from fastapi.dependencies.models import Dependant
 
-from rtf_platform import auth, outreach, research
-from rtf_platform.api import ROUTERS, actions, api, deps, errors, reads, shapes
+from spindle import auth, outreach, research
+from spindle.api import ROUTERS, actions, api, deps, errors, reads, shapes
 
 
 def _dependency_calls(dependant: Dependant) -> set:
@@ -669,7 +669,7 @@ class TheNeedsYouQueue(unittest.TestCase):
         two cannot drift into a console that greys out a button the server would have
         honoured, or offers one it would refuse.
         """
-        from rtf_platform import repo
+        from spindle import repo
 
         self.assertIsNone(repo.why_unacceptable(
             {"kind": "presence", "platform": "deezer", "value": "1",

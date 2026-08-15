@@ -16,9 +16,9 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from rtf_platform import distributors
-from rtf_platform.distributors import StatementError, base
-from rtf_platform.distributors.distrokid import CURRENT
+from spindle import distributors
+from spindle.distributors import StatementError, base
+from spindle.distributors.distrokid import CURRENT
 
 TSV = "\t".join
 DK_HEADER = TSV(["Reporting Date", "Sale Month", "Store", "Artist", "Title",

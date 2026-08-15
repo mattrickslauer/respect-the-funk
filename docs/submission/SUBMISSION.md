@@ -1,5 +1,5 @@
 ---
-title: "Respect the Funk — CockroachDB × AWS Hackathon submission"
+title: "Spindle — CockroachDB × AWS Hackathon submission"
 subtitle: "Who, what, where, when, why CockroachDB, and the one thing it does that nothing else can. Every figure in this document was executed against the running cluster on 2026-08-14 and is labelled with its N."
 status: "SUBMISSION NARRATIVE. The argument of record for judges and for a model reading the repository. Where this disagrees with `docs/2026-08-11-sponsor-audit.md`, the audit wins — it is the adversarial version and this is the readable one."
 date: "2026-08-14"
@@ -249,7 +249,7 @@ Stated here so a judge does not have to find it:
 - **Not Bedrock.** See WHERE.
 - **Not a paid product.** `platform/schema/033_account_billing.sql` makes the tenant column
   real, `POST /claim` creates a bounded free tenant with no Stripe configuration present,
-  and `platform/web/rtf_platform/billing.py` speaks Stripe in **test mode only** — it
+  and `platform/web/spindle/billing.py` speaks Stripe in **test mode only** — it
   refuses a live key on purpose. No checkout session has been created against Stripe by
   this code, no customer exists, and no payment has been taken. The prices in `plans.py`
   are prices that have been written down.

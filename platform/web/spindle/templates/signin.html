@@ -1,0 +1,84 @@
+{% extends "_public.html" %}
+{# Sign-in, in two steps on one page.
+
+   On the console layout this would be showing the thing it is protecting, so it stays on
+   the public layout — that was true when this page took an operator token and it is true
+   now that it takes an emailed code.
+
+   `step` decides which half renders. One template rather than two because the two halves
+   are the same page at different moments, and a reader who mistypes their address should
+   go back to a form they recognise rather than to a different-looking screen. #}
+{% block title %}Sign in — Spindle{% endblock %}
+
+{% block topnav %}
+  <a class="btn" href="/">Back</a>
+{% endblock %}
+
+{% block body %}
+<div class="wrap" style="max-width:420px">
+  <section>
+    <h1 style="font-size:26px; margin-bottom:.6rem">Sign in</h1>
+
+    {% if error %}
+      <p class="notice bad"><b>{{ error }}</b></p>
+    {% endif %}
+
+    {% if step == "code" %}
+      <p class="lede" style="font-size:15px; margin-bottom:1.8rem">
+        A {{ code_minutes }}-minute code is on its way to <b>{{ email }}</b>.
+        It can be used once.
+      </p>
+
+      <form method="post" action="/signin/verify">
+        {# The address travels in a hidden field rather than being retyped. The code is
+           worthless without the address it was minted against — the digest is salted with
+           it — so asking twice is how somebody ends up verifying a different address from
+           the one that was mailed. #}
+        <input type="hidden" name="email" value="{{ email }}">
+        <div class="field">
+          <label for="code">Six-digit code</label>
+          {# inputmode and one-time-code so phones open a number pad and both mobile
+             platforms offer to autofill it straight out of the message. The pattern
+             allows the spaces and hyphens people paste; the server strips them. #}
+          <input type="text" id="code" name="code" required autofocus
+                 inputmode="numeric" autocomplete="one-time-code"
+                 pattern="[0-9 \-]{6,8}" maxlength="8" placeholder="000000">
+          <span class="hint">Check the message it arrived in — asking for a new code
+            replaces this one.</span>
+        </div>
+        <button class="btn p lg" type="submit">Sign in</button>
+      </form>
+
+      <form method="post" action="/signin/code" style="margin-top:1rem">
+        <input type="hidden" name="email" value="{{ email }}">
+        <button class="btn" type="submit">Send a new code</button>
+        <span class="hint" style="margin-left:.5rem">
+          One every {{ resend_after }} seconds.
+        </span>
+      </form>
+
+      <p class="hint" style="margin-top:1.4rem">
+        <a href="/signin">Use a different address</a>
+      </p>
+
+    {% else %}
+      <p class="lede" style="font-size:15px; margin-bottom:1.8rem">
+        Type your email address and we will send you a code. If you have not been here
+        before, signing in creates your label.
+      </p>
+
+      <form method="post" action="/signin/code">
+        <div class="field">
+          <label for="email">Email address</label>
+          <input type="email" id="email" name="email" required autofocus
+                 autocomplete="email" value="{{ email }}"
+                 placeholder="you@yourlabel.com">
+          <span class="hint">The code goes to this address, so it has to be one you can
+            read.</span>
+        </div>
+        <button class="btn p lg" type="submit">Email me a code</button>
+      </form>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -28,7 +28,7 @@ output "classifier_function_name" {
 
 output "changefeed_webhook_url" {
   value       = length(aws_lambda_function_url.changefeed) > 0 ? aws_lambda_function_url.changefeed[0].function_url : ""
-  description = "The changefeed's webhook sink. Empty until changefeed_webhook_token is set. Feed it to `python -m rtf_platform.changefeed --dry-run --url <this>` to render the exact CREATE CHANGEFEED statement — which a human then runs, because a changefeed draws request units continuously and nothing in this repo is allowed to start one on its own."
+  description = "The changefeed's webhook sink. Empty until changefeed_webhook_token is set. Feed it to `python -m spindle.changefeed --dry-run --url <this>` to render the exact CREATE CHANGEFEED statement — which a human then runs, because a changefeed draws request units continuously and nothing in this repo is allowed to start one on its own."
 }
 
 # The DKIM records, for the case where the domain's DNS is not in Route 53 and
@@ -51,11 +51,24 @@ output "ses_dkim_records" {
   )
 }
 
-# Whether this deployment can send at all — and therefore whether anybody can sign in,
-# now that an emailed code is the only credential. Printed after every apply because the
-# answer is not obvious from the resources: the identity can exist while the domain is
-# still unverified and while the account is still in the SES sandbox.
-output "mail_configured" {
-  description = "True when all three PLATFORM_MAIL_* values are set on the console function."
+# Two answers, because there are two questions and one of them is the one that matters
+# after an apply. Both are printed because reading only `mail_configured` would say "mail
+# is not configured" on a deployment where sign-in works perfectly well.
+
+# **Can anybody get in?** A sign-in code is transactional: it needs a verified sender and
+# a reply-to, and no postal address — CAN-SPAM requires that of commercial mail, and
+# `otp.py` never calls `compliant_body`. `settings.transactional_mail_configured` is the
+# check this mirrors, and it is the one that decides whether the console is enterable.
+output "sign_in_mail_configured" {
+  description = "True when sign-in codes can be sent. This is the one that decides whether anybody can log in."
+  value       = var.mail_sender != "" && var.mail_reply_to != ""
+}
+
+# **Can we pitch a curator?** Strictly stronger: outreach is commercial, so CAN-SPAM
+# §7704(a)(5) requires a physical postal address in the body. False here means `sender.py`
+# refuses to claim the outbox and the changefeed attaches no sender — sign-in is
+# unaffected. Mirrors `settings.mail_configured`.
+output "outreach_mail_configured" {
+  description = "True when commercial sends are lawful — needs PLATFORM_MAIL_POSTAL_ADDRESS as well."
   value       = var.mail_sender != "" && var.mail_reply_to != "" && var.mail_postal_address != ""
 }

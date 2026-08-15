@@ -15,8 +15,8 @@ does when `DATABASE_URL` is unset. It parses source, not connects to anything.
 
 ## What it does
 
-Walks every `.py` file under `rtf_platform/` with `Path.rglob` — not `glob`, which does
-not recurse and would silently stop covering `rtf_platform/distributors/` the moment a
+Walks every `.py` file under `spindle/` with `Path.rglob` — not `glob`, which does
+not recurse and would silently stop covering `spindle/distributors/` the moment a
 query moved there or a new subpackage appeared; an earlier census test in this project
 made exactly that mistake. For each file, finds every call that ultimately reaches
 `cursor.execute(sql, ...)` — directly, or through a same-module wrapper that only
@@ -107,7 +107,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-RTF_PLATFORM = Path(__file__).resolve().parents[1] / "rtf_platform"
+RTF_PLATFORM = Path(__file__).resolve().parents[1] / "spindle"
 
 #: Every table in `platform/schema/*.sql` that carries a `tenant_id` column — the
 #: single place this list is maintained. A table is deliberately left out only when its
@@ -178,6 +178,18 @@ VALIDATED_FRAGMENTS: dict[tuple[str, str, str], str] = {
         "otherwise, before it reaches the SQL — so what lands here is a timestamp "
         "literal, never a clause. The surrounding statement keeps its literal "
         "`WHERE tenant_id = %s` and is checked below in both of its two possible forms."),
+    ("platforms.py", "search", "filters"): (
+        "The *optional* predicates of the public search — country, platform and a name "
+        "match — and nothing else. The two predicates that matter to this test are "
+        "written literally into the statement (`WHERE p.tenant_id = %(t)s AND "
+        "p.party_class = 'counterparty'`) and cannot be reached from here, so a "
+        "`filters` that resolved to the empty string still leaves the statement scoped; "
+        "that is the reason the mandatory half was pulled out of the assembled clause "
+        "rather than this entry being written to cover the whole `WHERE`. "
+        "Every value inside it is a bound parameter — `%(cc)s`, `%(pf)s`, `%(q)s` — so "
+        "no caller input is interpolated as SQL; the only interpolated *text* is "
+        "`PLATFORM_CASE`, a module constant, and `platform` is checked against "
+        "`platforms.KEYS` and raises before it reaches the string."),
 }
 
 #: What an entry in `VALIDATED_FRAGMENTS` resolves to. Deliberately not SQL-shaped: it
@@ -617,7 +629,7 @@ class TenantScoping(unittest.TestCase):
                         f"{rel}:{lineno} {keyword} {table} has no tenant_id predicate "
                         f"in its governing clause:\n    {key[:200]}")
 
-        # A change to `rtf_platform/` that stops finding any `.execute()` call at all
+        # A change to `spindle/` that stops finding any `.execute()` call at all
         # is this test silently checking nothing — fail loudly rather than pass empty.
         self.assertGreater(checked, 50,
                            "found suspiciously few SQL statements — is the walk broken?")

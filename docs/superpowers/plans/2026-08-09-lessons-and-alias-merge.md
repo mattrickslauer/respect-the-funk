@@ -28,7 +28,7 @@ Every task's requirements implicitly include these. All are existing house rules
 **1. This plan runs in a git worktree branched from `96a5c29`.** That commit does **not** contain the parallel session's outreach work, which is uncommitted in the main working tree. So inside this worktree:
 
 - `platform/schema/` holds `001`–`009` and **no `010`**. That gap is expected. `010_outreach.sql` exists only in the other tree.
-- `rtf_platform/outreach.py` does not exist. Nothing in this plan imports it. Do not create it, and do not "restore" it.
+- `spindle/outreach.py` does not exist. Nothing in this plan imports it. Do not create it, and do not "restore" it.
 - **The test baseline is 77 passed, 16 skipped** — the numbers in this plan are correct for this branch. The main tree reports 87/33 because it has tests this branch does not.
 
 **2. The cluster is shared, and it is ahead of this branch.** `campaign`, `thread`, `message` and `outbox` are live on `defaultdb` right now, created by a migration that is in no commit. Task 5a therefore `ALTER`s a table whose `CREATE` this branch cannot see. That is correct and deliberate — migrations run against the cluster, not against the branch — but it means:
@@ -45,9 +45,9 @@ Every task's requirements implicitly include these. All are existing house rules
 |---|---|
 | `platform/schema/011_lesson.sql` | **create** — the `lesson` table, its `CHECK`s, and `lesson_semantic` |
 | `platform/schema/012_party_alias.sql` | **create** — `party.alias_of`, `party_class = 'alias'` |
-| `platform/web/rtf_platform/lessons.py` | **create** — write, retrieve, resolve a supersession chain, and the pure rerank |
-| `platform/web/rtf_platform/agents.py` | **modify** — `shortlist` gains the rerank; `dedup_party` is added; `REGISTRY` gains it |
-| `platform/web/rtf_platform/repo.py` | **modify** — `merge_party`, `unmerge_party`, `resolve_canonical`; `delete_party` clears lessons |
+| `platform/web/spindle/lessons.py` | **create** — write, retrieve, resolve a supersession chain, and the pure rerank |
+| `platform/web/spindle/agents.py` | **modify** — `shortlist` gains the rerank; `dedup_party` is added; `REGISTRY` gains it |
+| `platform/web/spindle/repo.py` | **modify** — `merge_party`, `unmerge_party`, `resolve_canonical`; `delete_party` clears lessons |
 | `platform/web/tests/test_lessons.py` | **create** — the pure rerank and the chain resolution, offline |
 | `platform/web/tests/test_merge.py` | **create** — merge round-trip and alias invisibility, against the cluster |
 | `platform/web/tests/test_dedup.py` | **create** — the agent proposes and never merges |
@@ -226,7 +226,7 @@ git commit -m "platform: the lesson, and a valence so the rerank can have a sign
 Written before persistence, because it is the part with actual logic and it needs no database at all.
 
 **Files:**
-- Create: `platform/web/rtf_platform/lessons.py`
+- Create: `platform/web/spindle/lessons.py`
 - Test: `platform/web/tests/test_lessons.py`
 
 **Interfaces:**
@@ -258,7 +258,7 @@ from __future__ import annotations
 
 import unittest
 
-from rtf_platform import lessons
+from spindle import lessons
 
 
 def candidate(cid: str, distance: float) -> dict:
@@ -353,11 +353,11 @@ class Rerank(unittest.TestCase):
 
 Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'rtf_platform.lessons'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'spindle.lessons'`
 
 - [ ] **Step 3: Write the implementation**
 
-Create `platform/web/rtf_platform/lessons.py`:
+Create `platform/web/spindle/lessons.py`:
 
 ```python
 """R2 — what have we learned that applies here — and the rerank that spends it.
@@ -462,7 +462,7 @@ Expected: PASS, 11 tests.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add platform/web/rtf_platform/lessons.py platform/web/tests/test_lessons.py
+git add platform/web/spindle/lessons.py platform/web/tests/test_lessons.py
 git commit -m "platform: the rerank is arithmetic, and it says which lesson moved what"
 ```
 
@@ -471,7 +471,7 @@ git commit -m "platform: the rerank is arithmetic, and it says which lesson move
 ### Task 3: `lessons.py` — write, and resolve a supersession chain
 
 **Files:**
-- Modify: `platform/web/rtf_platform/lessons.py`
+- Modify: `platform/web/spindle/lessons.py`
 - Modify: `platform/web/tests/test_lessons.py`
 
 **Interfaces:**
@@ -523,19 +523,19 @@ class Heads(unittest.TestCase):
 
 Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py::Heads -q`
 
-Expected: FAIL — `AttributeError: module 'rtf_platform.lessons' has no attribute 'heads'`
+Expected: FAIL — `AttributeError: module 'spindle.lessons' has no attribute 'heads'`
 
 - [ ] **Step 3: Implement `heads` and `write`**
 
-Add to the imports at the top of `platform/web/rtf_platform/lessons.py`:
+Add to the imports at the top of `platform/web/spindle/lessons.py`:
 
 ```python
 import psycopg
 
-from rtf_platform import embed, spend
+from spindle import embed, spend
 ```
 
-Append to `platform/web/rtf_platform/lessons.py`:
+Append to `platform/web/spindle/lessons.py`:
 
 ```python
 def heads(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -591,14 +591,14 @@ Expected: PASS, 16 tests.
 
 - [ ] **Step 5: Confirm `model_version` exists on the provider, and fix if not**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -c "from rtf_platform import embed; print([f for f in embed.OpenAIEmbedder.__dataclass_fields__])"`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -c "from spindle import embed; print([f for f in embed.OpenAIEmbedder.__dataclass_fields__])"`
 
 If `model_version` is not among the fields, the `getattr(provider, "model_version", "")` above already returns `""` — which the schema permits. Leave it. Do **not** add a field to `OpenAIEmbedder` for this; `007`'s rule is that `model` must be nameable, and it is.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add platform/web/rtf_platform/lessons.py platform/web/tests/test_lessons.py
+git add platform/web/spindle/lessons.py platform/web/tests/test_lessons.py
 git commit -m "platform: a lesson is searchable at commit, and a chain resolves to its head"
 ```
 
@@ -607,8 +607,8 @@ git commit -m "platform: a lesson is searchable at commit, and a chain resolves 
 ### Task 4: `shortlist` reads the lessons
 
 **Files:**
-- Modify: `platform/web/rtf_platform/lessons.py` (add `retrieve_for`)
-- Modify: `platform/web/rtf_platform/agents.py:625-670` (`shortlist`)
+- Modify: `platform/web/spindle/lessons.py` (add `retrieve_for`)
+- Modify: `platform/web/spindle/agents.py:625-670` (`shortlist`)
 - Test: `platform/web/tests/test_lessons.py` (cluster test)
 
 **Interfaces:**
@@ -669,7 +669,7 @@ class RetrievalIsScoped(unittest.TestCase):
             return str(cur.fetchone()["id"])
 
     def test_a_lesson_from_another_model_is_invisible(self):
-        from rtf_platform import lessons as mod
+        from spindle import lessons as mod
         self._insert(model="other-model")
         found = mod.retrieve_for(self.conn, self.tenant,
                                  query_vector_literal=self._vector(0.1),
@@ -678,7 +678,7 @@ class RetrievalIsScoped(unittest.TestCase):
                          "a vector from a different model is noise, not a near neighbour")
 
     def test_a_lesson_from_the_same_model_is_found(self):
-        from rtf_platform import lessons as mod
+        from spindle import lessons as mod
         self._insert(model="the-model", text="found me")
         found = mod.retrieve_for(self.conn, self.tenant,
                                  query_vector_literal=self._vector(0.1),
@@ -688,7 +688,7 @@ class RetrievalIsScoped(unittest.TestCase):
     def test_a_party_lesson_is_fetched_by_id_not_by_similarity(self):
         # A party-scoped lesson with a deliberately distant embedding must still come
         # back when that party is a candidate — we know who we mean.
-        from rtf_platform import lessons as mod
+        from spindle import lessons as mod
         party_id = str(uuid.uuid4())
         with self.conn.cursor() as cur:
             cur.execute(
@@ -708,11 +708,11 @@ class RetrievalIsScoped(unittest.TestCase):
 
 Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_lessons.py::RetrievalIsScoped -q`
 
-Expected: FAIL — `AttributeError: module 'rtf_platform.lessons' has no attribute 'retrieve_for'`
+Expected: FAIL — `AttributeError: module 'spindle.lessons' has no attribute 'retrieve_for'`
 
 - [ ] **Step 3: Implement `retrieve_for`**
 
-Append to `platform/web/rtf_platform/lessons.py`:
+Append to `platform/web/spindle/lessons.py`:
 
 ```python
 def retrieve_for(conn: psycopg.Connection, tenant_id: str, *,
@@ -774,7 +774,7 @@ Expected: PASS, 19 tests.
 
 Task 2 shipped `rerank` reporting `abs(shift)`. That was wrong in the spec and it becomes load-bearing here: this task makes `applied` the inspector's evidence trail, and a reader who cannot tell whether a lesson *helped* or *hurt* a candidate has a trail that explains nothing. Magnitude without direction is not an explanation.
 
-In `platform/web/rtf_platform/lessons.py`, in `rerank`, change:
+In `platform/web/spindle/lessons.py`, in `rerank`, change:
 
 ```python
             shifts.append({"lesson_id": str(lesson["id"]),
@@ -822,7 +822,7 @@ Expected: PASS, 17 tests (16 from Tasks 2–3, plus this one).
 
 Task 3's `write()` clamps `confidence` and `valence` into range. The justification was float noise — a ratio landing at `1.0000001` should not lose the whole lesson. That reasoning holds and the clamp stays. But the same line silently turns `confidence=50` into `1.0`, and a caller that has misunderstood the scale then looks exactly like a caller that is very sure. The two cases need separating.
 
-Add to `platform/web/rtf_platform/lessons.py`, beside `LESSON_WEIGHT`:
+Add to `platform/web/spindle/lessons.py`, beside `LESSON_WEIGHT`:
 
 ```python
 #: How far outside its legal range a number may stray before `write` calls it a bug
@@ -893,10 +893,10 @@ Expected: PASS, 21 tests (16 from Tasks 2–3, plus Step 4a's 1, plus these 4).
 
 - [ ] **Step 5: Wire the rerank into `shortlist`**
 
-In `platform/web/rtf_platform/agents.py`, add to the imports:
+In `platform/web/spindle/agents.py`, add to the imports:
 
 ```python
-from rtf_platform import embed, fleet, lessons, repo, sources, spend
+from spindle import embed, fleet, lessons, repo, sources, spend
 ```
 
 Add beside `CHUNK_CHARS` near the top of the file:
@@ -994,7 +994,7 @@ psql "$DATABASE_URL" -c "SELECT DISTINCT embedding_model FROM party WHERE profil
 - [ ] **Step 8: Commit**
 
 ```bash
-git add platform/web/rtf_platform/lessons.py platform/web/rtf_platform/agents.py platform/web/tests/test_lessons.py
+git add platform/web/spindle/lessons.py platform/web/spindle/agents.py platform/web/tests/test_lessons.py
 git commit -m "platform: the shortlist reads what we learned, and says which lesson moved what"
 ```
 
@@ -1234,7 +1234,7 @@ git commit -m "platform: one open thread per person, not per row"
 ### Task 6: `repo.merge_party` and `repo.unmerge_party`
 
 **Files:**
-- Modify: `platform/web/rtf_platform/repo.py` (add three functions; amend `delete_party` at `repo.py:144-167`)
+- Modify: `platform/web/spindle/repo.py` (add three functions; amend `delete_party` at `repo.py:144-167`)
 - Test: `platform/web/tests/test_merge.py`
 
 **Interfaces:**
@@ -1325,7 +1325,7 @@ class Merging(unittest.TestCase):
             return {str(r["id"]) for r in cur.fetchall()}
 
     def test_both_rows_survive_a_merge(self):
-        from rtf_platform import repo
+        from spindle import repo
         repo.merge_party(self.conn, self.tenant,
                          alias_id=self.dupe, canonical_id=self.keeper)
         self.assertIsNotNone(self._row(self.dupe), "the duplicate row must not be deleted")
@@ -1334,7 +1334,7 @@ class Merging(unittest.TestCase):
         self.assertEqual(self._row(self.keeper)["party_class"], "counterparty")
 
     def test_an_alias_disappears_from_the_shortlist(self):
-        from rtf_platform import repo
+        from spindle import repo
         self.assertIn(self.dupe, self._shortlist_ids())
         repo.merge_party(self.conn, self.tenant,
                          alias_id=self.dupe, canonical_id=self.keeper)
@@ -1343,7 +1343,7 @@ class Merging(unittest.TestCase):
         self.assertIn(self.keeper, found, "the survivor must still be shortlisted")
 
     def test_a_merge_round_trips(self):
-        from rtf_platform import repo
+        from spindle import repo
         before = (self._row(self.dupe), self._row(self.keeper))
         repo.merge_party(self.conn, self.tenant,
                          alias_id=self.dupe, canonical_id=self.keeper)
@@ -1351,7 +1351,7 @@ class Merging(unittest.TestCase):
         self.assertEqual((self._row(self.dupe), self._row(self.keeper)), before)
 
     def test_resolve_canonical_follows_the_alias(self):
-        from rtf_platform import repo
+        from spindle import repo
         repo.merge_party(self.conn, self.tenant,
                          alias_id=self.dupe, canonical_id=self.keeper)
         self.assertEqual(repo.resolve_canonical(self.conn, self.tenant, self.dupe),
@@ -1360,7 +1360,7 @@ class Merging(unittest.TestCase):
                          self.keeper)
 
     def test_merging_a_party_into_itself_is_refused(self):
-        from rtf_platform import repo
+        from spindle import repo
         with self.assertRaises(repo.MergeRefused):
             repo.merge_party(self.conn, self.tenant,
                              alias_id=self.dupe, canonical_id=self.dupe)
@@ -1368,7 +1368,7 @@ class Merging(unittest.TestCase):
     def test_alias_chains_stay_one_level_deep(self):
         # Merging B into A, then C into B, must land C on A — not on B, which is no
         # longer a person we would ever contact.
-        from rtf_platform import repo
+        from spindle import repo
         third = self._party("Amanda")
         repo.merge_party(self.conn, self.tenant,
                          alias_id=self.dupe, canonical_id=self.keeper)
@@ -1379,7 +1379,7 @@ class Merging(unittest.TestCase):
     def test_merging_a_party_that_has_aliases_is_refused(self):
         # A has B merged into it; merging A into C would strand B pointing at a
         # non-canonical row, which is the chain the previous test forbids.
-        from rtf_platform import repo
+        from spindle import repo
         third = self._party("Amanda Rocha da Silva")
         repo.merge_party(self.conn, self.tenant,
                          alias_id=self.dupe, canonical_id=self.keeper)
@@ -1407,7 +1407,7 @@ class Merging(unittest.TestCase):
             return str(cur.fetchone()["id"])
 
     def test_an_open_thread_follows_the_merge(self):
-        from rtf_platform import repo
+        from spindle import repo
         thread_id = self._thread(self._campaign(), self.dupe)
         repo.merge_party(self.conn, self.tenant,
                          alias_id=self.dupe, canonical_id=self.keeper)
@@ -1424,7 +1424,7 @@ class Merging(unittest.TestCase):
         # The §3c guarantee, arriving late: if both are open, we already contacted one
         # person twice, and that is the operator's problem to see rather than ours to
         # paper over.
-        from rtf_platform import repo
+        from spindle import repo
         campaign = self._campaign()
         self._thread(campaign, self.dupe)
         self._thread(campaign, self.keeper)
@@ -1434,7 +1434,7 @@ class Merging(unittest.TestCase):
         self.assertIn("open thread", str(caught.exception))
 
     def test_a_closed_thread_does_not_block_a_merge(self):
-        from rtf_platform import repo
+        from spindle import repo
         campaign = self._campaign()
         self._thread(campaign, self.dupe)
         closed = self._thread(campaign, self.keeper)
@@ -1446,7 +1446,7 @@ class Merging(unittest.TestCase):
         self.assertEqual(self._row(self.dupe)["party_class"], "alias")
 
     def test_unmerging_puts_the_thread_back(self):
-        from rtf_platform import repo
+        from spindle import repo
         thread_id = self._thread(self._campaign(), self.dupe)
         repo.merge_party(self.conn, self.tenant,
                          alias_id=self.dupe, canonical_id=self.keeper)
@@ -1458,7 +1458,7 @@ class Merging(unittest.TestCase):
 
     def test_the_alias_keeps_its_presence_rows(self):
         # The whole argument for the flag: nothing is rewritten, so nothing is lost.
-        from rtf_platform import repo
+        from spindle import repo
         with self.conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO presence (tenant_id, subject_kind, subject_id, platform, url)
@@ -1478,13 +1478,13 @@ class Merging(unittest.TestCase):
 
 Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_merge.py -q`
 
-Expected: FAIL — `AttributeError: module 'rtf_platform.repo' has no attribute 'merge_party'`
+Expected: FAIL — `AttributeError: module 'spindle.repo' has no attribute 'merge_party'`
 
 Note: `presence` column names are assumed to be `(tenant_id, subject_kind, subject_id, platform, url)`. If the insert in the last test errors on a column, run `psql "$DATABASE_URL" -c "\d presence"` and correct the test to the real columns before implementing — the test is wrong in that case, not the schema.
 
 - [ ] **Step 3: Implement the three functions**
 
-Add to `platform/web/rtf_platform/repo.py`, above `delete_party`:
+Add to `platform/web/spindle/repo.py`, above `delete_party`:
 
 ```python
 class MergeRefused(RuntimeError):
@@ -1602,7 +1602,7 @@ def unmerge_party(conn: psycopg.Connection, tenant_id: str, alias_id: str) -> No
 
 - [ ] **Step 4: Amend `delete_party` to clear lessons**
 
-In `platform/web/rtf_platform/repo.py`, inside `delete_party`'s transaction, immediately after the `DELETE FROM presence` statement, add:
+In `platform/web/spindle/repo.py`, inside `delete_party`'s transaction, immediately after the `DELETE FROM presence` statement, add:
 
 ```python
             cur.execute(
@@ -1639,7 +1639,7 @@ Expected: **98 passed, 31 skipped** with `DATABASE_URL` unset — Task 6's 12 cl
 - [ ] **Step 7: Commit**
 
 ```bash
-git add platform/web/rtf_platform/repo.py platform/web/tests/test_merge.py
+git add platform/web/spindle/repo.py platform/web/tests/test_merge.py
 git commit -m "platform: a merge is two writes, and reversing it is the same two backwards"
 ```
 
@@ -1648,7 +1648,7 @@ git commit -m "platform: a merge is two writes, and reversing it is the same two
 ### Task 7: The `dedup_party` agent
 
 **Files:**
-- Modify: `platform/web/rtf_platform/agents.py` (add `dedup_party`, extend `REGISTRY`)
+- Modify: `platform/web/spindle/agents.py` (add `dedup_party`, extend `REGISTRY`)
 - Test: `platform/web/tests/test_dedup.py`
 
 **Interfaces:**
@@ -1727,7 +1727,7 @@ class Deduplicating(unittest.TestCase):
             return [dict(r) for r in cur.fetchall()]
 
     def test_a_near_duplicate_produces_a_pending_suggestion(self):
-        from rtf_platform import agents, spend
+        from spindle import agents, spend
         subject = self._party("Amanda Gonçalves", 0.1)
         self._party("Amanda Goncalves", 0.1)          # identical vector
         agents.dedup_party(self.conn, self._lead(subject), spend.Gate.open(None, None))
@@ -1736,7 +1736,7 @@ class Deduplicating(unittest.TestCase):
         self.assertEqual(found[0]["state"], "pending")
 
     def test_the_agent_never_merges_by_itself(self):
-        from rtf_platform import agents, spend
+        from spindle import agents, spend
         subject = self._party("Amanda Gonçalves", 0.1)
         other = self._party("Amanda Goncalves", 0.1)
         agents.dedup_party(self.conn, self._lead(subject), spend.Gate.open(None, None))
@@ -1754,14 +1754,14 @@ class Deduplicating(unittest.TestCase):
         self.assertIsNone(row["alias_of"])
 
     def test_a_distant_party_produces_nothing(self):
-        from rtf_platform import agents, spend
+        from spindle import agents, spend
         subject = self._party("Amanda Gonçalves", 0.1)
         self._party("Rudy - Deezer Moods Editor", -0.9)
         agents.dedup_party(self.conn, self._lead(subject), spend.Gate.open(None, None))
         self.assertEqual(self._suggestions(), [])
 
     def test_the_suggestion_carries_both_ids_and_the_distance(self):
-        from rtf_platform import agents, spend
+        from spindle import agents, spend
         subject = self._party("Amanda Gonçalves", 0.1)
         twin = self._party("Amanda Goncalves", 0.1)
         agents.dedup_party(self.conn, self._lead(subject), spend.Gate.open(None, None))
@@ -1771,7 +1771,7 @@ class Deduplicating(unittest.TestCase):
         self.assertIn("distance", payload)
 
     def test_an_existing_alias_is_not_proposed_again(self):
-        from rtf_platform import agents, repo, spend
+        from spindle import agents, repo, spend
         subject = self._party("Amanda Gonçalves", 0.1)
         twin = self._party("Amanda Goncalves", 0.1)
         repo.merge_party(self.conn, self.tenant, alias_id=twin, canonical_id=subject)
@@ -1780,7 +1780,7 @@ class Deduplicating(unittest.TestCase):
                          "a party already merged must not be proposed a second time")
 
     def test_a_party_with_no_embedding_fails_permanently(self):
-        from rtf_platform import agents, fleet, spend
+        from spindle import agents, fleet, spend
         with self.conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO party (tenant_id, slug, name, party_class)
@@ -1798,11 +1798,11 @@ class Deduplicating(unittest.TestCase):
 
 Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_dedup.py -q`
 
-Expected: FAIL — `AttributeError: module 'rtf_platform.agents' has no attribute 'dedup_party'`
+Expected: FAIL — `AttributeError: module 'spindle.agents' has no attribute 'dedup_party'`
 
 - [ ] **Step 3: Implement the agent**
 
-Add beside `SHORTLIST_CANDIDATES` in `platform/web/rtf_platform/agents.py`:
+Add beside `SHORTLIST_CANDIDATES` in `platform/web/spindle/agents.py`:
 
 ```python
 #: Cosine distance below which two parties are proposed as the same person.
@@ -1815,7 +1815,7 @@ Add beside `SHORTLIST_CANDIDATES` in `platform/web/rtf_platform/agents.py`:
 MERGE_DISTANCE = 0.08
 ```
 
-Add before `shortlist` in `platform/web/rtf_platform/agents.py`:
+Add before `shortlist` in `platform/web/spindle/agents.py`:
 
 ```python
 def dedup_party(conn: psycopg.Connection, lead: dict[str, Any],
@@ -1952,7 +1952,7 @@ A newly embedded party is exactly when a duplicate check is worth running, and `
 
 - [ ] **Step 6: Confirm the follow-on lead's shape matches what `fleet.complete` inserts**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && grep -n "for follow in outcome.follow_on" -A 25 rtf_platform/fleet.py`
+Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && grep -n "for follow in outcome.follow_on" -A 25 spindle/fleet.py`
 
 Check every column the `INSERT` names is a key the dict above provides or that the insert defaults. If `fleet.complete` requires a key not present — `adapter`, `platform`, `mode` — add it to the dict with the value the other agents use for a party-scoped lead. Do not change `fleet.complete`.
 
@@ -1965,7 +1965,7 @@ Expected: **98 passed, 37 skipped** with `DATABASE_URL` unset. With `DATABASE_UR
 - [ ] **Step 8: Commit**
 
 ```bash
-git add platform/web/rtf_platform/agents.py platform/web/tests/test_dedup.py
+git add platform/web/spindle/agents.py platform/web/tests/test_dedup.py
 git commit -m "platform: R3 proposes, a human disposes, and an embedding queues the check"
 ```
 
@@ -1985,7 +1985,7 @@ cd "$(git rev-parse --show-toplevel)/platform/web"
 DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python - <<'PY'
 import os, psycopg
 from psycopg.rows import dict_row
-from rtf_platform import agents, spend
+from spindle import agents, spend
 
 conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, row_factory=dict_row)
 gate = spend.Gate.open(None, None)

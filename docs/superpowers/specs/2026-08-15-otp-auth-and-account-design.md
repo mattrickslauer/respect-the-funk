@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-15
 **Status:** approved, in implementation
-**Touches:** `platform/web/rtf_platform/`, `platform/schema/`, `platform/infra/`, and
+**Touches:** `platform/web/spindle/`, `platform/schema/`, `platform/infra/`, and
 the deletion of `platform/console/`
 
 ---
@@ -74,7 +74,7 @@ no dictionary. A six-digit code *is* a dictionary — the whole of it. What boun
 here is not the hash, it is `attempts` and `expires_at`, and those are the controls that
 have to be right.
 
-### `rtf_platform/otp.py`
+### `spindle/otp.py`
 
 Ported in shape from `app/remixkit/services/accounts.py`, which already solved this once.
 
@@ -267,7 +267,7 @@ which is where accounts live in every console anyone has used.
 
 ## §6 — Removing the React console
 
-**Deleted:** `platform/console/`, `rtf_platform/console_assets.py`,
+**Deleted:** `platform/console/`, `spindle/console_assets.py`,
 `tests/test_console_assets.py`, the mount in `main.py`, and the npm block in
 `platform/infra/build.sh` — which takes Node out of the deployment path entirely.
 
@@ -280,7 +280,7 @@ same keep-it-outside-the-repo practice as the genblaze bundle.
 
 **Deliberately kept:**
 
-- **`rtf_platform/api/`.** Built for the React console, but independently tested,
+- **`spindle/api/`.** Built for the React console, but independently tested,
   documented at `docs/reference/api-v1.md`, and the only way anything scripts this
   system. Deleting it is larger than what was asked for. Under §2 its auth is unchanged.
 - **`app/remixkit/`.** A separate surface, not named in this request.

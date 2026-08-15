@@ -105,7 +105,7 @@ class _FakeBucket:
         return self.url
 
     def head(self, key: str):  # noqa: ANN201 - matches the port
-        from rtf_platform import storage
+        from spindle import storage
 
         return storage.Head(bytes=len(_Serve.payload), mime="audio/wav", etag="e")
 
@@ -187,7 +187,7 @@ class AnalyseRecording(unittest.TestCase):
     # ------------------------------------------------------------------ fixtures
 
     def _stored_asset(self, content_hash: str | None = None) -> str:
-        from rtf_platform import assets
+        from spindle import assets
 
         row, _ = assets.claim(
             self.conn, self.tenant, self.recording, kind="master",
@@ -201,7 +201,7 @@ class AnalyseRecording(unittest.TestCase):
                 "recording_id": self.recording, "party_id": self.party}
 
     def _run(self, asset_id: str):
-        from rtf_platform import agents, spend, storage
+        from spindle import agents, spend, storage
 
         # The agent resolves its own adapter from settings; point that at the fake.
         storage._ADAPTERS[(BUCKET, "us-east-1")] = self.store
@@ -233,7 +233,7 @@ class AnalyseRecording(unittest.TestCase):
         """`sample_rate` was NULL because nothing had opened the file. It is now the
         file's own rate — 44100 — and not the 22050 this module resamples to, which
         would be recording our own settings as a measurement of the record."""
-        from rtf_platform import assets
+        from spindle import assets
 
         asset_id = self._stored_asset()
         self._run(asset_id)
@@ -297,7 +297,7 @@ class AnalyseRecording(unittest.TestCase):
         corrupted object looks like, and it must not be measured as though it were the
         master — every fact derived from it would be about a different file.
         """
-        from rtf_platform import agents
+        from spindle import agents
 
         asset_id = self._stored_asset()
         _Serve.payload = self.audio_bytes + b"tampered"
@@ -312,7 +312,7 @@ class AnalyseRecording(unittest.TestCase):
         """Queued before the upload was confirmed. The operator may still finish it, so
         the lead backs off rather than parking — which is the difference between "try
         later" and "a human needs to look at this"."""
-        from rtf_platform import agents, assets
+        from spindle import agents, assets
 
         row, _ = assets.claim(self.conn, self.tenant, self.recording, kind="master",
                               content_hash=self.hash, mime="audio/wav",
@@ -322,7 +322,7 @@ class AnalyseRecording(unittest.TestCase):
         self.assertFalse(caught.exception.permanent)
 
     def test_a_deleted_asset_parks_the_lead(self) -> None:
-        from rtf_platform import agents
+        from spindle import agents
 
         with self.assertRaises(agents.fleet.LeadFailed) as caught:
             self._run(str(uuid.uuid4()))
@@ -358,7 +358,7 @@ class AnalyseRecording(unittest.TestCase):
         `platform/classifier/tests/validate.py` against six reference tracks, which is
         where a genre model's correctness belongs. What is under test here is the wiring.
         """
-        from rtf_platform import agents
+        from spindle import agents
 
         stub = {"parent": "Electronic", "style": "Electronic---House",
                 "confidence": 0.71, "model": "genre_discogs400-discogs-effnet-1",
@@ -389,7 +389,7 @@ class AnalyseRecording(unittest.TestCase):
         empty style when it is unsure which sub-genre, and the agent must write one row
         rather than two — an empty `style` fact would assert that the model said the
         style was nothing."""
-        from rtf_platform import agents
+        from spindle import agents
 
         stub = {"parent": "Hip Hop", "style": "", "confidence": 0.215,
                 "model": "genre_discogs400-discogs-effnet-1", "confident": "parent",
@@ -413,7 +413,7 @@ class AnalyseRecording(unittest.TestCase):
     def test_confirming_an_upload_queues_the_analysis(self) -> None:
         """Uploading a file is the only action an operator takes; the analysis follows
         from the row. Same move `outreach.advance` makes when a thread closes."""
-        from rtf_platform import assets
+        from spindle import assets
 
         asset_id = self._stored_asset()
         self.assertTrue(assets.queue_analysis(self.conn, self.tenant, self.recording,
@@ -436,7 +436,7 @@ class AnalyseRecording(unittest.TestCase):
         """`UNIQUE (tenant_id, target_hash)` over the asset id. Re-confirming an upload
         does not queue a second analysis — and a remaster is a different asset, so it
         does. One analysis per distinct file."""
-        from rtf_platform import assets
+        from spindle import assets
 
         asset_id = self._stored_asset()
         first = assets.queue_analysis(self.conn, self.tenant, self.recording, asset_id)
@@ -448,7 +448,7 @@ class AnalyseRecording(unittest.TestCase):
         """`lead_scope_shape` requires a party on a recording-scoped lead, and the party
         is whoever is credited. A recording with no credit has no owner to bill the work
         to, so nothing is queued rather than an owner being invented."""
-        from rtf_platform import assets
+        from spindle import assets
 
         with self.conn.cursor() as cur:
             cur.execute("""DELETE FROM party_credit
@@ -470,7 +470,7 @@ class Reanalysing(AnalyseRecording):
     """
 
     def test_a_completed_lead_returns_to_the_frontier(self) -> None:
-        from rtf_platform import assets, ingest
+        from spindle import assets, ingest
 
         asset_id = self._stored_asset()
         assets.queue_analysis(self.conn, self.tenant, self.recording, asset_id)
@@ -492,7 +492,7 @@ class Reanalysing(AnalyseRecording):
     def test_a_slug_narrows_it_to_one_recording(self) -> None:
         """After deploying a classifier you want every master; while debugging one
         track you emphatically do not."""
-        from rtf_platform import assets, ingest
+        from spindle import assets, ingest
 
         assets.queue_analysis(self.conn, self.tenant, self.recording,
                               self._stored_asset())
@@ -520,26 +520,26 @@ class SearchTerms(unittest.TestCase):
         """"Electronic" describes a third of Deezer and would return the same playlists
         for a techno record and an ambient one. The parent is stored as its own `genre`
         fact; what a curator actually curates is the style."""
-        from rtf_platform import agents
+        from spindle import agents
 
         self.assertEqual(agents._search_terms("Electronic---Tropical House"),
                          ["Tropical House"])
 
     def test_a_comma_joined_list_becomes_its_members(self) -> None:
-        from rtf_platform import agents
+        from spindle import agents
 
         self.assertEqual(agents._search_terms("house, melodic house, progressive house"),
                          ["house", "melodic house", "progressive house"])
 
     def test_a_bare_platform_label_survives_unchanged(self) -> None:
-        from rtf_platform import agents
+        from spindle import agents
 
         self.assertEqual(agents._search_terms("Dance"), ["Dance"])
 
     def test_empty_and_whitespace_yield_nothing(self) -> None:
         """A term of `" "` would search Deezer's playlists for a space. `sources.py`
         already learned this one the hard way."""
-        from rtf_platform import agents
+        from spindle import agents
 
         self.assertEqual(agents._search_terms(""), [])
         self.assertEqual(agents._search_terms(" , , "), [])
@@ -566,21 +566,21 @@ class ClassifierTerms(unittest.TestCase):
     }
 
     def test_a_tight_cluster_keeps_the_whole_cluster(self) -> None:
-        from rtf_platform import agents
+        from spindle import agents
 
         self.assertEqual(
             agents._classifier_terms(self.LOSING_SLEEP),
             ["Tropical House", "House", "Deep House", "Progressive House"])
 
     def test_the_straggler_below_the_ratio_is_dropped(self) -> None:
-        from rtf_platform import agents
+        from spindle import agents
 
         self.assertNotIn("Electro House", agents._classifier_terms(self.LOSING_SLEEP))
 
     def test_a_confident_single_answer_yields_one_term(self) -> None:
         """Metallica measured 0.844 against a distant field. A ratio rule must not turn
         a decisive answer into four hedged ones."""
-        from rtf_platform import agents
+        from spindle import agents
 
         decisive = {"model": "m", "styles": [
             {"label": "Rock---Heavy Metal", "p": 0.844},
@@ -592,14 +592,14 @@ class ClassifierTerms(unittest.TestCase):
         """The absolute floor under the ratio. Without it, five labels at 0.02 would
         pass the ratio test against each other and produce four confident-looking terms
         that are all noise."""
-        from rtf_platform import agents
+        from spindle import agents
 
         noise = {"model": "m", "styles": [{"label": f"X---S{i}", "p": 0.02}
                                           for i in range(5)]}
         self.assertEqual(agents._classifier_terms(noise), [])
 
     def test_no_classifier_yields_no_terms(self) -> None:
-        from rtf_platform import agents
+        from spindle import agents
 
         self.assertEqual(agents._classifier_terms(None), [])
         self.assertEqual(agents._classifier_terms({"model": "m", "styles": []}), [])

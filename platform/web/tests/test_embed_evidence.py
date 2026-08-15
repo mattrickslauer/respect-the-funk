@@ -27,7 +27,7 @@ import uuid
 import psycopg
 from psycopg.rows import dict_row
 
-from rtf_platform import agents, ingest
+from spindle import agents, ingest
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 

@@ -1,24 +1,29 @@
-<title>Respect the Funk Operator Manual</title>
+<title>Spindle Operator Manual</title>
 <style>
   /* ------------------------------------------------------------------ tokens
      Light is the default reading ground. The palette is the product's own —
-     amber phosphor and carrier teal off a transmitter-room dark — darkened
-     where it has to sit on paper. */
+     copper phosphor and carrier verdigris off a cutting-room dark — darkened
+     where it has to sit on paper.
+
+     This file is a standalone export and its tokens are a hand-maintained copy of
+     `platform/web/spindle/templates/_design.html`. That duplication is exactly what
+     `_design.html` exists to end; regenerate this from `manual.html` rather than
+     hand-patching it a third time. */
   :root{
-    --paper:#faf8f4;
-    --panel:#f2eee6;
-    --panel-2:#ebe6db;
-    --rule:#ded7c9;
-    --rule-soft:#e9e3d7;
-    --ink:#181c22;
-    --ink-2:#3d454f;
-    --dim:#5f6875;
-    --faint:#8a8f98;
-    --accent:#9a5f00;
-    --accent-bright:#c47c05;
-    --accent-wash:rgba(196,124,5,.10);
-    --carrier:#0d7a70;
-    --carrier-wash:rgba(13,122,112,.10);
+    --paper:#f7f3ec;
+    --panel:#efe9de;
+    --panel-2:#e7e0d2;
+    --rule:#dbd2c1;
+    --rule-soft:#e6dfd1;
+    --ink:#1a1714;
+    --ink-2:#3f3931;
+    --dim:#645c51;
+    --faint:#8a8175;
+    --accent:#9c5423;
+    --accent-bright:#c06a2e;
+    --accent-wash:rgba(192,106,46,.10);
+    --carrier:#1f6f5c;
+    --carrier-wash:rgba(31,111,92,.10);
     --warn:#a8322b;
     --warn-wash:rgba(168,50,43,.09);
     --shadow:0 1px 2px rgba(24,28,34,.06),0 8px 24px rgba(24,28,34,.05);
@@ -31,40 +36,40 @@
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
-      --paper:#0a0e14;
-      --panel:#121924;
-      --panel-2:#18202c;
-      --rule:#242f3d;
-      --rule-soft:#1b2330;
-      --ink:#e9eef6;
-      --ink-2:#c3cdda;
-      --dim:#8b99ab;
-      --faint:#66748699;
-      --accent:#ffb340;
-      --accent-bright:#ffc266;
-      --accent-wash:rgba(255,179,64,.11);
-      --carrier:#3fd6c5;
-      --carrier-wash:rgba(63,214,197,.10);
+      --paper:#0b0a09;
+      --panel:#14120f;
+      --panel-2:#1c1916;
+      --rule:#2a2521;
+      --rule-soft:#1f1b18;
+      --ink:#f0ebe3;
+      --ink-2:#cdc4b8;
+      --dim:#8c8175;
+      --faint:#5d554c99;
+      --accent:#d97f4a;
+      --accent-bright:#eb9a67;
+      --accent-wash:rgba(217,127,74,.11);
+      --carrier:#5cb89b;
+      --carrier-wash:rgba(92,184,155,.10);
       --warn:#ff8272;
       --warn-wash:rgba(255,130,114,.10);
       --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.32);
     }
   }
   :root[data-theme="dark"]{
-    --paper:#0a0e14;
-    --panel:#121924;
-    --panel-2:#18202c;
-    --rule:#242f3d;
-    --rule-soft:#1b2330;
-    --ink:#e9eef6;
-    --ink-2:#c3cdda;
-    --dim:#8b99ab;
-    --faint:#667486;
-    --accent:#ffb340;
-    --accent-bright:#ffc266;
-    --accent-wash:rgba(255,179,64,.11);
-    --carrier:#3fd6c5;
-    --carrier-wash:rgba(63,214,197,.10);
+    --paper:#0b0a09;
+    --panel:#14120f;
+    --panel-2:#1c1916;
+    --rule:#2a2521;
+    --rule-soft:#1f1b18;
+    --ink:#f0ebe3;
+    --ink-2:#cdc4b8;
+    --dim:#8c8175;
+    --faint:#5d554c;
+    --accent:#d97f4a;
+    --accent-bright:#eb9a67;
+    --accent-wash:rgba(217,127,74,.11);
+    --carrier:#5cb89b;
+    --carrier-wash:rgba(92,184,155,.10);
     --warn:#ff8272;
     --warn-wash:rgba(255,130,114,.10);
     --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.32);
@@ -237,7 +242,7 @@
 
 <header class="masthead">
   <div class="wrap">
-    <div class="brandline"><span class="bar"></span>Respect the Funk · Operator manual</div>
+    <div class="brandline"><span class="bar"></span>Spindle · Operator manual</div>
     <h1>Getting a record in front of the people who can play it.</h1>
     <p class="standfirst">
       This is the working manual for the console: what each screen is for, the order you
@@ -943,7 +948,7 @@
 <footer>
   <div class="wrap">
     <p>
-      Respect the Funk · Operator manual. Every figure and behaviour described here is
+      Spindle · Operator manual. Every figure and behaviour described here is
       taken from the console as built. Where something is prepared but not switched on,
       this document says so rather than describing what it will eventually do.
     </p>

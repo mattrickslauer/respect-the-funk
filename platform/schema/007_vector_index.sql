@@ -72,7 +72,7 @@
 -- None here. The columns stay NULL until an embedder writes them, and the writer must
 -- use small `INSERT` batches: the vendor documents that large batch inserts degrade a
 -- vector index, and `IMPORT INTO` is unsupported on a table carrying one.
--- `rtf_platform/embed.py` fixes the batch at 16 for that reason.
+-- `spindle/embed.py` fixes the batch at 16 for that reason.
 
 
 -- ------------------------------------------------------- the provenance of a vector

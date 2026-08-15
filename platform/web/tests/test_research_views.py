@@ -33,7 +33,7 @@ import uuid
 import psycopg
 from psycopg.rows import dict_row
 
-from rtf_platform import research
+from spindle import research
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 
@@ -104,7 +104,7 @@ class EveryInspectorRenders(unittest.TestCase):
         os.environ.pop("PLATFORM_MASTERS_BUCKET", None)
 
     def _render(self, row: dict) -> str:
-        from rtf_platform import routes
+        from spindle import routes
 
         return routes.templates.env.get_template("console/_inspector.html").render(
             sel=row, insp_kicker="track", insp_title=row.get("title", "—"),

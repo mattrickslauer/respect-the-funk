@@ -28,7 +28,7 @@ This worktree contains `agents.py`, `repo.py`, `fleet.py`, `lessons.py`, `distri
 
 **Kills:** provenance defaulting to `measured`/`inferred`, `unit` defaulting to `count`, `release_type` defaulting to `single`, `presence.mode` defaulting to `owned`, and `_to_int`/`_to_money` returning 0.
 
-**The design.** Adapters currently return `dict` and callers guess at missing keys. Introduce one module, `rtf_platform/harvested.py`, holding frozen dataclasses for each item an adapter can emit — `Identifier`, `Fact`, `Metric`, `Recording`, `Release`, `Presence`. Each has a classmethod `parse(raw: dict, *, adapter: str)` that:
+**The design.** Adapters currently return `dict` and callers guess at missing keys. Introduce one module, `spindle/harvested.py`, holding frozen dataclasses for each item an adapter can emit — `Identifier`, `Fact`, `Metric`, `Recording`, `Release`, `Presence`. Each has a classmethod `parse(raw: dict, *, adapter: str)` that:
 
 - requires every field the database requires, and raises `HarvestInvalid(adapter, field, raw)` naming the adapter and the missing field when one is absent;
 - **never defaults a label.** `provenance`, `unit`, `release_type` and `mode` are required. An adapter that cannot say what it measured has produced an item we cannot store;
@@ -80,7 +80,7 @@ Two vector queries have now been found full-scanning because a JOIN was attached
 
 ### Task D — tenant scoping and relationship coherence (Roots B and D)
 
-- [ ] **Tenant guard.** Three lookups in `agents.py` fetch by bare `id` without `tenant_id`. Add the predicate. Then add `tests/test_tenant_scoping.py`: parse every `cur.execute` string in `rtf_platform/*.py`, and for each naming a tenant-scoped table, assert `tenant_id` appears in the statement. Maintain the tenant-scoped table list in one place. This is a lint expressed as a test — it is the only thing that stops the next omission.
+- [ ] **Tenant guard.** Three lookups in `agents.py` fetch by bare `id` without `tenant_id`. Add the predicate. Then add `tests/test_tenant_scoping.py`: parse every `cur.execute` string in `spindle/*.py`, and for each naming a tenant-scoped table, assert `tenant_id` appears in the statement. Maintain the tenant-scoped table list in one place. This is a lint expressed as a test — it is the only thing that stops the next omission.
 - [ ] **`delete_party` clears lessons.** `011_lesson.sql`'s comment already claims it does; make the claim true. Add a test asserting a deleted party leaves no `lesson` row with `scope_kind='party'` and its id.
 - [ ] **`supersedes_id` is populated.** `map_source` marks rows `status='superseded'` and never sets `supersedes_id`, leaving orphans — measured: 3 of 4 live `party_fact` rows. Set it in the same statement that supersedes, so status and relationship cannot disagree.
 - [ ] **Refuse a self-supersede.** `ALTER TABLE party_fact ADD CONSTRAINT fact_no_self_supersede CHECK (supersedes_id IS NULL OR supersedes_id != id)`, same for `lesson`, as migration `013_supersede_integrity.sql`. A cycle needs more than a CHECK; a self-reference does not, and `lessons.heads()` drops every row on one.

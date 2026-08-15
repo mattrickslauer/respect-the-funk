@@ -34,7 +34,7 @@ plan BASIC, `node_count: 0`.
 **AWS — at least 1 required. One verified.**
 
 `aws_lambda_function_url.console` in `platform/infra/main.tf:152`, served by Mangum
-(`platform/web/rtf_platform/handler.py`). The console runs *on* Lambda; this is not a
+(`platform/web/spindle/handler.py`). The console runs *on* Lambda; this is not a
 bolt-on.
 
 > **One correction to `docs/reference/HACKATHON.md`.** It records the intent as
@@ -186,7 +186,7 @@ script's line *"A changefeed on that table wakes the next agent. No broker."* is
 today. It is also the one claim a judge can check in ten seconds. **Build it or cut the
 line — do not ship it as written.**
 
-> **Follow-up, 2026-08-13.** It was built — `rtf_platform/changefeed.py` — and the line is
+> **Follow-up, 2026-08-13.** It was built — `spindle/changefeed.py` — and the line is
 > still cut, because `SHOW CHANGEFEED JOBS` still returns zero rows. The module composes
 > the statement and refuses to run it: creating the feed starts a continuous RU draw whose
 > rate nobody has published, and that is a human decision. This paragraph therefore stands

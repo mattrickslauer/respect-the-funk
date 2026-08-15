@@ -33,8 +33,8 @@ import os
 import unittest
 import uuid
 
-from rtf_platform import auth, outreach
-from rtf_platform.api import actions, errors, reads
+from spindle import auth, outreach
+from spindle.api import actions, errors, reads
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 

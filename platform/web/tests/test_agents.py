@@ -1,6 +1,6 @@
 """The chunker and the document hash, offline.
 
-The agents themselves are exercised end to end by `rtf_platform.ingest` against the
+The agents themselves are exercised end to end by `spindle.ingest` against the
 cluster; what is worth unit-testing here is the pure text handling, because a chunker
 that silently drops a paragraph produces an index that is quietly incomplete — the
 failure that looks exactly like a working system with nothing to say.
@@ -12,7 +12,7 @@ import os
 import unittest
 import uuid
 
-from rtf_platform import agents, fleet
+from spindle import agents, fleet
 
 
 class Hashing(unittest.TestCase):
@@ -82,7 +82,7 @@ class MapSourceSupersession(unittest.TestCase):
         import psycopg
         from psycopg.rows import dict_row
 
-        from rtf_platform import repo
+        from spindle import repo
 
         self.conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True,
                                     row_factory=dict_row)
@@ -99,7 +99,7 @@ class MapSourceSupersession(unittest.TestCase):
         self.conn.close()
 
     def _write(self, value_text: str) -> None:
-        from rtf_platform import sources, spend
+        from spindle import sources, spend
 
         lead = {"id": str(uuid.uuid4()), "tenant_id": self.tenant,
                 "party_id": self.party["id"]}
@@ -200,7 +200,7 @@ class WriteFindCounterpartiesWritesALegalMode(unittest.TestCase):
         self.conn.close()
 
     def test_the_curators_own_presence_is_owned_not_observed(self) -> None:
-        from rtf_platform import sources, spend
+        from spindle import sources, spend
 
         lead = {"id": self.lead_id, "tenant_id": self.tenant}
         gate = spend.Gate.open(self.conn, self.tenant)
@@ -247,11 +247,11 @@ class DiscoveryRefusesToSearchByName(unittest.TestCase):
     """
 
     def _source(self):
-        from rtf_platform import sources
+        from spindle import sources
         return sources.DeezerSource()
 
     def test_no_style_terms_refuses_rather_than_searching_the_name(self):
-        from rtf_platform import sources
+        from spindle import sources
 
         with self.assertRaises(sources.SourceUnavailable) as caught:
             self._source().discover_counterparties("Amanda Kurt", "123", terms=[])
@@ -261,7 +261,7 @@ class DiscoveryRefusesToSearchByName(unittest.TestCase):
         """`party_fact` can hold an empty `value_text`; a list of empty strings is not a
         vocabulary, and filtering it away must reach the same refusal rather than
         searching for the empty string."""
-        from rtf_platform import sources
+        from spindle import sources
 
         with self.assertRaises(sources.SourceUnavailable):
             self._source().discover_counterparties("Amanda Kurt", "123", terms=["", " "])
@@ -269,14 +269,14 @@ class DiscoveryRefusesToSearchByName(unittest.TestCase):
     def test_the_refusal_is_permanent_so_the_fleet_stops_retrying(self):
         """Retrying cannot conjure a genre fact. The lead should park for a human, not
         burn four attempts and a provider call each time."""
-        from rtf_platform import sources
+        from spindle import sources
 
         with self.assertRaises(sources.SourceUnavailable) as caught:
             self._source().discover_counterparties("Amanda Kurt", "123", terms=[])
         self.assertTrue(caught.exception.permanent)
 
     def test_the_message_says_what_would_fix_it(self):
-        from rtf_platform import sources
+        from spindle import sources
 
         with self.assertRaises(sources.SourceUnavailable) as caught:
             self._source().discover_counterparties("Amanda Kurt", "123", terms=[])

@@ -4,7 +4,7 @@
 --
 -- `agent_manifest` has carried a `sender` row since migration 010, with
 -- `enabled = false`, and `platform/README.md` has said the honest thing next to it ever
--- since: *"no Sender claims the outbox, so nothing is sent."* `rtf_platform/sender.py`
+-- since: *"no Sender claims the outbox, so nothing is sent."* `spindle/sender.py`
 -- now claims it.
 --
 -- **`requires_human` stays true, and that is not a formality.** The send is the one

@@ -23,7 +23,7 @@ import json
 import time
 import unittest
 
-from rtf_platform import billing, plans, settings as settings_mod
+from spindle import billing, plans, settings as settings_mod
 
 SECRET = "whsec_test_secret_value"
 
@@ -411,7 +411,7 @@ class TheEndpointsThemselves(unittest.TestCase):
     def test_the_webhook_is_public_and_the_checkout_is_not(self):
         from fastapi.routing import APIRoute
 
-        from rtf_platform import routes
+        from spindle import routes
 
         gated = {}
         for route in routes.router.routes:
@@ -433,8 +433,8 @@ class TheEndpointsThemselves(unittest.TestCase):
     def test_the_webhook_refuses_a_bad_signature_with_the_declared_code(self):
         """End to end through the handler: forged body in, 400 and a branchable code out,
         and — the part that matters — no database call on the way."""
-        from rtf_platform import routes
-        from rtf_platform.api import errors
+        from spindle import routes
+        from spindle.api import errors
 
         original_conn = routes._conn
         routes._conn = lambda: (_ for _ in ()).throw(
@@ -457,7 +457,7 @@ class TheEndpointsThemselves(unittest.TestCase):
         self.assertEqual(body["message"], body["error"]["message"])
 
     def test_the_webhook_refuses_everything_when_the_secret_is_unset(self):
-        from rtf_platform import routes
+        from spindle import routes
 
         original_settings = routes.SETTINGS
         routes.SETTINGS = _configured(stripe_webhook_secret="")
@@ -485,7 +485,7 @@ class TheEndpointsThemselves(unittest.TestCase):
         """
         from fastapi import HTTPException
 
-        from rtf_platform import auth, routes
+        from spindle import auth, routes
 
         tenantless = auth.Principal(tenant_id=None, subject="nobody",
                                     authenticated=True)
@@ -495,7 +495,7 @@ class TheEndpointsThemselves(unittest.TestCase):
         self.assertIn("SignedIn", caught.exception.detail)
 
     def test_checkout_names_the_missing_variables_rather_than_pretending(self):
-        from rtf_platform import accounts, auth, routes
+        from spindle import accounts, auth, routes
 
         tenant = auth.Principal(tenant_id="tenant-1", subject="a@b.com",
                                 authenticated=True, plan="free")

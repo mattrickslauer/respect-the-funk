@@ -68,7 +68,7 @@ import unittest
 import uuid
 from datetime import datetime, timezone
 
-from rtf_platform import fleet
+from spindle import fleet
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 

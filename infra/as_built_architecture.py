@@ -506,7 +506,7 @@ def main() -> None:
 
 <div class="page">
   <div class="kicker">As built · {AS_OF} · with the multi-region topology deployed</div>
-  <h1>Respect the Funk — the system, as it actually works</h1>
+  <h1>Spindle — the system, as it actually works</h1>
   <p class="lede">Every number on these pages was read off {CLUSTER.split(' · ')[0]} ({VERSION}) on {AS_OF}.
   The three-region topology is drawn as deployed because that is what this document assumes; page 6 is the
   ledger of what is running right now and what is one command away. A diagram of a system that does not

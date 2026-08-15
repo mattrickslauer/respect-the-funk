@@ -26,10 +26,10 @@ python3 -m pip install \
   -r "$web/requirements.txt"
 
 # The app itself, templates included.
-cp -r "$web/rtf_platform" "$build/rtf_platform"
+cp -r "$web/spindle" "$build/spindle"
 
 # There is no Node step here any more. `platform/console` — the React console this
-# script used to compile into `rtf_platform/console_dist` — was removed on 2026-08-15
+# script used to compile into `spindle/console_dist` — was removed on 2026-08-15
 # because the server-rendered console does the same job and is the one being built on.
 # Its removal took npm out of the deployment path entirely, which is the reason this
 # comment exists rather than nothing: a reader comparing an old zip against a new one

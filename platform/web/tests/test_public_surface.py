@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from jinja2 import Environment, FileSystemLoader
 
-TEMPLATES = Path(__file__).resolve().parent.parent / "rtf_platform" / "templates"
+TEMPLATES = Path(__file__).resolve().parent.parent / "spindle" / "templates"
 
 
 class _Principal:
@@ -148,8 +148,8 @@ def test_the_console_takes_its_palette_from_the_system() -> None:
     assert '{% include "_design.html" %}' in console, (
         "the console must take its palette from the shared system, not carry one"
     )
-    assert 'data-ground="transmitter"' in console, (
-        "the console is a transmitter surface and does not follow the reader's setting"
+    assert 'data-ground="lathe"' in console, (
+        "the console is a lathe surface and does not follow the reader's setting"
     )
 
     root = _rule_body(console, ":root")
@@ -168,21 +168,21 @@ def test_the_console_takes_its_palette_from_the_system() -> None:
 
 @pytest.mark.parametrize("ground", ["light", "dark"])
 def test_the_system_defines_the_legend_in_both_grounds(ground: str) -> None:
-    """The manual teaches ● ○ ◆ on paper; the console draws them on the transmitter
+    """The manual teaches ● ○ ◆ on paper; the console draws them on the lathe
     ground. Both sets have to exist, or the manual is a legend for an instrument that
     renders nothing.
 
     The `--ground` assertion proves we grabbed the block we meant to before trusting
-    anything in it. An earlier version matched `data-ground="transmitter"` where it
+    anything in it. An earlier version matched `data-ground="lathe"` where it
     first appears, which was inside a `:not(...)` guard on the dark media query rather
-    than the transmitter rule itself — it passed, while checking the wrong thing.
+    than the lathe rule itself — it passed, while checking the wrong thing.
     """
     design = _design_css()
     block = (_rule_body(design, ":root{") if ground == "light"
-             else _rule_body(design, 'data-ground="transmitter"'))
+             else _rule_body(design, 'data-ground="lathe"'))
     des = _tokens(block)
 
-    expected_ground = "#faf8f4" if ground == "light" else "#06080c"
+    expected_ground = "#f7f3ec" if ground == "light" else "#0b0a09"
     assert des["--ground"] == expected_ground, (
         f"{ground}: matched the wrong rule in _design.html — "
         f"--ground is {des['--ground']}, expected {expected_ground}"
@@ -206,11 +206,11 @@ def test_landing_renders(env: Environment) -> None:
     assert 'href="/manual"' in html, "the two public pages must link to each other"
 
 
-def test_landing_pins_the_transmitter_ground() -> None:
+def test_landing_pins_the_lathe_ground() -> None:
     """The landing page is a room you monitor at night. It does not follow the reader's
     system setting the way the manual does, and the attribute is what says so."""
     html = (TEMPLATES / "landing.html").read_text(encoding="utf-8")
-    assert 'data-ground="transmitter"' in html
+    assert 'data-ground="lathe"' in html
 
 
 def test_landing_defines_no_token_the_system_already_defines() -> None:

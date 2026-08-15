@@ -1,24 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img"
-     aria-label="RemixKit — Respect the Funk">
-  <title>RemixKit — Respect the Funk</title>
+     aria-label="Spindle — The tool that makes your music go round">
+  <title>Spindle — The tool that makes your music go round</title>
 
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#1c1926"/>
-      <stop offset="0.55" stop-color="#14121a"/>
-      <stop offset="1" stop-color="#0e0c14"/>
+      <stop offset="0" stop-color="#1c1916"/>
+      <stop offset="0.55" stop-color="#14120f"/>
+      <stop offset="1" stop-color="#0b0a09"/>
     </linearGradient>
 
     <!-- Light behind the mark, so the disc sits in the page rather than on it. -->
     <radialGradient id="glow" cx="0.5" cy="0.44" r="0.46">
-      <stop offset="0" stop-color="#f5b940" stop-opacity="0.20"/>
-      <stop offset="0.6" stop-color="#f5b940" stop-opacity="0.05"/>
-      <stop offset="1" stop-color="#f5b940" stop-opacity="0"/>
+      <stop offset="0" stop-color="#d97f4a" stop-opacity="0.20"/>
+      <stop offset="0.6" stop-color="#d97f4a" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#d97f4a" stop-opacity="0"/>
     </radialGradient>
 
     <linearGradient id="disc" x1="0" y1="0" x2="0.4" y2="1">
-      <stop offset="0" stop-color="#262232"/>
-      <stop offset="1" stop-color="#15131c"/>
+      <stop offset="0" stop-color="#241f1a"/>
+      <stop offset="1" stop-color="#14120f"/>
     </linearGradient>
   </defs>
 
@@ -28,15 +28,18 @@
   <!-- The mark: a record read as a spectrum. Grooves inside, waveform radiating out. -->
   <g>
     <circle cx="640" cy="274" r="88" fill="url(#disc)"/>
-    <circle cx="640" cy="274" r="88" fill="none" stroke="#f5b940" stroke-opacity="0.30"/>
-    <circle cx="640" cy="274" r="72" fill="none" stroke="#f5b940" stroke-opacity="0.13"/>
-    <circle cx="640" cy="274" r="58" fill="none" stroke="#f5b940" stroke-opacity="0.10"/>
-    <circle cx="640" cy="274" r="44" fill="none" stroke="#f5b940" stroke-opacity="0.08"/>
+    <circle cx="640" cy="274" r="88" fill="none" stroke="#d97f4a" stroke-opacity="0.30"/>
+    <circle cx="640" cy="274" r="72" fill="none" stroke="#d97f4a" stroke-opacity="0.13"/>
+    <circle cx="640" cy="274" r="58" fill="none" stroke="#d97f4a" stroke-opacity="0.10"/>
+    <circle cx="640" cy="274" r="44" fill="none" stroke="#d97f4a" stroke-opacity="0.08"/>
     <!-- Label and spindle. -->
-    <circle cx="640" cy="274" r="27" fill="#f5b940" fill-opacity="0.92"/>
-    <circle cx="640" cy="274" r="7" fill="#14121a"/>
+    <circle cx="640" cy="274" r="27" fill="#d97f4a" fill-opacity="0.92"/>
+    <circle cx="640" cy="274" r="8.5" fill="#0b0a09"/>
+    <!-- The post itself, catching light. The product is named after this hole. -->
+    <circle cx="640" cy="274" r="8.5" fill="none" stroke="#f0ebe3"
+            stroke-opacity="0.70" stroke-width="2"/>
 
-    <g transform="translate(640, 274)" fill="#f5b940">
+    <g transform="translate(640, 274)" fill="#d97f4a">
       <rect x="-2.50" y="-165.00" width="5.00" height="69.00" rx="2.50" transform="rotate(0.000)" opacity="0.950"/>
       <rect x="-2.50" y="-159.56" width="5.00" height="63.56" rx="2.50" transform="rotate(5.625)" opacity="0.885"/>
       <rect x="-2.50" y="-147.40" width="5.00" height="51.40" rx="2.50" transform="rotate(11.250)" opacity="0.738"/>
@@ -105,8 +108,8 @@
   </g>
 
   <!-- Wordmark and kicker. Everything else the old thumbnail said now lives in the README. -->
-  <g font-family="Futura, 'Avenir Next', 'Helvetica Neue', sans-serif" text-anchor="middle">
-    <text x="640" y="492" font-size="82" font-weight="500" letter-spacing="-1.4" fill="#f7f5f2">RemixKit</text>
-    <text x="640" y="540" font-size="16" letter-spacing="7.2" fill="#f5b940" fill-opacity="0.85">RESPECT THE FUNK</text>
+  <g text-anchor="middle">
+    <text font-family="Futura, 'Avenir Next', 'URW Gothic', 'Helvetica Neue', sans-serif" x="640" y="492" font-size="82" font-weight="500" letter-spacing="-1.4" fill="#f0ebe3">Spindle</text>
+    <text font-family="Futura, 'Avenir Next', 'URW Gothic', 'Helvetica Neue', sans-serif" x="640" y="540" font-size="16" letter-spacing="4.5" fill="#d97f4a" fill-opacity="0.85">THE TOOL THAT MAKES YOUR MUSIC GO ROUND</text>
   </g>
 </svg>

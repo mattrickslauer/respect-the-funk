@@ -21,7 +21,7 @@ date: "2026-07-26"
 
 2. **The memory tier is a rounding error on its own bill, and a lever on the bill that dominates.** At T1 it costs **$0.0066 per finished video** against **$2.07** of generation and likeness judging — **0.32%**. It pays for itself if it removes **0.0075 attempts per approved still**, out of 2.2. This reinforces rather than contradicts [docs/research/07-cost-model](../docs/research/07-cost-model.md): generation is the bill, everything else is noise, and the memory tier is the cheapest possible way to attack the expensive line.
 
-3. **The binding constraint is not price — it is an unpublished number.** CockroachDB does not publish an RU cost for a vector-index scan. So the free allowance is stated here as *headroom*, not as spend: an operation would have to cost **> 9,542 RU** at T1, or **> 1,147 RU** at T2, before the 50M free allowance breaks. T1 has room to spare. **T2 must be measured**, and days 1–2 of [MEMORY-SPEC §9](../docs/MEMORY-SPEC.md) is where to record it.
+3. **The binding constraint is not price — it is an unpublished number.** CockroachDB does not publish an RU cost for a vector-index scan. So the free allowance is stated here as *headroom*, not as spend: an operation would have to cost **> 9,542 RU** at T1, or **> 1,147 RU** at T2, before the 50M free allowance breaks. T1 has room to spare. **T2 must be measured**, and days 1–2 of MEMORY-SPEC §9 (deleted 2026-08-15; in git history) is where to record it.
 
 ---
 
@@ -58,7 +58,7 @@ Counted out of this repository on 2026-07-26. These are the workload's real driv
 | Memory-tier operations / month | 1,750 | 5,240 | 43,600 |
 
 **T0 · Demo** — what exists on 2026-08-18, plus the synthetic corpus MEMORY-SPEC §9 commits to for exercising the index (5,000 rows, labelled synthetic wherever they appear).
-**T1 · Pilot** — Respect the Funk as tenant #1 at the scale [PRODUCT.md](../docs/PRODUCT.md) names as the real bottleneck: fifty songs, where manual onboarding rather than compute is what throttles throughput.
+**T1 · Pilot** — Respect the Funk as tenant #1 at the scale PRODUCT.md (deleted 2026-08-15; in git history) names as the real bottleneck: fifty songs, where manual onboarding rather than compute is what throttles throughput.
 **T2 · Platform** — ten labels on one engine. The multi-tenant case BUILD-SPEC §2b rule 6 partitions for, and the first tier where the free allowance is a genuine question.
 
 ⚠️ **Attempts-per-approved-still is an assumption at every tier, not evidence.** It is not measured anywhere in this repo, because nothing writes back — that is precisely MEMORY-SPEC §3's third failure, and the thing this whole branch exists to fix. The 3.0 / 2.2 / 1.8 figures size the workload; they are not a claim that the improvement has been observed. `memory-workload.pdf` draws the full sensitivity curve rather than a point estimate so this stays visible. MEMORY-SPEC §6 already commits to labelling the demo curve with its N; the same rule governs this document.
@@ -128,7 +128,7 @@ Full line items are in [`memory-workload.csv`](./memory-workload.csv), in AWS Pr
 | | **Total infrastructure** | | **$0.7227** | **$8.67** |
 | *memo* | *image generation — `gemini-2.5-flash-image`* | *$0.04/image · 968 attempts/mo* | *$38.72* | *$464.64* |
 
-**Five AWS services become six.** [MEMORY-SPEC §7](../docs/MEMORY-SPEC.md) proposes adding Bedrock to the five already in [infra/README.md](./README.md), and Bedrock is the only genuinely new spend this branch introduces: **$0.13/month at T1**, of which batch embedding halves the ingest half. Everything else — Lambda, SQS, SSM — stays inside its free tier at every tier modelled.
+**Five AWS services become six.** MEMORY-SPEC §7 (deleted 2026-08-15; in git history) proposes adding Bedrock to the five already in [infra/README.md](./README.md), and Bedrock is the only genuinely new spend this branch introduces: **$0.13/month at T1**, of which batch embedding halves the ingest half. Everything else — Lambda, SQS, SSM — stays inside its free tier at every tier modelled.
 
 ---
 

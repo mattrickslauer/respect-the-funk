@@ -25,7 +25,7 @@ import os
 import unittest
 import uuid
 
-from rtf_platform import outreach
+from spindle import outreach
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 

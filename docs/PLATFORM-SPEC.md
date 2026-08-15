@@ -225,7 +225,7 @@ No agent names another agent. The topology is a property of the data.
 > table above is consequently wired to nothing; it is left standing as the design it was,
 > rather than quietly deleted as though it had never been planned.
 >
-> **Status: built, not created.** `platform/web/rtf_platform/changefeed.py` composes this
+> **Status: built, not created.** `platform/web/spindle/changefeed.py` composes this
 > exact statement, parses the webhook batches, maps a change to the set of lead kinds it
 > can make claimable, and ships a Lambda handler and a `--verify`. `SHOW CHANGEFEED JOBS`
 > still returns **zero rows**, because creating the feed draws RUs continuously against a
@@ -332,7 +332,7 @@ Adding press or sync is a `channel_playbook` row plus a contact adapter. The spi
 > quotas and no entitlement: `CreateModelInvocationJob` returns *"Your account is not
 > authorized to perform this action. Please create a support case"*, reproduced in
 > `us-east-1` and `us-west-2` with a real IAM role and a real bucket. Both paths are
-> written (`rtf_platform/bedrock.py`) because the entitlement is a switch AWS throws
+> written (`spindle/bedrock.py`) because the entitlement is a switch AWS throws
 > rather than work anyone here can do — but the only embedding model that has ever
 > produced a row on this cluster is `openai:text-embedding-3-small`. **The AWS requirement
 > is carried by Lambda and S3**, which are genuinely deployed. Days 2–3 and 7–9 above

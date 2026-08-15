@@ -22,7 +22,7 @@ import os
 import unittest
 import uuid
 
-from rtf_platform import fleet
+from spindle import fleet
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 
@@ -173,7 +173,7 @@ class Expediting(unittest.TestCase):
         about that is visible from a template test or a route test — it is the *shape
         of the tuple the builder returns*, so that is what is checked.
         """
-        from rtf_platform import research
+        from spindle import research
 
         lead_id = self._lead()
         view = research.queue(self.conn, self.tenant)
@@ -194,7 +194,7 @@ class TheRouteExists(unittest.TestCase):
     looks exactly like the inert button it replaced."""
 
     def test_queue_run_is_a_post_route(self):
-        from rtf_platform.routes import router
+        from spindle.routes import router
 
         posts = {r.path for r in router.routes if "POST" in getattr(r, "methods", ())}
         self.assertIn("/queue/{lead_id}/run", posts)

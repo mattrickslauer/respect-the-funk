@@ -16,7 +16,7 @@ tickets at a lower cost per ticket, with the plumbing correct so a win pays.*
 
 This is the low-cost ticket printer. A **library** is fetched once. After that a video is
 ffmpeg and a solver: **no model call, no per-video cost, seconds of CPU.** That is
-[BUILD-SPEC §7b](../docs/BUILD-SPEC.md)'s unit-economics claim made literal one layer down —
+BUILD-SPEC §7b (deleted 2026-08-15; in git history)'s unit-economics claim made literal one layer down —
 the expensive step is per-library, the cheap step is per-post.
 
 It is deliberately *not* a second creative format. It is the same geometry — hold the

@@ -29,7 +29,7 @@ import unittest
 import uuid
 from decimal import Decimal
 
-from rtf_platform import (
+from spindle import (
     accounts, auth, outreach, plans, settings as settings_mod,
 )
 
@@ -232,7 +232,7 @@ class BothCompositionRootsPassTheResolver(unittest.TestCase):
     """
 
     def test_the_console_resolves_tenant_tokens(self):
-        from rtf_platform import routes
+        from spindle import routes
 
         seen: list[str] = []
         original = routes._resolve_account
@@ -244,7 +244,7 @@ class BothCompositionRootsPassTheResolver(unittest.TestCase):
         self.assertEqual(["some-tenant-token"], seen)
 
     def test_the_json_api_resolves_tenant_tokens(self):
-        from rtf_platform.api import deps
+        from spindle.api import deps
 
         seen: list[str] = []
         original = deps._resolve_account
@@ -349,7 +349,7 @@ class ThePerTenantCeilingOnlyNarrows(unittest.TestCase):
 
     def _gate(self, *, deployment: str, tenant: str | None,
               paused: bool = False):
-        from rtf_platform import spend
+        from spindle import spend
 
         return spend.Gate(
             policy=spend.Policy(paid_enabled=True,
@@ -376,7 +376,7 @@ class ThePerTenantCeilingOnlyNarrows(unittest.TestCase):
         """Distinct from a $0 ceiling. "No allowance today" and "somebody stopped this
         tenant" have different remedies, and one of them sends a person to look at a
         number that is fine."""
-        from rtf_platform import spend
+        from spindle import spend
 
         gate = self._gate(deployment="10.00", tenant="10.00", paused=True)
         with self.assertRaises(spend.SpendRefused) as caught:
@@ -481,7 +481,7 @@ class AgainstTheCluster(unittest.TestCase):
     def test_the_spend_gate_reads_the_claimed_tenants_ceiling(self):
         """The budget row is only worth writing if the gate reads it. This is the join
         between the claim flow and the enforcement that predates it."""
-        from rtf_platform import spend
+        from spindle import spend
 
         account, _ = self._claim()
         ceiling, paused = spend.tenant_ceiling(self.conn, str(account["tenant_id"]))
@@ -647,7 +647,7 @@ class AgainstTheCluster(unittest.TestCase):
     def test_an_upgrade_raises_both_the_allowance_and_the_ceiling(self):
         """`set_plan` writes the plan and the money ceiling in one transaction. Either
         one without the other leaves a tenant paying for one tier and bounded by another."""
-        from rtf_platform import spend
+        from spindle import spend
 
         account, _ = self._claim()
         tenant_id = str(account["tenant_id"])

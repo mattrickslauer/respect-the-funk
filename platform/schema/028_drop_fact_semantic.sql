@@ -12,7 +12,7 @@
 -- Measured against the live cluster on 2026-08-13:
 --
 --   * `party_fact` holds 45,125 rows and **0** of them have an `embedding`.
---   * **No code writes that column.** A grep across `rtf_platform/` finds one mention,
+--   * **No code writes that column.** A grep across `spindle/` finds one mention,
 --     in a docstring in `embed.py` describing the schema. There is no agent, no
 --     backfill, no stage. It was never populated because nothing was ever written to
 --     populate it.

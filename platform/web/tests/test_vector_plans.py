@@ -24,7 +24,7 @@ the moment somebody renames it — silently, which is worse than no test, becaus
     A rename or deletion raises `AttributeError` from inside the test method, which
     unittest reports as an ERROR — a loud failure, not a skip.
   * `VectorQueryCensus`, below, does not name functions by string at all. It walks the
-    AST of every module in `rtf_platform/` on every run, finds every string literal
+    AST of every module in `spindle/` on every run, finds every string literal
     containing `<=>`, and records which function encloses it. That *discovered* set is
     diffed against `EXPECTED_VECTOR_QUERY_SITES`. If a covered query is deleted, rewritten
     to no longer be a vector search, or moved to a different function, the discovered set
@@ -58,11 +58,11 @@ from unittest import mock
 import psycopg
 from psycopg.rows import dict_row
 
-from rtf_platform import agents, embed, lessons, spend
+from spindle import agents, embed, lessons, spend
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 
-RTF_PLATFORM_DIR = Path(__file__).resolve().parent.parent / "rtf_platform"
+RTF_PLATFORM_DIR = Path(__file__).resolve().parent.parent / "spindle"
 
 #: Checked against the live cluster before writing any literal into a query below:
 #: `SELECT DISTINCT embedding_model FROM party WHERE profile_embedding IS NOT NULL`
@@ -101,7 +101,7 @@ def _vector_query_sites(root: Path = RTF_PLATFORM_DIR) -> set[tuple[str, str]]:
     string literals, or write it as `` `<=>` `` split across a concatenation, to avoid
     tripping this scan on the codebase's own commentary.
 
-    `rglob`, not `glob` — `rtf_platform/distributors/` is a real subpackage, and a
+    `rglob`, not `glob` — `spindle/distributors/` is a real subpackage, and a
     `<=>` query written under it (or any future subpackage) must not go uncounted; a
     top-level-only scan silently stops covering a whole class of file the moment code is
     organized into a subpackage, which is exactly the kind of quiet coverage loss this
@@ -157,7 +157,7 @@ class VectorQueryCensus(unittest.TestCase):
             f"  found:    {sorted(found)}")
 
     def test_a_query_in_a_subpackage_is_detected(self) -> None:
-        """`rtf_platform/distributors/` is a real subpackage today, and it happens to be
+        """`spindle/distributors/` is a real subpackage today, and it happens to be
         empty of `<=>` queries — so the main census passing is not itself evidence that a
         query written *inside* a subpackage would be caught. `rglob` was chosen
         specifically over `glob` for this; prove it against a throwaway tree rather than

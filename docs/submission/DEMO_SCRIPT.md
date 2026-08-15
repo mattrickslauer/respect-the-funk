@@ -1,6 +1,6 @@
 ---
 title: "Demo script — three minutes, one argument"
-subtitle: "Every beat exists to answer one question: why is CockroachDB irreplaceable here? Nothing else is discussed. Supersedes VIDEO_SCRIPT.md, which was written before the sponsor audit."
+subtitle: "Every beat exists to answer one question: why is CockroachDB irreplaceable here? Nothing else is discussed. Superseded VIDEO_SCRIPT.md, which was written before the sponsor audit and was deleted on 2026-08-15."
 status: "BINDING for the shoot. Runtime 2:59 against a 3:00 hard cap, with the §1 trim applied. The pre-shoot checklist lists what must be true before the camera rolls."
 date: "2026-08-11"
 amended: "2026-08-14 — §3 rewritten. Migrations 023 and 026–032 were applied and the first contact harvest ran, taking `contact_route` from 1 row to 2,351 across three channels. The beat that argued restraint from the schema now argues it from evidence, and gained 0:14 to do so. Telegram and WhatsApp are named as what the channel model is *for*; the rule that they may never be implied as integrations is in 'What must not be said'. Also corrects a claim that had been in this file since it was written: §3 told the shoot to film a `contact_route` row in `opted_out`, and that state has never held a row."

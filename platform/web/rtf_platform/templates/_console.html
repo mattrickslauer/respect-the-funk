@@ -1,37 +1,64 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-ground="transmitter">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {# `viewport-fit=cover` is also what makes `env(safe-area-inset-*)` resolve to
+     anything other than zero. No `maximum-scale`, no `user-scalable=no`: an
+     operator who wants to zoom a table of call signs is allowed to. #}
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}Console{% endblock %} — Respect the Funk</title>
+{% include "_design.html" %}
   <style>
     /* =====================================================================
-       Instrument panel. Dark first, because this is a thing you monitor.
-
-       Colour carries meaning and nothing else: provenance class, run state,
-       and severity. There is no decorative hue anywhere in this file. If a
-       thing is grey it is because it is fine.
+       Instrument panel. Pinned dark, because this is a thing you monitor.
 
        Density targets: 13px UI, 11.5px mono, 26px rows, 3 panes at 1280px.
+
+       ## This file no longer owns a palette
+
+       It used to. It carried thirty-odd hex values and a `prefers-color-scheme`
+       block of its own, and `_design.html` was extracted precisely because that
+       set had already drifted from the landing page's and the manual's. The
+       extraction stopped at the public pages; this file was the last holdout,
+       and a shared system with one surface still outside it is not a shared
+       system, it is a suggestion.
+
+       So the palette comes from the include above and what remains here is an
+       alias block. The names below are the ones three hundred lines of rules in
+       this file already use; every one of them now resolves to a system token,
+       so the console cannot drift from the manual that documents it — not
+       because someone remembers to check, but because there is nothing left to
+       drift from.
+
+       Pinning `transmitter` is the other half. This surface used to follow the
+       reader's system setting and go light in daylight; `_design.html` names the
+       console as a transmitter surface — "a thing you monitor, at night, for
+       hours" — and it now is one.
        ===================================================================== */
     :root {
-      --bg:#0c0e10; --rail:#0a0c0e; --panel:#111417; --sunk:#0e1114;
-      --ink:#d9dee3; --dim:#8b949e; --faint:#5d666f;
-      --line:#1e2328; --line2:#2a3037;
-      --sel:#16324a; --selink:#7cc0f0;
-      --ok:#4fb477; --warn:#d2a24c; --err:#dd6b64; --info:#6ba3d0;
-      --meas:#63b3c4; --infr:#8b949e; --asrt:#c9a25e;
-      --r:4px;
-    }
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg:#f7f7f6; --rail:#f0f0ee; --panel:#ffffff; --sunk:#fafaf9;
-        --ink:#1a1d20; --dim:#5c646c; --faint:#8b939b;
-        --line:#e3e4e2; --line2:#d2d4d1;
-        --sel:#dbeafe; --selink:#1d4ed8;
-        --ok:#2f7d52; --warn:#94701f; --err:#a83a34; --info:#2b6699;
-        --meas:#20707f; --infr:#5c646c; --asrt:#8a6520;
-      }
+      --bg:var(--ground);          /* the work surface, the centre pane        */
+      --rail:var(--panel);         /* left nav, lifted off the ground by a rule */
+      --sunk:var(--panel-2);       /* a well: inset headers, inspector bands   */
+      --line:var(--rule);          /* the edge of a region                     */
+      --line2:var(--rule-strong);  /* the edge of a control. Stronger, on purpose. */
+
+      /* Selection is warm. A selected row is the thing you have put in front of
+         yourself to decide about, and the warm pole is what marks that. It was
+         blue here for as long as this file had its own palette, which meant the
+         console's most common highlight was a hue the system does not carry. */
+      --sel:var(--phosphor-wash);
+      --selink:var(--phosphor);
+
+      /* Provenance, abbreviated. The long names are read by a person choosing a
+         colour; these are read in a 336px pane. Same three values, necessarily —
+         they are the same three tokens. */
+      --meas:var(--measured);
+      --infr:var(--inferred);
+      --asrt:var(--asserted);
+
+      /* This surface is denser than a document, so its default corner is the
+         system's small one rather than its standard one. */
+      --r:var(--r-sm);
     }
     * { box-sizing:border-box; }
     html,body { height:100%; }
@@ -46,10 +73,15 @@
     /* ---- three panes ------------------------------------------------- */
     .app {
       display:grid; grid-template-columns:206px minmax(0,1fr) 336px;
-      height:100vh; overflow:hidden;
+      /* `dvh` after `vh`, not instead of it: the fallback is for the browsers that
+         do not know the unit, and the override is for the mobile ones where 100vh
+         is taller than the viewport whenever the chrome is showing. */
+      height:100vh; height:100dvh; overflow:hidden;
     }
-    @media (max-width:1180px) { .app { grid-template-columns:56px minmax(0,1fr) 300px; } }
-    @media (max-width:860px)  { .app { grid-template-columns:56px minmax(0,1fr); } .insp { display:none; } }
+    /* Narrower, still three panes, everything still labelled. The rail keeps its
+       words — see the responsive block at the foot of this file for why the 56px
+       icon rail that used to live here was not a condensed nav but a broken one. */
+    @media (max-width:1180px) { .app { grid-template-columns:172px minmax(0,1fr) 296px; } }
 
     /* ---- rail --------------------------------------------------------- */
     .rail {
@@ -87,10 +119,13 @@
       margin-top:auto; padding:.6rem .75rem; border-top:1px solid var(--line);
       font-size:10.5px; color:var(--faint); line-height:1.5;
     }
-    @media (max-width:1180px) {
-      .brand span, .scope, .navgroup, .navitem span.t, .navitem .b, .railfoot { display:none; }
-      .navitem { justify-content:center; padding:.4rem 0; }
-    }
+    /* The rule that used to sit here hid `.navitem span.t` and `.navitem .b` at
+       1180px — which is to say it hid the only two children a nav item has. The
+       result was fifteen identical blank boxes on every laptop under 1180px, and
+       there is no icon set in this markup to fall back to. It also hid `.scope`,
+       the only artist-scoping control in the product, and `.railfoot`, which
+       carries the only link to `/roster` and the only read-only indicator.
+       Deleted rather than repaired: see the responsive block at the foot. */
 
     /* ---- centre ------------------------------------------------------- */
     .centre { display:flex; flex-direction:column; min-width:0; overflow:hidden; }
@@ -146,7 +181,10 @@
     td.c-num { text-align:right; font-family:ui-monospace,monospace; font-size:11.5px; }
     td.c-mono { font-family:ui-monospace,monospace; font-size:11.5px; color:var(--dim); }
     td.c-bar, td.c-spark { font-family:ui-monospace,monospace; font-size:11px; letter-spacing:-.5px; }
-    td.c-bar { color:var(--info); }
+    /* Confidence and consumption are measured quantities, so they belong to the
+       cold pole. This was `--info` blue, which is a hue the two-pole system does
+       not carry for quantities — it reads as a notice, not a measurement. */
+    td.c-bar { color:var(--carrier); }
     td.c-spark { color:var(--dim); }
     /* A numeric header sitting left of its own right-aligned column reads as a
        different column. Header and values share an edge. */
@@ -169,6 +207,18 @@
     .chip.err{color:var(--err);border-color:var(--err)} .chip.info{color:var(--info);border-color:var(--info)}
     .prov { font-family:ui-monospace,monospace; font-size:11px; }
     .prov.measured{color:var(--meas)} .prov.inferred{color:var(--infr)} .prov.asserted{color:var(--asrt)}
+    /* The shared system draws the ● ○ ◆ glyph with a `::before`, because on the
+       manual's legend there is no markup to put it in. Here there is: `table.html`
+       renders `row.glyph` into the cell. Without this the console prints both and
+       every provenance cell reads `● ● MEAS`. Suppressed rather than removed from
+       the system, because the manual still needs it.
+
+       Specificity has to match the system's, which qualifies by class
+       (`.prov.measured::before`). A bare `.prov::before` loses and the glyph comes
+       back — which is exactly what happened on the first attempt. */
+    .prov.measured::before,
+    .prov.inferred::before,
+    .prov.asserted::before { content:none; margin-right:0; }
 
     /* ---- inspector ---------------------------------------------------- */
     .insp {
@@ -306,6 +356,11 @@
     .quiet b { color:var(--dim); font-family:ui-monospace,monospace; text-transform:none;
                letter-spacing:0; font-size:11px; font-weight:500; }
 
+    /* ---- ask ----------------------------------------------------------- */
+    /* The only centre block whose content is a form rather than a table, so it is
+       the only one that has to bring its own gutter and its own scroll. */
+    .askpane { flex:1; min-height:0; overflow-y:auto; padding:.85rem 1rem 2rem; }
+
     /* ---- reading panes (approvals, inbox) ------------------------------ */
     .list { border-right:0; }
     .card {
@@ -327,6 +382,127 @@
     .split { display:grid; grid-template-columns:266px minmax(0,1fr); min-height:0; flex:1; overflow:hidden; }
     .split > .col { overflow-y:auto; }
     .split > .col:first-child { border-right:1px solid var(--line); }
+
+    /* =====================================================================
+       Small screens
+       =====================================================================
+
+       Every breakpoint that existed in this file before this block did one of
+       two things: it narrowed a column, or it hid something. None of them ever
+       made a word bigger or a target easier to hit. That is how a 1280px
+       instrument panel ends up rendering as fifteen blank boxes and a
+       read-only table on a laptop, and it is the pattern being broken here.
+
+       Two breakpoints, and both only ever *add*:
+
+         900px — assume a finger. Type goes up, targets go up, inputs reach the
+                 16px at which iOS stops zooming the page on focus.
+         860px — assume one column. The three panes stop being panes and become
+                 a document, in the order an operator reads them: what I am
+                 looking at, then the detail, then where else I can go.
+
+       The 16px input size is not a preference. Below it, Safari zooms the
+       viewport on focus and does not zoom back, which leaves the operator on a
+       horizontally panned page with no way to recover but a manual pinch. It
+       was the only thing in this file capable of making the body scroll
+       sideways.
+       ===================================================================== */
+
+    @media (max-width:900px) {
+      /* Targets. 26px rows and 20px buttons are fine for a mouse and are not a
+         control on a touchscreen — adjacent 26px rows are a mis-tap machine. */
+      tbody tr { height:40px; }
+      .navitem { min-height:40px; padding:.45rem .55rem; }
+      .b, .btn { min-height:40px; display:inline-flex; align-items:center; }
+      .b.x { min-height:36px; min-width:36px; justify-content:center; }
+      .card { padding:.7rem .8rem; }
+
+      /* Inputs at the iOS threshold. */
+      .scope select, .search, .edf input, .edf select, .edf textarea,
+      input[type=text], input[type=email], input[type=url], input[type=date],
+      input[type=file], select, textarea { font-size:16px; min-height:40px; }
+      .edf textarea { min-height:7rem; }
+
+      /* Type. These were 9.5–11.5px, set for a 1280px panel read at desk
+         distance. A phone is held closer but the pixels are smaller, and the
+         net is that they were unreadable. */
+      .navgroup, thead th, .wire, .stat, .insphead .k, .edf label { font-size:11px; }
+      .stat i, .chip, .prov, .navitem .b { font-size:11px; }
+      .navitem { font-size:14px; }
+      .blurb, .card .m, .card .p, .kv, .ednote { font-size:13px; }
+      td.c-num, td.c-mono, td.c-bar, td.c-spark { font-size:12.5px; }
+      h1 { font-size:16px; }
+
+      /* The filter box had no wrap and a fixed 190px, inside a flex row with a
+         heading and a chip, inside a pane with `overflow:hidden`. It was cut
+         off rather than wrapped. */
+      .headtop { flex-wrap:wrap; }
+      .search { width:100%; margin-left:0; }
+    }
+
+    @media (max-width:860px) {
+      /* One document, not three panes. `height:100vh` with `overflow:hidden`
+         is the wrong shell on a phone twice over: the viewport is shorter than
+         100vh whenever the browser chrome is showing, and anything that
+         overflows is clipped with no page scroll to reach it. */
+      .app { display:block; height:auto; min-height:100dvh; overflow:visible; }
+      .centre, .insp, .scroll, .draft, .split, .split > .col { overflow:visible; }
+      .centre { min-height:0; }
+
+      /* The rail keeps every label. It becomes a wrapped strip of chips above
+         the content rather than a column beside it — brand, scope and footer
+         each take a full row, the nav items flow. Fifteen labelled chips is
+         four rows of legible navigation; fifteen unlabelled boxes was none. */
+      .rail {
+        /* `flex-direction:row` is load-bearing and was missing in the first pass.
+           The base rule is a column; setting only `flex-wrap:wrap` on a column
+           container wraps into further *columns*, so the fifteen nav items came
+           out stacked and centred, one per line, filling the whole first screen. */
+        display:flex; flex-direction:row; flex-wrap:wrap;
+        align-items:center; justify-content:flex-start; gap:.3rem;
+        border-right:0; border-bottom:1px solid var(--line);
+        padding:.55rem .6rem;
+        /* Fifteen chips in four groups is a legible menu and also two-thirds of a
+           phone screen, which would push the actual content below the fold on
+           every view. Bounded and scrolled internally instead, so the table is
+           always visible on load. A disclosure would be tidier, but `<details>`
+           cannot be open on desktop and closed on mobile without script, and this
+           console does not run any. */
+        max-height:34vh; overflow-y:auto; overscroll-behavior:contain;
+      }
+      .rail > .brand, .rail > .scope, .rail > .navgroup, .rail > .railfoot {
+        flex:1 1 100%;
+      }
+      .rail > .navgroup { margin-top:.4rem; }
+      .rail > .railfoot { margin-top:.5rem; }
+      .navitem { flex:0 0 auto; margin:0; border:1px solid var(--line); }
+
+      /* The inspector is where every form in this console lives: the editors,
+         the create control, the master upload, the actions row. It used to be
+         `display:none` here, which did not condense the product, it made it
+         read-only — and the row click that populates it became a no-op, so a
+         tap appeared to do nothing at all. It now follows the table. */
+      .insp { border-left:0; border-top:1px solid var(--line); }
+
+      /* Tables scroll rather than squeeze. `table-layout:fixed` with the
+         percentage widths in `cols` means an eight-column view on a 390px
+         screen gives each column about twenty pixels — every cell renders as
+         an ellipsis or an empty box, and `title` tooltips are the stated
+         recovery but hover does not exist on touch. A min-width hands the job
+         to `.scroll`, which is what it is for. `_layout.html` already does
+         exactly this on the legacy roster page. */
+      .scroll { overflow-x:auto; }
+      table { min-width:720px; }
+
+      /* Approvals and Inbox. A 266px list beside a `minmax(0,1fr)` reading
+         column left the draft body and the Approve/Reject buttons about 68px
+         of width, inside `overflow:hidden`. This is the product's one
+         irreversible gate; it does not get to be the least usable screen. */
+      .split { grid-template-columns:minmax(0,1fr); }
+      .split > .col:first-child { border-right:0; border-bottom:1px solid var(--line); }
+      .draft { padding:.9rem .8rem; }
+      .draft .body { max-width:none; }
+    }
   </style>
 </head>
 <body>

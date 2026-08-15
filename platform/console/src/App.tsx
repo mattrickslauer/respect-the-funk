@@ -67,10 +67,17 @@ function Rail() {
       </NavLink>
 
       <div className="railgap" />
+      {/* The link and the sentence explaining it are two different things, so they
+          are two elements rather than a link, a `<br/>` and a loose text node. On a
+          phone the rail is a bar across the bottom and there is room for exactly one
+          of them; a bare text node cannot be addressed by a stylesheet, so the gloss
+          gets a class and the link — which is the only route back to Facts, Queue,
+          Statements, Fleet and Budgets — is the one that always stays. */}
       <div className="railnote">
-        <a href="/artists" style={{ color: "var(--dim)" }}>Classic console →</a>
-        <br />
-        Facts, Queue, Statements, Fleet and Budgets live there.
+        <a href="/artists">Classic console →</a>
+        <span className="gloss">
+          Facts, Queue, Statements, Fleet and Budgets live there.
+        </span>
       </div>
     </nav>
   );

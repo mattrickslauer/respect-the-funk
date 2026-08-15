@@ -201,7 +201,12 @@ class TheRefusalEnvelope(unittest.TestCase):
 
     def test_every_code_is_declared(self) -> None:
         self.assertIn(errors.ALREADY_QUEUED, errors.CODES)
-        self.assertEqual(16, len(errors.CODES))
+        # Sixteen until per-tenant accounts landed; twenty now. The four added are
+        # `plan_limit_reached`, `billing_not_configured`, `billing_signature_invalid`
+        # and `claim_refused`. The number is asserted rather than the set because the
+        # point of the check is that adding a code is a deliberate act — a client
+        # branches on this vocabulary and it must not grow by accident.
+        self.assertEqual(20, len(errors.CODES))
 
     def test_the_sentence_is_mirrored_at_the_top_level(self) -> None:
         """`error.message` is canonical; the mirror exists so a client reaching for a

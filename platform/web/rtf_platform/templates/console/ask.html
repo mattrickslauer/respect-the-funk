@@ -15,7 +15,15 @@
   tenant's rows. The model chooses which question you meant; it never writes the SQL.
 {% endblock %}
 
+{# `.askpane` supplies two things the other centre blocks get for free. A gutter,
+   because a table brings its own cell padding and a form does not, so this page's
+   controls sat flush against the rail at every width. And a scroll container:
+   `.centre` is `overflow:hidden`, and only the result table had a `.scroll` of its
+   own — so on a short viewport the answer below the form was clipped with no way
+   to reach it, which on the one screen whose entire output is the answer is the
+   worst place in the console for that to happen. #}
 {% block centre %}
+<div class="askpane">
   {% if not mcp_configured %}
     <div class="empty">
       This screen is not configured. {{ mcp_missing }}
@@ -72,9 +80,22 @@
       {% endif %}
     {% endif %}
   {% endif %}
+</div>
 {% endblock %}
 
+{# The `<aside class="insp">` wrapper is not decoration. Without it these three
+   sections are direct children of `.app`, which is a three-column grid — so they
+   become grid items three, four and five, and the last two get placed into
+   implicit rows inside a `height:100dvh; overflow:hidden` container and are never
+   rendered at all. On desktop as well as mobile. The list of questions this page
+   can answer is the one thing its own header comment insists must be printed in
+   full, and it has been invisible. #}
 {% block inspector %}
+<aside class="insp">
+  <div class="insphead">
+    <div class="k">reference</div>
+    <div class="v">What Ask can answer</div>
+  </div>
   <div class="sect">
     <h3>Questions it can answer</h3>
     <ul class="chain">
@@ -104,4 +125,5 @@
       why the model is not allowed to compose the statement.
     </p>
   </div>
+</aside>
 {% endblock %}

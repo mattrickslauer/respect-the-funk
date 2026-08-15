@@ -157,17 +157,12 @@ function CampaignView({ id }: { id: string }) {
 
       <div className="grid2" style={{ marginTop: "1.1rem" }}>
         <div>
-          <h2
-            style={{
-              font: "600 9.5px/1 var(--face-display)",
-              letterSpacing: ".12em",
-              textTransform: "uppercase",
-              color: "var(--faint)",
-              margin: "0 0 .6rem",
-            }}
-          >
-            Shortlist
-          </h2>
+          {/* `.eyebrow` is the same declaration `.panel > h2` already carried; this
+              heading sits over a list rather than inside a panel, so it could not use
+              that selector and was inlining the shorthand instead. An inlined 9.5px
+              is a 9.5px no phone breakpoint can reach, which is the whole reason the
+              rule got a name of its own. */}
+          <h2 className="eyebrow">Shortlist</h2>
           <Shortlist campaign={c} />
           <p className="sub" style={{ maxWidth: "76ch" }}>
             One button per contact, and none for the batch. Opening a conversation

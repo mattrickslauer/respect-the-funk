@@ -43,9 +43,21 @@ def _render(env: Environment, name: str, **kw: object) -> str:
 
 
 def _tokens(block: str) -> dict[str, str]:
-    """Every `--name:value` declaration in a chunk of CSS."""
+    """Every custom-property declaration in a chunk of CSS.
+
+    Comments are stripped first, and that is not tidiness. The value pattern runs to
+    the next `;` or `}`, so a token name written with a colon after it inside a
+    comment — which is the natural way to mention one in prose — matches, and its
+    "value" then runs on for hundreds of characters until the next brace, swallowing
+    every real declaration in between. That failure is silent and reads as a missing
+    token: the file plainly declares `--bg`, the test insists it does not.
+
+    Cost a real half hour. The files these tests guard are heavily commented on
+    purpose, so the parser has to cope with prose that talks about CSS.
+    """
+    css = re.sub(r"/\*.*?\*/", "", block, flags=re.DOTALL)
     return {m.group(1): m.group(2).strip()
-            for m in re.finditer(r"(--[a-z0-9-]+)\s*:\s*([^;}]+)", block)}
+            for m in re.finditer(r"(--[a-z0-9-]+)\s*:\s*([^;}]+)", css)}
 
 
 def _rule_body(css: str, marker: str, *, after: int = 0) -> str:
@@ -120,51 +132,65 @@ def test_manual_carries_every_section(env: Environment) -> None:
 PROVENANCE = {"measured": "meas", "inferred": "infr", "asserted": "asrt"}
 
 
-@pytest.mark.parametrize("ground", ["light", "dark"])
-def test_manual_legend_matches_what_the_console_draws(ground: str) -> None:
-    """The manual teaches ● ○ ◆ and the console draws them. Same three colours, or the
-    manual is a legend for a different instrument.
+def test_the_console_takes_its_palette_from_the_system() -> None:
+    """This test used to compare three of the console's own hex values against the
+    system's and assert they matched. It passed for as long as somebody kept them in
+    step by hand, which is the weaker of the two available guarantees.
 
-    `_console.html` abbreviates them (`--meas`) and `_design.html` spells them out
-    (`--measured`); the names differ because the console's are read in a 336px pane and
-    the system's are read by a person choosing one. The *values* may not differ.
+    `_console.html` now includes `_design.html` and its short names are aliases, so the
+    console cannot drift from the manual that documents it — there is nothing left to
+    drift with. What is asserted here is that arrangement, because "include the shared
+    system" is exactly the line a future edit deletes on the way to adding one
+    convenient local colour.
     """
     console = (TEMPLATES / "_console.html").read_text(encoding="utf-8")
+
+    assert '{% include "_design.html" %}' in console, (
+        "the console must take its palette from the shared system, not carry one"
+    )
+    assert 'data-ground="transmitter"' in console, (
+        "the console is a transmitter surface and does not follow the reader's setting"
+    )
+
+    root = _rule_body(console, ":root")
+    con = _tokens(root)
+    for long_name, short_name in PROVENANCE.items():
+        assert con.get(f"--{short_name}") == f"var(--{long_name})", (
+            f"--{short_name} must alias --{long_name} rather than redeclare it; "
+            f"found {con.get(f'--{short_name}')!r}"
+        )
+
+    # One literal is how the fork restarts, so none are allowed to survive here.
+    assert not re.search(r"#[0-9a-fA-F]{3,8}", root), (
+        f"a literal colour is back in the console's root block: {root!r}"
+    )
+
+
+@pytest.mark.parametrize("ground", ["light", "dark"])
+def test_the_system_defines_the_legend_in_both_grounds(ground: str) -> None:
+    """The manual teaches ● ○ ◆ on paper; the console draws them on the transmitter
+    ground. Both sets have to exist, or the manual is a legend for an instrument that
+    renders nothing.
+
+    The `--ground` assertion proves we grabbed the block we meant to before trusting
+    anything in it. An earlier version matched `data-ground="transmitter"` where it
+    first appears, which was inside a `:not(...)` guard on the dark media query rather
+    than the transmitter rule itself — it passed, while checking the wrong thing.
+    """
     design = _design_css()
+    block = (_rule_body(design, ":root{") if ground == "light"
+             else _rule_body(design, 'data-ground="transmitter"'))
+    des = _tokens(block)
 
-    if ground == "light":
-        # The console's light values live in its `prefers-color-scheme: light` media
-        # query; the system's live in the bare `:root`, which is paper.
-        console_block = _rule_body(console, ":root", after=console.index(
-            "prefers-color-scheme: light"))
-        design_block = _rule_body(design, ":root{")
-    else:
-        # The console is dark-first, so its dark values are the bare `:root` — the
-        # first one in the file. The system's equivalent is the transmitter ground,
-        # which is the one the console would pin if it included this file.
-        console_block = _rule_body(console, ":root")
-        design_block = _rule_body(design, 'data-ground="transmitter"')
-
-    con, des = _tokens(console_block), _tokens(design_block)
-
-    # Prove we grabbed the block we meant to before comparing anything in it.
-    # An earlier version of this test matched `data-ground="transmitter"` where it
-    # first appears, which was inside a `:not(...)` guard on the dark media query
-    # rather than the transmitter rule itself. It passed — the two blocks agree on
-    # these three colours — but it was checking the wrong thing, and would have gone
-    # on passing if the transmitter block had drifted. A block assertion is cheap
-    # and it is what makes the comparison below mean anything.
-    expected_ground = "#faf8f4" if ground == "light" else "#080b11"
+    expected_ground = "#faf8f4" if ground == "light" else "#06080c"
     assert des["--ground"] == expected_ground, (
         f"{ground}: matched the wrong rule in _design.html — "
         f"--ground is {des['--ground']}, expected {expected_ground}"
     )
 
-    for long_name, short_name in PROVENANCE.items():
-        assert f"--{short_name}" in con, f"console lost --{short_name}"
-        assert con[f"--{short_name}"] == des[f"--{long_name}"], (
-            f"{ground}: the console draws {long_name} as {con[f'--{short_name}']} "
-            f"but the manual teaches {des[f'--{long_name}']}"
+    for long_name in PROVENANCE:
+        assert des.get(f"--{long_name}", "").startswith("#"), (
+            f"{ground}: --{long_name} is missing or is not a literal colour"
         )
 
 
@@ -213,7 +239,11 @@ def test_no_public_template_uses_an_undefined_token() -> None:
     colour is usually black on black.
     """
     design = set(_tokens(_design_css()))
-    for name in ("landing.html", "manual.html"):
+    # `_public.html` and `_console.html` were added here when they stopped carrying
+    # palettes of their own. They are the two files most likely to regress: both
+    # declare a block of aliases onto the system, and an alias whose target has been
+    # renamed resolves to nothing and paints black on black without erroring.
+    for name in ("landing.html", "manual.html", "_public.html", "_console.html"):
         page = (TEMPLATES / name).read_text(encoding="utf-8")
         declared = design | set(_tokens(page))
         used = {m.group(1) for m in re.finditer(r"var\((--[a-z0-9-]+)", page)}

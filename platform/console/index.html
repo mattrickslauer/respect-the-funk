@@ -5,7 +5,14 @@
 <html lang="en" data-ground="transmitter">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- `viewport-fit=cover` lets the shell paint into the notch and the home
+         indicator instead of being letterboxed between two bars of browser
+         background. It is also the switch that makes `env(safe-area-inset-*)`
+         return anything other than zero, so app.css's insets are inert without it.
+         No `maximum-scale` and no `user-scalable=no`: pinch-zoom is how someone
+         reads a screen this dense on a bad day, and taking it away is not a fix for
+         type being too small — raising the type is, which app.css now does. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
     <title>Console — Respect the Funk</title>
   </head>

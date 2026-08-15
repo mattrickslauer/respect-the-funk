@@ -241,6 +241,12 @@ def open_thread(principal: Writer, conn: Conn, tenant: Tenant, campaign_id: str,
     A `UniqueViolation` is `one_open_thread_per_counterparty` doing its job: somebody
     else is already talking to this person, across every campaign. Reported as that fact
     rather than as an error, because nothing is wrong.
+
+    A `PlanLimitReached` is the plan meter doing its job, and it is reported as its own
+    code rather than folded into the one above. Both are 409s on the same endpoint and
+    they mean opposite things — see the comment on `errors.PLAN_LIMIT_REACHED`. The
+    sentence is `outreach`'s, composed by `plans.Tier.conversation_refusal`, and is
+    passed through unedited so this API and the console quote the same limit.
     """
     party_id = research.campaign_party_id(conn, tenant, campaign_id)
     if party_id is None:
@@ -255,6 +261,8 @@ def open_thread(principal: Writer, conn: Conn, tenant: Tenant, campaign_id: str,
     try:
         row = outreach.open_thread(conn, tenant, campaign_id=campaign_id,
                                    counterparty_id=counterparty_id, decided=decided)
+    except outreach.PlanLimitReached as exc:
+        raise errors.Refusal(409, errors.PLAN_LIMIT_REACHED, str(exc)) from exc
     except psycopg.errors.UniqueViolation as exc:
         raise errors.Refusal(
             409, errors.THREAD_OCCUPIED,

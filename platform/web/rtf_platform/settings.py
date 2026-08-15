@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import ClassVar
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,10 @@ class Settings:
     cockroach_cluster_id: str
     mcp_url: str
     openai_api_key: str
+    stripe_secret_key: str
+    stripe_webhook_secret: str
+    stripe_price_label: str
+    stripe_price_roster: str
 
     @property
     def configured(self) -> bool:
@@ -79,6 +84,82 @@ class Settings:
         """
         return bool(self.cockroach_api_key and self.cockroach_cluster_id
                     and self.openai_api_key and self.database_url)
+
+    #: The four variables billing needs, paired with the attribute each lands in. One
+    #: tuple so `stripe_configured` and `stripe_missing` cannot come to check different
+    #: sets — the bug where a page says "configured" and the endpoint then names a
+    #: variable the page did not know about.
+    #:
+    #: `ClassVar` and not a field: this is a description of the settings, not one of
+    #: them, and without the annotation `dataclass` would add it to `__init__` as a
+    #: fifteenth constructor argument that every caller would then be able to override.
+    _STRIPE_VARS: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("STRIPE_SECRET_KEY", "stripe_secret_key"),
+        ("STRIPE_WEBHOOK_SECRET", "stripe_webhook_secret"),
+        ("STRIPE_PRICE_LABEL", "stripe_price_label"),
+        ("STRIPE_PRICE_ROSTER", "stripe_price_roster"),
+    )
+
+    @property
+    def stripe_missing(self) -> list[str]:
+        """Exactly which Stripe variables are absent, by environment-variable name.
+
+        The same shape as `_mcp_missing` on the Ask screen, and for the same reason:
+        "billing is not configured" is not an actionable message, and this needs four
+        things. Naming them is the difference between a refusal somebody fixes in a
+        minute and one they file a bug about.
+
+        A list rather than a formatted sentence, because two surfaces render it — the
+        checkout refusal as JSON, and the pricing page as prose — and a pre-formatted
+        string would force one of them to parse English.
+        """
+        return [name for name, attr in self._STRIPE_VARS if not getattr(self, attr)]
+
+    @property
+    def stripe_configured(self) -> bool:
+        """Whether a checkout can be created at all.
+
+        All four are required and none has a default, because each absence produces a
+        different kind of wrong and none of them is recoverable at runtime. Without the
+        secret key there is no API call. Without the webhook secret a completed payment
+        cannot be *verified*, and an unverified webhook is worse than none — it is an
+        unauthenticated endpoint that grants plans to whoever posts to it. Without the
+        two price ids there is nothing to sell; Stripe prices are objects created in the
+        dashboard and their ids differ between test and live mode, which is precisely why
+        they are configuration and not constants in `plans.py`.
+
+        There is no partial mode. A deployment with a key and no webhook secret could
+        technically send somebody to a checkout page, and it would take their money and
+        never hear that it happened. `billing.py` refuses instead.
+        """
+        return not self.stripe_missing
+
+    @property
+    def stripe_mode(self) -> str:
+        """`"test"`, `"live"` or `"unconfigured"`, read from the key's own prefix.
+
+        Stripe stamps the mode into the credential — `sk_test_…` and `sk_live_…` — so the
+        mode is a fact about the key rather than a second setting that could disagree
+        with it. A separate `STRIPE_TEST_MODE` variable is the obvious alternative and it
+        is strictly worse: it can be set to `test` next to a live key, and the deployment
+        would then label real charges as test charges in the UI. Deriving it means the
+        label cannot lie.
+
+        A key that is neither prefix is `"unconfigured"` rather than assumed to be test.
+        This is the no-fallbacks rule at its most literal: the safe-looking guess is
+        "test", and guessing "test" about a credential that turned out to be live is how
+        a UI ends up reassuring somebody while taking their money.
+        """
+        if self.stripe_secret_key.startswith("sk_test_"):
+            return "test"
+        if self.stripe_secret_key.startswith("sk_live_"):
+            return "live"
+        return "unconfigured"
+
+    @property
+    def stripe_test_mode(self) -> bool:
+        """The flag a UI puts a "test mode" badge behind. Derived, so it cannot drift."""
+        return self.stripe_mode == "test"
 
     @property
     def storage_configured(self) -> bool:
@@ -138,6 +219,32 @@ def load() -> Settings:
         # `spend.py`'s rate card records both Claude and Titan on-demand quotas at 0 RPM,
         # measured. Empty means the Ask screen says so rather than guessing a question.
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+        # Stripe. All four empty by default, and there is deliberately no test-mode
+        # placeholder among them — not `sk_test_...`, not a dummy price id, nothing.
+        #
+        # A fake key is the tempting default because it makes the code path "work" in
+        # development, and it is the exact failure this repository's standing rule
+        # forbids: the checkout would build a request, Stripe would reject it, and the
+        # operator would be debugging an authentication error from a vendor instead of
+        # reading "STRIPE_SECRET_KEY is unset". `stripe_missing` names what is absent;
+        # `billing.py` refuses before it constructs anything.
+        #
+        # The free tier does not read any of these. `POST /claim` works end to end with
+        # all four empty, which is not an accident of the implementation but the
+        # requirement it was built to: the tier a judge uses cannot depend on a payment
+        # provider being configured.
+        stripe_secret_key=os.environ.get("STRIPE_SECRET_KEY", ""),
+        # Stripe signs every webhook with this and `billing.verify_signature` checks it.
+        # Absent, the webhook refuses every request rather than trusting the body — an
+        # unverified webhook endpoint is an unauthenticated way to grant paid plans.
+        stripe_webhook_secret=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),
+        # Price object ids from the Stripe dashboard, one per purchasable tier. They are
+        # configuration rather than constants in `plans.py` because a price id is
+        # mode-specific: the test-mode id and the live-mode id for the same $49 product
+        # are different strings, and a value compiled into the source could not be both.
+        # `plans.Tier.stripe_price_setting` names which of these a tier uses.
+        stripe_price_label=os.environ.get("STRIPE_PRICE_LABEL", ""),
+        stripe_price_roster=os.environ.get("STRIPE_PRICE_ROSTER", ""),
         # Used to construct the S3 and SES clients. `AWS_REGION` is set by the Lambda
         # runtime itself, so in the deployed function this needs no configuration;
         # the explicit variable is for a worker or a laptop, and the default matches

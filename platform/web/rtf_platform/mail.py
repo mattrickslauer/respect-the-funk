@@ -52,6 +52,7 @@ finds out until a curator says they never heard from you.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -94,6 +95,34 @@ _PERMANENT = (
     "ConfigurationSetDoesNotExist", "InvalidParameterValue",
 )
 
+#: Characters SES permits in a message tag value: ASCII letters, digits, underscore and
+#: hyphen, and nothing else.
+_TAG_SAFE = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _tag_value(key: str) -> str:
+    """An idempotency key, reduced to what SES will accept as a tag value.
+
+    ## The bug this exists to fix
+
+    Sending the key unmodified worked for as long as every key was hex. `otp.py` then
+    introduced keys shaped `otp:<hex>`, and the colon is not in SES's permitted set, so
+    **every sign-in code failed to send** with:
+
+        InvalidParameterValue: Invalid tag value <otp:3f8d0955a…>
+
+    Measured against the live deployment on 2026-08-15. `InvalidParameterValue` is in
+    `_PERMANENT` above, so the send was correctly not retried — which meant the whole
+    sign-in funnel refused, loudly and permanently, for every address. The mail layer
+    was doing exactly the right thing with a message it should never have been asked
+    to send.
+
+    Substituting rather than stripping, because the tag is a forensic aid: `otp_3f8d…`
+    and `outreach_3f8d…` stay distinguishable, where stripping the separator would run
+    the prefix into the digest and make two different keys look alike.
+    """
+    return _TAG_SAFE.sub("_", key)[:256]
+
 
 class SESMailer:
     """Amazon SES, via boto3.
@@ -114,6 +143,7 @@ class SESMailer:
         self.reply_to = reply_to
         self.region = region
 
+
     def send(self, *, to: str, subject: str, body: str,
              idempotency_key: str) -> Sent:
         import boto3                                   # noqa: PLC0415 — see docstring
@@ -129,7 +159,8 @@ class SESMailer:
                     "Subject": {"Data": subject, "Charset": "UTF-8"},
                     "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
                 },
-                Tags=[{"Name": "idempotency-key", "Value": idempotency_key[:256]}],
+                Tags=[{"Name": "idempotency-key",
+                       "Value": _tag_value(idempotency_key)}],
             )
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code", "")
@@ -141,14 +172,41 @@ class SESMailer:
 
 
 def load() -> Mailer:
-    """The configured mailer, or a refusal. Never a no-op."""
+    """The configured transport, or a refusal. Never a no-op.
+
+    **This checks the transport and not the lawfulness of any particular message**, and
+    the distinction is `sender.py`'s, not a new one: that module already splits its two
+    guards and says why in full. The short version, because the split is easy to
+    misread as a weakening:
+
+      * A **verified sender** and a **reply-to** are what it takes to hand SES a message
+        at all. Without the first SES rejects the call; without the second the message is
+        one nobody can answer. Those are properties of the transport, so they are checked
+        here.
+      * A **postal address** is what CAN-SPAM §7704(a)(5) requires in every *commercial*
+        message. That is a property of the message, so it is checked where a commercial
+        message is composed — `sender.py` refuses to claim the outbox without it, before
+        anything is claimed, and does so independently of this function precisely because
+        an injected `mailer=` skips the loader entirely. Nothing about that changed.
+
+    Until 2026-08-15 this function required all three, which made the *only* transactional
+    message in the system — the sign-in code from `otp.py` — unsendable on a deployment
+    with no postal address to give. Since an emailed code is now the only credential, that
+    made a lawful, well-configured deployment one nobody could enter, and the only way out
+    was to invent a postal address to satisfy a check. Inventing one is exactly the untruth
+    this codebase refuses elsewhere, and it would then be printed in the footer of every
+    commercial message later enabled.
+
+    `settings.mail_configured` still means all three and is what gates outreach.
+    """
     config = settings_mod.load()
-    if not config.mail_configured:
+    if not config.transactional_mail_configured:
         raise MailNotConfigured(
-            "PLATFORM_MAIL_SENDER, PLATFORM_MAIL_REPLY_TO and "
-            "PLATFORM_MAIL_POSTAL_ADDRESS must all be set before anything can be sent. "
-            "The sender is not a component that degrades — it either sends a lawful, "
-            "replyable message or it does not run.")
+            "PLATFORM_MAIL_SENDER and PLATFORM_MAIL_REPLY_TO must both be set before "
+            "anything can be sent. The sender is not a component that degrades — it "
+            "either sends a replyable message from a verified identity, or it does not "
+            "run. (Commercial sends additionally need PLATFORM_MAIL_POSTAL_ADDRESS; "
+            "sender.py enforces that where the message is composed.)")
     return SESMailer(sender=config.mail_sender, reply_to=config.mail_reply_to,
                      region=config.region)
 

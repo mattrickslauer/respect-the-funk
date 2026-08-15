@@ -48,8 +48,32 @@ class Settings:
         return bool(self.classifier_function)
 
     @property
+    def transactional_mail_configured(self) -> bool:
+        """Whether a **transactional** message can be sent: the transport, and nothing else.
+
+        A transactional message is one the recipient just asked for — a sign-in code is
+        the only one this system sends. It needs a verified `mail_sender`, or SES rejects
+        the call, and a `mail_reply_to`, because a message nobody can answer is a message
+        that should not be sent.
+
+        **It does not need `mail_postal_address`, and that is a legal fact rather than a
+        relaxation.** CAN-SPAM §7704(a)(5) requires a physical address in every
+        *commercial* email. A six-digit code somebody requested thirty seconds ago is not
+        commercial, has nothing to unsubscribe from, and `otp.py` deliberately does not
+        call `mail.compliant_body` — appending that footer would invite a person to reply
+        STOP to a login email and thereby set `contact_route.state = 'opted_out'` on a
+        party who may be in an active campaign.
+
+        Requiring an address here anyway would mean a deployment that only ever sends
+        sign-in codes has to invent one to function. Inventing a postal address to satisfy
+        a check is exactly the kind of untruth this codebase refuses elsewhere, and it
+        would be printed in the footer of any commercial message later enabled.
+        """
+        return bool(self.mail_sender and self.mail_reply_to)
+
+    @property
     def mail_configured(self) -> bool:
-        """Whether a send can legally and technically happen.
+        """Whether a **commercial** send can legally and technically happen.
 
         All three are required and none is defaulted, because each absence produces a
         different kind of wrong. Without a verified `mail_sender` SES rejects the call.
@@ -58,8 +82,13 @@ class Settings:
         provider will happily deliver for you. `mail_reply_to` is required because a
         pitch a curator cannot reply to is not outreach, it is spam with extra steps.
 
-        `sender.py` refuses to claim the outbox when this is false. It does not send a
-        degraded message.
+        `changefeed.py` attaches no outbox sender when this is false, and `sender.py`
+        refuses to claim the outbox. Neither sends a degraded message.
+
+        **This is strictly stronger than `transactional_mail_configured` and the two must
+        not be conflated.** Outreach is metered by this one; sign-in is metered by the
+        other. A deployment can legitimately be able to sign people in and not be able to
+        pitch a curator — that is this deployment, as of 2026-08-15.
         """
         return bool(self.mail_sender and self.mail_reply_to
                     and self.mail_postal_address)

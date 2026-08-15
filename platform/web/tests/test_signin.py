@@ -21,6 +21,8 @@ The properties this file is for:
 
 from __future__ import annotations
 
+import contextlib
+import dataclasses
 import os
 import unittest
 import uuid
@@ -41,6 +43,22 @@ class FakeMailer:
         return mail.Sent(provider_message_id="fake", cost_usd="0.0001")
 
 
+@contextlib.contextmanager
+def _settings(**overrides):
+    """Run a block with `mail.settings_mod.load()` returning altered settings.
+
+    `Settings` is a frozen dataclass, so `replace` is the only honest way to vary one
+    field — constructing one by hand would silently stop tracking new fields.
+    """
+    original = mail.settings_mod.load
+    base = original()
+    mail.settings_mod.load = lambda: dataclasses.replace(base, **overrides)
+    try:
+        yield
+    finally:
+        mail.settings_mod.load = original
+
+
 def _request(path: str = "/signin", method: str = "GET"):
     """A real Starlette `Request`, which the template response needs to render."""
     from starlette.requests import Request
@@ -57,6 +75,103 @@ def _request(path: str = "/signin", method: str = "GET"):
         return {"type": "http.request", "body": b"", "more_body": False}
 
     return Request(scope, receive)
+
+
+class TransactionalMailIsNotCommercialMail(unittest.TestCase):
+    """The split that lets a deployment sign people in without a postal address.
+
+    A sign-in code is transactional: the recipient asked for it seconds ago and there is
+    nothing to unsubscribe from. CAN-SPAM §7704(a)(5) requires a physical address in every
+    *commercial* message, and outreach is where that applies.
+
+    Before 2026-08-15 `mail.load()` demanded all three variables, which made the only
+    transactional message in the system unsendable on a deployment with no postal address
+    to give — and since an emailed code is now the only credential, that made a lawful,
+    well-configured deployment one nobody could enter. The only escape was to invent an
+    address to satisfy a check, which would then be printed in the footer of any
+    commercial message later enabled.
+
+    These tests hold both halves: the narrow gate is genuinely narrower, and the
+    commercial gate did not move.
+    """
+
+    def test_a_sender_and_reply_to_are_enough_to_send_a_code(self):
+        with _settings(mail_sender="a@b.com", mail_reply_to="a@b.com",
+                       mail_postal_address=""):
+            self.assertTrue(mail.settings_mod.load().transactional_mail_configured)
+            # Builds a real SESMailer rather than raising. No network: constructing the
+            # boto3 client is deferred to `send`.
+            self.assertIsInstance(mail.load(), mail.SESMailer)
+
+    def test_a_missing_postal_address_still_blocks_commercial_mail(self):
+        """The half that must not move. `changefeed.py` attaches no outbox sender when
+        this is false, and `sender.py` refuses to claim the outbox."""
+        with _settings(mail_sender="a@b.com", mail_reply_to="a@b.com",
+                       mail_postal_address=""):
+            self.assertFalse(mail.settings_mod.load().mail_configured)
+
+    def test_all_three_still_means_commercial_mail_is_configured(self):
+        with _settings(mail_sender="a@b.com", mail_reply_to="a@b.com",
+                       mail_postal_address="1 Example St"):
+            settings = mail.settings_mod.load()
+            self.assertTrue(settings.transactional_mail_configured)
+            self.assertTrue(settings.mail_configured)
+
+    def test_a_missing_sender_blocks_both(self):
+        """SES rejects a send from an unverified identity, so this is the transport
+        failing, not a policy choice."""
+        with _settings(mail_sender="", mail_reply_to="a@b.com",
+                       mail_postal_address="1 Example St"):
+            settings = mail.settings_mod.load()
+            self.assertFalse(settings.transactional_mail_configured)
+            self.assertFalse(settings.mail_configured)
+            with self.assertRaises(mail.MailNotConfigured):
+                mail.load()
+
+    def test_a_missing_reply_to_blocks_both(self):
+        with _settings(mail_sender="a@b.com", mail_reply_to="",
+                       mail_postal_address="1 Example St"):
+            self.assertFalse(mail.settings_mod.load().transactional_mail_configured)
+            with self.assertRaises(mail.MailNotConfigured):
+                mail.load()
+
+    def test_the_refusal_does_not_demand_a_postal_address(self):
+        """The message a locked-out operator reads. Naming a variable that is not
+        required would send them looking for a value they do not have and do not need."""
+        with _settings(mail_sender="", mail_reply_to=""):
+            with self.assertRaises(mail.MailNotConfigured) as caught:
+                mail.load()
+        message = str(caught.exception)
+        self.assertIn("PLATFORM_MAIL_SENDER", message)
+        self.assertIn("PLATFORM_MAIL_REPLY_TO", message)
+        # Mentioned only as the commercial-send caveat, never as something to set to
+        # get a code out.
+        self.assertIn("Commercial sends", message)
+
+    def test_the_sign_in_code_carries_no_can_spam_footer(self):
+        """The reason the postal address is not required, asserted rather than argued.
+
+        If a code ever went out through `compliant_body`, it would invite somebody to
+        reply STOP to a login email — which sets `contact_route.state = 'opted_out'` on a
+        party who may be in an active campaign.
+
+        Checked against the parsed module rather than its text: `otp.py`'s docstring
+        names `compliant_body` at length, explaining why it does *not* call it, so a
+        substring search finds the argument and reports it as the violation.
+        """
+        import ast
+        from pathlib import Path
+
+        tree = ast.parse(Path(otp.__file__).read_text(encoding="utf-8"))
+        called = {
+            node.func.attr if isinstance(node.func, ast.Attribute) else
+            getattr(node.func, "id", "")
+            for node in ast.walk(tree) if isinstance(node, ast.Call)
+        }
+        self.assertNotIn("compliant_body", called)
+        # And the body it does send carries no opt-out line.
+        self.assertNotIn("STOP", otp._BODY)
+        self.assertNotIn("unsubscribe", otp._BODY.lower())
 
 
 class TheSessionCookie(unittest.TestCase):
@@ -153,20 +268,14 @@ class TheSignInFlow(unittest.TestCase):
         """Mail is the only way in now, so this is the refusal that matters most. It must
         say which variables are unset — there is no reveal path to fall back to, and a
         generic 'could not send' would send the operator looking in the wrong place."""
-        def refuse():
-            raise mail.MailNotConfigured(
-                "PLATFORM_MAIL_SENDER, PLATFORM_MAIL_REPLY_TO and "
-                "PLATFORM_MAIL_POSTAL_ADDRESS must all be set before anything can be "
-                "sent.")
-
-        mail.load = refuse
-        email = self._address()
-        response = routes.signin_request_code(
-            _request("/signin/code", "POST"), auth.ANONYMOUS, email=email)
+        mail.load = self._real_load          # the real loader, against empty settings
+        with _settings(mail_sender="", mail_reply_to=""):
+            email = self._address()
+            response = routes.signin_request_code(
+                _request("/signin/code", "POST"), auth.ANONYMOUS, email=email)
 
         self.assertEqual(503, response.status_code)
-        for name in ("PLATFORM_MAIL_SENDER", "PLATFORM_MAIL_REPLY_TO",
-                     "PLATFORM_MAIL_POSTAL_ADDRESS"):
+        for name in ("PLATFORM_MAIL_SENDER", "PLATFORM_MAIL_REPLY_TO"):
             self.assertIn(name, response.context["error"])
 
     def test_no_code_is_ever_shown_on_the_page(self):

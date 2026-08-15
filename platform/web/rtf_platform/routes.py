@@ -2275,8 +2275,14 @@ def signin_request_code(request: Request, principal: Principal,
 
     **`mail.load()` raising is rendered, not swallowed.** A deployment with no verified
     SES identity cannot issue codes at all — mail is the only way in now — and the page
-    says which of the three `PLATFORM_MAIL_*` variables are unset. There is no
-    development reveal path; `otp.py` says why at length.
+    names the variables that are unset. There is no development reveal path; `otp.py`
+    says why at length.
+
+    Note which variables those are: `mail.load()` checks the *transport*
+    (`PLATFORM_MAIL_SENDER`, `PLATFORM_MAIL_REPLY_TO`) and not
+    `PLATFORM_MAIL_POSTAL_ADDRESS`, which CAN-SPAM requires only of commercial messages
+    and which `sender.py` enforces on the outreach path. A deployment can sign people in
+    without being able to pitch a curator.
     """
     if principal.authenticated:
         return RedirectResponse("/", status_code=303)

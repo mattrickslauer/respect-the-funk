@@ -1,0 +1,42 @@
+-- =============================================================================
+-- 015_backfill_observed_mode.sql — ends the grandfather period 014 started
+-- =============================================================================
+--
+-- **NOT APPLIED.** Written so ending the grandfather period `014`'s `presence_mode_known`
+-- CHECK began is one command away when the owner decides to make it, not a migration
+-- somebody has to reconstruct from scratch later. Backfilling live data is a decision
+-- `014`'s own comment declined to make unattended, and this file is that decision made
+-- explicit rather than folded into `014` as a default.
+--
+-- Row count this was written against (`apps/spindle/schema/014_integrity_constraints.sql`'s
+-- comment has the same figures, from the same query, on the same date):
+--
+--     SELECT count(*) FROM presence WHERE mode = 'observed';  -- 18
+--     SELECT count(*) FROM presence
+--      WHERE mode NOT IN ('owned','unowned','absent','observed');  -- 0
+--
+-- So `'observed'` is the only illegal value on the cluster, and 18 is the whole
+-- backfill. `agents._write_find_counterparties` — the sole writer of that value — was
+-- fixed to write `'owned'` in commit `eaed4fe`, one commit before `014`'s CHECK landed
+-- (`7325a88`) — not the same commit — so this is a one-time cleanup of rows written
+-- before that fix, not an ongoing gap.
+--
+-- Guarded twice, deliberately redundant:
+--   * the `UPDATE`'s own `WHERE mode = 'observed'` means it is mechanically incapable of
+--     touching a row already holding a legal value, whatever the count above says by the
+--     time this actually runs;
+--   * `VALIDATE CONSTRAINT` immediately after is what turns "we backfilled the rows we
+--     knew about" into "the database itself confirms none are left" — if some other
+--     illegal value had appeared on the cluster since the code fix landed (it should
+--     not have — the write path has produced only `'owned'` since `eaed4fe`, and
+--     `014`'s CHECK has covered every write since `7325a88`), this is what would catch
+--     it, loudly, rather than declaring victory on the strength of one UPDATE's rowcount.
+--
+-- `owned`, not a case-by-case value per row: every one of the 18 came from
+-- `_write_find_counterparties`, and `014`'s comment already argues why that function's
+-- discoveries are always the account's own party — the same reasoning applies uniformly
+-- to all 18, there is no mixed population here needing a per-row judgement call.
+
+UPDATE presence SET mode = 'owned' WHERE mode = 'observed';
+
+ALTER TABLE presence VALIDATE CONSTRAINT presence_mode_known;

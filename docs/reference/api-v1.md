@@ -12,8 +12,8 @@ something by it — the API never substitutes an em-dash, a zero or an empty str
 value that is absent.
 
 **Source of truth.** The endpoint list and every refusal code are checked against the
-code by `platform/web/tests/test_api_surface.py`. The behaviour is checked against a
-cluster by `platform/web/tests/test_api_endpoints.py`. If this file and those disagree,
+code by `apps/spindle/web/tests/test_api_surface.py`. The behaviour is checked against a
+cluster by `apps/spindle/web/tests/test_api_endpoints.py`. If this file and those disagree,
 those are right and this is stale.
 
 ---

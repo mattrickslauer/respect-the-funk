@@ -52,7 +52,7 @@ Every effort estimate below is calibrated against `fcc.py` and `radiobrowser.py`
 | Seeder — one lead per unit of work | `ingest.py` | ~30 lines (`index_streams` is 35) |
 | `_fetch_` / `_write_` agent pair | `agents.py` | ~150–200 lines |
 | Registry entry | `agents.REGISTRY` | 1 line |
-| Migration — `source_manifest` + `agent_manifest` rows | `platform/schema/0NN_*.sql` | ~40 lines of SQL under ~90 lines of argument |
+| Migration — `source_manifest` + `agent_manifest` rows | `apps/spindle/schema/0NN_*.sql` | ~40 lines of SQL under ~90 lines of argument |
 
 Stdlib only is a hard constraint, not a preference — these modules run inside the console Lambda's bundle. A source needing `lxml`, `boto3` or a Spark job is a different and much larger proposition, which is the main reason Common Crawl does not appear in §1.
 
@@ -368,4 +368,4 @@ Listed rather than buried, per the house rule.
 - [Radio Browser API](https://api.radio-browser.info/) — terms and UA convention, fetched 2026-08-13
 - Radio Browser `/json/countries` and `/json/stations/search` — measured directly, 2026-08-13
 - iTunes Search API — `https://itunes.apple.com/search?media=podcast` — measured directly, 2026-08-13
-- In-repo: [`SCOPE-RESET.md`](../SCOPE-RESET.md) §2a · [`10-creator-indexing.md`](./10-creator-indexing.md) §1, §4 · `platform/schema/018_contact_route.sql` · `023_podcast_source.sql` · `026_role_backfill.sql` · `027_enable_podcasts.sql` · `spindle/fcc.py`, `radiobrowser.py`, `podcastindex.py`, `ingest.py`
+- In-repo: [`SCOPE-RESET.md`](../SCOPE-RESET.md) §2a · [`10-creator-indexing.md`](./10-creator-indexing.md) §1, §4 · `apps/spindle/schema/018_contact_route.sql` · `023_podcast_source.sql` · `026_role_backfill.sql` · `027_enable_podcasts.sql` · `spindle/fcc.py`, `radiobrowser.py`, `podcastindex.py`, `ingest.py`

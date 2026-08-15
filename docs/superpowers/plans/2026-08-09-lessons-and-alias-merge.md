@@ -18,8 +18,8 @@ Every task's requirements implicitly include these. All are existing house rules
 - **A guess is a suggestion, never a fact.** Anything a model inferred lands in `suggestion` as `pending` for a human. `agents.map_source`'s docstring states this as a rule the agents do not get to break.
 - **Tuning constants are named module-level constants with the reasoning in a comment, never literals inline.** Spec §10 item 1.
 - **No test touches the network.** Cluster tests skip when `DATABASE_URL` is unset, via `@unittest.skipUnless(HAVE_DB, …)`, and clean up through a tenant dropped in `tearDown` — the pattern in `tests/test_fleet.py`.
-- **Run tests with** `cd platform/web && .venv/bin/python -m pytest tests -q`. Baseline in this worktree: **77 passed, 16 skipped.** The main tree reports 87/33 — it has the outreach tests this branch does not. Do not "fix" the difference.
-- **Migrations are applied with** `python platform/schema/apply.py <file>.sql`. Neither migration here is destructive, so neither is added to `apply.DESTRUCTIVE`.
+- **Run tests with** `cd apps/spindle/web && .venv/bin/python -m pytest tests -q`. Baseline in this worktree: **77 passed, 16 skipped.** The main tree reports 87/33 — it has the outreach tests this branch does not. Do not "fix" the difference.
+- **Migrations are applied with** `python apps/spindle/schema/apply.py <file>.sql`. Neither migration here is destructive, so neither is added to `apply.DESTRUCTIVE`.
 
 ## Read this before Task 1 — the branch and the cluster disagree, on purpose
 
@@ -27,7 +27,7 @@ Every task's requirements implicitly include these. All are existing house rules
 
 **1. This plan runs in a git worktree branched from `96a5c29`.** That commit does **not** contain the parallel session's outreach work, which is uncommitted in the main working tree. So inside this worktree:
 
-- `platform/schema/` holds `001`–`009` and **no `010`**. That gap is expected. `010_outreach.sql` exists only in the other tree.
+- `apps/spindle/schema/` holds `001`–`009` and **no `010`**. That gap is expected. `010_outreach.sql` exists only in the other tree.
 - `spindle/outreach.py` does not exist. Nothing in this plan imports it. Do not create it, and do not "restore" it.
 - **The test baseline is 77 passed, 16 skipped** — the numbers in this plan are correct for this branch. The main tree reports 87/33 because it has tests this branch does not.
 
@@ -43,15 +43,15 @@ Every task's requirements implicitly include these. All are existing house rules
 
 | File | Responsibility |
 |---|---|
-| `platform/schema/011_lesson.sql` | **create** — the `lesson` table, its `CHECK`s, and `lesson_semantic` |
-| `platform/schema/012_party_alias.sql` | **create** — `party.alias_of`, `party_class = 'alias'` |
-| `platform/web/spindle/lessons.py` | **create** — write, retrieve, resolve a supersession chain, and the pure rerank |
-| `platform/web/spindle/agents.py` | **modify** — `shortlist` gains the rerank; `dedup_party` is added; `REGISTRY` gains it |
-| `platform/web/spindle/repo.py` | **modify** — `merge_party`, `unmerge_party`, `resolve_canonical`; `delete_party` clears lessons |
-| `platform/web/tests/test_lessons.py` | **create** — the pure rerank and the chain resolution, offline |
-| `platform/web/tests/test_merge.py` | **create** — merge round-trip and alias invisibility, against the cluster |
-| `platform/web/tests/test_dedup.py` | **create** — the agent proposes and never merges |
-| `platform/README.md` | **modify** — correct three false claims, record the new state |
+| `apps/spindle/schema/011_lesson.sql` | **create** — the `lesson` table, its `CHECK`s, and `lesson_semantic` |
+| `apps/spindle/schema/012_party_alias.sql` | **create** — `party.alias_of`, `party_class = 'alias'` |
+| `apps/spindle/web/spindle/lessons.py` | **create** — write, retrieve, resolve a supersession chain, and the pure rerank |
+| `apps/spindle/web/spindle/agents.py` | **modify** — `shortlist` gains the rerank; `dedup_party` is added; `REGISTRY` gains it |
+| `apps/spindle/web/spindle/repo.py` | **modify** — `merge_party`, `unmerge_party`, `resolve_canonical`; `delete_party` clears lessons |
+| `apps/spindle/web/tests/test_lessons.py` | **create** — the pure rerank and the chain resolution, offline |
+| `apps/spindle/web/tests/test_merge.py` | **create** — merge round-trip and alias invisibility, against the cluster |
+| `apps/spindle/web/tests/test_dedup.py` | **create** — the agent proposes and never merges |
+| `apps/spindle/README.md` | **modify** — correct three false claims, record the new state |
 
 `lessons.py` is a new module rather than more of `agents.py` because that file is already 680 lines and holds five agents; lesson persistence and scoring are neither an agent nor coordination, and the rerank has to be a pure function to be testable without a cluster.
 
@@ -60,7 +60,7 @@ Every task's requirements implicitly include these. All are existing house rules
 ### Task 1: Migration 011 — the `lesson` table
 
 **Files:**
-- Create: `platform/schema/011_lesson.sql`
+- Create: `apps/spindle/schema/011_lesson.sql`
 - Modify: `docs/superpowers/specs/2026-08-09-outreach-loop-design.md` (§3a DDL — add `valence`)
 
 **Interfaces:**
@@ -89,7 +89,7 @@ and auditable.
 
 - [ ] **Step 2: Write the migration**
 
-Create `platform/schema/011_lesson.sql`:
+Create `apps/spindle/schema/011_lesson.sql`:
 
 ```sql
 -- 011 — the lesson: the only table in this schema whose job is to make the next run
@@ -114,7 +114,7 @@ Create `platform/schema/011_lesson.sql`:
 -- This is the same polymorphism `presence` and `party_credit` already carry, and it has
 -- the same price: `ON DELETE CASCADE` cannot fire, so `repo.delete_party` deletes
 -- lessons itself. That is now three tables a party deleter must clear by hand, and the
--- periodic orphan sweep `platform/README.md` says is worth writing covers all three.
+-- periodic orphan sweep `apps/spindle/README.md` says is worth writing covers all three.
 --
 --
 -- ## `supersedes_id` rather than UPDATE
@@ -188,7 +188,7 @@ CREATE INDEX IF NOT EXISTS lesson_by_scope
 
 - [ ] **Step 3: Apply it against the cluster**
 
-Run: `cd "$(git rev-parse --show-toplevel)" && python platform/schema/apply.py 011_lesson.sql`
+Run: `cd "$(git rev-parse --show-toplevel)" && python apps/spindle/schema/apply.py 011_lesson.sql`
 
 Expected: each statement reported applied, no error. If `CREATE VECTOR INDEX` errors with a feature-disabled message, stop — `feature.vector_index.enabled` was verified `t` on this cluster and a change to that is a go/no-go, not a workaround.
 
@@ -215,7 +215,7 @@ psql "$DATABASE_URL" -c "DELETE FROM lesson WHERE text = 'no model'"
 - [ ] **Step 5: Commit**
 
 ```bash
-git add platform/schema/011_lesson.sql docs/superpowers/specs/2026-08-09-outreach-loop-design.md
+git add apps/spindle/schema/011_lesson.sql docs/superpowers/specs/2026-08-09-outreach-loop-design.md
 git commit -m "platform: the lesson, and a valence so the rerank can have a sign"
 ```
 
@@ -226,8 +226,8 @@ git commit -m "platform: the lesson, and a valence so the rerank can have a sign
 Written before persistence, because it is the part with actual logic and it needs no database at all.
 
 **Files:**
-- Create: `platform/web/spindle/lessons.py`
-- Test: `platform/web/tests/test_lessons.py`
+- Create: `apps/spindle/web/spindle/lessons.py`
+- Test: `apps/spindle/web/tests/test_lessons.py`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -238,7 +238,7 @@ Written before persistence, because it is the part with actual logic and it need
 
 - [ ] **Step 1: Write the failing test**
 
-Create `platform/web/tests/test_lessons.py`:
+Create `apps/spindle/web/tests/test_lessons.py`:
 
 ```python
 """The rerank, offline.
@@ -351,13 +351,13 @@ class Rerank(unittest.TestCase):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
 
 Expected: FAIL — `ModuleNotFoundError: No module named 'spindle.lessons'`
 
 - [ ] **Step 3: Write the implementation**
 
-Create `platform/web/spindle/lessons.py`:
+Create `apps/spindle/web/spindle/lessons.py`:
 
 ```python
 """R2 — what have we learned that applies here — and the rerank that spends it.
@@ -455,14 +455,14 @@ def rerank(candidates: list[dict[str, Any]], lessons: list[dict[str, Any]], *,
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
 
 Expected: PASS, 11 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add platform/web/spindle/lessons.py platform/web/tests/test_lessons.py
+git add apps/spindle/web/spindle/lessons.py apps/spindle/web/tests/test_lessons.py
 git commit -m "platform: the rerank is arithmetic, and it says which lesson moved what"
 ```
 
@@ -471,8 +471,8 @@ git commit -m "platform: the rerank is arithmetic, and it says which lesson move
 ### Task 3: `lessons.py` — write, and resolve a supersession chain
 
 **Files:**
-- Modify: `platform/web/spindle/lessons.py`
-- Modify: `platform/web/tests/test_lessons.py`
+- Modify: `apps/spindle/web/spindle/lessons.py`
+- Modify: `apps/spindle/web/tests/test_lessons.py`
 
 **Interfaces:**
 - Consumes: `lessons.LESSON_WEIGHT` (Task 2); `embed.load()`, `embed.embed_batch(gate, provider, texts) -> (list[Vector], Decimal)`, `Vector.literal()`; `spend.Gate`.
@@ -482,7 +482,7 @@ git commit -m "platform: the rerank is arithmetic, and it says which lesson move
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `platform/web/tests/test_lessons.py`:
+Append to `apps/spindle/web/tests/test_lessons.py`:
 
 ```python
 class Heads(unittest.TestCase):
@@ -521,13 +521,13 @@ class Heads(unittest.TestCase):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py::Heads -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && .venv/bin/python -m pytest tests/test_lessons.py::Heads -q`
 
 Expected: FAIL — `AttributeError: module 'spindle.lessons' has no attribute 'heads'`
 
 - [ ] **Step 3: Implement `heads` and `write`**
 
-Add to the imports at the top of `platform/web/spindle/lessons.py`:
+Add to the imports at the top of `apps/spindle/web/spindle/lessons.py`:
 
 ```python
 import psycopg
@@ -535,7 +535,7 @@ import psycopg
 from spindle import embed, spend
 ```
 
-Append to `platform/web/spindle/lessons.py`:
+Append to `apps/spindle/web/spindle/lessons.py`:
 
 ```python
 def heads(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -585,20 +585,20 @@ def write(conn: psycopg.Connection, tenant_id: str, *, scope_kind: str, scope_id
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
 
 Expected: PASS, 16 tests.
 
 - [ ] **Step 5: Confirm `model_version` exists on the provider, and fix if not**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -c "from spindle import embed; print([f for f in embed.OpenAIEmbedder.__dataclass_fields__])"`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && .venv/bin/python -c "from spindle import embed; print([f for f in embed.OpenAIEmbedder.__dataclass_fields__])"`
 
 If `model_version` is not among the fields, the `getattr(provider, "model_version", "")` above already returns `""` — which the schema permits. Leave it. Do **not** add a field to `OpenAIEmbedder` for this; `007`'s rule is that `model` must be nameable, and it is.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add platform/web/spindle/lessons.py platform/web/tests/test_lessons.py
+git add apps/spindle/web/spindle/lessons.py apps/spindle/web/tests/test_lessons.py
 git commit -m "platform: a lesson is searchable at commit, and a chain resolves to its head"
 ```
 
@@ -607,9 +607,9 @@ git commit -m "platform: a lesson is searchable at commit, and a chain resolves 
 ### Task 4: `shortlist` reads the lessons
 
 **Files:**
-- Modify: `platform/web/spindle/lessons.py` (add `retrieve_for`)
-- Modify: `platform/web/spindle/agents.py:625-670` (`shortlist`)
-- Test: `platform/web/tests/test_lessons.py` (cluster test)
+- Modify: `apps/spindle/web/spindle/lessons.py` (add `retrieve_for`)
+- Modify: `apps/spindle/web/spindle/agents.py:625-670` (`shortlist`)
+- Test: `apps/spindle/web/tests/test_lessons.py` (cluster test)
 
 **Interfaces:**
 - Consumes: `lessons.rerank`, `lessons.heads` (Tasks 2–3); `agents.shortlist(conn, tenant_id, party_id, *, gate, limit)`.
@@ -620,7 +620,7 @@ git commit -m "platform: a lesson is searchable at commit, and a chain resolves 
 
 - [ ] **Step 1: Write the failing cluster test**
 
-Append to `platform/web/tests/test_lessons.py`:
+Append to `apps/spindle/web/tests/test_lessons.py`:
 
 ```python
 import os
@@ -706,13 +706,13 @@ class RetrievalIsScoped(unittest.TestCase):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_lessons.py::RetrievalIsScoped -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_lessons.py::RetrievalIsScoped -q`
 
 Expected: FAIL — `AttributeError: module 'spindle.lessons' has no attribute 'retrieve_for'`
 
 - [ ] **Step 3: Implement `retrieve_for`**
 
-Append to `platform/web/spindle/lessons.py`:
+Append to `apps/spindle/web/spindle/lessons.py`:
 
 ```python
 def retrieve_for(conn: psycopg.Connection, tenant_id: str, *,
@@ -766,7 +766,7 @@ def retrieve_for(conn: psycopg.Connection, tenant_id: str, *,
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_lessons.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_lessons.py -q`
 
 Expected: PASS, 19 tests.
 
@@ -774,7 +774,7 @@ Expected: PASS, 19 tests.
 
 Task 2 shipped `rerank` reporting `abs(shift)`. That was wrong in the spec and it becomes load-bearing here: this task makes `applied` the inspector's evidence trail, and a reader who cannot tell whether a lesson *helped* or *hurt* a candidate has a trail that explains nothing. Magnitude without direction is not an explanation.
 
-In `platform/web/spindle/lessons.py`, in `rerank`, change:
+In `apps/spindle/web/spindle/lessons.py`, in `rerank`, change:
 
 ```python
             shifts.append({"lesson_id": str(lesson["id"]),
@@ -793,7 +793,7 @@ to:
                            "shift": shift})
 ```
 
-Then fix the one Task 2 test that asserted the magnitude, in `platform/web/tests/test_lessons.py`:
+Then fix the one Task 2 test that asserted the magnitude, in `apps/spindle/web/tests/test_lessons.py`:
 
 ```python
         self.assertAlmostEqual(applied[0]["shift"], -0.05,
@@ -814,7 +814,7 @@ And add this test to the `Rerank` class:
         self.assertLess(bad[0]["applied"][0]["shift"], 0)
 ```
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
 
 Expected: PASS, 17 tests (16 from Tasks 2–3, plus this one).
 
@@ -822,7 +822,7 @@ Expected: PASS, 17 tests (16 from Tasks 2–3, plus this one).
 
 Task 3's `write()` clamps `confidence` and `valence` into range. The justification was float noise — a ratio landing at `1.0000001` should not lose the whole lesson. That reasoning holds and the clamp stays. But the same line silently turns `confidence=50` into `1.0`, and a caller that has misunderstood the scale then looks exactly like a caller that is very sure. The two cases need separating.
 
-Add to `platform/web/spindle/lessons.py`, beside `LESSON_WEIGHT`:
+Add to `apps/spindle/web/spindle/lessons.py`, beside `LESSON_WEIGHT`:
 
 ```python
 #: How far outside its legal range a number may stray before `write` calls it a bug
@@ -862,7 +862,7 @@ with:
                  _bounded(valence, -1.0, 1.0, "valence"),
 ```
 
-Add this test class to `platform/web/tests/test_lessons.py`:
+Add this test class to `apps/spindle/web/tests/test_lessons.py`:
 
 ```python
 class Bounds(unittest.TestCase):
@@ -887,13 +887,13 @@ class Bounds(unittest.TestCase):
         self.assertIn("valence", str(caught.exception))
 ```
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && .venv/bin/python -m pytest tests/test_lessons.py -q`
 
 Expected: PASS, 21 tests (16 from Tasks 2–3, plus Step 4a's 1, plus these 4).
 
 - [ ] **Step 5: Wire the rerank into `shortlist`**
 
-In `platform/web/spindle/agents.py`, add to the imports:
+In `apps/spindle/web/spindle/agents.py`, add to the imports:
 
 ```python
 from spindle import embed, fleet, lessons, repo, sources, spend
@@ -967,7 +967,7 @@ Update the `shortlist` docstring by appending this paragraph before the closing 
 
 - [ ] **Step 6: Verify the whole suite still passes**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && .venv/bin/python -m pytest tests -q`
 
 Expected: PASS. **98 passed, 19 skipped** — the 77-test baseline, plus 16 offline tests from Tasks 2–3, plus Step 4a's 1 and Step 4b's 4, with Task 4's 3 cluster tests joining the 16 already-skipped ones.
 
@@ -994,7 +994,7 @@ psql "$DATABASE_URL" -c "SELECT DISTINCT embedding_model FROM party WHERE profil
 - [ ] **Step 8: Commit**
 
 ```bash
-git add platform/web/spindle/lessons.py platform/web/spindle/agents.py platform/web/tests/test_lessons.py
+git add apps/spindle/web/spindle/lessons.py apps/spindle/web/spindle/agents.py apps/spindle/web/tests/test_lessons.py
 git commit -m "platform: the shortlist reads what we learned, and says which lesson moved what"
 ```
 
@@ -1003,7 +1003,7 @@ git commit -m "platform: the shortlist reads what we learned, and says which les
 ### Task 5: Migration 012 — the alias
 
 **Files:**
-- Create: `platform/schema/012_party_alias.sql`
+- Create: `apps/spindle/schema/012_party_alias.sql`
 
 **Interfaces:**
 - Consumes: `party.party_class` and its `party_class_known` constraint from `009`.
@@ -1011,7 +1011,7 @@ git commit -m "platform: the shortlist reads what we learned, and says which les
 
 - [ ] **Step 1: Write the migration**
 
-Create `platform/schema/012_party_alias.sql`:
+Create `apps/spindle/schema/012_party_alias.sql`:
 
 ```sql
 -- 012 — a merge that can be undone.
@@ -1085,7 +1085,7 @@ CREATE INDEX IF NOT EXISTS party_aliases_of
 
 - [ ] **Step 2: Apply it**
 
-Run: `cd "$(git rev-parse --show-toplevel)" && python platform/schema/apply.py 012_party_alias.sql`
+Run: `cd "$(git rev-parse --show-toplevel)" && python apps/spindle/schema/apply.py 012_party_alias.sql`
 
 Expected: applied without error. The 21 existing rows all have `alias_of IS NULL` and `party_class IN ('roster','counterparty')`, so `party_alias_is_classed` validates against them.
 
@@ -1103,7 +1103,7 @@ Expected: FAILS with `party_alias_is_classed` — the class was set without a ta
 - [ ] **Step 4: Commit**
 
 ```bash
-git add platform/schema/012_party_alias.sql
+git add apps/spindle/schema/012_party_alias.sql
 git commit -m "platform: a merge keeps both rows, and an alias falls out of R1 for free"
 ```
 
@@ -1114,7 +1114,7 @@ git commit -m "platform: a merge keeps both rows, and an alias falls out of R1 f
 **Do not stop between Task 5 and this one.** Task 5 makes aliases possible; until this lands, `one_open_thread_per_counterparty` no longer enforces what it claims.
 
 **Files:**
-- Create: `platform/schema/012a_thread_canonical.sql`
+- Create: `apps/spindle/schema/012a_thread_canonical.sql`
 
 **Interfaces:**
 - Consumes: `party.alias_of` (Task 5); the live `thread` table and its `one_open_thread_per_counterparty` index, created by `010_outreach.sql` — **which is not in this branch**, only on the cluster.
@@ -1133,7 +1133,7 @@ Expected: `one_open_thread_per_counterparty` is present. Note the thread count �
 
 - [ ] **Step 2: Write the migration**
 
-Create `platform/schema/012a_thread_canonical.sql`:
+Create `apps/spindle/schema/012a_thread_canonical.sql`:
 
 ```sql
 -- 012a — the collision index has to follow the person, not the row.
@@ -1209,7 +1209,7 @@ CREATE INDEX IF NOT EXISTS thread_by_canonical
 
 - [ ] **Step 3: Apply it**
 
-Run: `cd "$(git rev-parse --show-toplevel)" && python platform/schema/apply.py 012a_thread_canonical.sql`
+Run: `cd "$(git rev-parse --show-toplevel)" && python apps/spindle/schema/apply.py 012a_thread_canonical.sql`
 
 Expected: applied without error. If `ALTER COLUMN … SET NOT NULL` fails, the backfill missed rows — inspect with `SELECT count(*) FROM thread WHERE canonical_party_id IS NULL` rather than dropping the `NOT NULL`.
 
@@ -1225,7 +1225,7 @@ Expected: exactly one row, `one_open_thread_per_canonical`, on `canonical_party_
 - [ ] **Step 5: Commit**
 
 ```bash
-git add platform/schema/012a_thread_canonical.sql
+git add apps/spindle/schema/012a_thread_canonical.sql
 git commit -m "platform: one open thread per person, not per row"
 ```
 
@@ -1234,8 +1234,8 @@ git commit -m "platform: one open thread per person, not per row"
 ### Task 6: `repo.merge_party` and `repo.unmerge_party`
 
 **Files:**
-- Modify: `platform/web/spindle/repo.py` (add three functions; amend `delete_party` at `repo.py:144-167`)
-- Test: `platform/web/tests/test_merge.py`
+- Modify: `apps/spindle/web/spindle/repo.py` (add three functions; amend `delete_party` at `repo.py:144-167`)
+- Test: `apps/spindle/web/tests/test_merge.py`
 
 **Interfaces:**
 - Consumes: migration `011` (Task 5).
@@ -1247,7 +1247,7 @@ git commit -m "platform: one open thread per person, not per row"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `platform/web/tests/test_merge.py`:
+Create `apps/spindle/web/tests/test_merge.py`:
 
 ```python
 """Merging, against the real cluster.
@@ -1476,7 +1476,7 @@ class Merging(unittest.TestCase):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_merge.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_merge.py -q`
 
 Expected: FAIL — `AttributeError: module 'spindle.repo' has no attribute 'merge_party'`
 
@@ -1484,7 +1484,7 @@ Note: `presence` column names are assumed to be `(tenant_id, subject_kind, subje
 
 - [ ] **Step 3: Implement the three functions**
 
-Add to `platform/web/spindle/repo.py`, above `delete_party`:
+Add to `apps/spindle/web/spindle/repo.py`, above `delete_party`:
 
 ```python
 class MergeRefused(RuntimeError):
@@ -1602,7 +1602,7 @@ def unmerge_party(conn: psycopg.Connection, tenant_id: str, alias_id: str) -> No
 
 - [ ] **Step 4: Amend `delete_party` to clear lessons**
 
-In `platform/web/spindle/repo.py`, inside `delete_party`'s transaction, immediately after the `DELETE FROM presence` statement, add:
+In `apps/spindle/web/spindle/repo.py`, inside `delete_party`'s transaction, immediately after the `DELETE FROM presence` statement, add:
 
 ```python
             cur.execute(
@@ -1626,20 +1626,20 @@ And extend the docstring's second paragraph to read:
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_merge.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_merge.py -q`
 
 Expected: PASS, 12 tests.
 
 - [ ] **Step 6: Run the whole suite**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && .venv/bin/python -m pytest tests -q`
 
 Expected: **98 passed, 31 skipped** with `DATABASE_URL` unset — Task 6's 12 cluster tests are all skips in that mode.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add platform/web/spindle/repo.py platform/web/tests/test_merge.py
+git add apps/spindle/web/spindle/repo.py apps/spindle/web/tests/test_merge.py
 git commit -m "platform: a merge is two writes, and reversing it is the same two backwards"
 ```
 
@@ -1648,8 +1648,8 @@ git commit -m "platform: a merge is two writes, and reversing it is the same two
 ### Task 7: The `dedup_party` agent
 
 **Files:**
-- Modify: `platform/web/spindle/agents.py` (add `dedup_party`, extend `REGISTRY`)
-- Test: `platform/web/tests/test_dedup.py`
+- Modify: `apps/spindle/web/spindle/agents.py` (add `dedup_party`, extend `REGISTRY`)
+- Test: `apps/spindle/web/tests/test_dedup.py`
 
 **Interfaces:**
 - Consumes: `fleet.Outcome`, `fleet.LeadFailed`, `spend.Gate`, migration `011`'s `party_class = 'alias'` (Tasks 5–6).
@@ -1660,7 +1660,7 @@ git commit -m "platform: a merge is two writes, and reversing it is the same two
 
 - [ ] **Step 1: Write the failing test**
 
-Create `platform/web/tests/test_dedup.py`:
+Create `apps/spindle/web/tests/test_dedup.py`:
 
 ```python
 """The deduplication agent, against the cluster.
@@ -1796,13 +1796,13 @@ class Deduplicating(unittest.TestCase):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_dedup.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_dedup.py -q`
 
 Expected: FAIL — `AttributeError: module 'spindle.agents' has no attribute 'dedup_party'`
 
 - [ ] **Step 3: Implement the agent**
 
-Add beside `SHORTLIST_CANDIDATES` in `platform/web/spindle/agents.py`:
+Add beside `SHORTLIST_CANDIDATES` in `apps/spindle/web/spindle/agents.py`:
 
 ```python
 #: Cosine distance below which two parties are proposed as the same person.
@@ -1815,7 +1815,7 @@ Add beside `SHORTLIST_CANDIDATES` in `platform/web/spindle/agents.py`:
 MERGE_DISTANCE = 0.08
 ```
 
-Add before `shortlist` in `platform/web/spindle/agents.py`:
+Add before `shortlist` in `apps/spindle/web/spindle/agents.py`:
 
 ```python
 def dedup_party(conn: psycopg.Connection, lead: dict[str, Any],
@@ -1929,7 +1929,7 @@ REGISTRY: dict[str, fleet.Agent] = {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_dedup.py -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python -m pytest tests/test_dedup.py -q`
 
 Expected: PASS, 6 tests.
 
@@ -1952,20 +1952,20 @@ A newly embedded party is exactly when a duplicate check is worth running, and `
 
 - [ ] **Step 6: Confirm the follow-on lead's shape matches what `fleet.complete` inserts**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && grep -n "for follow in outcome.follow_on" -A 25 spindle/fleet.py`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && grep -n "for follow in outcome.follow_on" -A 25 spindle/fleet.py`
 
 Check every column the `INSERT` names is a key the dict above provides or that the insert defaults. If `fleet.complete` requires a key not present — `adapter`, `platform`, `mode` — add it to the dict with the value the other agents use for a party-scoped lead. Do not change `fleet.complete`.
 
 - [ ] **Step 7: Run the whole suite**
 
-Run: `cd "$(git rev-parse --show-toplevel)/platform/web" && .venv/bin/python -m pytest tests -q`
+Run: `cd "$(git rev-parse --show-toplevel)/apps/spindle/web" && .venv/bin/python -m pytest tests -q`
 
 Expected: **98 passed, 37 skipped** with `DATABASE_URL` unset. With `DATABASE_URL` set all 37 run: **135 passed, 0 skipped**.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add platform/web/spindle/agents.py platform/web/tests/test_dedup.py
+git add apps/spindle/web/spindle/agents.py apps/spindle/web/tests/test_dedup.py
 git commit -m "platform: R3 proposes, a human disposes, and an embedding queues the check"
 ```
 
@@ -1973,15 +1973,15 @@ git commit -m "platform: R3 proposes, a human disposes, and an embedding queues 
 
 ### Task 8: Run it against the real roster, and correct the README
 
-The plan's only task with no new code. It is here because the three false claims in `platform/README.md` are the kind that get copied into a submission.
+The plan's only task with no new code. It is here because the three false claims in `apps/spindle/README.md` are the kind that get copied into a submission.
 
 **Files:**
-- Modify: `platform/README.md`
+- Modify: `apps/spindle/README.md`
 
 - [ ] **Step 1: Run the deduplicator over the live counterparties**
 
 ```bash
-cd "$(git rev-parse --show-toplevel)/platform/web"
+cd "$(git rev-parse --show-toplevel)/apps/spindle/web"
 DATABASE_URL="$(grep -m1 '^DATABASE_URL=' ../../.env | cut -d= -f2-)" .venv/bin/python - <<'PY'
 import os, psycopg
 from psycopg.rows import dict_row
@@ -2010,7 +2010,7 @@ psql "$DATABASE_URL" -c "SELECT confidence, rationale FROM suggestion \
   WHERE kind = 'merge' AND state = 'pending' ORDER BY confidence DESC"
 ```
 
-- [ ] **Step 3: Correct `platform/README.md`**
+- [ ] **Step 3: Correct `apps/spindle/README.md`**
 
 In the "Where we are" table, replace the `Embeddings` and `Retrieval` rows with:
 
@@ -2055,7 +2055,7 @@ Fix every hit, including the architecture poster generator if it names the numbe
 - [ ] **Step 5: Commit**
 
 ```bash
-git add platform/README.md
+git add apps/spindle/README.md
 git commit -m "docs: what the cluster actually contains, counted rather than remembered"
 ```
 

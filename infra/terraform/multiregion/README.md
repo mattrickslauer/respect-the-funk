@@ -1,6 +1,6 @@
 ---
 title: "Three-region CockroachDB Standard — Terraform"
-subtitle: "The cluster that makes platform/schema/024_regional_by_row.sql true."
+subtitle: "The cluster that makes apps/spindle/schema/024_regional_by_row.sql true."
 status: "VALIDATED, NOT APPLIED — `terraform validate` and `terraform fmt` pass against cockroachdb/cockroach v1.22.0. No cluster has been created."
 date: "2026-08-13"
 ---
@@ -11,7 +11,7 @@ Three files of HCL that create one CockroachDB Standard cluster across
 `us-east-1` (primary), `eu-west-1` and `ap-southeast-1`, one SQL user, and one allowlist
 entry. That is the whole module.
 
-It exists because `platform/schema/024_regional_by_row.sql` makes `contact_route`
+It exists because `apps/spindle/schema/024_regional_by_row.sql` makes `contact_route`
 `REGIONAL BY ROW` — one logical table whose rows are domiciled per data subject, so an EU
 music director's email address is replicated in Ireland and not in Virginia. The
 migration cannot be true without an EU region to be true in.

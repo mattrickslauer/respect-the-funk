@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-15
 **Status:** approved, in implementation
-**Touches:** `platform/web/spindle/`, `platform/schema/`, `platform/infra/`, and
+**Touches:** `apps/spindle/web/spindle/`, `apps/spindle/schema/`, `infra/terraform/spindle/`, and
 the deletion of `platform/console/`
 
 ---
@@ -201,7 +201,7 @@ appears only in `auth.py`, two tests, and docstrings.
 ## §4 — SES, wired for real
 
 Mail is now the only way in, so `mail_configured == False` is a deployment nobody can
-enter. `platform/infra/main.tf:526` currently records the opposite decision:
+enter. `infra/terraform/spindle/main.tf:526` currently records the opposite decision:
 
 > The Sender is deliberately NOT reachable from here: no `PLATFORM_MAIL_*` variables are
 > set […] Wiring SES here is a decision to take on purpose.
@@ -269,7 +269,7 @@ which is where accounts live in every console anyone has used.
 
 **Deleted:** `platform/console/`, `spindle/console_assets.py`,
 `tests/test_console_assets.py`, the mount in `main.py`, and the npm block in
-`platform/infra/build.sh` — which takes Node out of the deployment path entirely.
+`infra/terraform/spindle/build.sh` — which takes Node out of the deployment path entirely.
 
 **Preservation.** `platform/console` is a subtree of `main`, not a branch, so its full
 history stays recoverable from git after the deletion commit; a bundle would add nothing.

@@ -258,7 +258,7 @@ JOBS = [
 
 GIVES_BACK = [
     ("Closes PLATFORM-SPEC §10 risk 2",
-     "platform/README.md records that the RU cost of a filtered vector scan cannot be "
+     "apps/spindle/README.md records that the RU cost of a filtered vector scan cannot be "
      "measured because <i>a probe with no rows measures nothing</i>. The Forager is the row "
      "generator — the first thing in the repository that makes that measurement possible."),
     ("Makes the Managed MCP Server demonstrable",
@@ -319,10 +319,10 @@ DEMO = [
 VERIFIED = [
     ("Vector indexes are enabled on Basic, and prefix filtering resolves to prefix spans",
      "VERIFIED",
-     "platform/README.md items 1–2, against respect-the-funk-31317 (v26.2.5). Closed the "
+     "apps/spindle/README.md items 1–2, against respect-the-funk-31317 (v26.2.5). Closed the "
      "flagged day-1 go/no-go, and EXPLAIN confirms the shape the retrieval design depends on."),
     ("Partial unique indexes and FOR UPDATE SKIP LOCKED both work", "VERIFIED",
-     "platform/README.md items 3–4 — the two mechanisms the frontier is built out of, dedup "
+     "apps/spindle/README.md items 3–4 — the two mechanisms the frontier is built out of, dedup "
      "and the lease."),
     ("RU cost of a filtered vector scan, and changefeed RU draw", "UNVERIFIED",
      "The first needs real row volume, which the Forager is what produces; the second needs a "
@@ -790,7 +790,7 @@ CREATE VECTOR INDEX artist_fact_search
            for c, s, d in CEILINGS)}</tbody></table>
   <p class="note">Cost floor: <b>$0.00/month idle.</b> CockroachDB Basic scales to zero and a
   Lambda has no idle floor, so a roster nobody is working costs nothing — measured, not estimated,
-  in infra/MEMORY-WORKLOAD.md and platform/README.md.</p>
+  in infra/MEMORY-WORKLOAD.md and apps/spindle/README.md.</p>
 </div>
 
 <div class="page">

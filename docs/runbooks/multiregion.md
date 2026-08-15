@@ -10,7 +10,7 @@ for: "2026-08-17, human-gated"
 
 Creates a throwaway CockroachDB Standard cluster across `aws-us-east-1`,
 `aws-eu-west-1` and `aws-ap-southeast-1`; applies the schema; applies
-`platform/schema/024_regional_by_row.sql`, which makes `contact_route` `REGIONAL BY ROW`
+`apps/spindle/schema/024_regional_by_row.sql`, which makes `contact_route` `REGIONAL BY ROW`
 keyed on a region computed from each contact's country; proves with SQL that an EU
 contact's row is replicated in Ireland and a US contact's is not; proves that a contact
 in an unmapped jurisdiction is **refused** rather than defaulted; and then deletes the
@@ -169,16 +169,16 @@ A fresh cluster has an empty `defaultdb`. Migrations run in filename order; `005
 tables that do not exist yet, which `apply.py` reports as `gone` and permits.
 
 ```bash
-for f in platform/schema/0*.sql; do
+for f in apps/spindle/schema/0*.sql; do
   echo "=== $f"
-  python3 platform/schema/apply.py "$(basename "$f")" || break
+  python3 apps/spindle/schema/apply.py "$(basename "$f")" || break
 done
 ```
 
 Expected, per file:
 
 ```
-=== platform/schema/001_tenant_artist.sql
+=== apps/spindle/schema/001_tenant_artist.sql
 -- 001_tenant_artist.sql is additive; no emptiness guards apply --
 
 applying 001_tenant_artist.sql: 4 statements
@@ -242,7 +242,7 @@ already does and is not the point.
 
 ## 5. Seed three contacts, one per jurisdiction
 
-Not a migration — this is demo data and it does not belong in `platform/schema/`. It is
+Not a migration — this is demo data and it does not belong in `apps/spindle/schema/`. It is
 also fabricated on purpose and says so in the row: `018` is explicit that putting a false
 `contact_route` against a real broadcaster would poison the system of record.
 

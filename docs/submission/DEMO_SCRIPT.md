@@ -161,7 +161,7 @@ next drain does **not** pick it up. Then the test suite: `22 passed`.
 
 **Then, immediately — the token.**
 
-**Screen.** `platform/bin/lease_race_demo.py`, Act 2. Both workers named `ingest-cli`.
+**Screen.** `apps/spindle/bin/lease_race_demo.py`, Act 2. Both workers named `ingest-cli`.
 
 ```
 terminal 1 claims b844314c…   owner=ingest-cli  token=2bb498ed…

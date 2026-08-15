@@ -246,7 +246,7 @@ Added after §4 was implemented, so the record shows what survived contact.
 | `storage.py` | the `Storage` Protocol and the S3 adapter, presigned both ways |
 | `assets.py` | claim / confirm / current / delete, and `queue_analysis` |
 | `routes.py` | three masters routes, and the uploader in `_inspector.html` |
-| `platform/infra` | bucket, CORS, versioning, lifecycle, IAM — **written, not applied** |
+| `infra/terraform/spindle` | bucket, CORS, versioning, lifecycle, IAM — **written, not applied** |
 | `agents.analyse_recording` | downloads the master, verifies its hash, measures it, writes facts with `fact_basis` edges |
 
 **Two things §4 got wrong**, both found by tests rather than by review:
@@ -264,7 +264,7 @@ Added after §4 was implemented, so the record shows what survived contact.
    walk with no template change — but that was a claim, not a finding, until the test
    above.
 
-**The classifier is built** (`platform/classifier/`): the image, the Lambda and the ECR
+**The classifier is built** (`apps/spindle/classifier/`): the image, the Lambda and the ECR
 repository in Terraform, and the reference-track suite that §3a says is not optional. It
 passes 7/7 locally — six genres plus the two floors, silence refused and a too-short clip
 raising. What has not happened is `./push.sh` and the second `terraform apply`; until

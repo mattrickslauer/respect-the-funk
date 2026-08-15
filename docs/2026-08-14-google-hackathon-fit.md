@@ -189,7 +189,7 @@ Ranked by score-per-hour, which is not the same order as difficulty.
    and via the **GenAI SDK** satisfies the framework requirement at the same time.
 2. **Gemini embeddings as a fourth adapter** (§1). Re-embed 14,170 under the new model
    value; both live in one index. Gated on the 1024-dimension check.
-3. **Cloud Run.** `platform/web` is FastAPI behind Mangum. Cloud Run wants the container
+3. **Cloud Run.** `apps/spindle/web` is FastAPI behind Mangum. Cloud Run wants the container
    and drops the adapter — this is a simplification, not a migration. Satisfies the Google
    Cloud requirement on its own and produces the dashboard the video must show.
 4. **CockroachDB Cloud on a GCP region.** Recommended, not required. Leaving the cluster on
@@ -217,7 +217,7 @@ dormant media-generation subproject:
 - **Veo** — `content/` and `app/` already generate clips through a provider adapter
   (`provider_sora.py`, `providers.py`). Veo is another adapter.
 - **Lyria** — music generation, in a music company.
-- **Gemma** — `platform/classifier/` classifies 14,170 parties. A small model is the right
+- **Gemma** — `apps/spindle/classifier/` classifies 14,170 parties. A small model is the right
   size for that job on the merits, not just for the bonus.
 
 The strategic part: wiring Veo re-activates **RemixKit as the payoff stage of the

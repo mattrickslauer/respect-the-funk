@@ -131,10 +131,17 @@ Thumbs.db
 # Diagram build intermediates (infra/architecture.pdf is the committed deliverable).
 infra/.build/
 
-# ---------------------------------------------------------------- app
-app/.venv/
-app/.remixkit-data/
-app/**/__pycache__/
+# ---------------------------------------------------------------- apps/remixkit
+#
+# These were `app/...` until the tree became `apps/<name>/`. The rename matters more
+# than it looks: `app/.remixkit-data/` stopped matching the moment the directory moved,
+# and the 25 files under it — account YAMLs and identity frames, all local dev state —
+# went from ignored to merely untracked, which is one `git add -A` away from being
+# committed. A path-anchored ignore rule is a rule that expires silently when a
+# directory is renamed, and nothing announces it.
+apps/remixkit/.venv/
+apps/remixkit/.remixkit-data/
+apps/remixkit/**/__pycache__/
 *.egg-info/
 .pytest_cache/
 

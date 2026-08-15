@@ -54,7 +54,7 @@ returns fewer than `k` rows whenever the filter is selective.
                    - /'1f9e6dd3-…'/'openai:text-embedding-3-small'/'counterparty'/'contactable']
 ```
 
-**This shape is asserted by a test, not by a comment.** `platform/web/tests/test_vector_plans.py`
+**This shape is asserted by a test, not by a comment.** `apps/spindle/web/tests/test_vector_plans.py`
 parses `EXPLAIN` output and fails if the plan stops using the vector index — which is how a
 plan regression introduced by migration 012 was caught. A query that silently degrades to a
 full scan still returns correct-looking rows, so the only way to defend it is to assert the
@@ -88,7 +88,7 @@ beyond the four*, which are the actual reason this is not Postgres.
 
 ### 3. `ccloud` CLI — **used for something real**
 
-`platform/bin/ccloud-mcp-setup.sh` installs `ccloud`, uses it to **resolve this project's
+`apps/spindle/bin/ccloud-mcp-setup.sh` installs `ccloud`, uses it to **resolve this project's
 cluster ID by name**, and writes the `.mcp.json` above from the result. The cluster ID is
 a thing the MCP configuration actually needs, so `ccloud` is on the setup path rather than
 being a command run once in order to claim it.
@@ -141,7 +141,7 @@ the masters bucket.
 
 ### Amazon S3 — where the audio lives
 
-`spindle-prod-masters`, defined in `platform/infra/main.tf`: public access blocked,
+`spindle-prod-masters`, defined in `infra/terraform/spindle/main.tf`: public access blocked,
 server-side encryption, versioning, a lifecycle policy, and a CORS rule without which the
 browser's presigned upload fails.
 
@@ -156,7 +156,7 @@ masters/1f9e6dd3-…/master/e7ade43c6be692dd25c06f127a4a28165eda68eb14a7affc8e47
 ### Supporting AWS, not on the list
 
 IAM (per-function roles, least privilege), CloudWatch Logs (one log group per function),
-ECR (the classifier image). All of it is Terraform in `platform/infra/` — there is no
+ECR (the classifier image). All of it is Terraform in `infra/terraform/spindle/` — there is no
 console-clicked resource in the deployment.
 
 ### Amazon Bedrock — written, and unreachable on this account
@@ -224,7 +224,7 @@ Stated here because a page like this is worth nothing if a judge finds the gap t
 
 - **The lesson-accumulation loop has not run in production.** `lesson`, `party_chunk` and
   `thread` hold zero rows. The write path exists (`agents.distil_lesson`), the retrieval and
-  arithmetic re-ranking exist and are unit-tested (`platform/web/tests/test_lessons.py`), and
+  arithmetic re-ranking exist and are unit-tested (`apps/spindle/web/tests/test_lessons.py`), and
   `lesson_semantic` is indexed and ready — but no closed thread has yet taught a shortlist,
   because nothing has been sent.
 - **The changefeed is built and not created.** `SHOW CHANGEFEED JOBS` returns **zero rows**,

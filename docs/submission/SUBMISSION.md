@@ -247,9 +247,9 @@ Stated here so a judge does not have to find it:
   `SHOW CHANGEFEED JOBS` returns nothing, because creating one draws RUs continuously and
   nobody authorised that spend. Built is not running.
 - **Not Bedrock.** See WHERE.
-- **Not a paid product.** `platform/schema/033_account_billing.sql` makes the tenant column
+- **Not a paid product.** `apps/spindle/schema/033_account_billing.sql` makes the tenant column
   real, `POST /claim` creates a bounded free tenant with no Stripe configuration present,
-  and `platform/web/spindle/billing.py` speaks Stripe in **test mode only** — it
+  and `apps/spindle/web/spindle/billing.py` speaks Stripe in **test mode only** — it
   refuses a live key on purpose. No checkout session has been created against Stripe by
   this code, no customer exists, and no payment has been taken. The prices in `plans.py`
   are prices that have been written down.
@@ -264,5 +264,5 @@ believing.
 2. `docs/2026-08-11-sponsor-audit.md` — the same argument, made adversarially, with the
    case *against* the sponsor stated first.
 3. `docs/submission/TOOLS.md` — every tool claim, each executed against the cluster.
-4. `platform/schema/018_contact_route.sql` — one migration, to see how decisions get
+4. `apps/spindle/schema/018_contact_route.sql` — one migration, to see how decisions get
    recorded here.

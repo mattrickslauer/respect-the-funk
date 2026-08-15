@@ -1,6 +1,6 @@
 # The three-region cluster that makes row-level residency a database property.
 #
-# This is the infrastructure half of `platform/schema/024_regional_by_row.sql`. The
+# This is the infrastructure half of `apps/spindle/schema/024_regional_by_row.sql`. The
 # migration says "an EU contact's row lives in the EU"; nothing in the migration can be
 # true unless the cluster has an EU region to put it in, and unless the database is
 # willing to lose one of them. That is what this file provisions and nothing else.

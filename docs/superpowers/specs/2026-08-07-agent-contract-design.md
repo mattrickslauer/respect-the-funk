@@ -142,7 +142,7 @@ configuration rather than a fleet size.
 | Same artist, different work | `FOR UPDATE SKIP LOCKED` | none — the second worker takes different rows |
 | Same track, different agents | different work tables entirely | none |
 
-`FOR UPDATE SKIP LOCKED` is verified on our cluster (`platform/README.md`, item 4).
+`FOR UPDATE SKIP LOCKED` is verified on our cluster (`apps/spindle/README.md`, item 4).
 
 Two places where naive parallelism breaks. Both are specified here rather than discovered
 later.
@@ -521,11 +521,11 @@ counterparty. It belongs in `channel_playbook` as a knob, not in code.
 | `PLATFORM-SPEC §2` | Add `agent_manifest` (§2c above) and polymorphic `fact_basis` (§5a). Add `scope_kind`/`track_id` with their `CHECK` to work tables (§7). Add `thread.holdout` (§9e) and the `counterparty_contact` source columns (§10a). |
 | `PLATFORM-SPEC §5` | The fleet table gains the Forager, the Distiller and the Invalidator — ten agents, not eight. Each row gains its work table, scope tiers and manifest state. |
 | `PLATFORM-SPEC §8` | **Replace the twelve-day calendar with §12's dependency graph.** It prices work in human-team days and has no room for three of the ten agents. Keep only the Aug 18 deadline and the submission packaging checklist. |
-| `PLATFORM-SPEC §10` risk 3 | **Closed.** `platform/README.md` verified `feature.vector_index.enabled` is already `t` on `respect-the-funk-31317`. |
+| `PLATFORM-SPEC §10` risk 3 | **Closed.** `apps/spindle/README.md` verified `feature.vector_index.enabled` is already `t` on `respect-the-funk-31317`. |
 | `SCOPE-RESET §6` decision 4 | **Resolved** by §10b. |
 | Forager design §4 | `lead` gains `track_id`, `scope_kind`, and the two-step claim replaces the single-query claim. |
 
-`SCOPE-RESET §6` decisions 2 (repository topology) and 6 (tenancy) stay open. `platform/README.md`
+`SCOPE-RESET §6` decisions 2 (repository topology) and 6 (tenancy) stay open. `apps/spindle/README.md`
 defers 2 explicitly until both deadlines pass, which stands.
 
 ---
@@ -632,7 +632,7 @@ Marked rather than guessed, per `SCOPE-RESET §5` rule 2.
 2. **Recursive CTE performance over `fact_basis`** at real edge counts. The depth cap bounds
    it, but the constant is unmeasured.
 3. **RU cost of a filtered vector scan, and changefeed RU draw** — carried forward from
-   `PLATFORM-SPEC §10` risk 2 and `platform/README.md`. Both need row volume.
+   `PLATFORM-SPEC §10` risk 2 and `apps/spindle/README.md`. Both need row volume.
 4. **Vector-index degradation under parallel insert** — `PLATFORM-SPEC §10` risk 4. Determines
    whether `chunk_staging` survives.
 5. **Per-thread reply addressing** (§10c) has not been tested against any provider.
@@ -660,5 +660,5 @@ Marked rather than guessed, per `SCOPE-RESET §5` rule 2.
 | `docs/SCOPE-RESET.md` | **BINDING.** This resolves its open decision 4 and honours §2a, §3 and §5 unchanged. |
 | `docs/PLATFORM-SPEC.md` | **BINDING.** This amends §2, §5 and §8 per §11 and honours §0 exactly — no agent names another. |
 | `docs/superpowers/specs/2026-08-07-forager-agent-design.md` | **BINDING.** This generalises its adapter rule, its `fact_basis`, its budget governor and its claim query to the fleet, and amends its `lead` table per §11. |
-| `platform/README.md` | **REFERENCE — verified facts.** Its item 4 and its vector-index finding are load-bearing here. Its freeze on `app/`, `content/` and `infra/` stands. |
+| `apps/spindle/README.md` | **REFERENCE — verified facts.** Its item 4 and its vector-index finding are load-bearing here. Its freeze on `app/`, `content/` and `infra/` stands. |
 | `docs/research/01–13` | **REFERENCE — findings stand.** §9 and §10b are built on pillars 01 and 10 rather than around them. |

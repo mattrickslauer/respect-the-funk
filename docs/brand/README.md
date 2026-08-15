@@ -57,7 +57,7 @@ for Open Graph, because the mark and the wordmark sit well inside the centre.
 ## Type and colour
 
 The tokens are of record in
-[`platform/web/spindle/templates/_design.html`](../../platform/web/spindle/templates/_design.html),
+[`apps/spindle/web/spindle/templates/_design.html`](../../apps/spindle/web/spindle/templates/_design.html),
 which is the single source for the running product; this mark tracks it rather than the
 other way round. Display type Futura → Avenir Next, accent copper `#d97f4a`, ground
 `#14120f` → `#0b0a09`.

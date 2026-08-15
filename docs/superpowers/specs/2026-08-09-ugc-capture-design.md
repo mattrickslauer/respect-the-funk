@@ -44,7 +44,7 @@ fan tags artist in a Story
 ```
 
 The only genuinely new capabilities are an inbound adapter, a sender, and bytes on disk.
-`platform/README.md` has been honest for weeks that the first two are missing; this is
+`apps/spindle/README.md` has been honest for weeks that the first two are missing; this is
 the change that supplies them, and building them for Instagram gives the curator/email
 path a shape to copy rather than inventing one twice.
 
@@ -141,7 +141,7 @@ Without this column the rescope in §3 is not implementable, and the spec previo
 asserted it as though it were.
 
 **`asset` uses concrete foreign keys, deliberately breaking with `presence` and
-`party_credit`.** Both are polymorphic over subject kind, and `platform/README.md` already
+`party_credit`.** Both are polymorphic over subject kind, and `apps/spindle/README.md` already
 records the cost: an orphaned presence row survived a deleted party and was found only by
 counting, and every future deleter must now sweep by hand. Inheriting that for a table
 holding files means orphaned **S3 objects** — which cost money forever and which nothing

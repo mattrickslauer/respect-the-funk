@@ -13,7 +13,7 @@
 - **NO FALLBACKS.** No silent default, no `.get(k, default)` covering a broken contract, no `getattr(o,'a',d)`, no `or ""`, no `except: pass`, no quiet `return` on an unexpected state, no clamp standing in for a rejection. Fail loudly.
 - **Fail-CLOSED refusal is the opposite and is wanted.** `spend.Gate` refusing a paid call, `auth` returning ANONYMOUS with no token, `TransitionRefused` — all correct, none are defects.
 - **Do not add prose that asserts an invariant.** If you cannot enforce it in code, say so in the report instead of writing a comment that claims it.
-- Tests: `cd platform/web && .venv/bin/python -m pytest tests -q`. Baseline entering this plan: **98 passed, 20 skipped**.
+- Tests: `cd apps/spindle/web && .venv/bin/python -m pytest tests -q`. Baseline entering this plan: **98 passed, 20 skipped**.
 - The cluster is SHARED and LIVE. Migrations additive only.
 
 ## Scope boundary — read before starting

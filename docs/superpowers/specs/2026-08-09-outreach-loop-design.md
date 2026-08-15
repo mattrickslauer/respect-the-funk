@@ -67,7 +67,7 @@ exponential backoff, poisoned-row parking and `agent_run` recording, and every s
 below is a function taking a claimed row — **no new coordination code is written by this
 spec.**
 
-### 2a. Three claims in `platform/README.md` are false and this spec obliges their correction
+### 2a. Three claims in `apps/spindle/README.md` are false and this spec obliges their correction
 
 Stated here so the correction is a task rather than an embarrassment:
 
@@ -422,7 +422,7 @@ apply to it. A curator who ghosted twice sinks. A pitch angle that landed on thr
 Deezer mood editors lifts the fourth, including one never contacted.
 
 **The rerank is explainable by construction.** Every adjustment carries the `lesson.id`
-that caused it and the inspector renders it, so `platform/README.md`'s claim that every
+that caused it and the inspector renders it, so `apps/spindle/README.md`'s claim that every
 object in the product has a *why* becomes true for the object where it matters most.
 Incrementing `hit_count` happens here.
 
@@ -485,7 +485,7 @@ network. New coverage:
 
 The vector-index behaviour that cannot be faked — that `EXPLAIN` still resolves to
 `vector search` with `prefix spans` after the rerank lands — is checked against the real
-cluster and recorded in `platform/README.md`'s verification section, as `007` and `009`
+cluster and recorded in `apps/spindle/README.md`'s verification section, as `007` and `009`
 already were.
 
 ## 9. What this does not do
@@ -494,7 +494,7 @@ Named so they are omissions rather than oversights.
 
 - **No changefeed.** The fleet polls `next_action_at`, which is `PLATFORM-SPEC §10`
   risk 2's documented fallback and adequate at this volume. It costs the architecture
-  its elegance, not its function — but `platform/README.md` and the architecture poster
+  its elegance, not its function — but `apps/spindle/README.md` and the architecture poster
   must stop implying otherwise.
 - **No Bedrock.** On-demand quota is 0 rpm for Titan Embeddings V2 on this account and
   the increase is not self-service. Embedding is a port with two adapters; OpenAI is

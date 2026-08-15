@@ -29,7 +29,7 @@ output "region_hosts" {
 output "connection_string" {
   value       = data.cockroach_connection_string.app.connection_string
   sensitive   = true
-  description = "DATABASE_URL for platform/schema/apply.py. `terraform output -raw connection_string`."
+  description = "DATABASE_URL for apps/spindle/schema/apply.py. `terraform output -raw connection_string`."
 }
 
 output "teardown" {

@@ -33,8 +33,8 @@ plan BASIC, `node_count: 0`.
 
 **AWS — at least 1 required. One verified.**
 
-`aws_lambda_function_url.console` in `platform/infra/main.tf:152`, served by Mangum
-(`platform/web/spindle/handler.py`). The console runs *on* Lambda; this is not a
+`aws_lambda_function_url.console` in `infra/terraform/spindle/main.tf:152`, served by Mangum
+(`apps/spindle/web/spindle/handler.py`). The console runs *on* Lambda; this is not a
 bolt-on.
 
 > **One correction to `docs/reference/HACKATHON.md`.** It records the intent as

@@ -6,7 +6,7 @@ exactly at the test suite, and gives the commands that create the second one.
 
 **The short version.** Production is `respect-the-funk-31317`
 (`ae38b92e-c1ad-4a06-a247-489cd5ce9964`). Development runs against it on purpose. The
-test suite is forbidden from it by `platform/web/tests/conftest.py`, and the only way to
+test suite is forbidden from it by `apps/spindle/web/tests/conftest.py`, and the only way to
 run the cluster-gated tests is to point `DATABASE_URL` at a second cluster that carries
 an `rtf_test_cluster` table.
 
@@ -14,7 +14,7 @@ an `rtf_test_cluster` table.
 
 ## 1. Why development against production is correct, and testing against it is not
 
-`platform/web/dev.sh` states the position in its header, and it is right:
+`apps/spindle/web/dev.sh` states the position in its header, and it is right:
 
 > There is no local database to run instead: CockroachDB Basic scales to zero and costs
 > nothing idle, so developing against the real cluster is cheaper and more honest than
@@ -56,7 +56,7 @@ disposable target, and nothing else does.**
 
 A table called `rtf_test_cluster`, in the database the connection string names. The
 argument for that signal over a hostname denylist or an opt-in environment variable is in
-`platform/web/tests/conftest.py`'s header and is not repeated here; the operational
+`apps/spindle/web/tests/conftest.py`'s header and is not repeated here; the operational
 consequence is short:
 
 * A cluster with the marker is a legal test target.
@@ -72,7 +72,7 @@ There is no flag that turns the guard off.
 ## 3. Creating the test cluster
 
 Prerequisites: `ccloud` (0.8.23 is what this was written against;
-`platform/bin/ccloud-mcp-setup.sh` installs it) and a CockroachDB Cloud login.
+`apps/spindle/bin/ccloud-mcp-setup.sh` installs it) and a CockroachDB Cloud login.
 
 ```bash
 ccloud auth login          # OAuth; no API key lands in a file
@@ -133,8 +133,8 @@ Every migration, in order, against the new cluster:
 
 ```bash
 export DATABASE_URL='<the URL from 3c, with the password>'
-for f in platform/schema/0*.sql; do
-    python platform/schema/apply.py "$(basename "$f")" || break
+for f in apps/spindle/schema/0*.sql; do
+    python apps/spindle/schema/apply.py "$(basename "$f")" || break
 done
 ```
 
@@ -156,7 +156,7 @@ CREATE TABLE rtf_test_cluster (
 
 INSERT INTO rtf_test_cluster (declared_by, note) VALUES (
     'your-name',
-    'Disposable. platform/web/tests creates and drops tenants here on every run. '
+    'Disposable. apps/spindle/web/tests creates and drops tenants here on every run. '
     'Nothing in this cluster is a record of anything. Safe to delete and recreate.'
 );
 ```
@@ -184,7 +184,7 @@ time in any given shell.**
 
 ```bash
 # The test cluster. NOT production — see docs/runbooks/environments.md.
-# platform/web/tests/conftest.py refuses to run against anything without an
+# apps/spindle/web/tests/conftest.py refuses to run against anything without an
 # rtf_test_cluster table, which this cluster has and production does not.
 export DATABASE_URL="postgresql://tests:<password>@respect-the-funk-tests-XXXXX.j77.aws-us-east-1.cockroachlabs.cloud:26257/defaultdb?sslmode=verify-full"
 ```
@@ -199,14 +199,14 @@ The full suite, against the test cluster:
 
 ```bash
 set -a; . .env.tests; set +a
-cd platform/web && .venv/bin/python -m pytest -q
+cd apps/spindle/web && .venv/bin/python -m pytest -q
 ```
 
 The database-free suite — 232 tests, no cluster, no network, and the one to run when you
 just want to know whether the code compiles and the logic holds:
 
 ```bash
-cd platform/web && env -u DATABASE_URL .venv/bin/python -m pytest -q
+cd apps/spindle/web && env -u DATABASE_URL .venv/bin/python -m pytest -q
 ```
 
 `env -u` rather than `unset`, so it is scoped to the one command and cannot leave a shell

@@ -33,8 +33,8 @@ already-verified domain back to `Pending` until the new TXT is published. Import
 instead, then plan — the create disappears and only the IAM policy is left to add.
 
 ```
-terraform -chdir=platform/infra import 'aws_ses_domain_identity.mail[0]' <domain>
-terraform -chdir=platform/infra import 'aws_ses_domain_dkim.mail[0]'     <domain>
+terraform -chdir=infra/terraform/spindle import 'aws_ses_domain_identity.mail[0]' <domain>
+terraform -chdir=infra/terraform/spindle import 'aws_ses_domain_dkim.mail[0]'     <domain>
 ```
 
 Note what importing means afterwards: Terraform now manages an identity it did not
@@ -167,7 +167,7 @@ DNS exists.
 ### Publish two records
 
 ```
-terraform -chdir=platform/infra output ses_mail_from_records
+terraform -chdir=infra/terraform/spindle output ses_mail_from_records
 ```
 
 At the registrar (this domain's DNS is **not** in Route 53, so Terraform cannot do it):

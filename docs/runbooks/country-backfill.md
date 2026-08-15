@@ -23,7 +23,7 @@ Before that run the number was **3,180, all of them `US`** — one country on a 
 ## 1. FCC stations: one statement, no network
 
 ```bash
-cd platform/web
+cd apps/spindle/web
 python -m spindle.ingest --backfill-fcc-country
 ```
 
@@ -44,7 +44,7 @@ keeps the country Radio Browser asserted.
 ## 2. Radio Browser stations: `refresh_stream`, and it is slow
 
 ```bash
-cd platform/web
+cd apps/spindle/web
 python -m spindle.ingest --refresh-streams --kinds refresh_stream
 ```
 

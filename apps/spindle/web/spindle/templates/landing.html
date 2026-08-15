@@ -1,0 +1,2174 @@
+{# The public demo surface, aimed at one reader: a CockroachDB judge.
+
+   Deliberately NOT extending `_public.html`. That layout dresses the sign-in form and
+   the old marketing page, and this is a third thing with a different job — it has to
+   make an argument about a database, interactively, to someone who will not create an
+   account. Inheriting the console's chrome would have meant fighting it in every rule.
+
+   Design note, so the next person does not "tidy" it: the display face is **monospace**
+   on purpose. This product is call signs, licence records and query plans; setting the
+   headlines in the same face as the output is the point, not an oversight. #}
+<!doctype html>
+<html lang="en" data-ground="lathe">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spindle — built on CockroachDB</title>
+{# Rendered from the live count rather than typed. The number here read "14,000" until
+   2026-08-15, by which point the index held 43,191 — a meta description is the one
+   piece of copy nobody re-reads, so it is the one that has to come from the query. #}
+<meta name="description" content="A music distribution agentic OS. {{ "{:,}".format(stats.get('counterparties', 0)) }} radio stations and curators in a distributed vector index, and an outbox that cannot send twice.">
+{% include "_design.html" %}
+<style>
+/* Page-specific only. The cutting-room ground, the two brand hues and the
+   shared components now live in `_design.html`; `data-ground="lathe"` on
+   <html> above is what pins this page dark rather than letting it follow the
+   reader. Everything below is here because it belongs to this page alone. */
+
+/* The one colour the design system deliberately does not carry. It is CockroachDB's
+   trademark, it appears on this page because this page is a submission to them, and
+   it is never used for our own UI — which is exactly why it must not sit in a shared
+   token file where the next person would reach for it as "the purple one". */
+:root{ --crdb:#7d4dff; }
+
+body{
+  font-size:16px;
+  background-image:
+    radial-gradient(900px 400px at 78% -8%, rgba(125,77,255,.13), transparent 62%),
+    radial-gradient(700px 340px at 8% 4%, rgba(255,179,64,.07), transparent 60%);
+  background-attachment:fixed;
+}
+/* Narrower than the shared 1180px: this page is read once, top to bottom, and a
+   shorter line does that better than the manual's reference-shelf width. */
+.wrap{max-width:1080px;padding:0 24px}
+.eyebrow{font-size:11px;letter-spacing:.18em;margin-bottom:18px}
+
+/* ---------- masthead ---------- */
+.masthead{padding:34px 0 12px;border-bottom:1px solid var(--rule)}
+.built{
+  display:inline-flex;align-items:center;gap:12px;padding:8px 14px;
+  border:1px solid rgba(125,77,255,.42);border-radius:999px;
+  background:rgba(125,77,255,.09);font:500 13px/1 var(--face-body);color:#cbb8ff;
+}
+.built{flex-wrap:wrap}
+.built .crdb-wordmark{
+  font:700 14px/1 var(--face-display);letter-spacing:-.03em;color:#fff;
+  background:var(--crdb);padding:6px 9px;border-radius:5px;
+  /* This span was called `.mark` until 2026-08-15, and the sentence beside it rode
+     over the top. The cause was not shrinkage: `_design.html` owns `.mark` as the
+     provenance legend row, which is `display:grid` with a 38px first column. The
+     rule here overrode that element's padding and background but never its
+     `display`, so "CockroachDB" overflowed a 38px grid track onto its sibling.
+     An earlier comment blamed a monospace fallback and reached for `flex:none`,
+     which treated a name collision as a metrics problem and did not fix it.
+
+     The fix was the name. Do not reuse a class `_design.html` already owns.
+     `flex:none` stays, because a flex item may legitimately shrink below its
+     content width — but it is no longer what is holding this up. */
+  flex:none;
+}
+/* The mark sits beside the headline on a wide screen and above it on a narrow one.
+   `minmax(0,1fr)` on the copy column, or the long <h1> refuses to wrap and pushes
+   the top off the grid. */
+.hero{padding:56px 0 44px;display:grid;grid-template-columns:minmax(0,1fr) 260px;
+      gap:40px;align-items:center}
+.hero-mark{width:100%;max-width:260px;justify-self:end}
+@media (max-width:860px){
+  .hero{grid-template-columns:1fr;gap:8px}
+  .hero-mark{max-width:170px;justify-self:start;order:-1}
+}
+.hero h1{font-size:clamp(30px,5.1vw,60px);line-height:1.04;max-width:19ch}
+.hero h1 em{font-style:normal;color:var(--phosphor)}
+.hero p{max-width:60ch;color:var(--dim);font-size:18px;margin:22px 0 0}
+.hero .sub{color:var(--faint);font:13px/1.6 var(--face-display);margin-top:18px}
+
+/* ---------- counters ---------- */
+.counters{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));
+  gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:10px;
+  overflow:hidden;margin:8px 0 64px;
+}
+.counter{background:var(--panel);padding:18px 16px}
+.counter b{display:block;font:600 26px/1 var(--face-display);color:var(--ink);letter-spacing:-.02em}
+.counter span{display:block;margin-top:7px;font:11px/1.3 var(--face-display);
+  letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+.counter.live b{color:var(--carrier)}
+
+section{padding:64px 0;border-top:1px solid var(--rule)}
+section h2{font-size:clamp(21px,2.7vw,29px);max-width:24ch}
+section .lede{color:var(--dim);max-width:66ch;margin:16px 0 0}
+
+/* ---------- THE SIGNATURE: the tuner ---------- */
+.tuner{margin-top:34px;border:1px solid var(--rule);border-radius:12px;
+  background:var(--panel);overflow:hidden}
+.tuner-head{display:flex;flex-wrap:wrap;gap:14px;align-items:center;
+  padding:16px 18px;border-bottom:1px solid var(--rule);background:var(--panel-2)}
+.tuner-head .who{font:600 13px/1 var(--face-display);color:var(--ink)}
+.dial{display:flex;gap:0;border:1px solid var(--rule);border-radius:7px;overflow:hidden}
+.dial button{
+  appearance:none;border:0;background:transparent;color:var(--dim);cursor:pointer;
+  font:600 12px/1 var(--face-display);padding:9px 13px;letter-spacing:.04em;
+  border-right:1px solid var(--rule);transition:background .15s,color .15s;
+}
+.dial button:last-child{border-right:0}
+.dial button[aria-pressed="true"]{background:var(--phosphor);color:#1a1206}
+.dial button:hover:not([aria-pressed="true"]){background:var(--panel);color:var(--ink)}
+.dial button:focus-visible{outline:2px solid var(--carrier);outline-offset:-2px}
+
+.rows{padding:8px 0;min-height:220px}
+.row{display:grid;grid-template-columns:34px 1fr 74px;gap:14px;align-items:center;
+  padding:9px 18px}
+.row .rank{font:600 11px/1 var(--face-display);color:var(--faint);text-align:right}
+.row .name{font:13px/1.35 var(--face-display);color:var(--ink);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+/* The meter — cosine distance as signal strength, nearer = longer bar — is where
+   this product's one visual idea started, and it now lives in `_design.html` so the
+   console and the manual draw the same shape. All this page still owns is the gap
+   above it. The JS below sets `width` inline rather than the shared `--fill`, which
+   is deliberate: an inline width beats the token and this page animates from 0. */
+.meter{margin-top:6px}
+.row .d{font:11px/1 var(--face-display);color:var(--faint);text-align:right}
+.row.moved .name{color:var(--phosphor)}
+/* The delta against *now*, not against the previously viewed window. "This station
+   was fourth today and second an hour ago" is the sentence the beat is trying to
+   make; "it moved since the last thing you clicked" is a fact about the UI. */
+.row .delta{
+  display:inline-block;margin-left:8px;font:600 10px/1 var(--face-display);
+  letter-spacing:.06em;padding:3px 5px;border-radius:4px;vertical-align:1px;
+  border:1px solid transparent;white-space:nowrap;
+}
+.row .delta.up{color:var(--phosphor);border-color:color-mix(in srgb,var(--phosphor) 34%,transparent)}
+.row .delta.down{color:var(--dim);border-color:var(--rule)}
+.row .delta.new{color:var(--carrier);border-color:color-mix(in srgb,var(--carrier) 34%,transparent)}
+.tuner-foot{padding:12px 18px;border-top:1px solid var(--rule);background:var(--panel-2);
+  font:11px/1.5 var(--face-display);color:var(--faint)}
+.tuner-foot b{color:var(--carrier);font-weight:600}
+
+/* ---------- two-column claims ---------- */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:34px}
+.card{border:1px solid var(--rule);border-radius:11px;background:var(--panel);padding:20px}
+.card h3{font-size:14px;color:var(--phosphor);margin-bottom:9px}
+.card p{margin:0;color:var(--dim);font-size:14.5px}
+.card code{font:12px/1.5 var(--face-display);color:var(--carrier);background:#060910;
+  padding:2px 5px;border-radius:4px}
+
+/* ---------- verdict table ---------- */
+.verdict{width:100%;border-collapse:collapse;margin-top:30px;font-size:14px}
+.verdict th{text-align:left;font:600 11px/1 var(--face-display);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--faint);padding:0 12px 12px;border-bottom:1px solid var(--rule)}
+.verdict td{padding:13px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+.verdict td:first-child{font:12.5px/1.5 var(--face-display);color:var(--ink)}
+.verdict .no{color:var(--dim)}
+.verdict .yes{color:var(--phosphor);font-weight:600}
+
+/* ---------- the index prefix, drawn rather than quoted ----------
+   The `EXPLAIN` below this says the same thing and says it to a reader who
+   already knows what a prefix span is. This says it to one who does not, and it
+   is not a diagram of an idea — it is the index declaration from migration 009,
+   column for column, in order. The four equality columns are drawn as the gate
+   they are, and the vector search sits after them, inside what they select. */
+.prefix{margin-top:30px;border:1px solid var(--rule);border-radius:12px;
+        background:var(--panel);overflow:hidden}
+.prefix-head,.prefix-foot{padding:13px 17px;background:var(--panel-2);
+        font:11px/1.5 var(--face-display);color:var(--faint)}
+.prefix-head{border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;
+        gap:12px;flex-wrap:wrap;letter-spacing:.04em}
+.prefix-head b{color:var(--ink);font-weight:600}
+.prefix-foot{border-top:1px solid var(--rule);line-height:1.6}
+.prefix-foot b{color:var(--carrier);font-weight:600}
+.prefix-body{display:flex;align-items:stretch;overflow-x:auto;padding:18px 16px;gap:0}
+.seg{flex:0 0 auto;min-width:150px;padding:0 15px;display:flex;flex-direction:column;gap:7px;
+     border-right:1px dashed var(--rule)}
+.seg:last-child{border-right:0}
+.seg .op{font:600 9.5px/1 var(--face-display);letter-spacing:var(--track-caps);
+     text-transform:uppercase;color:var(--carrier)}
+.seg .col{font:600 13px/1.2 var(--face-display);color:var(--ink);letter-spacing:-.01em}
+.seg .val{font:11px/1.45 var(--face-display);color:var(--dim);overflow-wrap:anywhere}
+/* The warm pole marks the step that is doing the actual searching; the cold pole
+   marks the four that are narrowing the space it searches in. */
+.seg.hit{background:var(--phosphor-wash);border-right:0;border-radius:8px;margin-left:10px;
+     padding:12px 15px}
+.seg.hit .op{color:var(--phosphor)}
+
+.rows .row.tied .d{color:var(--phosphor)}
+.rp-tied{margin-left:9px;font:600 9.5px/1 var(--face-display);
+     letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--phosphor);
+     opacity:.85}
+
+/* ---------- the decision ledger ----------
+   Kind is a chip and is the only coloured thing in a row, because the kinds are not
+   equivalent: `opt_out` and `suppress` are the ones an audit actually turns on, and
+   a ledger that painted all seven the same would bury them. */
+.ledger{margin-top:26px;border:1px solid var(--rule);border-radius:12px;
+     background:var(--panel);overflow:hidden}
+.ledger-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+     padding:13px 17px;background:var(--panel-2);border-bottom:1px solid var(--rule);
+     font:11px/1.5 var(--face-display);color:var(--faint);letter-spacing:.04em}
+.ledger-head b{color:var(--ink);font-weight:600}
+.ledger-src{color:var(--faint)}
+.ledger-rows{font:12px/1.5 var(--face-display)}
+.ledger-note{margin:0;padding:16px 17px;color:var(--faint)}
+.led{display:grid;grid-template-columns:130px minmax(0,1fr) auto;gap:14px;
+     align-items:baseline;padding:11px 17px;border-bottom:1px solid var(--rule-soft)}
+.led:last-child{border-bottom:0}
+.led-kind{font:600 9.5px/1.6 var(--face-display);letter-spacing:var(--track-caps);
+     text-transform:uppercase;color:var(--dim);white-space:nowrap}
+.led.k-opt_out .led-kind,.led.k-suppress .led-kind{color:var(--cut)}
+.led.k-send .led-kind,.led.k-budget_increase .led-kind{color:var(--phosphor)}
+.led.k-shortlist .led-kind,.led.k-lesson .led-kind{color:var(--carrier)}
+.led-sum{color:var(--ink-2);overflow-wrap:anywhere}
+.led-who{display:block;color:var(--faint);font-size:11px;margin-top:3px}
+.led-at{text-align:right;color:var(--dim);white-space:nowrap}
+.led-hlc{display:block;color:var(--carrier);font-size:10.5px;margin-top:3px}
+@media (max-width:700px){
+  .led{grid-template-columns:1fr;gap:4px}
+  .led-at{text-align:left}
+}
+
+.led-stage{display:block;margin-top:3px;font:600 9px/1.4 var(--face-display);
+     letter-spacing:var(--track-caps);color:var(--phosphor);opacity:.9}
+.led.k-budget_increase .led-stage{color:var(--phosphor)}
+
+/* ---------- the decision replay ----------
+   `.rp-check` is the only place on this page where a green/red pair means pass and
+   fail rather than cold/warm — it is a self-test, and a self-test that reported its
+   own result in the ambient palette would be indistinguishable from decoration. */
+.rp-stamp{display:flex;gap:12px;flex-wrap:wrap;align-items:center;
+     padding:11px 16px;border-bottom:1px solid var(--rule);background:var(--panel-2);
+     font:11.5px/1.5 var(--face-display)}
+.rp-aost{color:var(--carrier)}
+.rp-check{margin-left:auto;padding:4px 9px;border-radius:5px;font-weight:600}
+.rp-check.ok{color:var(--carrier);background:var(--carrier-wash);
+     border:1px solid var(--carrier)}
+.rp-check.bad{color:var(--cut);background:var(--cut-wash);border:1px solid var(--cut)}
+.rows .row.hit{background:var(--phosphor-wash);border-radius:6px}
+.rows .row.hit .name{color:var(--phosphor);font-weight:600}
+.rp-you{margin-left:9px;font:600 9.5px/1 var(--face-display);
+     letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--phosphor)}
+.dial button[disabled]{opacity:.4;cursor:not-allowed}
+
+/* ---------- the prefix, unbindable ----------
+   `button.seg` inherits the layout above and adds only the affordance. Text stays
+   left-aligned and the font is not inherited from the UA stylesheet, which is the
+   one thing a <button> silently changes about a block of text. */
+button.seg{font:inherit;text-align:left;background:none;color:inherit;cursor:pointer;
+     border-top:0;border-bottom:0;border-left:0;padding-top:6px;padding-bottom:6px;
+     border-radius:6px;transition:background .12s,opacity .12s}
+button.seg:hover{background:var(--carrier-wash)}
+.seg .bind{font:600 9.5px/1 var(--face-display);letter-spacing:var(--track-caps);
+     text-transform:uppercase;color:var(--carrier)}
+/* Unbound reads as absent, not as broken: it is a legal query, just a worse one. */
+button.seg[aria-pressed="false"]{opacity:.42}
+button.seg[aria-pressed="false"] .col{text-decoration:line-through}
+button.seg[aria-pressed="false"] .bind{color:var(--dim)}
+/* Covered by the span the planner can actually build. */
+button.seg.in-span{background:var(--carrier-wash)}
+button.seg.in-span .bind{color:var(--carrier)}
+/* Bound, but stranded behind a gap — still in the WHERE clause, no longer in the
+   span. This is the state the whole section exists to make visible. */
+button.seg.stranded .bind{color:var(--phosphor)}
+button.seg.stranded{background:var(--phosphor-wash)}
+
+.prefix-foot{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.prefix-hint{color:var(--faint)}
+.prefix-verdict{font-weight:600}
+.prefix-verdict.ok{color:var(--carrier)}
+.prefix-verdict.warn{color:var(--phosphor)}
+.prefix-verdict.bad{color:var(--cut)}
+.prefix-note{margin:12px 0 0;color:var(--dim);font:13px/1.65 var(--face-body);max-width:76ch}
+.prefix-note b{color:var(--ink);font-weight:600}
+.prefix-note .cut{color:var(--cut);font-weight:600}
+
+/* ---------- the verdict, openable ----------
+   Detail rows are collapsed by default and are real table rows rather than a
+   parallel structure, so the table stays a table for a screen reader and for
+   anyone who lands here with JavaScript off — in which case every row is simply
+   already open, which is the correct degraded state for an argument. */
+.vr{cursor:pointer}
+.vr:hover td{background:var(--panel-2)}
+.vr td:first-child{position:relative;padding-left:26px}
+.vr td:first-child::before{content:"+";position:absolute;left:9px;color:var(--faint);
+     font:600 12px/1.5 var(--face-display)}
+.vr[aria-expanded="true"] td:first-child::before{content:"−";color:var(--phosphor)}
+.vr.keep td:first-child::before{color:var(--carrier)}
+.vd td{color:var(--dim);font:13px/1.7 var(--face-body);background:var(--panel-2);
+     padding:14px 18px 16px 26px}
+.vd b{color:var(--ink)}
+.vd em{color:var(--ink);font-style:italic}
+.js .vd{display:none}
+.js .vd.open{display:table-row}
+.vd-run{display:block;margin-top:10px;color:var(--carrier);font-family:var(--face-display);
+     font-size:12px}
+.vd-run a{color:var(--carrier)}
+
+/* ---------- the cap, draggable ----------
+   The slider is the argument: a price is a number you are quoted, a cap is a
+   predicate the gate evaluates. Dragging past a tier's cap flips it from admit to
+   refuse in front of the reader. */
+.capbar{margin-top:26px;padding:16px 18px;border:1px solid var(--rule);border-radius:12px;
+     background:var(--panel);display:grid;grid-template-columns:auto 1fr auto;gap:14px;
+     align-items:center}
+.capbar label{font:600 10px/1.3 var(--face-display);letter-spacing:var(--track-caps);
+     text-transform:uppercase;color:var(--faint)}
+.capbar input[type=range]{width:100%;accent-color:var(--phosphor)}
+.capbar output{font:600 22px/1 var(--face-display);color:var(--phosphor);min-width:3ch;
+     text-align:right}
+.capline{grid-column:1/-1;margin:0;font:12.5px/1.6 var(--face-display);color:var(--dim)}
+.capline b{color:var(--ink);font-weight:600}
+.capline .refuse{color:var(--phosphor);font-weight:600}
+@media (max-width:620px){.capbar{grid-template-columns:1fr auto}.capbar label{grid-column:1/-1}}
+
+.tier .admits{font:600 9.5px/1 var(--face-display);letter-spacing:var(--track-caps);
+     text-transform:uppercase;color:var(--faint)}
+.tier.admit .admits{color:var(--carrier)}
+.tier.refuse .admits{color:var(--phosphor)}
+.tier.cheapest{outline:2px solid var(--carrier);outline-offset:3px}
+
+/* ---------- the race ----------
+   The reader drives both workers. Everything here is layout; the rule being
+   demonstrated lives in the script at the foot of the page, next to the other
+   behaviour, rather than being split across two files. */
+.race{margin-top:30px;border:1px solid var(--rule);border-radius:12px;
+      background:var(--panel);overflow:hidden}
+.race-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule)}
+@media (max-width:700px){.race-grid{grid-template-columns:1fr}}
+.race-worker{background:var(--panel);padding:15px 17px;display:flex;flex-direction:column;gap:10px}
+.race-who{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.race-tag{font:600 9.5px/1 var(--face-display);letter-spacing:var(--track-caps);
+      text-transform:uppercase;color:var(--faint)}
+.race-tok{font:11px/1 var(--face-display);color:var(--dim);padding:6px 9px;
+      border:1px dashed var(--rule);border-radius:5px;align-self:flex-start}
+.race-tok.held{color:var(--carrier);border-color:var(--carrier);border-style:solid}
+.race-tok.stale{color:var(--phosphor);border-color:var(--phosphor);border-style:solid}
+.race-btns{display:flex;gap:8px;flex-wrap:wrap}
+.race button,.race-env button{
+      font:600 11px/1 var(--face-display);letter-spacing:.04em;color:var(--ink);
+      background:var(--panel-2);border:1px solid var(--rule-strong);border-radius:6px;
+      padding:8px 12px;cursor:pointer;transition:background .12s,border-color .12s}
+.race button:hover,.race-env button:hover{background:var(--carrier-wash);border-color:var(--carrier)}
+.race-env{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+      padding:13px 17px;border-top:1px solid var(--rule);background:var(--panel-2)}
+.race-envnote{color:var(--faint);font:11px/1.5 var(--face-display);flex:1 1 220px}
+.race-log{list-style:none;margin:0;padding:8px 17px;border-top:1px solid var(--rule);
+      font:11.5px/1.7 var(--face-display);max-height:190px;overflow-y:auto}
+.race-log:empty::after{content:"no calls yet";color:var(--faint);display:block;padding:6px 0}
+.race-log li{display:flex;gap:10px;flex-wrap:wrap;padding:2px 0}
+.race-log .w{color:var(--ink);font-weight:600;flex:0 0 66px}
+.race-log .r{color:var(--dim);flex:1 1 auto}
+.race-log .ok{color:var(--carrier)}
+.race-log .refused{color:var(--phosphor)}
+.race-log .skip{color:var(--faint)}
+.race-score{display:flex;gap:20px;flex-wrap:wrap;padding:13px 17px;
+      border-top:1px solid var(--rule);font:12px/1.4 var(--face-display);color:var(--dim)}
+.race-score b{color:var(--ink);font-size:15px;margin-left:6px}
+.race-dupe b{color:var(--carrier)}
+.race-score .race-goal{margin-left:auto;color:var(--faint)}
+.race-score.broken .race-dupe b{color:var(--cut)}
+
+/* ---------- the fence ----------
+   Two workers, one lead, the same name. The whole argument is that the two rows
+   are identical everywhere a human would look and differ in the one column only
+   the database can write, so the rows are laid out to make that comparison
+   unavoidable: same grid, same order, and the token is the only cell that moves.
+
+   Note on colour: the refusal is `--err`, not `--cut`. A refused claim is a
+   fence holding, not an irreversible act — and the design system's rule is that
+   red belongs to the send and to nothing else. */
+.fence{margin-top:30px;border:1px solid var(--rule);border-radius:12px;
+       background:var(--panel);overflow:hidden}
+.fence-head,.fence-foot{padding:13px 17px;background:var(--panel-2);
+       font:11px/1.55 var(--face-display);color:var(--faint);letter-spacing:.04em}
+.fence-head{border-bottom:1px solid var(--rule)}
+.fence-foot{border-top:1px solid var(--rule)}
+.fence-foot b{color:var(--carrier);font-weight:600}
+.fence-row{display:grid;gap:6px 16px;padding:15px 17px;align-items:baseline;
+       grid-template-columns:minmax(0,1fr);border-bottom:1px solid var(--rule-soft)}
+.fence-row:last-of-type{border-bottom:0}
+@media(min-width:700px){
+  .fence-row{grid-template-columns:130px 168px minmax(0,1fr) auto}
+}
+.fence .who{font:600 13.5px/1.2 var(--face-display);color:var(--ink)}
+.fence .tok{font:12px/1.2 var(--face-display);color:var(--carrier)}
+.fence .step{font:12px/1.4 var(--face-display);color:var(--dim)}
+.fence .out{font:600 11px/1 var(--face-display);letter-spacing:var(--track-caps);
+       text-transform:uppercase;padding:5px 9px;border-radius:5px;white-space:nowrap;
+       justify-self:start}
+.fence .out.bad{color:var(--err);border:1px solid var(--err);background:var(--err-wash)}
+.fence .out.good{color:var(--ok);border:1px solid var(--ok)}
+
+/* ---------- the transaction boundary ----------
+   Drawn as a bracket because that is the claim: not "three things happen", but
+   "three things are one thing". The rail down the left is the boundary itself. */
+.txn{margin-top:20px;border:1px solid var(--rule);border-radius:12px;
+     background:var(--panel);overflow:hidden}
+.txn-head,.txn-foot{padding:13px 17px;background:var(--panel-2);
+     font:11px/1.55 var(--face-display);color:var(--faint);letter-spacing:.04em}
+.txn-head{border-bottom:1px solid var(--rule)}
+.txn-foot{border-top:1px solid var(--rule)}
+.txn-foot b{color:var(--phosphor);font-weight:600}
+.txn-body{padding:17px 18px;font:12.5px/1.5 var(--face-display)}
+.txn .kw{color:var(--phosphor);font-weight:600;letter-spacing:.06em}
+.txn ol{list-style:none;margin:9px 0 9px 6px;padding:0 0 0 18px;
+     border-left:2px solid var(--carrier);display:flex;flex-direction:column;gap:9px}
+.txn li{color:var(--dim);display:grid;gap:2px}
+.txn li b{color:var(--ink);font-weight:600}
+.txn li span{color:var(--faint);font-size:11.5px}
+
+/* ---------- pricing ---------- */
+.tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:16px;margin-top:34px}
+.tier{border:1px solid var(--rule);border-radius:12px;background:var(--panel);padding:20px 18px;
+      display:flex;flex-direction:column;gap:13px}
+.tier.pick{border-color:color-mix(in srgb,var(--phosphor) 40%,transparent);
+      background:linear-gradient(180deg,var(--phosphor-wash),transparent 62%),var(--panel)}
+.tier .nm{font:600 10px/1 var(--face-display);letter-spacing:var(--track-caps);
+      text-transform:uppercase;color:var(--faint)}
+.tier.pick .nm{color:var(--phosphor)}
+.tier .amt{font:600 30px/1 var(--face-display);color:var(--ink);letter-spacing:-.03em;
+      font-variant-numeric:tabular-nums}
+.tier .amt small{font-size:12px;color:var(--faint);font-weight:400;letter-spacing:0}
+.tier ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;
+      font-size:13.5px;color:var(--dim);line-height:1.45}
+.tier li::before{content:"·";color:var(--carrier);margin-right:.5em;font-weight:700}
+.tier .sum{margin:0;font-size:13px;line-height:1.5;color:var(--faint)}
+.tier .go{margin-top:auto}
+.tier .unavail{font:12px/1.5 var(--face-display);color:var(--faint);
+      border:1px dashed var(--rule-strong);border-radius:8px;padding:10px 12px}
+.testmode{display:inline-block;margin-top:14px;font:600 9.5px/1 var(--face-display);
+      letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--carrier);
+      border:1px solid var(--carrier);border-radius:5px;padding:5px 8px}
+.claim{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.claim input{flex:1 1 150px;min-width:0;font:14px/1.2 var(--face-body);padding:11px 12px;
+      background:var(--ground);color:var(--ink);border:1px solid var(--rule-strong);
+      border-radius:8px;min-height:44px}
+.claim input::placeholder{color:var(--faint)}
+.claim button,.tier .go a,.tier .go button{display:inline-flex;align-items:center;
+      justify-content:center;min-height:44px;padding:0 16px;border-radius:8px;cursor:pointer;
+      text-decoration:none;font:600 14px/1 var(--face-body);white-space:nowrap;width:100%;
+      background:var(--phosphor);color:var(--ground);border:1px solid var(--phosphor)}
+.claim button{width:auto}
+.tier .go a.quiet,.tier .go button.quiet{background:transparent;color:var(--ink);
+      border-color:var(--rule-strong)}
+.tier .go a.quiet:hover,.tier .go button.quiet:hover{border-color:var(--faint)}
+.priced{margin-top:26px;font:12px/1.65 var(--face-display);color:var(--faint)}
+.priced b{color:var(--dim);font-weight:600}
+
+/* ---------- THE REACH MAP ----------
+   Colour here is not a palette decision, it is `_design.html`'s rule applied: the
+   `--carrier` teal means *a thing that is on, or answering*, and that file says in
+   terms that it "belongs to the index". This section is a picture of the index, so
+   the choropleth ramp is carrier and nothing else. Amber would have read as
+   emphasis, which is a claim about attention rather than about coverage.
+
+   A country we hold nobody in is drawn — in panel, with a hairline edge — rather
+   than left out. That is the same discipline the platform strip uses for the
+   surfaces we have not indexed: absence has to be visible as absence, or the reader
+   reads the lit countries as the whole world. */
+.reach-readout{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:1px;background:var(--rule);border:1px solid var(--rule);
+  border-radius:10px 10px 0 0;overflow:hidden;border-bottom:0;
+}
+.reach-readout div{background:var(--panel);padding:16px}
+.reach-readout b{display:block;font:600 clamp(22px,3.4vw,32px)/1 var(--face-display);
+  color:var(--carrier);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.reach-readout .muted b{color:var(--ink)}
+.reach-readout span{display:block;margin-top:8px;font:11px/1.3 var(--face-display);
+  letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+
+.reach-pick{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  border:1px solid var(--rule);border-bottom:0;background:var(--panel-2);
+  padding:10px 14px}
+.reach-pick label{font:11px/1 var(--face-display);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--faint)}
+.reach-pick select{
+  background:var(--panel);color:var(--ink);border:1px solid var(--rule-strong);
+  border-radius:6px;padding:7px 10px;font:12px/1.2 var(--face-display);min-width:230px;
+}
+.reach-pick select:focus-visible{outline:2px solid var(--carrier);outline-offset:1px}
+
+/* Ground, not panel. The unlit countries are filled `--panel`, so a `--panel` stage
+   would render them invisible and the map would show only the countries we have
+   reached floating in nothing — which reads as "this is the world" rather than
+   "this is our share of it". The darker ground is what makes an unreached country
+   legible as land. */
+.reach-stage{position:relative;border:1px solid var(--rule);background:var(--ground);
+  overflow:hidden}
+.reach-stage canvas{display:block;width:100%;height:auto;cursor:crosshair}
+/* The scope tooltip. Follows the pointer, never wraps, and is `pointer-events:none`
+   so it can never sit between the cursor and the country it is describing. */
+.reach-tip{
+  position:absolute;pointer-events:none;opacity:0;transition:opacity .12s;
+  background:var(--ground);border:1px solid var(--rule-strong);border-radius:6px;
+  padding:7px 10px;font:12px/1.45 var(--face-display);color:var(--ink);
+  white-space:nowrap;z-index:3;box-shadow:0 6px 20px rgba(0,0,0,.5);
+}
+.reach-tip b{color:var(--carrier);font-weight:600}
+.reach-tip.on{opacity:1}
+
+/* The country panel. Slides over the right of the map on wide screens and becomes a
+   plain block beneath it on narrow ones, because a 320px drawer on a 390px screen is
+   a drawer that covers the thing it describes. */
+.reach-panel{
+  position:absolute;top:0;right:0;bottom:0;width:min(380px,52%);
+  background:var(--ground);border-left:1px solid var(--rule);
+  transform:translateX(101%);transition:transform .22s ease;
+  display:flex;flex-direction:column;z-index:4;
+}
+.reach-panel.on{transform:none}
+.reach-panel header{display:flex;align-items:center;gap:10px;padding:14px 16px;
+  border-bottom:1px solid var(--rule);background:var(--panel)}
+.reach-panel header h3{margin:0;font:600 14px/1.2 var(--face-display);color:var(--ink)}
+.reach-panel header .n{font:11px/1 var(--face-display);color:var(--carrier);
+  letter-spacing:.06em}
+.reach-panel header button{margin-left:auto;appearance:none;background:transparent;
+  border:1px solid var(--rule-strong);color:var(--dim);border-radius:5px;
+  font:600 11px/1 var(--face-display);padding:7px 9px;cursor:pointer}
+.reach-panel header button:hover{color:var(--ink);border-color:var(--faint)}
+.reach-panel .find{padding:11px 16px;border-bottom:1px solid var(--rule)}
+.reach-panel .find input{
+  width:100%;box-sizing:border-box;background:var(--panel);color:var(--ink);
+  border:1px solid var(--rule-strong);border-radius:6px;padding:9px 11px;
+  font:13px/1.3 var(--face-display);
+}
+.reach-panel .find input:focus{outline:2px solid var(--carrier);outline-offset:1px}
+.reach-rows{overflow-y:auto;flex:1;padding:6px 0}
+.reach-rows .r{padding:11px 16px;border-bottom:1px solid var(--rule-soft)}
+.reach-rows .r .nm{font:600 13px/1.35 var(--face-display);color:var(--ink)}
+.reach-rows .r .meta{margin-top:5px;display:flex;flex-wrap:wrap;gap:5px}
+.reach-rows .empty{padding:22px 16px;color:var(--faint);font:12px/1.6 var(--face-display)}
+/* Fact chips carry provenance in their colour, using the three tokens the manual
+   teaches and the console renders. A `station_kind` is inferred and a `licensee` is
+   transcribed, and `SCOPE-RESET §2a` requires that difference to be visible rather
+   than flattened into one grey. */
+.pv{font:10px/1 var(--face-display);letter-spacing:.04em;padding:4px 6px;
+  border-radius:4px;border:1px solid;white-space:nowrap}
+.pv-measured{color:var(--measured);border-color:color-mix(in srgb,var(--measured) 40%,transparent)}
+.pv-inferred{color:var(--inferred);border-color:color-mix(in srgb,var(--inferred) 40%,transparent)}
+.pv-asserted{color:var(--asserted);border-color:color-mix(in srgb,var(--asserted) 40%,transparent)}
+.reach-rows .r .contacts{margin-top:6px;font:11px/1 var(--face-display);color:var(--dim)}
+
+/* The platform strip. A filter and a legend at once: what we index, what we do not
+   yet, and how many of each. */
+/* Flex rather than grid, so the last row stretches to fill instead of leaving empty
+   cells: eight platforms in a seven-column grid is one item and six holes. */
+.reach-strip{
+  display:flex;flex-wrap:wrap;gap:1px;
+  background:var(--rule);border:1px solid var(--rule);border-top:0;
+  border-radius:0 0 10px 10px;overflow:hidden;
+}
+.pf{flex:1 1 158px;background:var(--panel);padding:13px 14px;display:flex;gap:11px;
+  align-items:flex-start;
+  text-align:left;appearance:none;border:0;cursor:pointer;color:inherit;
+  border-top:2px solid transparent}
+.pf:hover{background:var(--panel-2)}
+.pf[aria-pressed="true"]{border-top-color:var(--carrier);background:var(--panel-2)}
+.pf svg{width:19px;height:19px;flex:none;margin-top:1px;color:var(--carrier)}
+.pf .lb{font:600 12px/1.25 var(--face-display);color:var(--ink)}
+.pf .ct{display:block;margin-top:4px;font:11px/1 var(--face-display);color:var(--dim);
+  font-variant-numeric:tabular-nums}
+/* Not indexed yet: greyed, still counted, still readable. Hiding these would let the
+   page imply we cover surfaces we have never touched. */
+.pf.off{cursor:default}
+.pf.off svg{color:var(--faint);opacity:.55}
+.pf.off .lb{color:var(--dim)}
+.pf.off .ct{color:var(--faint)}
+.pf.off:hover{background:var(--panel)}
+.pf:focus-visible{outline:2px solid var(--carrier);outline-offset:-2px}
+
+.reach-note{margin-top:14px;font:12px/1.65 var(--face-display);color:var(--faint)}
+.reach-note b{color:var(--dim);font-weight:600}
+
+@media (max-width:760px){
+  .reach-panel{position:static;width:auto;transform:none;display:none;
+    border-left:0;border-top:1px solid var(--rule)}
+  .reach-panel.on{display:flex}
+  .reach-rows{max-height:340px}
+}
+
+footer{border-top:1px solid var(--rule);padding:40px 0 64px;color:var(--faint);font-size:13px}
+footer a{color:var(--carrier)}
+
+/* ---------- small screens ----------
+   The counters and `.grid` already collapse on their own (`auto-fit` with a
+   sensible min). What did not was the type: a 60px hero and 11px labels are both
+   wrong on a 390px screen, in opposite directions. */
+@media (max-width:620px){
+  body{font-size:15px}
+  .hero{padding:36px 0 32px}
+  .hero p{font-size:16px}
+  section{padding:44px 0}
+  .counter{padding:15px 13px}
+  .counter b{font-size:22px}
+  .counter span,.eyebrow,.tier .nm{font-size:10.5px}
+  .verdict{font-size:13px}
+  .verdict th,.verdict td{padding:10px 8px}
+  .seg{min-width:132px}
+  .built{font-size:12px;padding:7px 11px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}
+@media (max-width:620px){.row{grid-template-columns:26px 1fr 62px;gap:10px}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="built">
+      <span class="crdb-wordmark">CockroachDB</span>
+      <span>Built for the CockroachDB&nbsp;×&nbsp;AWS Hackathon — Agentic Memory</span>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="hero-copy">
+      {# The previous line — "We mail real people, one at a time. The database is why
+         that is safe." — led with a defence. It answered an objection nobody had
+         raised yet, and the only promise in it was that we would not do something
+         bad. A hero has to say what the reader gets. This one names the pain first
+         and the asset second, and the asset is the true one: what accumulates
+         between releases is not audio, it is who replied. #}
+      <h1>Most labels start every release from zero. <em>Spindle remembers who said yes.</em></h1>
+      <p>Spindle is a music distribution agentic OS. It maps the industry into a
+         vector index — {{ "{:,}".format(stats.get('counterparties', 0)) }} radio stations
+         and curators, from public registers — then works out who should hear a record and
+         writes to them individually. Not a blast. Every page below is live against the
+         cluster.</p>
+      <p class="sub">read-only · no sign-in · every number queried on page load</p>
+    </div>
+    {# The mark, at the only size it is worth animating. `aria-hidden`: the <h1>
+       beside it already says the name, and a screen reader does not need the top
+       announced twice. #}
+    <div class="hero-mark" aria-hidden="true">{% include "_logo.html" %}</div>
+  </div>
+
+  <div class="counters">
+    <div class="counter"><b>{{ "{:,}".format(stats.get('counterparties', 0)) }}</b><span>counterparties</span></div>
+    <div class="counter live"><b>{{ "{:,}".format(stats.get('embedded', 0)) }}</b><span>embedded</span></div>
+    <div class="counter"><b>{{ "{:,}".format(stats.get('with_genre', 0)) }}</b><span>with genre</span></div>
+    <div class="counter"><b>{{ stats.get('lessons', 0) }}</b><span>lessons learned</span></div>
+    <div class="counter"><b>{{ stats.get('sent', 0) }}</b><span>sent, ever</span></div>
+    {# A "total spend" counter stood here until 2026-08-15. It read $0.0012, which is
+       not a proof of frugality to anyone who has not already been told the argument —
+       it just looks like a system that has barely run. The cost discipline is real and
+       it is made properly in `#pricing`, where a cap is a predicate rather than a
+       four-decimal number with no denominator. #}
+  </div>
+
+  <!-- ===================== 0. THE REACH MAP =====================
+       Everything in this section is drawn from `GET /public/index`, which is one
+       query over the whole counterparty table. Nothing here is baked: if the map
+       shows a country it is because there are rows in it, and the sequence the
+       countries light up in on load is the order they were actually first indexed
+       (`min(created_at)` per country), not an animation order chosen to look busy.
+
+       The marks below are schematic, drawn here rather than fetched: a mast, a
+       stream, a waveform. They identify a source in a legend; they are not anybody's
+       logo and are not trying to be. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <g id="mk-tower" fill="none" stroke="currentColor" stroke-width="1.6"
+       stroke-linecap="round"><path d="M12 8v13M7 21l5-13 5 13"/>
+       <path d="M5.5 6.5a9 9 0 0 1 13 0M8 9.2a5 5 0 0 1 8 0"/></g>
+    <g id="mk-stream" fill="none" stroke="currentColor" stroke-width="1.6"
+       stroke-linecap="round"><circle cx="12" cy="17.5" r="1.7" fill="currentColor"
+       stroke="none"/><path d="M8.4 14.2a5 5 0 0 1 7.2 0M5.6 11a9 9 0 0 1 12.8 0"/></g>
+    <g id="mk-spotify" fill="none" stroke="currentColor" stroke-width="1.6"
+       stroke-linecap="round"><circle cx="12" cy="12" r="8.4"/>
+       <path d="M8 9.8c2.7-.7 5.4-.4 7.6.9M8.4 12.9c2.2-.5 4.3-.3 6.1.8
+                M9 15.8c1.6-.4 3.1-.2 4.4.6"/></g>
+    <g id="mk-deezer" fill="currentColor"><rect x="4" y="14" width="3.4" height="3"
+       rx=".6"/><rect x="8.6" y="11" width="3.4" height="6" rx=".6"/>
+       <rect x="13.2" y="8" width="3.4" height="9" rx=".6"/>
+       <rect x="17.8" y="12" width="3.4" height="5" rx=".6"/></g>
+    <g id="mk-podcast" fill="none" stroke="currentColor" stroke-width="1.6"
+       stroke-linecap="round"><rect x="9.4" y="3.6" width="5.2" height="10" rx="2.6"/>
+       <path d="M6.4 11.6a5.6 5.6 0 0 0 11.2 0M12 17.2v3.2"/></g>
+    <g id="mk-tiktok" fill="none" stroke="currentColor" stroke-width="1.6"
+       stroke-linecap="round"><path d="M10.5 20a3.5 3.5 0 1 0-3.5-3.5"/>
+       <path d="M10.5 16.5V4c1.2 3 3 4.6 6 4.8"/></g>
+    <g id="mk-youtube" fill="none" stroke="currentColor" stroke-width="1.6"
+       stroke-linejoin="round"><rect x="3" y="6.2" width="18" height="11.6" rx="3.4"/>
+       <path d="M10.4 9.6l4.6 2.6-4.6 2.6z"/></g>
+    <g id="mk-instagram" fill="none" stroke="currentColor" stroke-width="1.6">
+       <rect x="4" y="4" width="16" height="16" rx="4.6"/><circle cx="12" cy="12" r="3.7"/>
+       <circle cx="16.9" cy="7.1" r="1.05" fill="currentColor" stroke="none"/></g>
+  </defs></svg>
+
+  <section id="reach">
+    <div class="eyebrow">Counterparty index</div>
+    <h2>Every country we can already take a record to.</h2>
+    <p class="lede">One query over the whole index, on page load. The countries light
+      in the order we first reached them. Click one to search what is in it — the
+      radio is indexed now; the creator platforms are the next job, and they are
+      listed dark rather than left off.</p>
+
+    <div class="reach-readout">
+      <div><b data-count="total">—</b><span>counterparties indexed</span></div>
+      <div class="muted"><b data-count="countries">—</b><span>countries reached</span></div>
+      <div class="muted"><b data-count="located">—</b><span>placed on the map</span></div>
+      <div class="muted"><b data-count="today">—</b><span>added today</span></div>
+    </div>
+
+    {# The map answers a click, and a click is not available to everyone: a keyboard
+       user has no way to reach a country, and on a phone Luxembourg is smaller than a
+       fingertip. This picker is the same action by another route — it opens the same
+       panel — rather than a reduced version of it. Ordered by count, so the countries
+       worth looking at are at the top rather than filed under alphabet. #}
+    <div class="reach-pick">
+      <label for="reach-country">Open a country</label>
+      <select id="reach-country">
+        <option value="">Choose a country…</option>
+      </select>
+    </div>
+
+    <div class="reach-stage">
+      <canvas id="reach-map" width="1200" height="560"
+              role="img" aria-label="World map, shaded by how many counterparties are indexed in each country"></canvas>
+      <div class="reach-tip" id="reach-tip"></div>
+      <aside class="reach-panel" id="reach-panel" aria-live="polite">
+        <header>
+          <h3 id="reach-panel-name">—</h3>
+          <span class="n" id="reach-panel-count"></span>
+          <button type="button" id="reach-close" aria-label="Close country panel">Close</button>
+        </header>
+        <div class="find">
+          <input type="search" id="reach-q" autocomplete="off"
+                 placeholder="Search this country by name…"
+                 aria-label="Search counterparties in this country by name">
+        </div>
+        <div class="reach-rows" id="reach-rows"></div>
+      </aside>
+    </div>
+
+    <div class="reach-strip" id="reach-strip"></div>
+    <p class="reach-note" id="reach-note"></p>
+  </section>
+
+  <!-- ===================== 1. THE TUNER ===================== -->
+  {# This section was a scrubber over arbitrary clock offsets until 2026-08-15, and it
+     argued against itself. A dial spanning −15m to −6h can only show a difference if
+     the index happened to change inside that window, and a counterparty index changes
+     when an ingest runs — so its most likely output was five identical lists under a
+     heading claiming that time travel matters. It also ran `shortlist_as_of`, which
+     drops the lesson rerank, removing the one input that moves on a human timescale.
+
+     What replaced it is the same machinery pointed at the question it was actually
+     built for. `thread.decided_at_hlc` records the instant a shortlist opened a
+     conversation; `decided_rank` records where the counterparty sat in it. Replaying
+     at that HLC either puts them back at that rank or it does not, so the demo checks
+     itself in front of the reader instead of asking to be believed. #}
+  <section id="tune">
+    <div class="eyebrow">Decision provenance</div>
+    <h2>Every decision is rooted to an instant you can read the database at.</h2>
+    <p class="lede">An autonomous system that acts on the world has to be answerable for
+      each act, and the answers all have the same shape: <em>what was true when we
+      decided</em>. So every consequential decision — a shortlist, a send, a raised cap,
+      an opt-out, even a decision <em>not</em> to act — carries the hybrid logical clock
+      it happened at. That coordinate is not a copy of the answer; it is a place to
+      stand in the database and read the answer back, with
+      <code style="color:var(--carrier)">AS&nbsp;OF&nbsp;SYSTEM&nbsp;TIME</code>. No
+      audit table, no snapshot, nothing that can drift from what actually happened.</p>
+
+    {# The ledger first, then one of its rows all the way down. Order is deliberate: the
+       list establishes that the claim is general, and the replay below proves a single
+       decision down to a reconstructed ranking that checks itself. Leading with the
+       replay would make this read as one clever trick about vector search. #}
+    <div class="ledger" id="ledger">
+      <div class="ledger-head">
+        <span>the decision ledger — <b>every row is a question somebody can ask</b></span>
+        <span class="ledger-src">apps/spindle/schema/035_decision_ledger.sql</span>
+      </div>
+      <div class="ledger-rows" id="ledger-rows" aria-live="polite">
+        <p class="ledger-note">reading the ledger…</p>
+      </div>
+    </div>
+
+    <p class="lede" style="margin-top:28px">Now one of them all the way down. Replaying
+      this shortlist re-runs it against
+      {{ "{:,}".format(stats.get('embedded', 0)) }} embedded counterparties at the exact
+      instant it was stamped — and checks itself against the rank written down at the
+      time.</p>
+
+    <div class="tuner" id="replay">
+      <div class="tuner-head">
+        <span class="who" id="rp-who">loading a recorded decision…</span>
+        <div class="dial" role="group" aria-label="Which index to rank against">
+          <button data-mode="then" aria-pressed="true">as it was</button>
+          <button data-mode="now"  aria-pressed="false">as it is now</button>
+        </div>
+      </div>
+
+      <div class="rp-stamp" id="rp-stamp"></div>
+      <div class="rows" id="rows" aria-live="polite"></div>
+      <div class="tuner-foot" id="foot">querying…</div>
+    </div>
+  </section>
+
+  <!-- ===================== 2. THE PLAN ===================== -->
+  <section id="plan">
+    <div class="eyebrow">The filters are inside the index</div>
+    <h2>It is a vector search, not a scan with a filter bolted on.</h2>
+    <p class="lede">Four predicates — tenant, embedding model, party class, contact state —
+      sit in the index prefix, so the search happens inside the filtered subspace rather
+      than over everything followed by a discard. A test asserts this plan on every run,
+      because a query that quietly degrades to a full scan still returns rows that look
+      correct.</p>
+
+    {# The index declaration, drawn — and unbindable. These are the five columns of
+       `party_shortlist` from migration 009, in their real order, with the values a
+       live shortlist actually binds.
+
+       The four equality columns are buttons because the argument is easier to
+       *break* than to state. A prefix span can only cover the leading contiguous
+       run of bound columns, so unbinding the second one costs you the third and
+       fourth as well even though they are still in the WHERE clause — which is the
+       thing about composite index order that a static diagram cannot show. The
+       all-bound case is the plan captured from the live cluster; every other case
+       is derived from that rule and is labelled as derived, not as a live read. #}
+    <div class="prefix" id="prefix">
+      <div class="prefix-head">
+        <span><b>party@party_shortlist</b> — the index, as declared</span>
+        <span>apps/spindle/schema/009_counterparty_index.sql</span>
+      </div>
+      <div class="prefix-body">
+        <button type="button" class="seg" data-col="tenant_id" data-val="1f9e6dd3…" aria-pressed="true">
+          <span class="op">equality</span>
+          <span class="col">tenant_id</span>
+          <span class="val">one label</span>
+          <span class="bind">bound</span>
+        </button>
+        <button type="button" class="seg" data-col="embedding_model" data-val="openai:text-embedding-3-small" aria-pressed="true">
+          <span class="op">equality</span>
+          <span class="col">embedding_model</span>
+          <span class="val">openai:text-embedding-3-small</span>
+          <span class="bind">bound</span>
+        </button>
+        <button type="button" class="seg" data-col="party_class" data-val="counterparty" aria-pressed="true">
+          <span class="op">equality</span>
+          <span class="col">party_class</span>
+          <span class="val">counterparty</span>
+          <span class="bind">bound</span>
+        </button>
+        <button type="button" class="seg" data-col="contact_state" data-val="contactable" aria-pressed="true">
+          <span class="op">equality</span>
+          <span class="col">contact_state</span>
+          <span class="val">contactable</span>
+          <span class="bind">bound</span>
+        </button>
+        <div class="seg hit">
+          <span class="op">cosine</span>
+          <span class="col">profile_embedding</span>
+          <span class="val">target count 20</span>
+        </div>
+      </div>
+      <div class="prefix-foot">
+        <span class="prefix-hint">Unbind a column to see what the planner can still use.</span>
+        <span id="prefix-verdict" class="prefix-verdict" aria-live="polite"></span>
+      </div>
+    </div>
+
+<pre id="prefix-plan"></pre>
+<p class="prefix-note" id="prefix-note" aria-live="polite"></p>
+  </section>
+
+  <!-- ===================== 3. IRREVERSIBILITY ===================== -->
+  <section id="send">
+    <div class="eyebrow">What we cannot take back</div>
+    <h2>A missed pitch costs nothing. A second pitch costs us the curator.</h2>
+    <p class="lede">Sending is the one act this system cannot undo, so the guarantees are
+      constraints rather than conventions — things the database will not let us get wrong,
+      even when we are in a hurry.</p>
+
+    {# `apps/spindle/bin/lease_race_demo.py`, act two — but driven by the reader rather
+       than narrated at them. Both workers are called `ingest-cli`, both go for the
+       same lead, and the only thing that separates them is the column no caller can
+       forge.
+
+       The controls are deliberately enough rope to hang the system with: you can
+       claim out of order, let a lease lapse, and complete late. The counter at the
+       bottom is the whole argument — it is not possible to drive it above one, and
+       the reader establishes that by trying rather than by being told. #}
+    <div class="race" id="race">
+      <div class="fence-head">two workers · one lead · <b>b844314c…</b> · both named the same thing</div>
+
+      <div class="race-grid">
+        <div class="race-worker" data-w="A">
+          <div class="race-who"><span class="who">ingest-cli</span><span class="race-tag">worker A</span></div>
+          <div class="race-tok" data-tok="A">no lease</div>
+          <div class="race-btns">
+            <button type="button" data-act="claim"    data-w="A">claim</button>
+            <button type="button" data-act="complete" data-w="A">complete</button>
+          </div>
+        </div>
+        <div class="race-worker" data-w="B">
+          <div class="race-who"><span class="who">ingest-cli</span><span class="race-tag">worker B</span></div>
+          <div class="race-tok" data-tok="B">no lease</div>
+          <div class="race-btns">
+            <button type="button" data-act="claim"    data-w="B">claim</button>
+            <button type="button" data-act="complete" data-w="B">complete</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="race-env">
+        <button type="button" data-act="expire">lease expires</button>
+        <button type="button" data-act="reset">reset</button>
+        <span class="race-envnote">“lease expires” is worker A stalling past the TTL — the
+          stall is what makes the race reachable at all.</span>
+      </div>
+
+      <ol class="race-log" id="race-log" aria-live="polite"></ol>
+
+      <div class="race-score">
+        <span>messages actually sent <b id="race-sent">0</b></span>
+        <span class="race-dupe">duplicates <b id="race-dupes">0</b></span>
+        <span class="race-goal" id="race-goal">try to make it two</span>
+      </div>
+
+      <div class="fence-foot">
+        The name cannot tell them apart. <b>The token can</b> — it is stamped at claim
+        time, only the database mints it, and every write is fenced on it being current.
+        Serializable isolation, <code>FOR UPDATE SKIP LOCKED</code>, and a fence that
+        fails closed.
+      </div>
+    </div>
+
+    {# `fleet.work_once`. The docstring above it records the measured bug that put
+       the boundary there — three `agent_run` rows with `state='ok'` for one lead,
+       and three duplicate `party_metric` rows — so this is a fix with a receipt
+       rather than a design principle applied in advance. #}
+    <div class="txn">
+      <div class="txn-head">what an agent does when it finishes a piece of work</div>
+      <div class="txn-body">
+        <span class="kw">BEGIN</span>
+        <ol>
+          <li><b>the write</b><span>whatever it learned — a fact, a metric, a lesson</span></li>
+          <li><b>agent_run</b><span>one row: state, duration, tokens, and what it cost</span></li>
+          <li><b>complete the lead</b><span>fenced on the lease token, which releases it</span></li>
+        </ol>
+        <span class="kw">COMMIT</span>
+      </div>
+      <div class="txn-foot">
+        Three statements, <b>one transaction</b> — so a worker that dies halfway leaves
+        nothing behind rather than a fact with no run, or a run with no completion. The
+        network call that produced the write happens outside the boundary, on purpose:
+        a transaction held open across an HTTP request is a different bug.
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>One open thread per counterparty</h3>
+        <p>A partial unique index on <code>(tenant_id, counterparty_id)</code> where the
+           thread is not closed. Two campaigns cannot work the same person at once, and
+           the lock releases the moment the conversation ends.</p>
+      </div>
+      <div class="card">
+        <h3>One outbox row per message</h3>
+        <p><code>UNIQUE (message_id)</code>. A double approval is a failed insert, not a
+           second copy in flight. The gate is safe to double-click.</p>
+      </div>
+      <div class="card">
+        <h3>A token only the database mints</h3>
+        <p>Every agent action is fenced on a <code>lease_token</code> stamped at claim
+           time. Two workers with the same name, one lead: the name cannot tell them
+           apart, the token can. The stale claim is refused.</p>
+      </div>
+      <div class="card">
+        <h3>Opting out is terminal</h3>
+        <p>Ask us to stop and <code>opted_out</code> is a state no discovery stage can
+           overwrite. Guessed addresses are refused outright. Not spam by construction,
+           not by policy.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 4. THE HONEST PART ===================== -->
+  <section id="verdict">
+    <div class="eyebrow">Where Postgres would do</div>
+    <h2>Most of this is replaceable. One thing is not.</h2>
+    <p class="lede">A submission that claims everything is unique is one a judge stops
+      believing. So here is the audit we ran on ourselves, and the single row that
+      survived it.</p>
+
+    {# Every row opens. The table on its own asserts a verdict; the details are where
+       the verdict is earned, and hiding them behind a click keeps the shape of the
+       argument — four concessions and one claim — readable at a glance first. The
+       last row is the only one that opens onto something the reader can run. #}
+    <table class="verdict" id="verdict-table">
+      <thead><tr><th>What we use</th><th>Postgres equivalent</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr class="vr" tabindex="0" role="button" aria-expanded="false">
+          <td>Vector index, cosine, prefix-filtered</td><td class="no">pgvector + composite indexes</td><td class="no">replaceable</td></tr>
+        <tr class="vd"><td colspan="3">
+          pgvector does this, and has for years. Our prefix trick is a composite index
+          with the vector column last — an idea Postgres can express directly. If the
+          shortlist were all this system did, there would be no argument here.
+        </td></tr>
+
+        <tr class="vr" tabindex="0" role="button" aria-expanded="false">
+          <td>SERIALIZABLE by default</td><td class="no">one SET statement</td><td class="no">replaceable</td></tr>
+        <tr class="vd"><td colspan="3">
+          <code>SET default_transaction_isolation = 'serializable'</code>. The honest
+          difference is that we did not have to remember, and a default nobody has to
+          remember is worth something — but it is a default, not a capability.
+        </td></tr>
+
+        <tr class="vr" tabindex="0" role="button" aria-expanded="false">
+          <td>FOR UPDATE SKIP LOCKED</td><td class="no">Postgres shipped it first</td><td class="no">replaceable</td></tr>
+        <tr class="vd"><td colspan="3">
+          Postgres 9.5, in 2016. The lease fence you just played with would work
+          unchanged on it. We are not going to claim a 2016 feature as a 2026 reason.
+        </td></tr>
+
+        <tr class="vr" tabindex="0" role="button" aria-expanded="false">
+          <td>Scale to zero</td><td class="no">Neon, Aurora Serverless</td><td class="no">replaceable</td></tr>
+        <tr class="vd"><td colspan="3">
+          Several managed Postgres products scale to zero, some of them more aggressively
+          than we do. This is a cost property of a deployment, not a property of a
+          database, and it belongs in the concessions column.
+        </td></tr>
+
+        <tr class="vr keep" tabindex="0" role="button" aria-expanded="false">
+          <td>AS OF SYSTEM TIME over a vector index</td><td class="no">nothing</td><td class="yes">irreplaceable</td></tr>
+        <tr class="vd"><td colspan="3">
+          This is the row the section exists for. Our agents write to real people, so
+          the question <em>why did you contact me</em> has to be answerable — and
+          answering it means re-running the ranking against the index <b>as it stood at
+          that second</b>, not as it stands now. Four extra words of SQL, no snapshot
+          table, no audit copy of the embeddings.
+          <span class="vd-run">The tuner above is that query:
+            <a href="#tune">run it against a past window</a> and watch the shortlist
+            differ from today's.</span>
+        </td></tr>
+      </tbody>
+    </table>
+
+    <p class="lede" style="margin-top:26px">Our agents contact real people. When someone
+      asks <em>why did you write to me</em>, we re-run the ranking that caused it against
+      the memory as it stood at that second — the same index, the same embeddings, the
+      same lessons. Four extra words of SQL. That is the reason an autonomous system that
+      acts on the world can be held to account, and it is the reason this is built on
+      CockroachDB.</p>
+  </section>
+
+  <!-- ===================== 5. WHAT IT COSTS ===================== -->
+  {# Every number below comes from `spindle.plans.TIERS`, which is also what
+     `outreach.open_thread` enforces against. Nothing here restates a figure. That is
+     the whole point of the module: a page promising more than the gate allows is a
+     support ticket that reads as fraud, and a gate allowing more than the page
+     promises is revenue nobody charged for. #}
+  <section id="pricing">
+    <div class="eyebrow">What it costs</div>
+    <h2>A tier is a budget cap, and the cap is a constraint.</h2>
+    <p class="lede">Most pricing pages are a promise. This one is a predicate. Every
+      plan below is a row in <code>budget</code>, and the spend gate that reads it
+      refuses the work rather than invoicing for it afterwards. The unit is an
+      <em>open conversation</em>, because one open thread per counterparty — label-wide
+      — is already a partial unique index. We are not inventing a meter to bill you
+      with; we are charging for the one thing the schema was already counting.</p>
+
+    {# The cap, made draggable. Every number the slider reasons about is the same
+       `open_conversations` the cards below render and `outreach.open_thread`
+       enforces — there is no second table of marketing figures. A tier with no cap
+       (`Talk to us`) carries no `data-cap` and is scored as "by agreement" rather
+       than as infinite, because an unset cap is a conversation, not a licence. #}
+    <div class="capbar">
+      <label for="cap-range">Conversations you need open at once</label>
+      {# Max is past the largest published cap on purpose, so a reader can drag off the
+         end of the table and meet the by-agreement tier, rather than bumping into a
+         slider that happens to stop exactly where the sales pitch stops. #}
+      <input type="range" id="cap-range" min="1" max="300" value="18" step="1">
+      <output id="cap-out" for="cap-range">18</output>
+      <p class="capline" id="cap-line" aria-live="polite"></p>
+    </div>
+
+    <div class="tiers" id="tiers">
+      {% for t in tiers %}
+      <div class="tier{% if t.key == 'free' %} pick{% endif %}"
+           data-key="{{ t.key }}" data-name="{{ t.name }}"
+           {% if t.open_conversations %}data-cap="{{ t.open_conversations }}"{% endif %}>
+        <span class="nm">{{ t.name }}</span>
+        <span class="admits" aria-live="polite"></span>
+        <span class="amt">
+          {%- if t.price_usd_month is none -%}Talk<small> to us</small>
+          {%- elif t.price_usd_month == 0 -%}$0
+          {%- else -%}${{ t.price_usd_month }}<small> / month</small>{%- endif -%}
+        </span>
+        <ul>
+          <li>
+            {%- if t.open_conversations -%}
+              {{ t.open_conversations }} open conversations per {{ plan_period }}
+            {%- else -%}
+              Conversation volume by agreement
+            {%- endif -%}
+          </li>
+          <li>
+            {%- if t.unlimited_artists -%}Unlimited artists
+            {%- else -%}{{ t.artists }} artist{{ 's' if t.artists != 1 }}{%- endif -%}
+          </li>
+        </ul>
+        <p class="sum">{{ t.summary }}</p>
+        <div class="go">
+          {% if t.key == 'free' %}
+            {# Posts to the first step of sign-in rather than to the old `POST /claim`.
+               Same field, same one click, and the account is created on the far side of
+               the emailed code instead of on the strength of having typed an address —
+               so this control is now signup and sign-in at once, and says so. #}
+            <form class="claim" method="post" action="/signin/code">
+              <input type="email" name="email" required autocomplete="email"
+                     placeholder="you@example.com" aria-label="Email for your account">
+              <button type="submit">Email me a code</button>
+            </form>
+          {% elif t.purchasable %}
+            {# Not configured says so, here, rather than after a click. The endpoint
+               refuses with a 503 naming the missing variables either way; surfacing it
+               on the control is the difference between a considered state and a dead
+               button. #}
+            {% if stripe_configured %}
+              <form method="post" action="/billing/checkout">
+                <input type="hidden" name="plan" value="{{ t.key }}">
+                <button type="submit" class="quiet">Choose {{ t.name }}</button>
+              </form>
+            {% else %}
+              <p class="unavail">Checkout is not configured on this deployment.</p>
+            {% endif %}
+          {% else %}
+            <a class="quiet" href="#tune">Book a demo</a>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% if stripe_test_mode %}<span class="testmode">Stripe test mode</span>{% endif %}
+
+    <p class="priced">
+      <b>What this page does not claim.</b> No customer is paying for this today and
+      none is implied. <b>Sending is off in this deployment</b> on every tier — the
+      console reports <code>sender_wired: false</code> and will keep reporting it until
+      a human wires a sender. A free account is genuinely bounded rather than
+      trust-based: the cap is enforced by the same gate that protects our own spend,
+      and that gate fails closed.
+    </p>
+  </section>
+
+  <footer>
+    <p>Spindle — a music distribution agentic OS, built for the CockroachDB × AWS
+       Hackathon, 2026. Counterparties are drawn from the FCC's public licence register and
+       the Radio Browser open database. CockroachDB is a trademark of Cockroach Labs; this
+       page is a hackathon submission, not an endorsement.</p>
+    <p style="margin-top:18px">
+      <a href="/manual">Operator manual</a> — what the console does and how it is run,
+      written for the people who run it. ·
+      <a href="/signin">Sign in</a> — the console is private; everything on this
+      page is read-only and needs no account.
+    </p>
+  </footer>
+</div>
+
+<script>
+/* ============================ the decision replay =========================
+   Two rankings of the same artist, and the whole argument is the difference:
+
+     `then` — the shortlist replayed AS OF SYSTEM TIME the hybrid logical clock
+              stamped on the thread when it was opened. This is the ranking that
+              actually caused the conversation.
+     `now`  — the same query against the index as it stands today.
+
+   `then` is fetched first and is the one that matters. `now` is a comparison and
+   is loaded lazily, because a reader who never presses it should not pay for it.
+
+   The self-check is the point and is rendered before the rows: `decided_rank` was
+   written down at decision time, so a replay either puts the counterparty back at
+   that rank or it does not. A demo that can fail in front of you is worth more
+   than one that cannot.
+
+   The meter is scaled across the *visible* range rather than to an absolute
+   distance, and says so on the page. Cosine distances over this index cluster
+   inside a couple of hundredths, so an absolute scale draws twelve identical bars
+   and tells the reader nothing; a relative scale shows the ordering honestly as
+   long as it does not pretend the gaps are large. Both are stated in the footer.
+   ========================================================================= */
+/* The ledger. Establishes that the coordinate is on every kind of decision and not
+   only the one the replay below reconstructs in full. It renders `at_wall` for the
+   human and quotes `at_hlc` beside it as the value a replay is actually issued
+   against — kept visibly distinct for the same reason `035_decision_ledger.sql` keeps
+   them distinct in the schema. A reader who notices the difference has understood the
+   section. */
+(function () {
+  var host = document.getElementById('ledger-rows');
+  if (!host) return;
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function when(iso) {
+    if (!iso) return '—';
+    var d = new Date(iso);
+    return isNaN(d.getTime()) ? esc(iso)
+      : d.toISOString().replace('T', ' ').slice(0, 16) + 'Z';
+  }
+  function note(msg) { host.innerHTML = '<p class="ledger-note">' + esc(msg) + '</p>'; }
+
+  fetch('/demo/decisions')
+    .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
+    .then(function (res) {
+      if (res.s !== 200) { note(res.d.error || 'the ledger did not answer'); return; }
+      var rows = res.d.decisions || [];
+      if (!rows.length) {
+        /* An empty ledger is a true statement about a deployment that has not decided
+           anything yet, and it says so rather than rendering an example. A seeded-
+           looking row invented here would undermine the one section about provenance. */
+        note('this deployment has not recorded a decision yet — an empty ledger is the ' +
+             'honest state and not a loading failure');
+        return;
+      }
+      host.innerHTML = rows.map(function (r) {
+        return '<div class="led k-' + esc(r.kind) + '">' +
+          '<span class="led-kind">' + esc(String(r.kind).replace(/_/g, ' ')) +
+            /* `applied` is the ordinary case and saying so on every row would be
+               noise. `proposed` and `refused` are the ones that mean a person was
+               in the loop, so only those are marked — which is also what makes the
+               one-row/two-row distinction visible to a reader. */
+            (r.stage && r.stage !== 'applied'
+              ? '<span class="led-stage">' + esc(r.stage) + '</span>' : '') +
+          '</span>' +
+          '<span class="led-sum">' + esc(r.summary) +
+            '<span class="led-who">' + esc(r.actor) + ' · about a ' +
+            esc(r.subject_kind) + '</span></span>' +
+          '<span class="led-at">' + when(r.at_wall) +
+            '<span class="led-hlc">' + esc(r.at_hlc) + '</span></span>' +
+        '</div>';
+      }).join('');
+    })
+    .catch(function () {
+      note('the cluster did not answer — it scales to zero, so the first query after ' +
+           'an idle period can take a moment. Reload to try again.');
+    });
+})();
+
+(function () {
+  var root = document.getElementById('replay');
+  if (!root) return;
+  var rowsEl = document.getElementById('rows');
+  var footEl = document.getElementById('foot');
+  var whoEl = document.getElementById('rp-who');
+  var stampEl = document.getElementById('rp-stamp');
+  var dial = root.querySelectorAll('.dial button');
+
+  var replay = null;   // the `then` payload, kept for the comparison
+  var nowRows = null;  // lazily fetched
+  var mode = 'then';
+  var lastTies = 0;
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* No bars. An audit against the live cluster on 2026-08-15 measured the corpus:
+     these twelve are the top ~0.1% of 14,139 by cosine distance and sit about 0.15
+     below the median of a corpus spanning 0.29 — so the *set* is strongly separated
+     and real. Within the set the spread is 0.016, and two pairs are exact ties on
+     identical documents. A bar scaled to that internal spread stretches 0.016 across
+     the full width, which amplifies noise about eighteenfold and draws tied rows at
+     different lengths — asserting an ordering that does not exist in the data.
+
+     So the ordering is shown as a number and the ties are named. Saying "these two
+     are tied and we cannot separate them" is a stronger claim than a chart that
+     pretends otherwise. */
+
+  /* Competition ranking: tied rows share a position and the next rank skips. This is
+     computed on the exact float the server sent, not on the 4dp display value — two
+     distances that differ in the 6th place are not a tie and must not be drawn as one. */
+  function ranked(rows) {
+    var out = [], rank = 0;
+    rows.forEach(function (r, i) {
+      var tiedPrev = i > 0 && r.distance === rows[i - 1].distance;
+      var tiedNext = i < rows.length - 1 && r.distance === rows[i + 1].distance;
+      if (!tiedPrev) rank = i + 1;
+      out.push({ row: r, rank: rank, tied: tiedPrev || tiedNext });
+    });
+    return out;
+  }
+
+  function draw(rows, highlight) {
+    var ties = 0;
+    rowsEl.innerHTML = ranked(rows).map(function (e) {
+      var r = e.row;
+      var hit = highlight && r.name === highlight;
+      if (e.tied) ties++;
+      return '<div class="row' + (hit ? ' hit' : '') + (e.tied ? ' tied' : '') + '">' +
+        '<span class="rank">' + String(e.rank).padStart(2, '0') + '</span>' +
+        '<span><span class="name">' + esc(r.name) + '</span>' +
+        (hit ? '<span class="rp-you">the one we wrote to</span>' : '') +
+        (e.tied ? '<span class="rp-tied">tied — identical vectors</span>' : '') +
+        '</span>' +
+        '<span class="d">' + r.distance.toFixed(4) + '</span></div>';
+    }).join('');
+    return ties;
+  }
+
+  function stamp() {
+    if (!replay) { stampEl.innerHTML = ''; return; }
+    var ok = replay.matched;
+    stampEl.innerHTML =
+      '<span class="rp-aost">AS OF SYSTEM TIME \'' + esc(replay.as_of) + '\'</span>' +
+      '<span class="rp-check ' + (ok ? 'ok' : 'bad') + '">' +
+        'recorded rank ' + replay.recorded_rank +
+        ' · replayed rank ' + (replay.replayed_rank === null ? '—' : replay.replayed_rank) +
+        ' · ' + (ok ? 'match' : 'does not match') +
+      '</span>';
+  }
+
+  function renderThen() {
+    if (!replay) return;
+    lastTies = draw(replay.rows, replay.counterparty);
+    stamp();
+    var msg = 'the shortlist that opened this conversation, read from the index as it ' +
+      'stood at that instant · these <b>' + replay.rows.length + '</b> were selected out ' +
+      'of every embedded counterparty in the index; within them the spread is only ' +
+      spread(replay.rows) + ' of cosine distance, so treat this as a set that was ' +
+      'selected rather than a leaderboard';
+    if (lastTies) msg += ' · <b>' + lastTies + '</b> of them are exact ties and cannot ' +
+      'be ordered at all';
+    footEl.innerHTML = msg;
+  }
+
+  function spread(rows) {
+    var ds = rows.map(function (r) { return r.distance; });
+    return (Math.max.apply(null, ds) - Math.min.apply(null, ds)).toFixed(4);
+  }
+
+  function renderNow() {
+    if (!nowRows) return;
+    lastTies = draw(nowRows, replay ? replay.counterparty : null);
+    stampEl.innerHTML = '<span class="rp-aost">no AS OF clause — the index as it is now</span>';
+
+    /* The comparison, said in full rather than as a bare count. If nothing moved,
+       say that too: "the index has not changed since" is a real answer and hiding
+       it would be the same dishonesty the scrubber committed. */
+    var was = {}, moved = 0, gone = 0;
+    (replay ? replay.rows : []).forEach(function (r, i) { was[r.name] = i; });
+    nowRows.forEach(function (r, i) {
+      if (was[r.name] === undefined) gone++;
+      else if (was[r.name] !== i) moved++;
+    });
+    var parts = ['the same query, no time travel'];
+    if (moved) parts.push('<b>' + moved + '</b> in a different position than at decision time');
+    if (gone) parts.push('<b>' + gone + '</b> not in that ranking at all');
+    if (!moved && !gone) parts.push('identical to the decision — the index has not changed since');
+    footEl.innerHTML = parts.join(' · ');
+  }
+
+  function loadNow() {
+    if (nowRows) { renderNow(); return; }
+    footEl.textContent = 'querying the cluster…';
+    fetch('/demo/tune?artist=hallow-youth&window=now')
+      .then(function (r) { return r.json(); })
+      .then(function (d) { nowRows = d.rows || []; renderNow(); })
+      .catch(function () {
+        footEl.textContent = 'the cluster did not answer — it scales to zero, so the ' +
+          'first query after an idle period can take a moment. Try again.';
+      });
+  }
+
+  /* Every failure here is a real state with its own sentence. None of them fall back
+     to a plausible-looking ranking, because a fabricated shortlist on the one section
+     about provenance would be the worst possible bug in this file. */
+  function fail(msg) {
+    whoEl.textContent = 'no decision to replay';
+    stampEl.innerHTML = '';
+    rowsEl.innerHTML = '';
+    footEl.innerHTML = esc(msg);
+    dial.forEach(function (b) { b.disabled = true; });
+  }
+
+  fetch('/demo/replay')
+    .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
+    .then(function (res) {
+      var d = res.d;
+      if (res.s === 410) {
+        fail('that decision is older than gc.ttlseconds, so the instant it was made has ' +
+             'been garbage-collected. Time travel reaches back exactly that far and no ' +
+             'further — which is the cost of the feature, stated rather than hidden.');
+        return;
+      }
+      if (res.s !== 200) { fail(d.note || d.error || 'no recorded decision on this deployment'); return; }
+      replay = d;
+      whoEl.innerHTML = 'we opened a conversation with <b>' + esc(d.counterparty) + '</b> ' +
+                        'about <b>' + esc(d.artist) + '</b>';
+      renderThen();
+    })
+    .catch(function () {
+      fail('the cluster did not answer — it scales to zero, so the first query after an ' +
+           'idle period can take a moment. Reload to try again.');
+    });
+
+  dial.forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (b.disabled) return;
+      dial.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+      mode = b.getAttribute('data-mode');
+      if (mode === 'now') loadNow(); else renderThen();
+    });
+  });
+})();
+</script>
+
+<script>
+/* ============================ the reach map ============================
+   Draws `GET /public/index` onto `GET /public/world.json`. Both are public, both
+   are read-only, and everything below is presentation — no number is computed here
+   that the server did not send.
+
+   Three things worth knowing before editing:
+
+   1. The load sequence orders countries by `first_at`, which is the real
+      `min(created_at)` of the counterparties in them. It is a replay, not a
+      flourish, and sorting it any other way would make it a lie that looks the same.
+   2. Hit testing is a ray-cast over the ring arrays rather than `isPointInPath`,
+      so it is independent of the canvas transform and cannot drift out of step with
+      the device-pixel scaling.
+   3. Colours are read from the CSS custom properties rather than written here, so
+      this file cannot introduce a hue `_design.html` does not define.
+   ====================================================================== */
+(function () {
+  var cv = document.getElementById('reach-map');
+  if (!cv || !cv.getContext) return;
+  var ctx = cv.getContext('2d');
+  var tip = document.getElementById('reach-tip');
+  var panel = document.getElementById('reach-panel');
+  var rowsEl = document.getElementById('reach-rows');
+  var qEl = document.getElementById('reach-q');
+  var stage = cv.parentNode;
+
+  /* Latitude window. Antarctica is a fifth of the height and holds no broadcasters,
+     and cutting it lets every populated country be a third larger at the same width.
+     84N keeps northern Greenland and Svalbard. */
+  var LAT_MAX = 84, LAT_MIN = -58, W = 1200, H = 560;
+  var css = getComputedStyle(document.documentElement);
+  function tok(n, fb) { return (css.getPropertyValue(n) || fb).trim() || fb; }
+  var C_CARRIER = tok('--carrier', '#5cb89b');
+  /* The fill for a country we hold nobody in. `--panel-2` rather than `--panel`
+     because it has to sit clearly above `--ground`: an unreached country is land, and
+     land the reader cannot see is a map that overstates our coverage by omission. */
+  var C_LAND    = tok('--panel-2', '#1c1916');
+  var C_RULE    = tok('--rule', '#2a2521');
+  var C_INK     = tok('--ink', '#f0ebe3');
+  var REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var world = null, index = null, shapes = [], byCC = {}, polyCC = {}, lit = {}, filter = '';
+  var hoverCC = '', openCC = '';
+
+  function hex2rgb(h) {
+    h = h.replace('#', '');
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    var v = parseInt(h, 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  }
+  var RGB_TOP = hex2rgb(C_CARRIER), RGB_LOW = [16, 32, 40];
+
+  /* Log, not linear. The US holds 11,364 and a long tail of countries holds single
+     figures; on a linear ramp every country but one is the same unlit colour and the
+     map argues the opposite of what is true. */
+  function ramp(n, max) {
+    if (!n) return C_LAND;
+    var t = Math.log(1 + n) / Math.log(1 + max);
+    t = 0.18 + 0.82 * t;
+    var c = [0,1,2].map(function (i) {
+      return Math.round(RGB_LOW[i] + (RGB_TOP[i] - RGB_LOW[i]) * t);
+    });
+    return 'rgb(' + c.join(',') + ')';
+  }
+
+  function project(lon, lat) {
+    return [ (lon + 180) / 360 * W,
+             (LAT_MAX - lat) / (LAT_MAX - LAT_MIN) * H ];
+  }
+
+  function build() {
+    var s = world.scale, cs = world.countries;
+    shapes = [];
+    for (var cc in cs) {
+      var rings = [], bb = [1e9, 1e9, -1e9, -1e9];
+      for (var r = 0; r < cs[cc].length; r++) {
+        var flat = cs[cc][r], pts = [];
+        for (var i = 0; i < flat.length; i += 2) {
+          var p = project(flat[i] / s, flat[i + 1] / s);
+          pts.push(p[0], p[1]);
+          if (p[0] < bb[0]) bb[0] = p[0];
+          if (p[1] < bb[1]) bb[1] = p[1];
+          if (p[0] > bb[2]) bb[2] = p[0];
+          if (p[1] > bb[3]) bb[3] = p[1];
+        }
+        if (pts.length >= 8) rings.push(pts);
+      }
+      if (rings.length) shapes.push({ cc: cc, rings: rings, bb: bb });
+    }
+    polyCC = {};
+    shapes.forEach(function (s) { polyCC[s.cc] = true; });
+  }
+
+  /* Even-odd ray cast, which is the same rule the fill uses, so what looks filled is
+     what answers a click. */
+  function hit(sh, x, y) {
+    if (x < sh.bb[0] || x > sh.bb[2] || y < sh.bb[1] || y > sh.bb[3]) return false;
+    var inside = false;
+    for (var r = 0; r < sh.rings.length; r++) {
+      var p = sh.rings[r];
+      for (var i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
+        var xi = p[i], yi = p[i+1], xj = p[j], yj = p[j+1];
+        if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
+          inside = !inside;
+        }
+      }
+    }
+    return inside;
+  }
+
+  function countFor(cc) {
+    var e = byCC[cc];
+    if (!e) return 0;
+    return filter ? (e.platforms[filter] || 0) : e.n;
+  }
+
+  function draw() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    var max = 1;
+    for (var cc in byCC) { var v = countFor(cc); if (v > max) max = v; }
+
+    for (var i = 0; i < shapes.length; i++) {
+      var sh = shapes[i];
+      var n = (lit[sh.cc] === undefined || lit[sh.cc]) ? countFor(sh.cc) : 0;
+      ctx.beginPath();
+      for (var r = 0; r < sh.rings.length; r++) {
+        var p = sh.rings[r];
+        ctx.moveTo(p[0], p[1]);
+        for (var k = 2; k < p.length; k += 2) ctx.lineTo(p[k], p[k+1]);
+        ctx.closePath();
+      }
+      ctx.fillStyle = ramp(n, max);
+      ctx.fill('evenodd');
+      ctx.lineWidth = sh.cc === hoverCC || sh.cc === openCC ? 1.4 : 0.5;
+      ctx.strokeStyle = (sh.cc === hoverCC || sh.cc === openCC) ? C_INK : C_RULE;
+      ctx.stroke();
+    }
+  }
+
+  function fmt(n) { return (n || 0).toLocaleString('en-US'); }
+
+  function setReadout(key, value) {
+    var el = document.querySelector('[data-count="' + key + '"]');
+    if (el) el.textContent = fmt(value);
+  }
+
+  /* Counts a readout up to its value. Eased, ~1.1s, and it starts from whatever is
+     already there — so the thirty-second poll animates the *difference* rather than
+     restarting from zero, which would read as the index having been rebuilt. */
+  function countUp(key, to) {
+    var el = document.querySelector('[data-count="' + key + '"]');
+    if (!el) return;
+    var from = parseInt((el.textContent || '0').replace(/[^0-9]/g, ''), 10) || 0;
+    if (REDUCED || from === to) { el.textContent = fmt(to); return; }
+    var t0 = performance.now(), dur = 1100;
+    (function step(now) {
+      var t = Math.min(1, (now - t0) / dur);
+      var e = 1 - Math.pow(1 - t, 3);
+      el.textContent = fmt(Math.round(from + (to - from) * e));
+      if (t < 1) requestAnimationFrame(step);
+    })(t0);
+  }
+
+  /* The load sequence: countries light in the order they were first indexed. */
+  function sweep() {
+    var order = index.countries.slice().filter(function (c) { return byCC[c.cc]; })
+      .sort(function (a, b) {
+        return String(a.first_at || '').localeCompare(String(b.first_at || ''));
+      });
+    if (REDUCED) { order.forEach(function (c) { lit[c.cc] = true; }); draw(); return; }
+    order.forEach(function (c) { lit[c.cc] = false; });
+    draw();
+    var i = 0, t0 = performance.now(), dur = 2200;
+    (function step(now) {
+      var t = Math.min(1, (now - t0) / dur);
+      var want = Math.floor(t * order.length);
+      while (i < want) { lit[order[i].cc] = true; i++; }
+      draw();
+      if (t < 1) requestAnimationFrame(step);
+    })(t0);
+  }
+
+  function renderStrip() {
+    var strip = document.getElementById('reach-strip');
+    strip.innerHTML = '';
+    index.platforms.forEach(function (p) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pf' + (p.indexed ? '' : ' off');
+      b.title = p.blurb;
+      if (p.indexed) {
+        b.setAttribute('aria-pressed', String(filter === p.key));
+        b.addEventListener('click', function () {
+          filter = (filter === p.key) ? '' : p.key;
+          renderStrip(); draw();
+          if (openCC) loadRows();
+        });
+      } else {
+        b.disabled = true;
+      }
+      b.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#mk-' + p.mark + '"/></svg>' +
+        '<span><span class="lb">' + p.label + '</span>' +
+        '<span class="ct">' + (p.indexed ? fmt(p.n) + ' indexed' : 'not indexed yet') +
+        '</span></span>';
+      strip.appendChild(b);
+    });
+  }
+
+  /* Countries we hold counterparties in that this map has no outline for — Natural
+     Earth's 110m set has no polygon for a city-state or a small island. Named, with
+     the number, because a total that does not match the map is the kind of thing a
+     reader is right to distrust. */
+  function renderNote() {
+    var missing = index.countries.filter(function (c) { return !byCC[c.cc]; });
+    var sum = missing.reduce(function (a, c) { return a + c.n; }, 0);
+    var el = document.getElementById('reach-note');
+    var parts = [];
+    parts.push('<b>' + fmt(index.total - index.located) + '</b> counterparties carry no '
+             + 'country yet and are counted but not drawn.');
+    if (missing.length) {
+      parts.push('<b>' + fmt(sum) + '</b> more sit in ' + missing.length + ' places too '
+               + 'small to outline at this scale (' +
+               missing.slice(0, 6).map(function (c) { return c.cc; }).join(', ') +
+               (missing.length > 6 ? '…' : '') + ').');
+    }
+    el.innerHTML = parts.join(' ');
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  var rowsReq = 0;
+  function loadRows() {
+    var mine = ++rowsReq;
+    var url = '/public/search?cc=' + encodeURIComponent(openCC) +
+              (filter ? '&platform=' + encodeURIComponent(filter) : '') +
+              (qEl.value.trim() ? '&q=' + encodeURIComponent(qEl.value.trim()) : '');
+    rowsEl.innerHTML = '<div class="empty">Searching…</div>';
+    fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+      if (mine !== rowsReq) return;          // a later keystroke already won
+      if (d.error) { rowsEl.innerHTML = '<div class="empty">' + esc(d.error.message) + '</div>'; return; }
+      document.getElementById('reach-panel-count').textContent = fmt(d.matched) + ' indexed';
+      if (!d.rows.length) {
+        rowsEl.innerHTML = '<div class="empty">Nothing here matches that. '
+                         + 'The filter and the search box both narrow this list.</div>';
+        return;
+      }
+      rowsEl.innerHTML = d.rows.map(function (r) {
+        var chips = Object.keys(r.facts).map(function (k) {
+          var f = r.facts[k];
+          return '<span class="pv pv-' + esc(f.provenance) + '" title="' + esc(k) +
+                 ' — ' + esc(f.provenance) + '">' + esc(String(f.value).slice(0, 42)) + '</span>';
+        }).join('');
+        return '<div class="r"><div class="nm">' + esc(r.name) + '</div>' +
+               '<div class="meta">' + chips + '</div>' +
+               '<div class="contacts">' + (r.contacts
+                  ? r.contacts + ' contact route' + (r.contacts === 1 ? '' : 's') + ' on file'
+                  : 'no contact route yet') + '</div></div>';
+      }).join('');
+    }).catch(function () {
+      if (mine !== rowsReq) return;
+      rowsEl.innerHTML = '<div class="empty">That search did not reach the cluster. '
+                       + 'Try again.</div>';
+    });
+  }
+
+  function openCountry(cc) {
+    if (!byCC[cc]) return;
+    openCC = cc;
+    var sel = document.getElementById('reach-country');
+    if (sel && sel.value !== cc) sel.value = cc;
+    document.getElementById('reach-panel-name').textContent = cc;
+    document.getElementById('reach-panel-count').textContent = fmt(byCC[cc].n) + ' indexed';
+    qEl.value = '';
+    panel.classList.add('on');
+    draw();
+    loadRows();
+  }
+  function closeCountry() {
+    openCC = '';
+    panel.classList.remove('on');
+    // Kept in step with the map, or the picker goes on naming a country that is no
+    // longer open and choosing it again fires no `change` event.
+    var sel = document.getElementById('reach-country');
+    if (sel) sel.value = '';
+    draw();
+  }
+
+  document.getElementById('reach-close').addEventListener('click', closeCountry);
+  document.getElementById('reach-country').addEventListener('change', function () {
+    if (this.value) openCountry(this.value); else closeCountry();
+  });
+  var qt;
+  qEl.addEventListener('input', function () {
+    clearTimeout(qt); qt = setTimeout(loadRows, 260);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && openCC) closeCountry();
+  });
+
+  function at(e) {
+    var r = cv.getBoundingClientRect();
+    return [ (e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H ];
+  }
+  function find(x, y) {
+    for (var i = 0; i < shapes.length; i++) if (hit(shapes[i], x, y)) return shapes[i].cc;
+    return '';
+  }
+
+  cv.addEventListener('mousemove', function (e) {
+    var p = at(e), cc = find(p[0], p[1]);
+    if (cc !== hoverCC) { hoverCC = cc; draw(); }
+    if (!cc) { tip.classList.remove('on'); return; }
+    var n = countFor(cc);
+    tip.innerHTML = '<b>' + esc(cc) + '</b> — ' + fmt(n) + ' indexed' +
+                    (filter ? ' on this platform' : '');
+    tip.classList.add('on');
+    var r = cv.getBoundingClientRect();
+    tip.style.left = Math.min(e.clientX - r.left + 14, r.width - 170) + 'px';
+    tip.style.top  = (e.clientY - r.top + 14) + 'px';
+  });
+  cv.addEventListener('mouseleave', function () {
+    tip.classList.remove('on');
+    if (hoverCC) { hoverCC = ''; draw(); }
+  });
+  cv.addEventListener('click', function (e) {
+    var p = at(e), cc = find(p[0], p[1]);
+    if (cc && byCC[cc]) openCountry(cc); else closeCountry();
+  });
+
+  function absorb(d) {
+    index = d;
+    byCC = {};
+    d.countries.forEach(function (c) { byCC[c.cc] = c; });
+    var today = new Date().toISOString().slice(0, 10);
+    var t = d.history.filter(function (h) { return h.d === today; })[0];
+    /* "Placed on the map" has to mean *drawn*, not *has a country code*. The two
+       differ: Natural Earth's 110m set has no outline for a city-state or a small
+       island, so a counterparty in Hong Kong or Singapore is located and still not on
+       the map. Reporting `located` under this label would overstate the picture by
+       exactly the number `renderNote` then apologises for. */
+    var drawn = d.countries.reduce(function (a, c) {
+      return a + (polyCC[c.cc] ? c.n : 0);
+    }, 0);
+    countUp('total', d.total);
+    countUp('countries', d.countries.length);
+    countUp('located', drawn);
+    countUp('today', t ? t.n : 0);
+    renderStrip();
+    renderNote();
+    renderPicker();
+  }
+
+  /* Rebuilt on every poll, and the open selection is preserved across the rebuild —
+     losing it would close the panel a reader was in the middle of using, every thirty
+     seconds. */
+  function renderPicker() {
+    var sel = document.getElementById('reach-country');
+    if (!sel) return;
+    var keep = sel.value;
+    sel.innerHTML = '<option value="">Choose a country…</option>';
+    index.countries.forEach(function (c) {
+      var o = document.createElement('option');
+      o.value = c.cc;
+      o.textContent = c.cc + ' — ' + fmt(c.n) +
+                      (polyCC[c.cc] ? '' : ' (not drawn at this scale)');
+      sel.appendChild(o);
+    });
+    sel.value = keep;
+  }
+
+  Promise.all([
+    fetch('/public/world.json').then(function (r) { return r.json(); }),
+    fetch('/public/index').then(function (r) { return r.json(); })
+  ]).then(function (res) {
+    world = res[0];
+    if (res[1].error) throw new Error(res[1].error.message);
+    build();
+    absorb(res[1]);
+    sweep();
+    /* Poll. Thirty seconds against a sixty-second server cache, so a reader watching
+       sees a change land within a minute of an agent finishing a batch. */
+    setInterval(function () {
+      fetch('/public/index').then(function (r) { return r.json(); }).then(function (d) {
+        if (d.error) return;
+        Object.keys(lit).forEach(function (k) { lit[k] = true; });
+        absorb(d);
+        draw();
+      }).catch(function () {});
+    }, 30000);
+  }).catch(function (err) {
+    /* No silent empty map. A world drawn with nothing lit does not look broken, it
+       looks like a company with no counterparties, so say what happened instead. */
+    stage.innerHTML = '<p style="padding:34px;color:var(--faint);font:13px/1.7 ' +
+      'var(--face-display)">The index did not answer, so this map is not being drawn ' +
+      'rather than drawn empty.<br>' + esc(err && err.message ? err.message : '') + '</p>';
+  });
+
+  window.addEventListener('resize', function () { draw(); });
+})();
+</script>
+
+<script>
+/* ---------- #plan: the prefix, unbindable ----------------------------------
+   The rule this implements is CockroachDB's, not ours: a span over a composite
+   index can only constrain a *leading contiguous* run of columns. The moment one
+   is unbound, every column after it drops out of the span even though it is still
+   in the WHERE clause — it becomes a filter applied to whatever the vector search
+   already returned.
+
+   The all-bound plan is the one captured from the live cluster and is labelled as
+   such. Every other plan is derived from the rule above and says so, because a
+   page that renders a made-up EXPLAIN as though it came from a database is doing
+   the exact thing this section accuses other systems of. */
+(function () {
+  var root = document.getElementById('prefix');
+  if (!root) return;
+  var planEl = document.getElementById('prefix-plan');
+  var noteEl = document.getElementById('prefix-note');
+  var verdictEl = document.getElementById('prefix-verdict');
+  var segs = Array.prototype.slice.call(root.querySelectorAll('button.seg'));
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  }
+
+  function render() {
+    var bound = segs.map(function (s) { return s.getAttribute('aria-pressed') === 'true'; });
+
+    /* The span stops at the first gap. Everything after it is stranded. */
+    var spanLen = 0;
+    while (spanLen < bound.length && bound[spanLen]) spanLen++;
+
+    segs.forEach(function (s, i) {
+      var inSpan = i < spanLen;
+      var stranded = bound[i] && !inSpan;
+      s.classList.toggle('in-span', inSpan);
+      s.classList.toggle('stranded', stranded);
+      s.querySelector('.bind').textContent =
+        !bound[i] ? 'unbound' : (inSpan ? 'in span' : 'filter only');
+    });
+
+    var vals = segs.slice(0, spanLen).map(function (s) {
+      return "/'" + s.getAttribute('data-val') + "'";
+    }).join('');
+    var strandedCols = segs.filter(function (s, i) { return bound[i] && i >= spanLen; })
+                           .map(function (s) { return s.getAttribute('data-col'); });
+
+    var live = spanLen === 4;
+    var head = live
+      ? "-- EXPLAIN, live cluster"
+      : "-- derived from the index declaration, not a live EXPLAIN";
+
+    var lines = ['<span class="cm">' + head + '</span>', '• lookup join',
+                 '│ table: party@party_pkey',
+                 '└── <span class="hl">• vector search</span>',
+                 '      table: party@party_shortlist', '      target count: 20'];
+    if (spanLen > 0) {
+      lines.push('      <span class="hl">prefix spans:</span> [' + esc(vals));
+      lines.push('                   - ' + esc(vals) + ']');
+    } else {
+      lines.push('      <span class="hl">prefix spans:</span> ' +
+                 '<span class="hl">FULL INDEX — every tenant, every model</span>');
+    }
+    if (strandedCols.length) {
+      lines.push('      filter (after search): ' + esc(strandedCols.join(', ')));
+    }
+    planEl.innerHTML = lines.join('\n');
+
+    /* The verdict is graded, because these failures are not equally bad. Crossing
+       the tenant boundary is a different class of wrong from a slow query. */
+    var cls, verdict, note;
+    if (spanLen === 4) {
+      cls = 'ok'; verdict = 'searching inside the subspace';
+      note = 'All four predicates are in the span, so the vector search happens ' +
+             '<b>inside</b> the filtered subspace. Target count 20 means twenty usable rows.';
+    } else if (!bound[0]) {
+      cls = 'bad'; verdict = 'tenant boundary crossed';
+      note = 'With <b>tenant_id</b> unbound this is no longer a slow query, it is ' +
+             '<span class="cut">the wrong query</span> — the search ranges across every ' +
+             'label in the cluster. This is why the tenant predicate is not left to ' +
+             'reviewer discipline: CI parses every statement in <b>spindle/</b> and fails ' +
+             'the build if one omits it.';
+    } else if (strandedCols.length === 0) {
+      /* Only trailing columns are unbound, so nothing is stranded behind a gap.
+         The query is still correct and still uses the index — it just searches a
+         wider subspace. Saying "stranded" here would be a lie about a legal plan. */
+      cls = 'warn'; verdict = spanLen + ' of 4 columns in the span';
+      note = 'Nothing is stranded: the unbound columns are at the <b>end</b> of the ' +
+             'index, so the span still covers every predicate that is bound. This plan ' +
+             'is correct and still uses the index — it just searches a wider subspace, ' +
+             'and some of the twenty rows it returns will be parties we cannot contact.';
+    } else {
+      cls = 'warn'; verdict = spanLen + ' of 4 columns in the span';
+      note = '<b>' + strandedCols.join('</b> and <b>') + '</b> ' +
+             (strandedCols.length > 1 ? 'are' : 'is') + ' still in the WHERE clause, but no ' +
+             'longer in the span — a composite index can only constrain a leading ' +
+             'contiguous run, so a gap strands everything behind it. ' +
+             (strandedCols.length > 1 ? 'They become filters' : 'It becomes a filter') +
+             ' applied <b>after</b> the search returns, which means target count 20 stops ' +
+             'meaning twenty usable rows and starts meaning twenty candidates, some of ' +
+             'which are then thrown away.';
+    }
+    verdictEl.className = 'prefix-verdict ' + cls;
+    verdictEl.textContent = verdict;
+    noteEl.innerHTML = note;
+  }
+
+  segs.forEach(function (s) {
+    s.addEventListener('click', function () {
+      s.setAttribute('aria-pressed', s.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+      render();
+    });
+  });
+  render();
+})();
+
+/* ---------- #send: the lease race, driven by the reader --------------------
+   Three rules, and they are the ones in `fleet.work_once` rather than a
+   simplification invented for a web page:
+
+     claim     `FOR UPDATE SKIP LOCKED` — a lead someone else holds is not
+               contended for, it is skipped. The second worker gets no row back
+               and so has no lease to complete with.
+     expire    a lease has a TTL. When it lapses the lead is claimable again and
+               the holder is NOT told — it still believes it holds the lease,
+               which is exactly the condition that makes a fence necessary.
+     complete  `UPDATE ... WHERE lease_token = $mine`. If the row's token has
+               moved on this matches zero rows and the write is refused closed.
+
+   `sent` cannot be driven above one. That is the claim, and the controls are
+   arranged so a reader can spend a minute failing to falsify it. */
+(function () {
+  var root = document.getElementById('race');
+  if (!root) return;
+  var logEl = document.getElementById('race-log');
+  var sentEl = document.getElementById('race-sent');
+  var dupesEl = document.getElementById('race-dupes');
+  var goalEl = document.getElementById('race-goal');
+  var scoreEl = root.querySelector('.race-score');
+
+  var TOKENS = ['2bb498ed', '6f72beda', 'c1d0a447', '9ae37b52'];
+  var state, minted;
+
+  function reset() {
+    /* `holder` is the token the row carries; `believes` is what each worker thinks
+       it holds. The gap between those two is the entire bug class. */
+    state = { holder: null, believes: { A: null, B: null }, done: false, sent: 0, dupes: 0 };
+    minted = 0;
+    logEl.innerHTML = '';
+    render();
+  }
+
+  function log(w, result, cls) {
+    var li = document.createElement('li');
+    var a = document.createElement('span'); a.className = 'w'; a.textContent = w;
+    var b = document.createElement('span'); b.className = 'r ' + cls; b.textContent = result;
+    li.appendChild(a); li.appendChild(b);
+    logEl.appendChild(li);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function render() {
+    ['A', 'B'].forEach(function (w) {
+      var el = root.querySelector('[data-tok="' + w + '"]');
+      var mine = state.believes[w];
+      el.textContent = mine ? mine + '…' : 'no lease';
+      el.classList.toggle('held', !!mine && mine === state.holder);
+      el.classList.toggle('stale', !!mine && mine !== state.holder);
+    });
+    sentEl.textContent = state.sent;
+    dupesEl.textContent = state.dupes;
+    scoreEl.classList.toggle('broken', state.dupes > 0);
+    goalEl.textContent = state.dupes > 0
+      ? 'the fence let one through — that is a bug, not a feature'
+      : (state.sent ? 'still one. try a different order.' : 'try to make it two');
+  }
+
+  function claim(w) {
+    if (state.done) { log(w, 'claim → nothing to claim: the lead is already complete', 'skip'); return; }
+    if (state.holder) {
+      /* SKIP LOCKED does not block and does not raise. It returns no row at all. */
+      log(w, 'claim → skipped: another worker holds the lease (FOR UPDATE SKIP LOCKED)', 'skip');
+      return;
+    }
+    var tok = TOKENS[minted++ % TOKENS.length];
+    state.holder = tok;
+    state.believes[w] = tok;
+    log(w, 'claim → holds lease ' + tok + '…', 'ok');
+  }
+
+  function complete(w) {
+    var mine = state.believes[w];
+    if (!mine) { log(w, 'complete → refused: no lease to fence on', 'refused'); return; }
+    if (state.done) { log(w, 'complete → refused: the lead is already complete', 'refused'); return; }
+    if (mine !== state.holder) {
+      /* The stale worker is not refused for being slow. It is refused for being
+         wrong about the present, which is the only thing the row can check. */
+      log(w, 'complete → Refused · lease lost (' + mine + '… is no longer current)', 'refused');
+      return;
+    }
+    state.done = true;
+    state.sent += 1;
+    if (state.sent > 1) state.dupes = state.sent - 1;
+    log(w, 'complete → OK · the write, the agent_run row and the release, in one transaction', 'ok');
+  }
+
+  function expire() {
+    if (!state.holder) { log('—', 'lease expires → no lease to lapse', 'skip'); return; }
+    var was = state.holder;
+    state.holder = null;
+    log('—', 'lease expires → ' + was + '… lapsed. The holder is not told.', 'skip');
+  }
+
+  root.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-act]');
+    if (!btn) return;
+    var act = btn.getAttribute('data-act');
+    var w = btn.getAttribute('data-w');
+    if (act === 'reset') { reset(); return; }
+    if (act === 'expire') expire();
+    else if (act === 'claim') claim(w);
+    else if (act === 'complete') complete(w);
+    render();
+  });
+
+  reset();
+})();
+
+/* ---------- #pricing: the cap as a predicate -------------------------------
+   Reads the caps off the rendered cards rather than carrying a second copy, so a
+   tier changed in `spindle.plans.TIERS` changes this with it and the two cannot
+   drift. A card with no `data-cap` is the by-agreement tier: it is not scored as
+   admitting everything, because that would be a promise nobody made. */
+(function () {
+  var range = document.getElementById('cap-range');
+  if (!range) return;
+  var out = document.getElementById('cap-out');
+  var line = document.getElementById('cap-line');
+  var cards = Array.prototype.slice.call(document.querySelectorAll('#tiers .tier'));
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  }
+  function ordinal(n) {
+    var s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  function render() {
+    var want = parseInt(range.value, 10);
+    out.textContent = want;
+
+    var cheapest = null;
+    cards.forEach(function (c) {
+      var raw = c.getAttribute('data-cap');
+      var el = c.querySelector('.admits');
+      if (!el) return;
+      c.classList.remove('admit', 'refuse', 'cheapest');
+      if (!raw) { el.textContent = 'by agreement'; return; }
+      var cap = parseInt(raw, 10);
+      if (want <= cap) {
+        c.classList.add('admit');
+        el.textContent = 'admits · ' + (cap - want) + ' spare';
+        if (!cheapest) cheapest = c;
+      } else {
+        c.classList.add('refuse');
+        el.textContent = 'refuses the ' + ordinal(cap + 1);
+      }
+    });
+    if (cheapest) cheapest.classList.add('cheapest');
+
+    if (cheapest) {
+      var cap = parseInt(cheapest.getAttribute('data-cap'), 10);
+      var refusing = cards.filter(function (c) { return c.classList.contains('refuse'); }).length;
+      line.innerHTML = 'At <b>' + want + '</b> open conversations the cheapest tier that ' +
+        'admits you is <b>' + esc(cheapest.getAttribute('data-name')) + '</b>, with ' +
+        (cap - want) + ' of its ' + cap + ' spare.' +
+        /* Only claim a refusal when one is actually on screen. At the bottom of the
+           range the cheapest tier IS the first tier and nothing is refusing. */
+        (refusing
+          ? ' The ' + (refusing > 1 ? refusing + ' tiers' : 'tier') + ' below it ' +
+            (refusing > 1 ? 'do' : 'does') + ' not get more expensive at this volume — ' +
+            (refusing > 1 ? 'they ' : 'it ') +
+            '<span class="refuse">refuse' + (refusing > 1 ? '' : 's') + ' the work</span>.'
+          : ' This is the smallest tier there is, so nothing below it is being refused ' +
+            'yet — drag right and watch one start.');
+    } else {
+      line.innerHTML = '<b>' + want + '</b> is past every published cap, so there is no tier ' +
+        'to put you on and the honest answer is a conversation rather than a number. What ' +
+        'does not happen is the gate quietly allowing it and invoicing afterwards.';
+    }
+  }
+
+  range.addEventListener('input', render);
+  render();
+})();
+
+/* ---------- #verdict: the rows open ----------------------------------------
+   The `js` class is set from here rather than shipped in the markup, so a reader
+   with JavaScript off gets every detail row already open rather than a table with
+   four invisible arguments in it. Collapsing is the enhancement; the argument is
+   not conditional on scripting. */
+(function () {
+  var table = document.getElementById('verdict-table');
+  if (!table) return;
+  document.documentElement.classList.add('js');
+
+  function toggle(row) {
+    var detail = row.nextElementSibling;
+    if (!detail || !detail.classList.contains('vd')) return;
+    var open = row.getAttribute('aria-expanded') === 'true';
+    row.setAttribute('aria-expanded', open ? 'false' : 'true');
+    detail.classList.toggle('open', !open);
+  }
+
+  table.addEventListener('click', function (ev) {
+    var row = ev.target.closest ? ev.target.closest('tr.vr') : null;
+    /* A link inside an open detail row must not re-collapse the row it sits in. */
+    if (!row || ev.target.closest('a')) return;
+    toggle(row);
+  });
+
+  table.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    var row = ev.target.closest ? ev.target.closest('tr.vr') : null;
+    if (!row) return;
+    ev.preventDefault();
+    toggle(row);
+  });
+
+  /* The one row that is a claim rather than a concession opens on load. The four
+     concessions stay shut: a reader who opens nothing should still leave having
+     read the claim. */
+  var keep = table.querySelector('tr.vr.keep');
+  if (keep) toggle(keep);
+})();
+</script>
+</body>
+</html>

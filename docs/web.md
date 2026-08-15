@@ -62,7 +62,7 @@ need to check a value against the original.
 
 > **Scope, since the 2026-08-15 rebrand: this table is RemixKit's, not the platform's.**
 > Spindle's tokens live in
-> [`platform/web/spindle/templates/_design.html`](../platform/web/spindle/templates/_design.html)
+> [`apps/spindle/web/spindle/templates/_design.html`](../apps/spindle/web/spindle/templates/_design.html)
 > and are a different palette on purpose — copper and verdigris on warm carbon, not gold on
 > purple-black. The brand mark in [`docs/brand/`](./brand/) followed this table until the
 > rebrand and now follows `_design.html`. If you are picking a colour for anything above

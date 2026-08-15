@@ -115,7 +115,7 @@ worse than no claim. It belongs in the roadmap section, named as future work.
 > **Addendum, 2026-08-13 — half of that recommendation was overruled, and the important
 > half was not.**
 >
-> The building happened: `platform/schema/024_regional_by_row.sql` makes `contact_route`
+> The building happened: `apps/spindle/schema/024_regional_by_row.sql` makes `contact_route`
 > `REGIONAL BY ROW`, and `infra/terraform/multiregion/` provisions the three-region
 > Standard cluster the migration needs. `terraform validate` and `terraform fmt` pass
 > against `cockroachdb/cockroach v1.22.0`. **Nothing has been applied. The three queries

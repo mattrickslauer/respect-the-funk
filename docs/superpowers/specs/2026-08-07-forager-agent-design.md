@@ -76,7 +76,7 @@ making.
 1. **It needs no new coordination primitives.** `lead` is a work item with `owner_agent` and
    `lease_expires_at`, claimed by the query in `PLATFORM-SPEC §3a` with `thread` → `lead`. The
    same lease, the same `FOR UPDATE SKIP LOCKED`, already verified working against the real
-   cluster (`platform/README.md`, item 4).
+   cluster (`apps/spindle/README.md`, item 4).
 2. **The frontier is the memory.** The hackathon's headline criterion is that memory be integral
    to agent functionality. Here the agent's entire plan is rows. Kill it mid-crawl, restart, it
    resumes — `PLATFORM-SPEC §8`'s closing demo beat, available on day 3 instead of day 12.
@@ -534,7 +534,7 @@ while re-derivation leads appear in the frontier, with zero deletes.
 
 ### 10b. What the Forager gives back to the spec
 
-**It closes `PLATFORM-SPEC §10` risk 2.** `platform/README.md` records that the RU cost of a filtered
+**It closes `PLATFORM-SPEC §10` risk 2.** `apps/spindle/README.md` records that the RU cost of a filtered
 vector scan cannot be measured because *"a probe with no rows measures nothing."* The Forager is the
 row generator. It is the first thing in the repository that makes that measurement possible.
 

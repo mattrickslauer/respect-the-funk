@@ -225,7 +225,7 @@ No agent names another agent. The topology is a property of the data.
 > table above is consequently wired to nothing; it is left standing as the design it was,
 > rather than quietly deleted as though it had never been planned.
 >
-> **Status: built, not created.** `platform/web/spindle/changefeed.py` composes this
+> **Status: built, not created.** `apps/spindle/web/spindle/changefeed.py` composes this
 > exact statement, parses the webhook batches, maps a change to the set of lead kinds it
 > can make claimable, and ships a Lambda handler and a `--verify`. `SHOW CHANGEFEED JOBS`
 > still returns **zero rows**, because creating the feed draws RUs continuously against a

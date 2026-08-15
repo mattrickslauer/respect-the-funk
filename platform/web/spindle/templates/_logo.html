@@ -1,0 +1,160 @@
+{# =============================================================================
+   _logo.html — the Spindle mark: a wooden top, mid-spin
+   =============================================================================
+
+   Included, not a file, for the same reason `_design.html` is: there is no static
+   mount in this app. See that file's header for the argument.
+
+   ## Why a top and not the record
+
+   `docs/brand/thumbnail.svg` draws a record with a spindle hole at its centre, and
+   that mark is still the repository's social preview. This one is the on-site logo
+   and it reads the other meaning of the word on purpose: a spindle is also the peg
+   a top spins on, and a top is a thing you can *watch working*. A record sitting
+   still says catalogue; a top still turning says the fleet is up.
+
+   ## How the spin is faked
+
+   A solid of revolution has no visible motion when it turns — that is the whole
+   problem with animating a cone. Concentric rings, which is what a real turned top
+   is painted with, are rotationally symmetric and would sit dead still no matter
+   how fast it span. So the body carries **vertical staves** instead, and they
+   translate horizontally inside a clip of the silhouette. Two copies of the stave
+   group sit one period apart and the pair slides by exactly one period, so the
+   wrap point never lands in view.
+
+   Three things are deliberately NOT on the spin animation, because they are what
+   makes it read as a lit object rather than a scrolling texture:
+
+     - the specular highlight, fixed to the left, where the light is
+     - the shoulder ring, which is geometry, not surface
+     - the silhouette itself
+
+   The wobble is a second, slower animation on a different element, at a period
+   that does not divide the spin's. Precession in a real top is not in phase with
+   its rotation, and matching them makes it look like a rocking toy.
+
+   `prefers-reduced-motion` stops all three. What remains is a still top, tilted,
+   with its motion arcs — a logo, which is what it has to be anyway in a PNG.
+   ============================================================================= #}
+<style>
+.spindle-logo{display:block;width:100%;height:auto;overflow:visible}
+
+/* The tilt lives here and the wobble modulates it. Origin is the tip, because a
+   top precesses about its point of contact and about nothing else. */
+.spindle-logo .rig{transform-origin:120px 244px;animation:sl-wobble 4.3s ease-in-out infinite}
+.spindle-logo .staves{animation:sl-spin .9s linear infinite}
+.spindle-logo .arcs{animation:sl-arcs 1.8s ease-in-out infinite}
+.spindle-logo .shadow{animation:sl-shadow 4.3s ease-in-out infinite}
+
+/* One period is 56 user units: staves sit every 28, in a light/dark pair. */
+@keyframes sl-spin{from{transform:translateX(0)}to{transform:translateX(-56px)}}
+@keyframes sl-wobble{0%,100%{transform:rotate(-15deg)}50%{transform:rotate(-11.5deg)}}
+@keyframes sl-arcs{0%,100%{opacity:.45}50%{opacity:1}}
+@keyframes sl-shadow{0%,100%{transform:translateX(0) scaleX(1)}50%{transform:translateX(6px) scaleX(.92)}}
+
+@media (prefers-reduced-motion:reduce){
+  .spindle-logo .rig{animation:none;transform:rotate(-15deg)}
+  .spindle-logo .staves,.spindle-logo .arcs,.spindle-logo .shadow{animation:none}
+  .spindle-logo .arcs{opacity:.55}
+}
+</style>
+
+<svg class="spindle-logo" viewBox="0 0 240 280" role="img"
+     aria-label="Spindle — a wooden top, spinning">
+  <defs>
+    <!-- The silhouette, used as a clip so the staves cannot escape the body. -->
+    <clipPath id="sl-body">
+      <path d="M54 116 L120 244 L186 116
+               C186 90 160 74 120 74
+               C80 74 54 90 54 116 Z"/>
+    </clipPath>
+
+    <!-- Cylindrical shading: lit from the left, falling off to the right. This is
+         what stops the staves from reading as flat wallpaper. -->
+    <linearGradient id="sl-wood" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"    stop-color="#c9703f"/>
+      <stop offset="0.34" stop-color="#e08a52"/>
+      <stop offset="0.72" stop-color="#a85c30"/>
+      <stop offset="1"    stop-color="#7d4222"/>
+    </linearGradient>
+
+    <linearGradient id="sl-stem" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"   stop-color="#c07a4a"/>
+      <stop offset="0.5" stop-color="#e6a274"/>
+      <stop offset="1"   stop-color="#8e5128"/>
+    </linearGradient>
+
+    <radialGradient id="sl-gloss" cx="0.3" cy="0.28" r="0.5">
+      <stop offset="0" stop-color="#ffd9bd" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffd9bd" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Contact shadow. Sits outside the rig so it stays on the ground while the
+       body leans over it. -->
+  <ellipse class="shadow" cx="120" cy="250" rx="52" ry="9"
+           fill="#000" opacity="0.34"/>
+
+  <g class="rig">
+    <g clip-path="url(#sl-body)">
+      <rect x="40" y="60" width="160" height="200" fill="url(#sl-wood)"/>
+
+      <!-- The staves. Period 56; the second copy is the first shifted by one
+           period so the slide can wrap invisibly. -->
+      <g class="staves" fill="#6f3a1c" opacity="0.30">
+        <rect x="-24" y="60" width="13" height="200"/>
+        <rect x="4"   y="60" width="13" height="200"/>
+        <rect x="32"  y="60" width="13" height="200"/>
+        <rect x="60"  y="60" width="13" height="200"/>
+        <rect x="88"  y="60" width="13" height="200"/>
+        <rect x="116" y="60" width="13" height="200"/>
+        <rect x="144" y="60" width="13" height="200"/>
+        <rect x="172" y="60" width="13" height="200"/>
+        <rect x="200" y="60" width="13" height="200"/>
+        <rect x="228" y="60" width="13" height="200"/>
+        <rect x="256" y="60" width="13" height="200"/>
+      </g>
+
+      <!-- Fixed, because the light does not travel with the surface. -->
+      <ellipse cx="88" cy="104" rx="30" ry="34" fill="url(#sl-gloss)"/>
+    </g>
+
+    <!-- Silhouette edge, over the clipped fill. -->
+    <path d="M54 116 L120 244 L186 116
+             C186 90 160 74 120 74
+             C80 74 54 90 54 116 Z"
+          fill="none" stroke="#5c2f14" stroke-width="3" stroke-linejoin="round"/>
+
+    <!-- The shoulder: geometry, so it does not move with the surface.
+
+         Only the NEAR arc is drawn. A full ellipse here shows the far rim
+         through the body and the top reads as wireframe — it was drawn that way
+         until the first render, and the object looked hollow. -->
+    <path d="M54 116 A66 13 0 0 1 186 116"
+          fill="none" stroke="#5c2f14" stroke-width="3" stroke-linecap="round"/>
+    <path d="M54 116 A66 13 0 0 1 186 116"
+          fill="none" stroke="#ffd9bd" stroke-width="1" opacity="0.30"
+          transform="translate(0,-3)"/>
+
+    <!-- Stem and knob. -->
+    <rect x="111" y="34" width="18" height="48" rx="6" fill="url(#sl-stem)"
+          stroke="#5c2f14" stroke-width="2.5"/>
+    <ellipse cx="120" cy="32" rx="15" ry="8" fill="#e08a52"
+             stroke="#5c2f14" stroke-width="2.5"/>
+
+    <!-- The steel point. The one cool value on the whole object, because it is
+         the only part that is not wood. -->
+    <path d="M109 222 L120 244 L131 222 Z" fill="#cdc4b8" stroke="#5c2f14" stroke-width="2"
+          stroke-linejoin="round"/>
+  </g>
+
+  <!-- Motion arcs. Outside the rig: they mark where the body has been, so they
+       must not lean with it. -->
+  <g class="arcs" fill="none" stroke="#7fd3b8" stroke-width="4" stroke-linecap="round">
+    <path d="M28 96  C14 112 14 134 26 150"/>
+    <path d="M14 84  C-4 108 -4 140 12 164" opacity="0.55"/>
+    <path d="M212 96 C226 112 226 134 214 150"/>
+    <path d="M226 84 C244 108 244 140 228 164" opacity="0.55"/>
+  </g>
+</svg>

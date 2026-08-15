@@ -54,7 +54,7 @@
     /* `nowrap`, or the wordmark shrinks as a flex item and breaks across three
        lines. Flex items may shrink below their content width, and a three-word
        brand is exactly the shape that reveals it. */
-    header.top .mark { font-weight:640; letter-spacing:-.015em; white-space:nowrap; }
+    header.top .wordmark { font-weight:640; letter-spacing:-.015em; white-space:nowrap; }
     header.top { flex-wrap:wrap; }
     header.top .dot { width:7px; height:7px; border-radius:50%; background:var(--carrier); }
     header.top nav { margin-left:auto; display:flex; gap:.5rem; align-items:center; }
@@ -125,7 +125,7 @@
 <body>
   <header class="top">
     <span class="dot"></span>
-    <span class="mark">Spindle</span>
+    <span class="wordmark">Spindle</span>
     <nav>{% block topnav %}{% endblock %}</nav>
   </header>
   {% block body %}{% endblock %}

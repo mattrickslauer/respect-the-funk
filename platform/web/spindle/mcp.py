@@ -311,6 +311,8 @@ TENANT_SCOPED_TABLES: frozenset[str] = frozenset({
     "party_document", "party_chunk", "party_fact", "party_metric", "agent_run",
     "party_budget", "presence", "suggestion", "lesson", "statement_import",
     "campaign", "thread", "message", "outbox",
+    "autonomy", "recording_budget", "budget_raise", "decision",
+    "contact_route", "recording_asset", "tenant_budget",
 })
 
 _REF_RE = re.compile(r"\b(FROM|INTO|UPDATE|JOIN)\s+([A-Za-z_][A-Za-z0-9_]*)", re.I)

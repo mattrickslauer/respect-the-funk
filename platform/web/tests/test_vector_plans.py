@@ -58,11 +58,11 @@ from unittest import mock
 import psycopg
 from psycopg.rows import dict_row
 
-from spindle import agents, embed, lessons, spend
+from spindle import agents, embed, lessons, routes, spend
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
 
-RTF_PLATFORM_DIR = Path(__file__).resolve().parent.parent / "spindle"
+SPINDLE_DIR = Path(__file__).resolve().parent.parent / "spindle"
 
 #: Checked against the live cluster before writing any literal into a query below:
 #: `SELECT DISTINCT embedding_model FROM party WHERE profile_embedding IS NOT NULL`
@@ -85,10 +85,17 @@ EXPECTED_VECTOR_QUERY_SITES: set[tuple[str, str]] = {
     ("agents.py", "shortlist"),   # R1 over party — already fixed; the model to copy.
     ("agents.py", "shortlist_as_of"),  # R1 again, read-only, over the index as it was.
     ("lessons.py", "retrieve_for"),  # R2's general pass over lesson.
+    # The one deliberate full scan in the package, and the only entry here that is NOT
+    # required to plan as a vector search. It counts how many counterparties sit at
+    # least as close as the shortlist's last row — "15 of 14,140" — which is a question
+    # about the whole corpus and so cannot use the index that exists to avoid reading
+    # it. `test_corpus_position_is_the_documented_exception` pins that, so this entry
+    # cannot quietly become cover for a genuine regression somewhere else.
+    ("routes.py", "_corpus_position"),
 }
 
 
-def _vector_query_sites(root: Path = RTF_PLATFORM_DIR) -> set[tuple[str, str]]:
+def _vector_query_sites(root: Path = SPINDLE_DIR) -> set[tuple[str, str]]:
     """Every (relative path, enclosing function) with a string literal containing `<=>`,
     found by walking the AST of every module under `root`, including subpackages.
 
@@ -341,6 +348,68 @@ class VectorSearchPlans(unittest.TestCase):
                 "vector search", plan,
                 f"plan has no `vector search` node — the planner abandoned the index "
                 f"and full-scanned instead:\n\n{plan}\n\nquery:\n{text}")
+
+    # ------------------------------------------------------- routes._corpus_position
+
+    def test_corpus_position_is_the_documented_exception(self) -> None:
+        """The one `<=>` query in this package that is *supposed* to be a full scan.
+
+        Everything else in `EXPECTED_VECTOR_QUERY_SITES` must plan as a vector search,
+        and this file exists because one of them once silently stopped. `_corpus_position`
+        is the deliberate opposite: it answers "how many of the whole corpus are at least
+        this close", which is a question about every row, and no index over the vectors
+        can answer it without reading them.
+
+        Asserted rather than merely commented, in both directions:
+
+          * it really is a scan, so the exemption is honest and a reader can see the cost
+            the endpoint pays;
+          * it does NOT plan as a vector search, which is what would happen if somebody
+            "fixed" it by bolting on the index hint — that would silently change what the
+            count means, because a `LIMIT`-ed vector search returns a neighbourhood and
+            not a population, and the number would quietly stop being a count of the
+            corpus while continuing to render as one.
+
+        If this test ever fails because the plan gained a vector search node, the bug is
+        not here — it is that the count is no longer counting what the page says it does.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO party (tenant_id, slug, name, party_class, contact_state,
+                                      profile_embedding, embedding_model)
+                   VALUES (%s, 'artist', 'the artist', 'roster', 'contactable',
+                           %s::VECTOR(1024), %s)
+                RETURNING id""",
+                (self.tenant, self._vec(0.1), REAL_EMBEDDING_MODEL))
+            artist_id = str(cur.fetchone()["id"])
+            for i in range(3):
+                cur.execute(
+                    """INSERT INTO party (tenant_id, slug, name, party_class,
+                                          contact_state, profile_embedding, embedding_model)
+                       VALUES (%s, %s, %s, 'counterparty', 'contactable',
+                               %s::VECTOR(1024), %s)""",
+                    (self.tenant, f"curator-{i}", f"curator {i}",
+                     self._vec(0.1 * i), REAL_EMBEDDING_MODEL))
+
+        _, captured = _capture_vector_queries(
+            routes._corpus_position, self.conn, self.tenant, artist_id, 0.5)
+        self.assertEqual(len(captured), 1,
+                         "expected exactly one `<=>` statement from _corpus_position")
+
+        text, params = captured[0]
+        with self.conn.cursor() as cur:
+            cur.execute("EXPLAIN " + text, params)
+            plan = "\n".join(row["info"] for row in cur.fetchall())
+
+        self.assertNotIn(
+            "vector search", plan,
+            "the corpus count now plans as a vector search. That is not an improvement: "
+            "a vector search returns a bounded neighbourhood, so the count would stop "
+            f"being a count of the corpus while still rendering as one.\n\n{plan}")
+        self.assertIn(
+            "scan", plan,
+            f"expected a scan node — this query is a full scan by construction and the "
+            f"plan should say so:\n\n{plan}")
 
     # ------------------------------------------------------------ agents.shortlist
 

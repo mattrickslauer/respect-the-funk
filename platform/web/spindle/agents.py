@@ -1938,6 +1938,32 @@ def _write_index_streams(conn: psycopg.Connection, lead: dict[str, Any],
                      0.5 if radiobrowser.musical(tags) else 0.3),
                 )
 
+            # Tune-ins, as a metric rather than as prose. This number is already in the
+            # payload — `radiobrowser.stations` *orders the fetch by it* — and until now
+            # it was read for sorting and thrown away, which left `party_metric` holding
+            # six rows across the whole counterparty index.
+            #
+            # It is the only measurement of audience this project can currently reach for
+            # a stream, and `budgets.value_of` is written around its absence: a
+            # counterparty with no metric is unvalued and is excluded from a valuation
+            # rather than being assigned an invented average. So storing it is not
+            # telemetry — it is the difference between a track's budget being justified
+            # by measurements and being justified by nothing.
+            #
+            # A new row per observation rather than an upsert: `metric_series` is ordered
+            # by `observed_at DESC` and the point of a series is that it moves. The
+            # unique index that would collide here is `metric_one_per_period`, which is
+            # scoped to `recording_id IS NOT NULL` and does not apply to a party metric.
+            clicks = st.get("clickcount")
+            if isinstance(clicks, (int, float)) and clicks >= 0:
+                cur.execute(
+                    """INSERT INTO party_metric (tenant_id, party_id, platform, metric,
+                                                 value, unit, provenance, source)
+                       VALUES (%s, %s, 'radiobrowser', 'clickcount', %s, 'count',
+                               'measured', 'index_streams')""",
+                    (tenant_id, party_id, int(clicks)),
+                )
+
             # The website is a `presence`, not a `contact_route`. A homepage is a surface
             # you can read, which is exactly what `presence` means; a contact route is an
             # endpoint you may *send to*, and conflating the two is how a crawler's URL

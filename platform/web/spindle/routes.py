@@ -512,8 +512,11 @@ def _demo_stats(conn: psycopg.Connection, tenant_id: str) -> dict[str, Any]:
                    WHERE tenant_id = %(t)s AND dimension = 'genre') AS with_genre,
                  (SELECT count(*) FROM lesson WHERE tenant_id = %(t)s) AS lessons,
                  (SELECT count(*) FROM agent_run WHERE tenant_id = %(t)s) AS runs,
-                 (SELECT coalesce(sum(cost_micro_usd), 0) FROM agent_run
-                   WHERE tenant_id = %(t)s) AS micro_usd,
+                 -- `micro_usd` was summed here for a "total spend" counter that the
+                 -- landing page dropped on 2026-08-15. Removed with it rather than
+                 -- left computing: an aggregate nobody renders is the kind of thing
+                 -- that survives three refactors before someone works out it is dead.
+                 -- The live spend figure the console needs comes from `spend.py`.
                  (SELECT count(*) FROM outbox
                    WHERE tenant_id = %(t)s AND state = 'sent') AS sent""",
             {"t": tenant_id})
@@ -572,6 +575,222 @@ def demo_tune(artist: str = "hallow-youth", window: str = "now") -> JSONResponse
         "window": window,
         "rows": [{"name": r["name"], "distance": round(float(r["distance"]), 4)}
                  for r in rows],
+    })
+
+
+@router.get("/demo/decisions")
+def demo_decisions(limit: int = 8) -> JSONResponse:
+    """The decision ledger — every act this deployment can be asked about, with its
+    coordinate.
+
+    `035_decision_ledger.sql` is the argument; this is the read behind the public
+    provenance section. The shortlist replay one endpoint over is the *worked example* —
+    it reconstructs an actual ranking — and this is the claim that example generalises:
+    a send, a raised cap, an opt-out and a decision not to act all carry the same kind
+    of coordinate, and each can be read back at it.
+
+    Public and unauthenticated, and safe on the same terms as the rest of `/demo/*`:
+    every column returned is a description of a decision this deployment took. No
+    contact value exists on this table to leak.
+    """
+    conn = _conn()
+    tenant_id = _showcase_tenant_id(conn)
+    if tenant_id is None:
+        return JSONResponse({"error": "no tenant"}, status_code=503)
+
+    limit = max(1, min(int(limit), 25))
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT kind, stage, summary, actor, subject_kind, at_wall, at_hlc
+                 FROM decision
+                WHERE tenant_id = %s
+                ORDER BY at_hlc DESC
+                LIMIT %s""",
+            (tenant_id, limit))
+        rows = cur.fetchall()
+
+    return JSONResponse({
+        "decisions": [{
+            "kind": r["kind"],
+            "stage": r["stage"],
+            "summary": r["summary"],
+            "actor": r["actor"],
+            "subject_kind": r["subject_kind"],
+            # Display value and replay coordinate, kept apart on the wire exactly as
+            # `035` keeps them apart in the schema. The page shows `at_wall` and quotes
+            # `at_hlc`; nothing may query with the former.
+            "at_wall": r["at_wall"].isoformat() if r["at_wall"] else None,
+            "at_hlc": str(r["at_hlc"]),
+        } for r in rows],
+    })
+
+
+#: Corpus-position counts, memoised per warm process. See `_corpus_position` for why
+#: this is cached rather than run per request. Keyed by the artist and the threshold it
+#: was computed against, so a shifted shortlist recomputes instead of reporting a stale
+#: count against a distance that no longer bounds it.
+_CORPUS_TTL_S = 300.0
+_corpus_cache: dict[tuple[str, str, float], tuple[float, int, int]] = {}
+
+
+def _corpus_position(conn: psycopg.Connection, tenant_id: str, artist_id: str,
+                     threshold: float) -> tuple[int, int]:
+    """How many counterparties sit at least as close as the shortlist's last row.
+
+    Returns `(closer, total)` — "15 of 14,140" — which is the honest headline for a
+    vector shortlist. A measured audit against the live cluster on 2026-08-15 found
+    that the *set* separation is the defensible claim and the ordering inside the set
+    largely is not: those twelve rows are the top ~0.1% of the corpus, while the spread
+    within them is 0.016 and contains exact ties.
+
+    **Why a count and not a percentile.** A percentile needs a rounding decision and
+    reads as a statistic; a count reads as a fact. And the corpus median in particular
+    is not publishable: 1,069 parties share one identical distance — the generic
+    `"Programming not documented. A radio station."` document embedding to one point —
+    and that spike straddles the 52nd-60th percentile, so every median lands inside it
+    and describes the degenerate cluster rather than the corpus. Excluding the blob
+    moves the headline from 0.106% to 0.118%, so the top-of-corpus claim survives the
+    junk even though the middle of the distribution does not.
+
+    **Why this is not folded into the shortlist query**, which would save a round trip
+    and was the suggestion: `agents.shortlist_as_of` is not demo code. It is on the
+    production justification path and is called from `research.py` too, and the whole
+    argument of the landing page's `#plan` section is an `EXPLAIN` of that statement
+    showing a vector search over an index prefix. This count is a **full scan** by
+    construction. Putting it in the same statement would add an unbounded scan to a
+    live path and make the published plan false for it. Two queries, one of them
+    cached, is the cheaper mistake.
+
+    **Why cached.** The scan costs about as much as the round trip does at 14k rows,
+    which is to say it is invisible today — but it grows linearly while the index query
+    does not, and this is reachable from a public unauthenticated route, so uncached it
+    is a scan anyone can hammer at roughly a second a go. Memoised per warm process for
+    five minutes: a counter on a demo page does not need to be fresher than that.
+    """
+    key = (tenant_id, artist_id, round(threshold, 6))
+    hit = _corpus_cache.get(key)
+    now = time.monotonic()
+    if hit is not None and hit[0] > now:
+        return hit[1], hit[2]
+
+    with conn.cursor() as cur:
+        # The predicates mirror `party_shortlist`'s prefix exactly, so the denominator
+        # is the population the shortlist actually chose from and not "every row".
+        cur.execute(
+            """SELECT count(*) AS total,
+                      count(*) FILTER (
+                        WHERE p.profile_embedding <=> a.profile_embedding <= %s) AS closer
+                 FROM party p,
+                      (SELECT profile_embedding, embedding_model FROM party
+                        WHERE tenant_id = %s AND id = %s) a
+                WHERE p.tenant_id = %s
+                  AND p.embedding_model = a.embedding_model
+                  AND p.party_class = 'counterparty'
+                  AND p.contact_state = 'contactable'
+                  AND p.profile_embedding IS NOT NULL""",
+            (threshold, tenant_id, artist_id, tenant_id))
+        row = cur.fetchone()
+
+    closer, total = int(row["closer"] or 0), int(row["total"] or 0)
+    _corpus_cache[key] = (now + _CORPUS_TTL_S, closer, total)
+    return closer, total
+
+
+@router.get("/demo/replay")
+def demo_replay() -> JSONResponse:
+    """The decision behind a real thread, replayed at the instant it was made.
+
+    `/demo/tune` lets a reader move a dial to an arbitrary clock offset. This is the
+    same machinery pointed at the question it was built for: *why did you contact me*.
+    It takes a thread that recorded a decision, reads `decided_at_hlc` off it, and
+    re-runs the shortlist `AS OF SYSTEM TIME` that exact hybrid logical clock.
+
+    Why this is the better demo, stated once here so it is not re-litigated: a scrubber
+    can only show a difference if the index happened to change inside the window it
+    spans, and over a counterparty index that mutates when an ingest runs, it usually
+    has not. So the scrubber's most likely output is five identical lists, which argues
+    against the claim it exists to make. A replay is anchored to an instant that
+    definitely mattered, and it carries its own check — `decided_rank` was written down
+    at the time, so the replay either reproduces it or it does not, and either answer is
+    worth more than a list that never moves.
+
+    Public and unauthenticated for `demo_tune`'s reasons, and safe on the same grounds:
+    `justification` reads, spends nothing, and the ranking rows carry `id`, `name` and
+    `distance` and no contact value of any kind.
+    """
+    conn = _conn()
+    tenant_id = _showcase_tenant_id(conn)
+    if tenant_id is None:
+        return JSONResponse({"error": "no tenant"}, status_code=503)
+
+    with conn.cursor() as cur:
+        # The most recent thread that actually recorded a shortlist behind it. Ordered
+        # by `decided_at_hlc` rather than `created_at`: a thread opened by hand has a
+        # `created_at` and no decision, and ordering by the column being filtered on
+        # keeps the two from disagreeing.
+        cur.execute(
+            """SELECT t.id, t.created_at, t.state,
+                      p.name AS counterparty_name, a.name AS artist_name,
+                      c.party_id AS artist_id
+                 FROM thread t
+                 JOIN party p    ON p.id = t.counterparty_id AND p.tenant_id = t.tenant_id
+                 JOIN campaign c ON c.id = t.campaign_id     AND c.tenant_id = t.tenant_id
+                 JOIN party a    ON a.id = c.party_id        AND a.tenant_id = c.tenant_id
+                WHERE t.tenant_id = %s AND t.decided_at_hlc IS NOT NULL
+                ORDER BY t.decided_at_hlc DESC
+                LIMIT 1""",
+            (tenant_id,))
+        row = cur.fetchone()
+
+    if row is None:
+        # Not an error state and not dressed up as one. A deployment that has opened no
+        # thread yet has nothing to justify, and saying that is the honest page.
+        return JSONResponse({"error": "no recorded decision",
+                             "note": ("nothing has been shortlisted into a thread on this "
+                                      "deployment yet, so there is no decision to replay")},
+                            status_code=404)
+
+    try:
+        out = outreach.justification(conn, tenant_id, str(row["id"]))
+    except outreach.NotJustified as exc:
+        return JSONResponse({"error": "not justified", "note": str(exc)}, status_code=404)
+    except agents.HistoryExpired as exc:
+        # The cost of the feature, said out loud. Time travel reaches back exactly as
+        # far as `gc.ttlseconds` and no further, and a replay that has aged out is the
+        # clearest possible statement of that bound.
+        return JSONResponse({"error": "history expired", "note": str(exc),
+                             "counterparty": row["counterparty_name"],
+                             "artist": row["artist_name"]},
+                            status_code=410)
+
+    # The set-selection claim, as a count rather than a percentile. Failure here must
+    # not take the replay down with it — the ranking is the answer to "why did you
+    # contact me" and the corpus count is context on it, so a cluster that will not
+    # answer the second question still answers the first, and the page says so.
+    closer = corpus = None
+    ranking = out["ranking"]
+    if ranking:
+        try:
+            closer, corpus = _corpus_position(
+                conn, tenant_id, str(row["artist_id"]),
+                float(ranking[-1]["distance"]))
+        except psycopg.Error:
+            closer = corpus = None
+
+    return JSONResponse({
+        "artist": row["artist_name"],
+        "counterparty": row["counterparty_name"],
+        "state": row["state"],
+        "closer": closer,
+        "corpus": corpus,
+        "opened_at": row["created_at"].isoformat() if row["created_at"] else None,
+        "as_of": out["as_of"],
+        "recorded_rank": out["recorded_rank"],
+        "recorded_distance": round(float(out["recorded_distance"]), 4),
+        "replayed_rank": out["replayed_rank"],
+        "matched": out["matched"],
+        "rows": [{"name": r["name"], "distance": round(float(r["distance"]), 4)}
+                 for r in out["ranking"]],
     })
 
 

@@ -51,15 +51,32 @@ body{
   background:rgba(125,77,255,.09);font:500 13px/1 var(--face-body);color:#cbb8ff;
 }
 .built{flex-wrap:wrap}
-.built .mark{
+.built .crdb-wordmark{
   font:700 14px/1 var(--face-display);letter-spacing:-.03em;color:#fff;
   background:var(--crdb);padding:6px 9px;border-radius:5px;
-  /* `flex:none`, or the wordmark shrinks below its own text and the sentence
-     beside it rides over the top. Only shows up where the display face falls
-     back to a wider monospace than the one this was measured in. */
+  /* This span was called `.mark` until 2026-08-15, and the sentence beside it rode
+     over the top. The cause was not shrinkage: `_design.html` owns `.mark` as the
+     provenance legend row, which is `display:grid` with a 38px first column. The
+     rule here overrode that element's padding and background but never its
+     `display`, so "CockroachDB" overflowed a 38px grid track onto its sibling.
+     An earlier comment blamed a monospace fallback and reached for `flex:none`,
+     which treated a name collision as a metrics problem and did not fix it.
+
+     The fix was the name. Do not reuse a class `_design.html` already owns.
+     `flex:none` stays, because a flex item may legitimately shrink below its
+     content width — but it is no longer what is holding this up. */
   flex:none;
 }
-.hero{padding:56px 0 44px}
+/* The mark sits beside the headline on a wide screen and above it on a narrow one.
+   `minmax(0,1fr)` on the copy column, or the long <h1> refuses to wrap and pushes
+   the top off the grid. */
+.hero{padding:56px 0 44px;display:grid;grid-template-columns:minmax(0,1fr) 260px;
+      gap:40px;align-items:center}
+.hero-mark{width:100%;max-width:260px;justify-self:end}
+@media (max-width:860px){
+  .hero{grid-template-columns:1fr;gap:8px}
+  .hero-mark{max-width:170px;justify-self:start;order:-1}
+}
 .hero h1{font-size:clamp(30px,5.1vw,60px);line-height:1.04;max-width:19ch}
 .hero h1 em{font-style:normal;color:var(--phosphor)}
 .hero p{max-width:60ch;color:var(--dim);font-size:18px;margin:22px 0 0}
@@ -172,6 +189,181 @@ section .lede{color:var(--dim);max-width:66ch;margin:16px 0 0}
 .seg.hit{background:var(--phosphor-wash);border-right:0;border-radius:8px;margin-left:10px;
      padding:12px 15px}
 .seg.hit .op{color:var(--phosphor)}
+
+.rows .row.tied .d{color:var(--phosphor)}
+.rp-tied{margin-left:9px;font:600 9.5px/1 var(--face-display);
+     letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--phosphor);
+     opacity:.85}
+
+/* ---------- the decision ledger ----------
+   Kind is a chip and is the only coloured thing in a row, because the kinds are not
+   equivalent: `opt_out` and `suppress` are the ones an audit actually turns on, and
+   a ledger that painted all seven the same would bury them. */
+.ledger{margin-top:26px;border:1px solid var(--rule);border-radius:12px;
+     background:var(--panel);overflow:hidden}
+.ledger-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+     padding:13px 17px;background:var(--panel-2);border-bottom:1px solid var(--rule);
+     font:11px/1.5 var(--face-display);color:var(--faint);letter-spacing:.04em}
+.ledger-head b{color:var(--ink);font-weight:600}
+.ledger-src{color:var(--faint)}
+.ledger-rows{font:12px/1.5 var(--face-display)}
+.ledger-note{margin:0;padding:16px 17px;color:var(--faint)}
+.led{display:grid;grid-template-columns:130px minmax(0,1fr) auto;gap:14px;
+     align-items:baseline;padding:11px 17px;border-bottom:1px solid var(--rule-soft)}
+.led:last-child{border-bottom:0}
+.led-kind{font:600 9.5px/1.6 var(--face-display);letter-spacing:var(--track-caps);
+     text-transform:uppercase;color:var(--dim);white-space:nowrap}
+.led.k-opt_out .led-kind,.led.k-suppress .led-kind{color:var(--cut)}
+.led.k-send .led-kind,.led.k-budget_increase .led-kind{color:var(--phosphor)}
+.led.k-shortlist .led-kind,.led.k-lesson .led-kind{color:var(--carrier)}
+.led-sum{color:var(--ink-2);overflow-wrap:anywhere}
+.led-who{display:block;color:var(--faint);font-size:11px;margin-top:3px}
+.led-at{text-align:right;color:var(--dim);white-space:nowrap}
+.led-hlc{display:block;color:var(--carrier);font-size:10.5px;margin-top:3px}
+@media (max-width:700px){
+  .led{grid-template-columns:1fr;gap:4px}
+  .led-at{text-align:left}
+}
+
+.led-stage{display:block;margin-top:3px;font:600 9px/1.4 var(--face-display);
+     letter-spacing:var(--track-caps);color:var(--phosphor);opacity:.9}
+.led.k-budget_increase .led-stage{color:var(--phosphor)}
+
+/* ---------- the decision replay ----------
+   `.rp-check` is the only place on this page where a green/red pair means pass and
+   fail rather than cold/warm — it is a self-test, and a self-test that reported its
+   own result in the ambient palette would be indistinguishable from decoration. */
+.rp-stamp{display:flex;gap:12px;flex-wrap:wrap;align-items:center;
+     padding:11px 16px;border-bottom:1px solid var(--rule);background:var(--panel-2);
+     font:11.5px/1.5 var(--face-display)}
+.rp-aost{color:var(--carrier)}
+.rp-check{margin-left:auto;padding:4px 9px;border-radius:5px;font-weight:600}
+.rp-check.ok{color:var(--carrier);background:var(--carrier-wash);
+     border:1px solid var(--carrier)}
+.rp-check.bad{color:var(--cut);background:var(--cut-wash);border:1px solid var(--cut)}
+.rows .row.hit{background:var(--phosphor-wash);border-radius:6px}
+.rows .row.hit .name{color:var(--phosphor);font-weight:600}
+.rp-you{margin-left:9px;font:600 9.5px/1 var(--face-display);
+     letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--phosphor)}
+.dial button[disabled]{opacity:.4;cursor:not-allowed}
+
+/* ---------- the prefix, unbindable ----------
+   `button.seg` inherits the layout above and adds only the affordance. Text stays
+   left-aligned and the font is not inherited from the UA stylesheet, which is the
+   one thing a <button> silently changes about a block of text. */
+button.seg{font:inherit;text-align:left;background:none;color:inherit;cursor:pointer;
+     border-top:0;border-bottom:0;border-left:0;padding-top:6px;padding-bottom:6px;
+     border-radius:6px;transition:background .12s,opacity .12s}
+button.seg:hover{background:var(--carrier-wash)}
+.seg .bind{font:600 9.5px/1 var(--face-display);letter-spacing:var(--track-caps);
+     text-transform:uppercase;color:var(--carrier)}
+/* Unbound reads as absent, not as broken: it is a legal query, just a worse one. */
+button.seg[aria-pressed="false"]{opacity:.42}
+button.seg[aria-pressed="false"] .col{text-decoration:line-through}
+button.seg[aria-pressed="false"] .bind{color:var(--dim)}
+/* Covered by the span the planner can actually build. */
+button.seg.in-span{background:var(--carrier-wash)}
+button.seg.in-span .bind{color:var(--carrier)}
+/* Bound, but stranded behind a gap — still in the WHERE clause, no longer in the
+   span. This is the state the whole section exists to make visible. */
+button.seg.stranded .bind{color:var(--phosphor)}
+button.seg.stranded{background:var(--phosphor-wash)}
+
+.prefix-foot{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.prefix-hint{color:var(--faint)}
+.prefix-verdict{font-weight:600}
+.prefix-verdict.ok{color:var(--carrier)}
+.prefix-verdict.warn{color:var(--phosphor)}
+.prefix-verdict.bad{color:var(--cut)}
+.prefix-note{margin:12px 0 0;color:var(--dim);font:13px/1.65 var(--face-body);max-width:76ch}
+.prefix-note b{color:var(--ink);font-weight:600}
+.prefix-note .cut{color:var(--cut);font-weight:600}
+
+/* ---------- the verdict, openable ----------
+   Detail rows are collapsed by default and are real table rows rather than a
+   parallel structure, so the table stays a table for a screen reader and for
+   anyone who lands here with JavaScript off — in which case every row is simply
+   already open, which is the correct degraded state for an argument. */
+.vr{cursor:pointer}
+.vr:hover td{background:var(--panel-2)}
+.vr td:first-child{position:relative;padding-left:26px}
+.vr td:first-child::before{content:"+";position:absolute;left:9px;color:var(--faint);
+     font:600 12px/1.5 var(--face-display)}
+.vr[aria-expanded="true"] td:first-child::before{content:"−";color:var(--phosphor)}
+.vr.keep td:first-child::before{color:var(--carrier)}
+.vd td{color:var(--dim);font:13px/1.7 var(--face-body);background:var(--panel-2);
+     padding:14px 18px 16px 26px}
+.vd b{color:var(--ink)}
+.vd em{color:var(--ink);font-style:italic}
+.js .vd{display:none}
+.js .vd.open{display:table-row}
+.vd-run{display:block;margin-top:10px;color:var(--carrier);font-family:var(--face-display);
+     font-size:12px}
+.vd-run a{color:var(--carrier)}
+
+/* ---------- the cap, draggable ----------
+   The slider is the argument: a price is a number you are quoted, a cap is a
+   predicate the gate evaluates. Dragging past a tier's cap flips it from admit to
+   refuse in front of the reader. */
+.capbar{margin-top:26px;padding:16px 18px;border:1px solid var(--rule);border-radius:12px;
+     background:var(--panel);display:grid;grid-template-columns:auto 1fr auto;gap:14px;
+     align-items:center}
+.capbar label{font:600 10px/1.3 var(--face-display);letter-spacing:var(--track-caps);
+     text-transform:uppercase;color:var(--faint)}
+.capbar input[type=range]{width:100%;accent-color:var(--phosphor)}
+.capbar output{font:600 22px/1 var(--face-display);color:var(--phosphor);min-width:3ch;
+     text-align:right}
+.capline{grid-column:1/-1;margin:0;font:12.5px/1.6 var(--face-display);color:var(--dim)}
+.capline b{color:var(--ink);font-weight:600}
+.capline .refuse{color:var(--phosphor);font-weight:600}
+@media (max-width:620px){.capbar{grid-template-columns:1fr auto}.capbar label{grid-column:1/-1}}
+
+.tier .admits{font:600 9.5px/1 var(--face-display);letter-spacing:var(--track-caps);
+     text-transform:uppercase;color:var(--faint)}
+.tier.admit .admits{color:var(--carrier)}
+.tier.refuse .admits{color:var(--phosphor)}
+.tier.cheapest{outline:2px solid var(--carrier);outline-offset:3px}
+
+/* ---------- the race ----------
+   The reader drives both workers. Everything here is layout; the rule being
+   demonstrated lives in the script at the foot of the page, next to the other
+   behaviour, rather than being split across two files. */
+.race{margin-top:30px;border:1px solid var(--rule);border-radius:12px;
+      background:var(--panel);overflow:hidden}
+.race-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule)}
+@media (max-width:700px){.race-grid{grid-template-columns:1fr}}
+.race-worker{background:var(--panel);padding:15px 17px;display:flex;flex-direction:column;gap:10px}
+.race-who{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.race-tag{font:600 9.5px/1 var(--face-display);letter-spacing:var(--track-caps);
+      text-transform:uppercase;color:var(--faint)}
+.race-tok{font:11px/1 var(--face-display);color:var(--dim);padding:6px 9px;
+      border:1px dashed var(--rule);border-radius:5px;align-self:flex-start}
+.race-tok.held{color:var(--carrier);border-color:var(--carrier);border-style:solid}
+.race-tok.stale{color:var(--phosphor);border-color:var(--phosphor);border-style:solid}
+.race-btns{display:flex;gap:8px;flex-wrap:wrap}
+.race button,.race-env button{
+      font:600 11px/1 var(--face-display);letter-spacing:.04em;color:var(--ink);
+      background:var(--panel-2);border:1px solid var(--rule-strong);border-radius:6px;
+      padding:8px 12px;cursor:pointer;transition:background .12s,border-color .12s}
+.race button:hover,.race-env button:hover{background:var(--carrier-wash);border-color:var(--carrier)}
+.race-env{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+      padding:13px 17px;border-top:1px solid var(--rule);background:var(--panel-2)}
+.race-envnote{color:var(--faint);font:11px/1.5 var(--face-display);flex:1 1 220px}
+.race-log{list-style:none;margin:0;padding:8px 17px;border-top:1px solid var(--rule);
+      font:11.5px/1.7 var(--face-display);max-height:190px;overflow-y:auto}
+.race-log:empty::after{content:"no calls yet";color:var(--faint);display:block;padding:6px 0}
+.race-log li{display:flex;gap:10px;flex-wrap:wrap;padding:2px 0}
+.race-log .w{color:var(--ink);font-weight:600;flex:0 0 66px}
+.race-log .r{color:var(--dim);flex:1 1 auto}
+.race-log .ok{color:var(--carrier)}
+.race-log .refused{color:var(--phosphor)}
+.race-log .skip{color:var(--faint)}
+.race-score{display:flex;gap:20px;flex-wrap:wrap;padding:13px 17px;
+      border-top:1px solid var(--rule);font:12px/1.4 var(--face-display);color:var(--dim)}
+.race-score b{color:var(--ink);font-size:15px;margin-left:6px}
+.race-dupe b{color:var(--carrier)}
+.race-score .race-goal{margin-left:auto;color:var(--faint)}
+.race-score.broken .race-dupe b{color:var(--cut)}
 
 /* ---------- the fence ----------
    Two workers, one lead, the same name. The whole argument is that the two rows
@@ -423,19 +615,31 @@ footer a{color:var(--carrier)}
 
   <header class="masthead">
     <div class="built">
-      <span class="mark">CockroachDB</span>
+      <span class="crdb-wordmark">CockroachDB</span>
       <span>Built for the CockroachDB&nbsp;×&nbsp;AWS Hackathon — Agentic Memory</span>
     </div>
   </header>
 
   <div class="hero">
-    <h1>We mail real people, one at a time. <em>The database is why that is safe.</em></h1>
-    <p>Spindle is a music distribution agentic OS. It maps the industry into a
-       vector index — {{ "{:,}".format(stats.get('counterparties', 0)) }} radio stations
-       and curators, from public registers — then works out who should hear a record and
-       writes to them individually. Not a blast. Every page below is live against the
-       cluster.</p>
-    <p class="sub">read-only · no sign-in · every number queried on page load</p>
+    <div class="hero-copy">
+      {# The previous line — "We mail real people, one at a time. The database is why
+         that is safe." — led with a defence. It answered an objection nobody had
+         raised yet, and the only promise in it was that we would not do something
+         bad. A hero has to say what the reader gets. This one names the pain first
+         and the asset second, and the asset is the true one: what accumulates
+         between releases is not audio, it is who replied. #}
+      <h1>Most labels start every release from zero. <em>Spindle remembers who said yes.</em></h1>
+      <p>Spindle is a music distribution agentic OS. It maps the industry into a
+         vector index — {{ "{:,}".format(stats.get('counterparties', 0)) }} radio stations
+         and curators, from public registers — then works out who should hear a record and
+         writes to them individually. Not a blast. Every page below is live against the
+         cluster.</p>
+      <p class="sub">read-only · no sign-in · every number queried on page load</p>
+    </div>
+    {# The mark, at the only size it is worth animating. `aria-hidden`: the <h1>
+       beside it already says the name, and a screen reader does not need the top
+       announced twice. #}
+    <div class="hero-mark" aria-hidden="true">{% include "_logo.html" %}</div>
   </div>
 
   <div class="counters">
@@ -444,7 +648,11 @@ footer a{color:var(--carrier)}
     <div class="counter"><b>{{ "{:,}".format(stats.get('with_genre', 0)) }}</b><span>with genre</span></div>
     <div class="counter"><b>{{ stats.get('lessons', 0) }}</b><span>lessons learned</span></div>
     <div class="counter"><b>{{ stats.get('sent', 0) }}</b><span>sent, ever</span></div>
-    <div class="counter"><b>${{ "%.4f"|format((stats.get('micro_usd', 0) or 0) / 1000000) }}</b><span>total spend</span></div>
+    {# A "total spend" counter stood here until 2026-08-15. It read $0.0012, which is
+       not a proof of frugality to anyone who has not already been told the argument —
+       it just looks like a system that has barely run. The cost discipline is real and
+       it is made properly in `#pricing`, where a cap is a predicate rather than a
+       four-decimal number with no denominator. #}
   </div>
 
   <!-- ===================== 0. THE REACH MAP =====================
@@ -537,27 +745,60 @@ footer a{color:var(--carrier)}
   </section>
 
   <!-- ===================== 1. THE TUNER ===================== -->
-  <section id="tune">
-    <div class="eyebrow">Distributed vector indexing</div>
-    <h2>Tune the index, and then tune it to last week.</h2>
-    <p class="lede">This runs R1 — the shortlist query — against
-      {{ "{:,}".format(stats.get('embedded', 0)) }} embedded counterparties, live. The bar
-      is cosine distance drawn as signal strength: longer is nearer. Now move the dial.
-      The same query runs against the index <em>as it existed</em> at that moment, using
-      <code style="color:var(--carrier)">AS&nbsp;OF&nbsp;SYSTEM&nbsp;TIME</code> — no audit
-      table, no snapshot, no versioned copy of anything.</p>
+  {# This section was a scrubber over arbitrary clock offsets until 2026-08-15, and it
+     argued against itself. A dial spanning −15m to −6h can only show a difference if
+     the index happened to change inside that window, and a counterparty index changes
+     when an ingest runs — so its most likely output was five identical lists under a
+     heading claiming that time travel matters. It also ran `shortlist_as_of`, which
+     drops the lesson rerank, removing the one input that moves on a human timescale.
 
-    <div class="tuner">
+     What replaced it is the same machinery pointed at the question it was actually
+     built for. `thread.decided_at_hlc` records the instant a shortlist opened a
+     conversation; `decided_rank` records where the counterparty sat in it. Replaying
+     at that HLC either puts them back at that rank or it does not, so the demo checks
+     itself in front of the reader instead of asking to be believed. #}
+  <section id="tune">
+    <div class="eyebrow">Decision provenance</div>
+    <h2>Every decision is rooted to an instant you can read the database at.</h2>
+    <p class="lede">An autonomous system that acts on the world has to be answerable for
+      each act, and the answers all have the same shape: <em>what was true when we
+      decided</em>. So every consequential decision — a shortlist, a send, a raised cap,
+      an opt-out, even a decision <em>not</em> to act — carries the hybrid logical clock
+      it happened at. That coordinate is not a copy of the answer; it is a place to
+      stand in the database and read the answer back, with
+      <code style="color:var(--carrier)">AS&nbsp;OF&nbsp;SYSTEM&nbsp;TIME</code>. No
+      audit table, no snapshot, nothing that can drift from what actually happened.</p>
+
+    {# The ledger first, then one of its rows all the way down. Order is deliberate: the
+       list establishes that the claim is general, and the replay below proves a single
+       decision down to a reconstructed ranking that checks itself. Leading with the
+       replay would make this read as one clever trick about vector search. #}
+    <div class="ledger" id="ledger">
+      <div class="ledger-head">
+        <span>the decision ledger — <b>every row is a question somebody can ask</b></span>
+        <span class="ledger-src">platform/schema/035_decision_ledger.sql</span>
+      </div>
+      <div class="ledger-rows" id="ledger-rows" aria-live="polite">
+        <p class="ledger-note">reading the ledger…</p>
+      </div>
+    </div>
+
+    <p class="lede" style="margin-top:28px">Now one of them all the way down. Replaying
+      this shortlist re-runs it against
+      {{ "{:,}".format(stats.get('embedded', 0)) }} embedded counterparties at the exact
+      instant it was stamped — and checks itself against the rank written down at the
+      time.</p>
+
+    <div class="tuner" id="replay">
       <div class="tuner-head">
-        <span class="who">artist: Hallow Youth — dance, 124bpm</span>
-        <div class="dial" role="group" aria-label="Query the index as of">
-          <button data-w="now" aria-pressed="true">now</button>
-          <button data-w="-15m" aria-pressed="false">−15m</button>
-          <button data-w="-1h" aria-pressed="false">−1h</button>
-          <button data-w="-3h" aria-pressed="false">−3h</button>
-          <button data-w="-6h" aria-pressed="false">−6h</button>
+        <span class="who" id="rp-who">loading a recorded decision…</span>
+        <div class="dial" role="group" aria-label="Which index to rank against">
+          <button data-mode="then" aria-pressed="true">as it was</button>
+          <button data-mode="now"  aria-pressed="false">as it is now</button>
         </div>
       </div>
+
+      <div class="rp-stamp" id="rp-stamp"></div>
       <div class="rows" id="rows" aria-live="polite"></div>
       <div class="tuner-foot" id="foot">querying…</div>
     </div>
@@ -573,36 +814,47 @@ footer a{color:var(--carrier)}
       because a query that quietly degrades to a full scan still returns rows that look
       correct.</p>
 
-    {# The index declaration, drawn. Not an illustration of the concept — these are
-       the five columns of `party_shortlist` from migration 009, in their real order,
-       with the values a live shortlist actually binds. The `EXPLAIN` underneath is
-       the same claim addressed to a reader who already knows what a prefix span is. #}
-    <div class="prefix">
+    {# The index declaration, drawn — and unbindable. These are the five columns of
+       `party_shortlist` from migration 009, in their real order, with the values a
+       live shortlist actually binds.
+
+       The four equality columns are buttons because the argument is easier to
+       *break* than to state. A prefix span can only cover the leading contiguous
+       run of bound columns, so unbinding the second one costs you the third and
+       fourth as well even though they are still in the WHERE clause — which is the
+       thing about composite index order that a static diagram cannot show. The
+       all-bound case is the plan captured from the live cluster; every other case
+       is derived from that rule and is labelled as derived, not as a live read. #}
+    <div class="prefix" id="prefix">
       <div class="prefix-head">
         <span><b>party@party_shortlist</b> — the index, as declared</span>
         <span>platform/schema/009_counterparty_index.sql</span>
       </div>
       <div class="prefix-body">
-        <div class="seg">
+        <button type="button" class="seg" data-col="tenant_id" data-val="1f9e6dd3…" aria-pressed="true">
           <span class="op">equality</span>
           <span class="col">tenant_id</span>
           <span class="val">one label</span>
-        </div>
-        <div class="seg">
+          <span class="bind">bound</span>
+        </button>
+        <button type="button" class="seg" data-col="embedding_model" data-val="openai:text-embedding-3-small" aria-pressed="true">
           <span class="op">equality</span>
           <span class="col">embedding_model</span>
           <span class="val">openai:text-embedding-3-small</span>
-        </div>
-        <div class="seg">
+          <span class="bind">bound</span>
+        </button>
+        <button type="button" class="seg" data-col="party_class" data-val="counterparty" aria-pressed="true">
           <span class="op">equality</span>
           <span class="col">party_class</span>
           <span class="val">counterparty</span>
-        </div>
-        <div class="seg">
+          <span class="bind">bound</span>
+        </button>
+        <button type="button" class="seg" data-col="contact_state" data-val="contactable" aria-pressed="true">
           <span class="op">equality</span>
           <span class="col">contact_state</span>
           <span class="val">contactable</span>
-        </div>
+          <span class="bind">bound</span>
+        </button>
         <div class="seg hit">
           <span class="op">cosine</span>
           <span class="col">profile_embedding</span>
@@ -610,21 +862,13 @@ footer a{color:var(--carrier)}
         </div>
       </div>
       <div class="prefix-foot">
-        The four equality columns are the <b>prefix</b>. The vector search runs inside
-        the subspace they select, because CockroachDB will not walk across a prefix it
-        is filtering by equality — which is also why a vector embedded under one model
-        is unreachable from a query that asked for another.
+        <span class="prefix-hint">Unbind a column to see what the planner can still use.</span>
+        <span id="prefix-verdict" class="prefix-verdict" aria-live="polite"></span>
       </div>
     </div>
 
-<pre><span class="cm">-- EXPLAIN, live cluster</span>
-• lookup join
-│ table: party@party_pkey
-└── <span class="hl">• vector search</span>
-      table: party@party_shortlist
-      target count: 20
-      <span class="hl">prefix spans:</span> [/'1f9e6dd3…'/'openai:text-embedding-3-small'/'counterparty'/'contactable'
-                   - /'1f9e6dd3…'/'openai:text-embedding-3-small'/'counterparty'/'contactable']</pre>
+<pre id="prefix-plan"></pre>
+<p class="prefix-note" id="prefix-note" aria-live="polite"></p>
   </section>
 
   <!-- ===================== 3. IRREVERSIBILITY ===================== -->
@@ -635,24 +879,52 @@ footer a{color:var(--carrier)}
       constraints rather than conventions — things the database will not let us get wrong,
       even when we are in a hurry.</p>
 
-    {# `platform/bin/lease_race_demo.py`, act two, laid out so the comparison the
-       argument rests on cannot be missed: both workers are called `ingest-cli`,
-       both claim the same lead, and the only column that differs is the one no
-       caller can forge. #}
-    <div class="fence">
+    {# `platform/bin/lease_race_demo.py`, act two — but driven by the reader rather
+       than narrated at them. Both workers are called `ingest-cli`, both go for the
+       same lead, and the only thing that separates them is the column no caller can
+       forge.
+
+       The controls are deliberately enough rope to hang the system with: you can
+       claim out of order, let a lease lapse, and complete late. The counter at the
+       bottom is the whole argument — it is not possible to drive it above one, and
+       the reader establishes that by trying rather than by being told. #}
+    <div class="race" id="race">
       <div class="fence-head">two workers · one lead · <b>b844314c…</b> · both named the same thing</div>
-      <div class="fence-row">
-        <span class="who">ingest-cli</span>
-        <span class="tok">2bb498ed…</span>
-        <span class="step">claims the lead, then tries to complete it</span>
-        <span class="out bad">Refused · lease lost</span>
+
+      <div class="race-grid">
+        <div class="race-worker" data-w="A">
+          <div class="race-who"><span class="who">ingest-cli</span><span class="race-tag">worker A</span></div>
+          <div class="race-tok" data-tok="A">no lease</div>
+          <div class="race-btns">
+            <button type="button" data-act="claim"    data-w="A">claim</button>
+            <button type="button" data-act="complete" data-w="A">complete</button>
+          </div>
+        </div>
+        <div class="race-worker" data-w="B">
+          <div class="race-who"><span class="who">ingest-cli</span><span class="race-tag">worker B</span></div>
+          <div class="race-tok" data-tok="B">no lease</div>
+          <div class="race-btns">
+            <button type="button" data-act="claim"    data-w="B">claim</button>
+            <button type="button" data-act="complete" data-w="B">complete</button>
+          </div>
+        </div>
       </div>
-      <div class="fence-row">
-        <span class="who">ingest-cli</span>
-        <span class="tok">6f72beda…</span>
-        <span class="step">claims the lead, then completes it</span>
-        <span class="out good">OK</span>
+
+      <div class="race-env">
+        <button type="button" data-act="expire">lease expires</button>
+        <button type="button" data-act="reset">reset</button>
+        <span class="race-envnote">“lease expires” is worker A stalling past the TTL — the
+          stall is what makes the race reachable at all.</span>
       </div>
+
+      <ol class="race-log" id="race-log" aria-live="polite"></ol>
+
+      <div class="race-score">
+        <span>messages actually sent <b id="race-sent">0</b></span>
+        <span class="race-dupe">duplicates <b id="race-dupes">0</b></span>
+        <span class="race-goal" id="race-goal">try to make it two</span>
+      </div>
+
       <div class="fence-foot">
         The name cannot tell them apart. <b>The token can</b> — it is stamped at claim
         time, only the database mints it, and every write is fenced on it being current.
@@ -719,14 +991,56 @@ footer a{color:var(--carrier)}
       believing. So here is the audit we ran on ourselves, and the single row that
       survived it.</p>
 
-    <table class="verdict">
+    {# Every row opens. The table on its own asserts a verdict; the details are where
+       the verdict is earned, and hiding them behind a click keeps the shape of the
+       argument — four concessions and one claim — readable at a glance first. The
+       last row is the only one that opens onto something the reader can run. #}
+    <table class="verdict" id="verdict-table">
       <thead><tr><th>What we use</th><th>Postgres equivalent</th><th>Verdict</th></tr></thead>
       <tbody>
-        <tr><td>Vector index, cosine, prefix-filtered</td><td class="no">pgvector + composite indexes</td><td class="no">replaceable</td></tr>
-        <tr><td>SERIALIZABLE by default</td><td class="no">one SET statement</td><td class="no">replaceable</td></tr>
-        <tr><td>FOR UPDATE SKIP LOCKED</td><td class="no">Postgres shipped it first</td><td class="no">replaceable</td></tr>
-        <tr><td>Scale to zero</td><td class="no">Neon, Aurora Serverless</td><td class="no">replaceable</td></tr>
-        <tr><td>AS OF SYSTEM TIME over a vector index</td><td class="no">nothing</td><td class="yes">irreplaceable</td></tr>
+        <tr class="vr" tabindex="0" role="button" aria-expanded="false">
+          <td>Vector index, cosine, prefix-filtered</td><td class="no">pgvector + composite indexes</td><td class="no">replaceable</td></tr>
+        <tr class="vd"><td colspan="3">
+          pgvector does this, and has for years. Our prefix trick is a composite index
+          with the vector column last — an idea Postgres can express directly. If the
+          shortlist were all this system did, there would be no argument here.
+        </td></tr>
+
+        <tr class="vr" tabindex="0" role="button" aria-expanded="false">
+          <td>SERIALIZABLE by default</td><td class="no">one SET statement</td><td class="no">replaceable</td></tr>
+        <tr class="vd"><td colspan="3">
+          <code>SET default_transaction_isolation = 'serializable'</code>. The honest
+          difference is that we did not have to remember, and a default nobody has to
+          remember is worth something — but it is a default, not a capability.
+        </td></tr>
+
+        <tr class="vr" tabindex="0" role="button" aria-expanded="false">
+          <td>FOR UPDATE SKIP LOCKED</td><td class="no">Postgres shipped it first</td><td class="no">replaceable</td></tr>
+        <tr class="vd"><td colspan="3">
+          Postgres 9.5, in 2016. The lease fence you just played with would work
+          unchanged on it. We are not going to claim a 2016 feature as a 2026 reason.
+        </td></tr>
+
+        <tr class="vr" tabindex="0" role="button" aria-expanded="false">
+          <td>Scale to zero</td><td class="no">Neon, Aurora Serverless</td><td class="no">replaceable</td></tr>
+        <tr class="vd"><td colspan="3">
+          Several managed Postgres products scale to zero, some of them more aggressively
+          than we do. This is a cost property of a deployment, not a property of a
+          database, and it belongs in the concessions column.
+        </td></tr>
+
+        <tr class="vr keep" tabindex="0" role="button" aria-expanded="false">
+          <td>AS OF SYSTEM TIME over a vector index</td><td class="no">nothing</td><td class="yes">irreplaceable</td></tr>
+        <tr class="vd"><td colspan="3">
+          This is the row the section exists for. Our agents write to real people, so
+          the question <em>why did you contact me</em> has to be answerable — and
+          answering it means re-running the ranking against the index <b>as it stood at
+          that second</b>, not as it stands now. Four extra words of SQL, no snapshot
+          table, no audit copy of the embeddings.
+          <span class="vd-run">The tuner above is that query:
+            <a href="#tune">run it against a past window</a> and watch the shortlist
+            differ from today's.</span>
+        </td></tr>
       </tbody>
     </table>
 
@@ -754,10 +1068,28 @@ footer a{color:var(--carrier)}
       — is already a partial unique index. We are not inventing a meter to bill you
       with; we are charging for the one thing the schema was already counting.</p>
 
-    <div class="tiers">
+    {# The cap, made draggable. Every number the slider reasons about is the same
+       `open_conversations` the cards below render and `outreach.open_thread`
+       enforces — there is no second table of marketing figures. A tier with no cap
+       (`Talk to us`) carries no `data-cap` and is scored as "by agreement" rather
+       than as infinite, because an unset cap is a conversation, not a licence. #}
+    <div class="capbar">
+      <label for="cap-range">Conversations you need open at once</label>
+      {# Max is past the largest published cap on purpose, so a reader can drag off the
+         end of the table and meet the by-agreement tier, rather than bumping into a
+         slider that happens to stop exactly where the sales pitch stops. #}
+      <input type="range" id="cap-range" min="1" max="300" value="18" step="1">
+      <output id="cap-out" for="cap-range">18</output>
+      <p class="capline" id="cap-line" aria-live="polite"></p>
+    </div>
+
+    <div class="tiers" id="tiers">
       {% for t in tiers %}
-      <div class="tier{% if t.key == 'free' %} pick{% endif %}">
+      <div class="tier{% if t.key == 'free' %} pick{% endif %}"
+           data-key="{{ t.key }}" data-name="{{ t.name }}"
+           {% if t.open_conversations %}data-cap="{{ t.open_conversations }}"{% endif %}>
         <span class="nm">{{ t.name }}</span>
+        <span class="admits" aria-live="polite"></span>
         <span class="amt">
           {%- if t.price_usd_month is none -%}Talk<small> to us</small>
           {%- elif t.price_usd_month == 0 -%}$0
@@ -835,120 +1167,255 @@ footer a{color:var(--carrier)}
 </div>
 
 <script>
+/* ============================ the decision replay =========================
+   Two rankings of the same artist, and the whole argument is the difference:
+
+     `then` — the shortlist replayed AS OF SYSTEM TIME the hybrid logical clock
+              stamped on the thread when it was opened. This is the ranking that
+              actually caused the conversation.
+     `now`  — the same query against the index as it stands today.
+
+   `then` is fetched first and is the one that matters. `now` is a comparison and
+   is loaded lazily, because a reader who never presses it should not pay for it.
+
+   The self-check is the point and is rendered before the rows: `decided_rank` was
+   written down at decision time, so a replay either puts the counterparty back at
+   that rank or it does not. A demo that can fail in front of you is worth more
+   than one that cannot.
+
+   The meter is scaled across the *visible* range rather than to an absolute
+   distance, and says so on the page. Cosine distances over this index cluster
+   inside a couple of hundredths, so an absolute scale draws twelve identical bars
+   and tells the reader nothing; a relative scale shows the ordering honestly as
+   long as it does not pretend the gaps are large. Both are stated in the footer.
+   ========================================================================= */
+/* The ledger. Establishes that the coordinate is on every kind of decision and not
+   only the one the replay below reconstructs in full. It renders `at_wall` for the
+   human and quotes `at_hlc` beside it as the value a replay is actually issued
+   against — kept visibly distinct for the same reason `035_decision_ledger.sql` keeps
+   them distinct in the schema. A reader who notices the difference has understood the
+   section. */
 (function () {
+  var host = document.getElementById('ledger-rows');
+  if (!host) return;
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function when(iso) {
+    if (!iso) return '—';
+    var d = new Date(iso);
+    return isNaN(d.getTime()) ? esc(iso)
+      : d.toISOString().replace('T', ' ').slice(0, 16) + 'Z';
+  }
+  function note(msg) { host.innerHTML = '<p class="ledger-note">' + esc(msg) + '</p>'; }
+
+  fetch('/demo/decisions')
+    .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
+    .then(function (res) {
+      if (res.s !== 200) { note(res.d.error || 'the ledger did not answer'); return; }
+      var rows = res.d.decisions || [];
+      if (!rows.length) {
+        /* An empty ledger is a true statement about a deployment that has not decided
+           anything yet, and it says so rather than rendering an example. A seeded-
+           looking row invented here would undermine the one section about provenance. */
+        note('this deployment has not recorded a decision yet — an empty ledger is the ' +
+             'honest state and not a loading failure');
+        return;
+      }
+      host.innerHTML = rows.map(function (r) {
+        return '<div class="led k-' + esc(r.kind) + '">' +
+          '<span class="led-kind">' + esc(String(r.kind).replace(/_/g, ' ')) +
+            /* `applied` is the ordinary case and saying so on every row would be
+               noise. `proposed` and `refused` are the ones that mean a person was
+               in the loop, so only those are marked — which is also what makes the
+               one-row/two-row distinction visible to a reader. */
+            (r.stage && r.stage !== 'applied'
+              ? '<span class="led-stage">' + esc(r.stage) + '</span>' : '') +
+          '</span>' +
+          '<span class="led-sum">' + esc(r.summary) +
+            '<span class="led-who">' + esc(r.actor) + ' · about a ' +
+            esc(r.subject_kind) + '</span></span>' +
+          '<span class="led-at">' + when(r.at_wall) +
+            '<span class="led-hlc">' + esc(r.at_hlc) + '</span></span>' +
+        '</div>';
+      }).join('');
+    })
+    .catch(function () {
+      note('the cluster did not answer — it scales to zero, so the first query after ' +
+           'an idle period can take a moment. Reload to try again.');
+    });
+})();
+
+(function () {
+  var root = document.getElementById('replay');
+  if (!root) return;
   var rowsEl = document.getElementById('rows');
   var footEl = document.getElementById('foot');
-  var dial = document.querySelectorAll('.dial button');
-  // name -> rank in the *live* ranking. Captured once, from the first `now` fetch, and
-  // refreshed only when `now` is selected again.
-  //
-  // An earlier version compared each render against the previous one, which measured
-  // the wrong thing: it told you how the list had changed since whatever you last
-  // clicked, so going -1h then -3h reported the difference between two historical
-  // moments and going back to `now` reported nothing at all. The claim this section
-  // makes is "the ranking that caused a send is not the ranking you would get today",
-  // and that is a comparison against today, always.
-  var baseline = null;
+  var whoEl = document.getElementById('rp-who');
+  var stampEl = document.getElementById('rp-stamp');
+  var dial = root.querySelectorAll('.dial button');
 
-  function delta(rankNow, rankThen) {
-    if (rankNow === undefined) {
-      return '<span class="delta new">not in today\'s list</span>';
-    }
-    var moved = rankNow - rankThen;
-    if (moved === 0) return '';
-    if (moved > 0) {
-      return '<span class="delta up">▲ ' + moved + ' vs now</span>';
-    }
-    return '<span class="delta down">▼ ' + Math.abs(moved) + ' vs now</span>';
-  }
+  var replay = null;   // the `then` payload, kept for the comparison
+  var nowRows = null;  // lazily fetched
+  var mode = 'then';
+  var lastTies = 0;
 
-  function render(data, window) {
-    var rows = data.rows || [];
-    if (!rows.length) {
-      rowsEl.innerHTML = '<div class="row"><span class="rank"></span>' +
-        '<span class="name" style="color:var(--faint);white-space:normal">' +
-        escapeHtml(data.note || 'Nothing was embedded at that timestamp yet.') +
-        '</span><span class="d"></span></div>';
-      footEl.textContent = 'no rows at ' + window;
-      return;
-    }
-    // Distances cluster tightly, so the meter is scaled across the returned range
-    // rather than 0–1. An honest bar that is all-full tells you nothing.
-    var isNow = window === 'now';
-
-    // Distances cluster tightly, so the meter is scaled across the returned range
-    // rather than 0–1. An honest bar that is all-full tells you nothing.
-    var ds = rows.map(function (r) { return r.distance; });
-    var lo = Math.min.apply(null, ds), hi = Math.max.apply(null, ds), span = (hi - lo) || 1;
-
-    if (isNow) baseline = {};
-
-    var moved = 0, arrived = 0;
-
-    rowsEl.innerHTML = rows.map(function (r, i) {
-      var pct = 96 - ((r.distance - lo) / span) * 74;
-      var mark = '';
-      if (isNow) {
-        baseline[r.name] = i;
-      } else if (baseline) {
-        var was = baseline[r.name];
-        if (was === undefined) arrived++;
-        else if (was !== i) moved++;
-        mark = delta(was, i);
-      }
-      return '<div class="row' + (mark ? ' moved' : '') + '">' +
-        '<span class="rank">' + String(i + 1).padStart(2, '0') + '</span>' +
-        '<span><span class="name">' + escapeHtml(r.name) + '</span>' + mark +
-        '<span class="meter"><i data-w="' + pct.toFixed(1) + '"></i></span></span>' +
-        '<span class="d">' + r.distance.toFixed(4) + '</span></div>';
-    }).join('');
-
-    requestAnimationFrame(function () {
-      rowsEl.querySelectorAll('.meter i').forEach(function (b) {
-        b.style.width = b.getAttribute('data-w') + '%';
-      });
-    });
-
-    if (isNow) {
-      footEl.innerHTML = 'ranked <b>now</b> · ' + rows.length + ' of ' +
-        document.querySelector('.counter.live b').textContent + ' embedded';
-      return;
-    }
-
-    // Said in full rather than as a count, because "3 moved" reads as noise and
-    // "3 of these 10 sat somewhere else an hour ago" is the argument.
-    var parts = ['ranked <b>AS OF SYSTEM TIME \'' + window + '\'</b>'];
-    if (moved) parts.push('<b>' + moved + '</b> in a different position then');
-    if (arrived) parts.push('<b>' + arrived + '</b> not in today\'s list at all');
-    if (!moved && !arrived) parts.push('same order as now');
-    footEl.innerHTML = parts.join(' · ');
-  }
-
-  function escapeHtml(s) {
-    return s.replace(/[&<>"']/g, function (c) {
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
 
-  function load(window) {
+  /* No bars. An audit against the live cluster on 2026-08-15 measured the corpus:
+     these twelve are the top ~0.1% of 14,139 by cosine distance and sit about 0.15
+     below the median of a corpus spanning 0.29 — so the *set* is strongly separated
+     and real. Within the set the spread is 0.016, and two pairs are exact ties on
+     identical documents. A bar scaled to that internal spread stretches 0.016 across
+     the full width, which amplifies noise about eighteenfold and draws tied rows at
+     different lengths — asserting an ordering that does not exist in the data.
+
+     So the ordering is shown as a number and the ties are named. Saying "these two
+     are tied and we cannot separate them" is a stronger claim than a chart that
+     pretends otherwise. */
+
+  /* Competition ranking: tied rows share a position and the next rank skips. This is
+     computed on the exact float the server sent, not on the 4dp display value — two
+     distances that differ in the 6th place are not a tie and must not be drawn as one. */
+  function ranked(rows) {
+    var out = [], rank = 0;
+    rows.forEach(function (r, i) {
+      var tiedPrev = i > 0 && r.distance === rows[i - 1].distance;
+      var tiedNext = i < rows.length - 1 && r.distance === rows[i + 1].distance;
+      if (!tiedPrev) rank = i + 1;
+      out.push({ row: r, rank: rank, tied: tiedPrev || tiedNext });
+    });
+    return out;
+  }
+
+  function draw(rows, highlight) {
+    var ties = 0;
+    rowsEl.innerHTML = ranked(rows).map(function (e) {
+      var r = e.row;
+      var hit = highlight && r.name === highlight;
+      if (e.tied) ties++;
+      return '<div class="row' + (hit ? ' hit' : '') + (e.tied ? ' tied' : '') + '">' +
+        '<span class="rank">' + String(e.rank).padStart(2, '0') + '</span>' +
+        '<span><span class="name">' + esc(r.name) + '</span>' +
+        (hit ? '<span class="rp-you">the one we wrote to</span>' : '') +
+        (e.tied ? '<span class="rp-tied">tied — identical vectors</span>' : '') +
+        '</span>' +
+        '<span class="d">' + r.distance.toFixed(4) + '</span></div>';
+    }).join('');
+    return ties;
+  }
+
+  function stamp() {
+    if (!replay) { stampEl.innerHTML = ''; return; }
+    var ok = replay.matched;
+    stampEl.innerHTML =
+      '<span class="rp-aost">AS OF SYSTEM TIME \'' + esc(replay.as_of) + '\'</span>' +
+      '<span class="rp-check ' + (ok ? 'ok' : 'bad') + '">' +
+        'recorded rank ' + replay.recorded_rank +
+        ' · replayed rank ' + (replay.replayed_rank === null ? '—' : replay.replayed_rank) +
+        ' · ' + (ok ? 'match' : 'does not match') +
+      '</span>';
+  }
+
+  function renderThen() {
+    if (!replay) return;
+    lastTies = draw(replay.rows, replay.counterparty);
+    stamp();
+    var msg = 'the shortlist that opened this conversation, read from the index as it ' +
+      'stood at that instant · these <b>' + replay.rows.length + '</b> were selected out ' +
+      'of every embedded counterparty in the index; within them the spread is only ' +
+      spread(replay.rows) + ' of cosine distance, so treat this as a set that was ' +
+      'selected rather than a leaderboard';
+    if (lastTies) msg += ' · <b>' + lastTies + '</b> of them are exact ties and cannot ' +
+      'be ordered at all';
+    footEl.innerHTML = msg;
+  }
+
+  function spread(rows) {
+    var ds = rows.map(function (r) { return r.distance; });
+    return (Math.max.apply(null, ds) - Math.min.apply(null, ds)).toFixed(4);
+  }
+
+  function renderNow() {
+    if (!nowRows) return;
+    lastTies = draw(nowRows, replay ? replay.counterparty : null);
+    stampEl.innerHTML = '<span class="rp-aost">no AS OF clause — the index as it is now</span>';
+
+    /* The comparison, said in full rather than as a bare count. If nothing moved,
+       say that too: "the index has not changed since" is a real answer and hiding
+       it would be the same dishonesty the scrubber committed. */
+    var was = {}, moved = 0, gone = 0;
+    (replay ? replay.rows : []).forEach(function (r, i) { was[r.name] = i; });
+    nowRows.forEach(function (r, i) {
+      if (was[r.name] === undefined) gone++;
+      else if (was[r.name] !== i) moved++;
+    });
+    var parts = ['the same query, no time travel'];
+    if (moved) parts.push('<b>' + moved + '</b> in a different position than at decision time');
+    if (gone) parts.push('<b>' + gone + '</b> not in that ranking at all');
+    if (!moved && !gone) parts.push('identical to the decision — the index has not changed since');
+    footEl.innerHTML = parts.join(' · ');
+  }
+
+  function loadNow() {
+    if (nowRows) { renderNow(); return; }
     footEl.textContent = 'querying the cluster…';
-    fetch('/demo/tune?artist=hallow-youth&window=' + encodeURIComponent(window))
+    fetch('/demo/tune?artist=hallow-youth&window=now')
       .then(function (r) { return r.json(); })
-      .then(function (d) { render(d, window); })
+      .then(function (d) { nowRows = d.rows || []; renderNow(); })
       .catch(function () {
         footEl.textContent = 'the cluster did not answer — it scales to zero, so the ' +
           'first query after an idle period can take a moment. Try again.';
       });
   }
 
+  /* Every failure here is a real state with its own sentence. None of them fall back
+     to a plausible-looking ranking, because a fabricated shortlist on the one section
+     about provenance would be the worst possible bug in this file. */
+  function fail(msg) {
+    whoEl.textContent = 'no decision to replay';
+    stampEl.innerHTML = '';
+    rowsEl.innerHTML = '';
+    footEl.innerHTML = esc(msg);
+    dial.forEach(function (b) { b.disabled = true; });
+  }
+
+  fetch('/demo/replay')
+    .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
+    .then(function (res) {
+      var d = res.d;
+      if (res.s === 410) {
+        fail('that decision is older than gc.ttlseconds, so the instant it was made has ' +
+             'been garbage-collected. Time travel reaches back exactly that far and no ' +
+             'further — which is the cost of the feature, stated rather than hidden.');
+        return;
+      }
+      if (res.s !== 200) { fail(d.note || d.error || 'no recorded decision on this deployment'); return; }
+      replay = d;
+      whoEl.innerHTML = 'we opened a conversation with <b>' + esc(d.counterparty) + '</b> ' +
+                        'about <b>' + esc(d.artist) + '</b>';
+      renderThen();
+    })
+    .catch(function () {
+      fail('the cluster did not answer — it scales to zero, so the first query after an ' +
+           'idle period can take a moment. Reload to try again.');
+    });
+
   dial.forEach(function (b) {
     b.addEventListener('click', function () {
+      if (b.disabled) return;
       dial.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
-      load(b.getAttribute('data-w'));
+      mode = b.getAttribute('data-mode');
+      if (mode === 'now') loadNow(); else renderThen();
     });
   });
-
-  load('now');
 })();
 </script>
 
@@ -1360,6 +1827,347 @@ footer a{color:var(--carrier)}
   });
 
   window.addEventListener('resize', function () { draw(); });
+})();
+</script>
+
+<script>
+/* ---------- #plan: the prefix, unbindable ----------------------------------
+   The rule this implements is CockroachDB's, not ours: a span over a composite
+   index can only constrain a *leading contiguous* run of columns. The moment one
+   is unbound, every column after it drops out of the span even though it is still
+   in the WHERE clause — it becomes a filter applied to whatever the vector search
+   already returned.
+
+   The all-bound plan is the one captured from the live cluster and is labelled as
+   such. Every other plan is derived from the rule above and says so, because a
+   page that renders a made-up EXPLAIN as though it came from a database is doing
+   the exact thing this section accuses other systems of. */
+(function () {
+  var root = document.getElementById('prefix');
+  if (!root) return;
+  var planEl = document.getElementById('prefix-plan');
+  var noteEl = document.getElementById('prefix-note');
+  var verdictEl = document.getElementById('prefix-verdict');
+  var segs = Array.prototype.slice.call(root.querySelectorAll('button.seg'));
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  }
+
+  function render() {
+    var bound = segs.map(function (s) { return s.getAttribute('aria-pressed') === 'true'; });
+
+    /* The span stops at the first gap. Everything after it is stranded. */
+    var spanLen = 0;
+    while (spanLen < bound.length && bound[spanLen]) spanLen++;
+
+    segs.forEach(function (s, i) {
+      var inSpan = i < spanLen;
+      var stranded = bound[i] && !inSpan;
+      s.classList.toggle('in-span', inSpan);
+      s.classList.toggle('stranded', stranded);
+      s.querySelector('.bind').textContent =
+        !bound[i] ? 'unbound' : (inSpan ? 'in span' : 'filter only');
+    });
+
+    var vals = segs.slice(0, spanLen).map(function (s) {
+      return "/'" + s.getAttribute('data-val') + "'";
+    }).join('');
+    var strandedCols = segs.filter(function (s, i) { return bound[i] && i >= spanLen; })
+                           .map(function (s) { return s.getAttribute('data-col'); });
+
+    var live = spanLen === 4;
+    var head = live
+      ? "-- EXPLAIN, live cluster"
+      : "-- derived from the index declaration, not a live EXPLAIN";
+
+    var lines = ['<span class="cm">' + head + '</span>', '• lookup join',
+                 '│ table: party@party_pkey',
+                 '└── <span class="hl">• vector search</span>',
+                 '      table: party@party_shortlist', '      target count: 20'];
+    if (spanLen > 0) {
+      lines.push('      <span class="hl">prefix spans:</span> [' + esc(vals));
+      lines.push('                   - ' + esc(vals) + ']');
+    } else {
+      lines.push('      <span class="hl">prefix spans:</span> ' +
+                 '<span class="hl">FULL INDEX — every tenant, every model</span>');
+    }
+    if (strandedCols.length) {
+      lines.push('      filter (after search): ' + esc(strandedCols.join(', ')));
+    }
+    planEl.innerHTML = lines.join('\n');
+
+    /* The verdict is graded, because these failures are not equally bad. Crossing
+       the tenant boundary is a different class of wrong from a slow query. */
+    var cls, verdict, note;
+    if (spanLen === 4) {
+      cls = 'ok'; verdict = 'searching inside the subspace';
+      note = 'All four predicates are in the span, so the vector search happens ' +
+             '<b>inside</b> the filtered subspace. Target count 20 means twenty usable rows.';
+    } else if (!bound[0]) {
+      cls = 'bad'; verdict = 'tenant boundary crossed';
+      note = 'With <b>tenant_id</b> unbound this is no longer a slow query, it is ' +
+             '<span class="cut">the wrong query</span> — the search ranges across every ' +
+             'label in the cluster. This is why the tenant predicate is not left to ' +
+             'reviewer discipline: CI parses every statement in <b>spindle/</b> and fails ' +
+             'the build if one omits it.';
+    } else if (strandedCols.length === 0) {
+      /* Only trailing columns are unbound, so nothing is stranded behind a gap.
+         The query is still correct and still uses the index — it just searches a
+         wider subspace. Saying "stranded" here would be a lie about a legal plan. */
+      cls = 'warn'; verdict = spanLen + ' of 4 columns in the span';
+      note = 'Nothing is stranded: the unbound columns are at the <b>end</b> of the ' +
+             'index, so the span still covers every predicate that is bound. This plan ' +
+             'is correct and still uses the index — it just searches a wider subspace, ' +
+             'and some of the twenty rows it returns will be parties we cannot contact.';
+    } else {
+      cls = 'warn'; verdict = spanLen + ' of 4 columns in the span';
+      note = '<b>' + strandedCols.join('</b> and <b>') + '</b> ' +
+             (strandedCols.length > 1 ? 'are' : 'is') + ' still in the WHERE clause, but no ' +
+             'longer in the span — a composite index can only constrain a leading ' +
+             'contiguous run, so a gap strands everything behind it. ' +
+             (strandedCols.length > 1 ? 'They become filters' : 'It becomes a filter') +
+             ' applied <b>after</b> the search returns, which means target count 20 stops ' +
+             'meaning twenty usable rows and starts meaning twenty candidates, some of ' +
+             'which are then thrown away.';
+    }
+    verdictEl.className = 'prefix-verdict ' + cls;
+    verdictEl.textContent = verdict;
+    noteEl.innerHTML = note;
+  }
+
+  segs.forEach(function (s) {
+    s.addEventListener('click', function () {
+      s.setAttribute('aria-pressed', s.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+      render();
+    });
+  });
+  render();
+})();
+
+/* ---------- #send: the lease race, driven by the reader --------------------
+   Three rules, and they are the ones in `fleet.work_once` rather than a
+   simplification invented for a web page:
+
+     claim     `FOR UPDATE SKIP LOCKED` — a lead someone else holds is not
+               contended for, it is skipped. The second worker gets no row back
+               and so has no lease to complete with.
+     expire    a lease has a TTL. When it lapses the lead is claimable again and
+               the holder is NOT told — it still believes it holds the lease,
+               which is exactly the condition that makes a fence necessary.
+     complete  `UPDATE ... WHERE lease_token = $mine`. If the row's token has
+               moved on this matches zero rows and the write is refused closed.
+
+   `sent` cannot be driven above one. That is the claim, and the controls are
+   arranged so a reader can spend a minute failing to falsify it. */
+(function () {
+  var root = document.getElementById('race');
+  if (!root) return;
+  var logEl = document.getElementById('race-log');
+  var sentEl = document.getElementById('race-sent');
+  var dupesEl = document.getElementById('race-dupes');
+  var goalEl = document.getElementById('race-goal');
+  var scoreEl = root.querySelector('.race-score');
+
+  var TOKENS = ['2bb498ed', '6f72beda', 'c1d0a447', '9ae37b52'];
+  var state, minted;
+
+  function reset() {
+    /* `holder` is the token the row carries; `believes` is what each worker thinks
+       it holds. The gap between those two is the entire bug class. */
+    state = { holder: null, believes: { A: null, B: null }, done: false, sent: 0, dupes: 0 };
+    minted = 0;
+    logEl.innerHTML = '';
+    render();
+  }
+
+  function log(w, result, cls) {
+    var li = document.createElement('li');
+    var a = document.createElement('span'); a.className = 'w'; a.textContent = w;
+    var b = document.createElement('span'); b.className = 'r ' + cls; b.textContent = result;
+    li.appendChild(a); li.appendChild(b);
+    logEl.appendChild(li);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function render() {
+    ['A', 'B'].forEach(function (w) {
+      var el = root.querySelector('[data-tok="' + w + '"]');
+      var mine = state.believes[w];
+      el.textContent = mine ? mine + '…' : 'no lease';
+      el.classList.toggle('held', !!mine && mine === state.holder);
+      el.classList.toggle('stale', !!mine && mine !== state.holder);
+    });
+    sentEl.textContent = state.sent;
+    dupesEl.textContent = state.dupes;
+    scoreEl.classList.toggle('broken', state.dupes > 0);
+    goalEl.textContent = state.dupes > 0
+      ? 'the fence let one through — that is a bug, not a feature'
+      : (state.sent ? 'still one. try a different order.' : 'try to make it two');
+  }
+
+  function claim(w) {
+    if (state.done) { log(w, 'claim → nothing to claim: the lead is already complete', 'skip'); return; }
+    if (state.holder) {
+      /* SKIP LOCKED does not block and does not raise. It returns no row at all. */
+      log(w, 'claim → skipped: another worker holds the lease (FOR UPDATE SKIP LOCKED)', 'skip');
+      return;
+    }
+    var tok = TOKENS[minted++ % TOKENS.length];
+    state.holder = tok;
+    state.believes[w] = tok;
+    log(w, 'claim → holds lease ' + tok + '…', 'ok');
+  }
+
+  function complete(w) {
+    var mine = state.believes[w];
+    if (!mine) { log(w, 'complete → refused: no lease to fence on', 'refused'); return; }
+    if (state.done) { log(w, 'complete → refused: the lead is already complete', 'refused'); return; }
+    if (mine !== state.holder) {
+      /* The stale worker is not refused for being slow. It is refused for being
+         wrong about the present, which is the only thing the row can check. */
+      log(w, 'complete → Refused · lease lost (' + mine + '… is no longer current)', 'refused');
+      return;
+    }
+    state.done = true;
+    state.sent += 1;
+    if (state.sent > 1) state.dupes = state.sent - 1;
+    log(w, 'complete → OK · the write, the agent_run row and the release, in one transaction', 'ok');
+  }
+
+  function expire() {
+    if (!state.holder) { log('—', 'lease expires → no lease to lapse', 'skip'); return; }
+    var was = state.holder;
+    state.holder = null;
+    log('—', 'lease expires → ' + was + '… lapsed. The holder is not told.', 'skip');
+  }
+
+  root.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button[data-act]');
+    if (!btn) return;
+    var act = btn.getAttribute('data-act');
+    var w = btn.getAttribute('data-w');
+    if (act === 'reset') { reset(); return; }
+    if (act === 'expire') expire();
+    else if (act === 'claim') claim(w);
+    else if (act === 'complete') complete(w);
+    render();
+  });
+
+  reset();
+})();
+
+/* ---------- #pricing: the cap as a predicate -------------------------------
+   Reads the caps off the rendered cards rather than carrying a second copy, so a
+   tier changed in `spindle.plans.TIERS` changes this with it and the two cannot
+   drift. A card with no `data-cap` is the by-agreement tier: it is not scored as
+   admitting everything, because that would be a promise nobody made. */
+(function () {
+  var range = document.getElementById('cap-range');
+  if (!range) return;
+  var out = document.getElementById('cap-out');
+  var line = document.getElementById('cap-line');
+  var cards = Array.prototype.slice.call(document.querySelectorAll('#tiers .tier'));
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  }
+  function ordinal(n) {
+    var s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  function render() {
+    var want = parseInt(range.value, 10);
+    out.textContent = want;
+
+    var cheapest = null;
+    cards.forEach(function (c) {
+      var raw = c.getAttribute('data-cap');
+      var el = c.querySelector('.admits');
+      if (!el) return;
+      c.classList.remove('admit', 'refuse', 'cheapest');
+      if (!raw) { el.textContent = 'by agreement'; return; }
+      var cap = parseInt(raw, 10);
+      if (want <= cap) {
+        c.classList.add('admit');
+        el.textContent = 'admits · ' + (cap - want) + ' spare';
+        if (!cheapest) cheapest = c;
+      } else {
+        c.classList.add('refuse');
+        el.textContent = 'refuses the ' + ordinal(cap + 1);
+      }
+    });
+    if (cheapest) cheapest.classList.add('cheapest');
+
+    if (cheapest) {
+      var cap = parseInt(cheapest.getAttribute('data-cap'), 10);
+      var refusing = cards.filter(function (c) { return c.classList.contains('refuse'); }).length;
+      line.innerHTML = 'At <b>' + want + '</b> open conversations the cheapest tier that ' +
+        'admits you is <b>' + esc(cheapest.getAttribute('data-name')) + '</b>, with ' +
+        (cap - want) + ' of its ' + cap + ' spare.' +
+        /* Only claim a refusal when one is actually on screen. At the bottom of the
+           range the cheapest tier IS the first tier and nothing is refusing. */
+        (refusing
+          ? ' The ' + (refusing > 1 ? refusing + ' tiers' : 'tier') + ' below it ' +
+            (refusing > 1 ? 'do' : 'does') + ' not get more expensive at this volume — ' +
+            (refusing > 1 ? 'they ' : 'it ') +
+            '<span class="refuse">refuse' + (refusing > 1 ? '' : 's') + ' the work</span>.'
+          : ' This is the smallest tier there is, so nothing below it is being refused ' +
+            'yet — drag right and watch one start.');
+    } else {
+      line.innerHTML = '<b>' + want + '</b> is past every published cap, so there is no tier ' +
+        'to put you on and the honest answer is a conversation rather than a number. What ' +
+        'does not happen is the gate quietly allowing it and invoicing afterwards.';
+    }
+  }
+
+  range.addEventListener('input', render);
+  render();
+})();
+
+/* ---------- #verdict: the rows open ----------------------------------------
+   The `js` class is set from here rather than shipped in the markup, so a reader
+   with JavaScript off gets every detail row already open rather than a table with
+   four invisible arguments in it. Collapsing is the enhancement; the argument is
+   not conditional on scripting. */
+(function () {
+  var table = document.getElementById('verdict-table');
+  if (!table) return;
+  document.documentElement.classList.add('js');
+
+  function toggle(row) {
+    var detail = row.nextElementSibling;
+    if (!detail || !detail.classList.contains('vd')) return;
+    var open = row.getAttribute('aria-expanded') === 'true';
+    row.setAttribute('aria-expanded', open ? 'false' : 'true');
+    detail.classList.toggle('open', !open);
+  }
+
+  table.addEventListener('click', function (ev) {
+    var row = ev.target.closest ? ev.target.closest('tr.vr') : null;
+    /* A link inside an open detail row must not re-collapse the row it sits in. */
+    if (!row || ev.target.closest('a')) return;
+    toggle(row);
+  });
+
+  table.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    var row = ev.target.closest ? ev.target.closest('tr.vr') : null;
+    if (!row) return;
+    ev.preventDefault();
+    toggle(row);
+  });
+
+  /* The one row that is a claim rather than a concession opens on load. The four
+     concessions stay shut: a reader who opens nothing should still leave having
+     read the claim. */
+  var keep = table.querySelector('tr.vr.keep');
+  if (keep) toggle(keep);
 })();
 </script>
 </body>

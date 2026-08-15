@@ -107,7 +107,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-RTF_PLATFORM = Path(__file__).resolve().parents[1] / "spindle"
+SPINDLE_PKG = Path(__file__).resolve().parents[1] / "spindle"
 
 #: Every table in `platform/schema/*.sql` that carries a `tenant_id` column — the
 #: single place this list is maintained. A table is deliberately left out only when its
@@ -128,6 +128,24 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     # carry `tenant_id NOT NULL`. `fact_basis`, `agent_manifest` and `source_manifest`
     # stay out because their own `CREATE TABLE` genuinely has no such column.
     "campaign", "thread", "message", "outbox",
+    # 035's three, added in the same commit as the migration rather than a merge later —
+    # the note above records what happened the one time that slipped. Verified against
+    # `036_autonomy_and_track_budget.sql`: all three carry `tenant_id UUID NOT NULL`.
+    # `budget_raise` matters most here: it is written by an agent acting unattended, so a
+    # statement of its that lost its tenant predicate would let one label's automatic
+    # spending decision be read or resolved from another's console.
+    "autonomy", "recording_budget", "budget_raise",
+    # `035`'s ledger. It carries `tenant_id` as the leading column of its own primary
+    # key, and its header says an audit ledger that could be read across a tenant
+    # boundary "would be worse than no audit ledger, because it would be an audit ledger
+    # that leaks" — which is precisely the claim this lint is for. It was absent when the
+    # table landed, so for one commit the newest table in the schema was uncovered: the
+    # same gap the note above records happening with `010`'s four.
+    "decision",
+    # Found on 2026-08-15 by deriving the set from the schema rather than reading the
+    # list. All three were already scoped correctly in every statement — the lint simply
+    # was not claiming them, which is coverage believed rather than held.
+    "contact_route", "recording_asset", "tenant_budget",
 )
 
 #: A reference to a table, tagged with which keyword introduced it — the keyword is
@@ -178,6 +196,22 @@ VALIDATED_FRAGMENTS: dict[tuple[str, str, str], str] = {
         "otherwise, before it reaches the SQL — so what lands here is a timestamp "
         "literal, never a clause. The surrounding statement keeps its literal "
         "`WHERE tenant_id = %s` and is checked below in both of its two possible forms."),
+    ("budgets.py", "value_of", "as_of"): (
+        "A cluster logical timestamp for `AS OF SYSTEM TIME`, interpolated for the same "
+        "reason `agents.shortlist_as_of` interpolates one: CockroachDB requires that "
+        "clause to be a constant at plan time and rejects a placeholder. "
+        "`budgets._check_as_of` regex-validates it against `\\d{1,19}(\\.\\d{1,10})?` "
+        "with `fullmatch` and raises otherwise, before it reaches the SQL — so what "
+        "lands here is a timestamp literal and can never be a clause, a quote or a "
+        "second statement. The surrounding query keeps its literal "
+        "`WHERE tenant_id = %s AND party_id = %s` and is checked below."),
+    ("budgets.py", "valuation", "as_of"): (
+        "The same validated timestamp as the `value_of` entry above, in the query that "
+        "walks track -> campaign -> thread -> counterparty. Note the clause attaches to "
+        "`thread` and cannot introduce a table or a predicate: the statement's literal "
+        "`WHERE t.tenant_id = %s` survives interpolation, and both joined tables are "
+        "correlated on `tenant_id` in their `ON` clauses, so a replay reads one "
+        "tenant's history exactly as a live read does."),
     ("platforms.py", "search", "filters"): (
         "The *optional* predicates of the public search — country, platform and a name "
         "match — and nothing else. The two predicates that matter to this test are "
@@ -343,7 +377,7 @@ def _extract_statements(path: Path) -> list[tuple[int, str]]:
     fn_scopes = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
 
     try:
-        relative = path.resolve().relative_to(RTF_PLATFORM).as_posix()
+        relative = path.resolve().relative_to(SPINDLE_PKG).as_posix()
     except ValueError:  # a path outside the package — the self-tests below use these
         relative = path.name
 
@@ -542,7 +576,7 @@ class TenantScoping(unittest.TestCase):
     def test_the_walk_finds_every_module(self) -> None:
         # `distributors/` is a subpackage `glob("*.py")` would not recurse into — the
         # exact mistake this test's docstring warns about repeating.
-        found = {p.relative_to(RTF_PLATFORM) for p in RTF_PLATFORM.rglob("*.py")}
+        found = {p.relative_to(SPINDLE_PKG) for p in SPINDLE_PKG.rglob("*.py")}
         self.assertIn(Path("agents.py"), found)
         self.assertIn(Path("fleet.py"), found)
         self.assertIn(Path("distributors/base.py"), found,
@@ -595,7 +629,7 @@ class TenantScoping(unittest.TestCase):
         guard below refuses to tolerate, applied to the other escape hatch."""
         for (rel, fn, var), reason in VALIDATED_FRAGMENTS.items():
             with self.subTest(fragment=(rel, fn, var)):
-                path = RTF_PLATFORM / rel
+                path = SPINDLE_PKG / rel
                 self.assertTrue(path.exists(), f"{rel} no longer exists")
                 tree = ast.parse(path.read_text(), filename=str(path))
                 fns = [n for n in ast.walk(tree)
@@ -616,7 +650,7 @@ class TenantScoping(unittest.TestCase):
         failures: list[str] = []
         checked = 0
 
-        for path in sorted(RTF_PLATFORM.rglob("*.py")):
+        for path in sorted(SPINDLE_PKG.rglob("*.py")):
             for lineno, sql in _extract_statements(path):
                 checked += 1
                 for unit, keyword, table in _violations(sql):
@@ -624,7 +658,7 @@ class TenantScoping(unittest.TestCase):
                     if key in ALLOWLIST:
                         used_allowlist_entries.add(key)
                         continue
-                    rel = path.relative_to(RTF_PLATFORM)
+                    rel = path.relative_to(SPINDLE_PKG)
                     failures.append(
                         f"{rel}:{lineno} {keyword} {table} has no tenant_id predicate "
                         f"in its governing clause:\n    {key[:200]}")
@@ -650,3 +684,95 @@ class TenantScoping(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+#: Tables that carry `tenant_id` and are deliberately NOT in `TENANT_SCOPED_TABLES`.
+#: Every entry needs a reason, because this set is the only way a table escapes the lint
+#: and an unexplained entry is indistinguishable from an oversight.
+#: The migrations themselves, which are the only authority on what a table has.
+SCHEMA_DIR = Path(__file__).resolve().parent.parent.parent / "schema"
+
+UNSCOPED_BY_DESIGN: dict[str, str] = {
+    # The boundary. You consult `account` to find out *which* tenant an address belongs
+    # to, so a tenant predicate cannot be a precondition of reading it — resolving the
+    # tenant is the query's entire purpose. `account_count` is likewise a deployment-wide
+    # capacity check ("the service is full"), not a tenant's own number. This is the same
+    # category as `tenant` itself, which escapes only because its key is `id`.
+    "account": "the table that resolves which tenant an email belongs to",
+    # Replaced by `party` and friends in `005_party_first.sql`, which says so in its
+    # header. Still defined by migrations 001-004 because this directory is additive and
+    # nothing here removes them, but `spindle/` issues no statement against any of them —
+    # verified by this module's own scan, which finds none to complain about.
+    "artist": "superseded by party (005)",
+    "artist_budget": "superseded by party_budget (005)",
+    "artist_chunk": "superseded by party_chunk (005)",
+    "artist_document": "superseded by party_document (005)",
+    "artist_fact": "superseded by party_fact (005)",
+    "artist_identifier": "superseded by party_identifier (005)",
+    "artist_metric": "superseded by party_metric (005)",
+    "artist_profile": "superseded by party (005)",
+    "track": "superseded by recording (005)",
+}
+
+
+def _schema_tables_with_tenant_id(schema_dir: Path) -> set[str]:
+    """Every table the migrations give a `tenant_id`, read from the DDL itself."""
+    bodies: dict[str, str] = {}
+    for path in sorted(schema_dir.glob("*.sql")):
+        sql = re.sub(r"--[^\n]*", "", path.read_text())
+        for m in re.finditer(
+                r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z_]+)\s*\((.*?)\n\)\s*;",
+                sql, re.S | re.I):
+            bodies[m.group(1)] = bodies.get(m.group(1), "") + m.group(2)
+        # A table can acquire the column later; 025 and 033 both do this elsewhere.
+        for m in re.finditer(
+                r"ALTER\s+TABLE\s+([a-z_]+)\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?tenant_id",
+                sql, re.I):
+            bodies[m.group(1)] = bodies.get(m.group(1), "") + " tenant_id "
+    return {t for t, body in bodies.items() if re.search(r"\btenant_id\b", body)}
+
+
+class ScopedTableListIsDerivable(unittest.TestCase):
+    """`TENANT_SCOPED_TABLES` is hand-maintained, and it has silently gone stale twice.
+
+    The list's own header records the first occurrence. The second was found on
+    2026-08-15: `decision`, `autonomy`, `recording_budget` and `budget_raise` were added
+    to the schema and to neither this list nor `mcp`'s copy, so every statement against
+    them sat outside the lint — not failing it, not covered by it. `test_mcp` compares
+    the two lists to *each other*, which cannot catch this: both were consistently wrong.
+
+    The same sweep then found `contact_route`, `recording_asset` and `tenant_budget` had
+    been outside it for longer. All three passed the moment they were added, which is the
+    point — the statements were right and the coverage was imaginary.
+
+    So the list stops being trusted on its own. This derives the set from the DDL and
+    fails on any table that is in neither the list nor `UNSCOPED_BY_DESIGN`. A new
+    tenant-scoped table now fails the build until somebody classifies it, which is the
+    opposite of the failure this file has had twice: an inclusion list silently missing a
+    table is invisible, and an exclusion list missing one is a red build.
+
+    Modelled on `test_vector_plans.VectorQueryCensus`, which already does exactly this
+    for `<=>` queries and for the same reason.
+    """
+
+    def test_no_tenant_scoped_table_is_unclassified(self) -> None:
+        derived = _schema_tables_with_tenant_id(SCHEMA_DIR)
+        classified = set(TENANT_SCOPED_TABLES) | set(UNSCOPED_BY_DESIGN)
+        unclassified = derived - classified
+        self.assertEqual(
+            unclassified, set(),
+            "these tables carry `tenant_id` in the schema but appear in neither "
+            "TENANT_SCOPED_TABLES nor UNSCOPED_BY_DESIGN, so no statement against them "
+            "is being linted:\n  " + "\n  ".join(sorted(unclassified)) +
+            "\n\nAdd each to TENANT_SCOPED_TABLES (and to `mcp.TENANT_SCOPED_TABLES`, "
+            "which test_mcp holds equal), or to UNSCOPED_BY_DESIGN with the reason.")
+
+    def test_every_exemption_still_exists(self) -> None:
+        """An exemption for a table the schema no longer defines is a stale exemption,
+        and a stale exemption is how a real table gets excused by a name collision."""
+        derived = _schema_tables_with_tenant_id(SCHEMA_DIR)
+        stale = set(UNSCOPED_BY_DESIGN) - derived
+        self.assertEqual(
+            stale, set(),
+            "UNSCOPED_BY_DESIGN names tables that no longer carry a tenant_id in the "
+            "schema: " + ", ".join(sorted(stale)))

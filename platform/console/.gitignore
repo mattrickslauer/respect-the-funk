@@ -1,8 +1,0 @@
-node_modules/
-dist/
-*.tsbuildinfo
-
-# Generated from platform/web/rtf_platform/templates/_design.html by
-# `npm run sync-tokens`. Not committed, so it cannot drift from its source in a
-# way that survives a checkout.
-src/styles/design.generated.css

@@ -120,14 +120,38 @@
                   <span class="ell">
                     {% if label %}<b>{{ label }}</b>{% endif %}<i>{{ detail }}</i>
                   </span>
+                  {# Every control on this row posts over htmx rather than submitting.
+                     As plain submits these threw the whole screen away and redrew it to
+                     change one row — the flash was the only feedback there was, and it
+                     said nothing about whether the write had succeeded or even started.
+
+                     The endpoints are unchanged and still answer `303` to `back`. htmx
+                     follows the redirect, `hx-select` lifts `<main>` out of the page
+                     that comes back, and that replaces the `<main>` on screen. One
+                     server code path, no fragment endpoints, no second renderer — the
+                     browser simply stops discarding the page to redraw the same thing.
+
+                     `hx-disabled-elt="find button"` locks the control for the duration
+                     so one decision cannot be posted twice. It names the button because
+                     `disabled` is an attribute a button honours and a form does not.
+
+                     The `method`/`action` stay on the form: with JavaScript off this is
+                     still an ordinary submit that works, which is worth keeping on the
+                     screen where a person accepts and rejects things. #}
                   {% if action is string %}
-                    <form method="post" action="{{ action }}">
+                    <form method="post" action="{{ action }}"
+                          hx-post="{{ action }}"
+                          hx-select="main" hx-target="main" hx-swap="outerHTML"
+                          hx-disabled-elt="find button">
                       <button type="submit" class="b x" title="Remove {{ label }}">✕</button>
                     </form>
                   {% elif action %}
                     <span class="acts">
                       {% for a_label, a_url, a_cls in action %}
-                        <form method="post" action="{{ a_url }}" style="display:inline">
+                        <form method="post" action="{{ a_url }}" style="display:inline"
+                              hx-post="{{ a_url }}"
+                              hx-select="main" hx-target="main" hx-swap="outerHTML"
+                              hx-disabled-elt="find button">
                           <button type="submit" class="b {{ a_cls }}">{{ a_label }}</button>
                         </form>
                       {% endfor %}
@@ -287,7 +311,12 @@
                 {% if a is string %}
                   <button type="button" class="b {{ 'p' if loop.first else '' }}{{ ' d' if a in ('Retract','Reject','Disable','Suppress','Mark do-not-contact','Close as lost') else '' }}">{{ a }}</button>
                 {% elif a|length > 3 and a[3] == 'post' %}
-                  <form method="post" action="{{ a[1] }}" style="display:inline">
+                  {# Posted over htmx, with the form kept as the no-JavaScript fallback —
+                     same pattern and same reasons as the editlist controls above. #}
+                  <form method="post" action="{{ a[1] }}" style="display:inline"
+                        hx-post="{{ a[1] }}"
+                        hx-select="main" hx-target="main" hx-swap="outerHTML"
+                        hx-disabled-elt="find button">
                     <button type="submit" class="b {{ a[2] }}">{{ a[0] }}</button>
                   </form>
                 {% else %}

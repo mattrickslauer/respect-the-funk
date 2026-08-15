@@ -138,14 +138,31 @@ running on the machine.
 ```hcl
 # platform/infra/terraform.tfvars
 database_url = "postgresql://…"   # from .env
-admin_token  = "…"                # openssl rand -hex 24; this is how you sign in
+
+# Mail, and read the runbook before setting it. Since 2026-08-15 sign-in is a
+# six-digit code emailed to your address and nothing else — there is no shared
+# admin token any more — so a deployment that cannot send is one nobody can enter.
+mail_domain         = "example.com"   # empty creates no SES resources, and applies fine
+mail_sender         = "hello@example.com"
+mail_reply_to       = "hello@example.com"
+mail_postal_address = "…"
 ```
+
+`admin_token` was here until 2026-08-15 and is gone. If your `terraform.tfvars` still
+carries it, delete the line: it authenticates nothing, and it is a live secret sitting in
+a file for no reason.
 
 ```bash
 ./platform/infra/build.sh              # vendors arm64 wheels into infra/build
 terraform -chdir=platform/infra init
 terraform -chdir=platform/infra apply  # read the plan; it is the resource list
+terraform -chdir=platform/infra output mail_configured   # false means nobody can sign in
 ```
+
+**Two steps Terraform cannot take**, both in
+[`docs/runbooks/ses-sign-in-mail.md`](../docs/runbooks/ses-sign-in-mail.md): verifying the
+domain in DNS, and leaving the SES sandbox — until which only addresses you have verified
+by hand can sign in at all.
 
 `terraform output console_url` is the demo URL `PLATFORM-SPEC §8` day 12 requires.
 

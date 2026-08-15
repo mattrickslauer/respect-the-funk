@@ -1,6 +1,10 @@
 # Platform API v1
 
-The JSON surface the React console talks to. Everything is under `/api/v1`.
+The JSON surface of the platform. Everything is under `/api/v1`.
+
+It was built for the React console at `platform/console`, which was removed on
+2026-08-15. The API was deliberately kept: it is independently tested, it is the only way
+anything scripts this system, and nothing about it depended on that client.
 
 This document exists so the client author does not read `rtf_platform/api/*.py` to guess
 shapes. Where it says a field can be `null`, it can be `null` and the client has to mean
@@ -16,11 +20,17 @@ those are right and this is stale.
 
 ## Authentication
 
-Every route is behind the operator gate. There are no public API routes — `/healthz` and
-the landing page stay on the console.
+Every route is behind the signed-in gate. There are no public API routes — `/healthz`
+and the landing page stay on the console.
 
-Two ways to present the operator token, and they are the *same* secret compared the same
-way (`hmac.compare_digest`, in `auth.principal_from_cookie`):
+The credential is your **account token**, and there is exactly one kind now. The shared
+`PLATFORM_ADMIN_TOKEN` was removed on 2026-08-15 along with the operator role; a token is
+issued when you sign in at `/signin` with a code emailed to your address, and it resolves
+to your tenant by a hash lookup in `account`. Every authenticated request is scoped to
+that tenant and there is no principal that sees across tenants.
+
+Two ways to present it, and they are the *same* token resolved the same way
+(`accounts.account_for_token`, via `auth.principal_from_cookie`):
 
 ```
 Cookie: rtf_session=<token>
@@ -73,7 +83,6 @@ Driver text is never passed through. A refusal will not name a constraint.
 | `not_authenticated` | 401 | No valid token. |
 | `read_only` | 403 | Signed in, may not write. |
 | `not_configured` | 503 | `DATABASE_URL` unset on the server. Misconfiguration; retrying will not help. |
-| `no_tenant` | 409 | No tenant exists yet. A fresh deployment, not an empty result. |
 | `not_found` | 404 | No such object in this tenant. Also what you get for another tenant's object — the two are indistinguishable on purpose. |
 | `not_allowed_value` | 400 | A value outside a closed set. The message lists the set. |
 | `malformed_request` | 422 | The request did not parse. `error.fields` names the field. |
@@ -97,12 +106,25 @@ Both are 409s on the same endpoint and they mean opposite things: the first says
 counterparty is taken, pick another*, the second says *the month is used up, no
 counterparty will work*. Only the second has an upgrade as its remedy.
 
-Three further codes exist in the closed set — `claim_refused`, `billing_not_configured`
-and `billing_signature_invalid` — and **no endpoint in this API raises them.** They
-belong to `POST /claim` and the two `POST /billing/*` endpoints, which live on the
-console application rather than here (the webhook cannot present a cookie, and the claim
-form is a browser POST). They share this envelope because there is one refusal shape for
-the whole deployment, not because they are part of this contract.
+Two further codes exist in the closed set — `billing_not_configured` and
+`billing_signature_invalid` — and **no endpoint in this API raises them.** They belong to
+the two `POST /billing/*` endpoints, which live on the console application rather than
+here (the webhook cannot present a cookie). They share this envelope because there is one
+refusal shape for the whole deployment, not because they are part of this contract.
+
+**Two codes were removed from the set on 2026-08-15**, and their absence is deliberate
+rather than an omission:
+
+- `no_tenant` meant "authenticated, but we cannot work out whose rows these are". It was
+  reachable only through the operator principal, which carried no tenant. With one
+  credential there is no way to be authenticated without an `account` row naming a
+  tenant, so nothing can raise it.
+- `claim_refused` belonged to `POST /claim`, which no longer exists. Sign-in is a
+  two-step browser flow with no machine-readable form; a script that wants a credential
+  holds the token it was issued.
+
+A declared code no path can produce is worse than no code — a client author writes a
+branch for it and can never test the branch. If you had one, delete it.
 
 ---
 

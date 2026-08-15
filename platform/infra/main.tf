@@ -182,6 +182,48 @@ resource "aws_route53_record" "ses_dkim" {
 # rather than "*" so a bug — or a stolen set of credentials — cannot send as a domain this
 # deployment does not own, which is the difference between an incident and a spam
 # incident somebody else's reputation pays for.
+# A custom MAIL FROM subdomain, which is the only thing that makes SPF *align*.
+#
+# ## Why this exists, and why adding `include:amazonses.com` to SPF would not have worked
+#
+# Sign-in codes landed in Gmail's spam folder on 2026-08-15. DKIM was verified, aligned
+# and passing, so DMARC passed on the DKIM half — but SPF did not align, and that is a
+# real negative signal rather than a cosmetic one.
+#
+# The reason is the *envelope* sender. Without a custom MAIL FROM, SES sends with a
+# Return-Path at `*.amazonses.com`, so the receiver's SPF check authenticates
+# **amazonses.com** — which passes, and is a different domain from the one in the `From`
+# header. DMARC only counts SPF when the two align. This is the standard trap: putting
+# `include:amazonses.com` in mattrickslauer.com's SPF record changes nothing, because
+# that record is never the one consulted.
+#
+# Setting a MAIL FROM subdomain moves the Return-Path to `bounce.<domain>`, which does
+# align, and the SPF record published there is then the one that is checked.
+#
+# ## `UseDefaultValue`, deliberately
+#
+# `RejectMessage` is the stricter setting and it is the wrong one to apply here first.
+# The DNS for this domain is at the registrar, not in Route 53, so the two records below
+# have to be added by hand — and between this resource applying and those records
+# existing, `RejectMessage` would refuse **every** send. On a deployment where an emailed
+# code is the only credential, that is a self-inflicted lockout in the window where
+# somebody is least likely to be watching.
+#
+# With `UseDefaultValue`, SES falls back to `*.amazonses.com` until the records resolve:
+# exactly today's behaviour, no worse, and it upgrades itself the moment DNS is right.
+# Tighten to `RejectMessage` once `aws ses get-identity-mail-from-domain-attributes`
+# reports `Success` — that is a one-line change and it is worth making, because at that
+# point a fallback to an unaligned envelope is a silent regression of this whole fix.
+#
+# The records to add are `terraform output ses_mail_from_records`; the runbook has them
+# with the reasoning.
+resource "aws_ses_domain_mail_from" "mail" {
+  count                  = var.mail_domain == "" ? 0 : 1
+  domain                 = aws_ses_domain_identity.mail[0].domain
+  mail_from_domain       = "bounce.${var.mail_domain}"
+  behavior_on_mx_failure = "UseDefaultValue"
+}
+
 resource "aws_iam_role_policy" "console_send_mail" {
   count = var.mail_domain == "" ? 0 : 1
   name  = "${local.name}-send-mail"

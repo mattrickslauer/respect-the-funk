@@ -137,6 +137,93 @@ terraform output sign_in_mail_configured    # must be true, or nobody can log in
 terraform output outreach_mail_configured   # false is fine unless you are sending pitches
 ```
 
+## Step 4 — deliverability, or the code arrives in spam
+
+**Measured on 2026-08-15: a sign-in code to Gmail landed in the spam folder.** The
+identity was verified and DKIM was passing, which is the state most people stop at. It is
+not enough, and the gap is specific.
+
+### What was actually wrong
+
+| Check | State | Aligned with `mattrickslauer.com`? |
+|---|---|---|
+| DKIM | pass | **yes** |
+| SPF | pass, for `amazonses.com` | **no** |
+| DMARC | pass (on DKIM), `p=none` | policy publishes no intent |
+
+DMARC passed, on the DKIM half alone. The SPF half failed *alignment*, and that is the
+part worth understanding because the obvious fix does not work:
+
+> Without a custom MAIL FROM, SES sets the envelope sender (`Return-Path`) to
+> `*.amazonses.com`. The receiver checks SPF against **that** domain, not against the one
+> in your `From` header. Adding `include:amazonses.com` to `mattrickslauer.com`'s SPF
+> record changes nothing, because that record is never consulted.
+
+The fix is to move the envelope sender onto a subdomain you control, which
+`aws_ses_domain_mail_from` now does — `bounce.<domain>`, with
+`behavior_on_mx_failure = "UseDefaultValue"` so nothing breaks in the window before the
+DNS exists.
+
+### Publish two records
+
+```
+terraform -chdir=platform/infra output ses_mail_from_records
+```
+
+At the registrar (this domain's DNS is **not** in Route 53, so Terraform cannot do it):
+
+| Name | Type | Value |
+|---|---|---|
+| `bounce.<domain>` | MX | `10 feedback-smtp.us-east-1.amazonses.com` |
+| `bounce.<domain>` | TXT | `v=spf1 include:amazonses.com ~all` |
+
+Confirm, and expect `Success` rather than `Pending`:
+
+```
+aws ses get-identity-mail-from-domain-attributes --identities <domain>
+```
+
+Once it reads `Success`, tighten `behavior_on_mx_failure` to `RejectMessage` in
+`main.tf`. Leaving it on `UseDefaultValue` forever means a DNS lapse silently reverts to
+an unaligned envelope — the exact defect this step fixed, returning without a symptom.
+
+### Strengthen DMARC
+
+The current record is `v=DMARC1; p=none;` — no reporting address, no stated intent. A
+receiver reads that as a domain nobody is minding. Once SPF aligns, publish:
+
+```
+_dmarc.<domain>  TXT  "v=DMARC1; p=quarantine; rua=mailto:dmarc@<domain>; fo=1"
+```
+
+Go to `p=quarantine` **after** confirming alignment, not before — with `p=none` a
+misalignment is a scoring penalty, and with `p=quarantine` it is a spam folder by policy.
+
+### What no amount of DNS will fix quickly
+
+`mattrickslauer.com` has no sending history. Reputation is earned per-domain over days of
+consistent, low-complaint volume, and a brand-new domain sending its first few messages
+gets treated with suspicion whatever its authentication says. Expect the first codes to
+need rescuing from spam even after the records are right.
+
+Two things that genuinely help, in order:
+
+1. **Mark the first few as "not spam" in Gmail.** A recipient-side signal is worth more
+   than anything sender-side at this volume.
+2. **Leave the SES sandbox** (Step 2). Sandbox is not itself a spam signal, but the
+   200/day cap keeps volume too low to build reputation.
+
+Do *not* reach for the usual list-mail remedies — `List-Unsubscribe`, a postal footer,
+an unsubscribe link. A sign-in code is transactional; adding an opt-out to one invites a
+recipient to reply STOP to a login email, and `otp.py` explains what that would do to a
+counterparty in an active campaign.
+
+### Check the reply-to is a real mailbox
+
+`mail_reply_to` is `spindle@<domain>`. This domain's MX points at the registrar's
+forwarding service, so that address delivers **only if a forwarder exists for it**. A
+reply-to that bounces is a reputation cost, and it is invisible until somebody replies.
+
 ## Verifying end to end
 
 ```

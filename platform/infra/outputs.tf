@@ -72,3 +72,28 @@ output "outreach_mail_configured" {
   description = "True when commercial sends are lawful — needs PLATFORM_MAIL_POSTAL_ADDRESS as well."
   value       = var.mail_sender != "" && var.mail_reply_to != "" && var.mail_postal_address != ""
 }
+
+# The two records the custom MAIL FROM subdomain needs, for the registrar to publish.
+#
+# Until both resolve, SES falls back to `*.amazonses.com` as the envelope sender
+# (`behavior_on_mx_failure = "UseDefaultValue"`), which is exactly today's behaviour —
+# so nothing breaks while they are missing, and nothing improves either. SPF only
+# *aligns* with the From domain once these exist, and alignment is the half that was
+# failing when sign-in codes landed in spam.
+#
+# The MX value is region-specific: `feedback-smtp.<region>.amazonses.com`.
+output "ses_mail_from_records" {
+  description = "MX and TXT to publish for the MAIL FROM subdomain, so SPF aligns."
+  value = var.mail_domain == "" ? [] : [
+    {
+      name  = "bounce.${var.mail_domain}"
+      type  = "MX"
+      value = "10 feedback-smtp.${var.region}.amazonses.com"
+    },
+    {
+      name  = "bounce.${var.mail_domain}"
+      type  = "TXT"
+      value = "v=spf1 include:amazonses.com ~all"
+    },
+  ]
+}

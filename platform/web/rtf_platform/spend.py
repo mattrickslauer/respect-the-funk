@@ -222,6 +222,31 @@ def spent_today(conn: psycopg.Connection, tenant_id: str) -> Decimal:
     return (Decimal(row["micro"]) / Decimal(1_000_000)).quantize(Decimal("0.000001"))
 
 
+def tenant_ceiling(conn: psycopg.Connection,
+                   tenant_id: str) -> tuple[Decimal | None, bool]:
+    """`(daily ceiling, paused)` for one tenant, or `(None, False)` if it has no budget row.
+
+    `None` is "this tenant has no ceiling of its own", not "unlimited" and not "zero".
+    The distinction decides `Gate.remaining_usd`: no row means the environment policy
+    applies alone, which is exactly what happened before per-tenant budgets existed, and
+    is the state the operator's tenant and every pre-migration-033 tenant are in.
+
+    That is not a silent default. The path that can create a tenant from the public
+    internet — `accounts.claim` — always writes this row, in the same transaction as the
+    account, so a tenant that a stranger caused to exist is bounded from the instant it
+    exists. The only tenants without one are the ones an operator made deliberately, and
+    the environment ceiling those fall back to is itself default-deny.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT daily_ceiling_usd, paused FROM tenant_budget WHERE tenant_id = %s",
+            (tenant_id,))
+        row = cur.fetchone()
+    if row is None:
+        return None, False
+    return Decimal(row["daily_ceiling_usd"]), bool(row["paused"])
+
+
 @dataclass
 class Gate:
     """Ask before you spend.
@@ -235,6 +260,21 @@ class Gate:
     policy: Policy
     already_spent_usd: Decimal
     refused: list[tuple[str, Decimal, str]]
+    #: This tenant's own daily ceiling, from `tenant_budget`, or `None` when it has no
+    #: row. Defaulted so every existing construction of a `Gate` in this codebase and its
+    #: tests keeps meaning exactly what it meant — a gate built without a tenant budget
+    #: behaves identically to one built before the column existed.
+    #:
+    #: It **narrows** the environment ceiling and can never widen it: `remaining_usd`
+    #: takes the smaller of the two. A per-tenant number that could raise the deployment's
+    #: ceiling would make `RTF_DAILY_CEILING_USD` advisory, and that variable is the kill
+    #: switch — the one thing an operator can change without a deploy to stop all spending
+    #: everywhere. A row in a table a webhook writes must not be able to override it.
+    tenant_ceiling_usd: Decimal | None = None
+    #: The per-tenant kill switch, from the same row. Refuses every priced call with its
+    #: own reason, kept distinct from a $0 ceiling because "no allowance today" and
+    #: "somebody stopped this tenant" are different facts to whoever reads the run log.
+    tenant_paused: bool = False
     #: What *this* gate has actually spent via `record`, separate from
     #: `already_spent_usd`'s running total (which starts from the day's prior spend and
     #: also grows by the same amount). A caller that fails partway through a run — an
@@ -247,15 +287,39 @@ class Gate:
 
     @classmethod
     def open(cls, conn: psycopg.Connection | None, tenant_id: str | None) -> "Gate":
+        """Read the policy, the day's spend and the tenant's own ceiling.
+
+        Both reads happen only when there is a connection, a tenant and paid calls are
+        enabled — the second condition is what keeps the added round trip off the path of
+        a deployment with spending switched off, where the answer cannot change the
+        outcome. That is the same reason `spent_today` was already conditional.
+        """
         policy = Policy.load()
         spent = Decimal("0")
+        ceiling: Decimal | None = None
+        paused = False
         if conn is not None and tenant_id and policy.paid_enabled:
             spent = spent_today(conn, tenant_id)
-        return cls(policy=policy, already_spent_usd=spent, refused=[])
+            ceiling, paused = tenant_ceiling(conn, tenant_id)
+        return cls(policy=policy, already_spent_usd=spent, refused=[],
+                   tenant_ceiling_usd=ceiling, tenant_paused=paused)
+
+    @property
+    def ceiling_usd(self) -> Decimal:
+        """The ceiling actually in force: the smaller of the deployment's and the tenant's.
+
+        `min`, never `max`, and never the tenant's alone. `RTF_DAILY_CEILING_USD` is the
+        operator's kill switch and a row in a table cannot be allowed to raise it — the
+        webhook writes that row, so the alternative is a payment provider granting itself
+        a higher spending limit on this project's AWS account.
+        """
+        if self.tenant_ceiling_usd is None:
+            return self.policy.daily_ceiling_usd
+        return min(self.policy.daily_ceiling_usd, self.tenant_ceiling_usd)
 
     @property
     def remaining_usd(self) -> Decimal:
-        return max(Decimal("0"), self.policy.daily_ceiling_usd - self.already_spent_usd)
+        return max(Decimal("0"), self.ceiling_usd - self.already_spent_usd)
 
     def check(self, key: str, *, tokens_in: int = 0, tokens_out: int = 0,
               requests: int = 1) -> Decimal:
@@ -280,14 +344,24 @@ class Gate:
             refuse("disabled",
                    f"Paid calls are off. {key} would have cost ${cost}. "
                    f"Set RTF_PAID_ENABLED=1 to allow it.")
+        if self.tenant_paused:
+            # Checked before the ceilings, so a paused tenant is told it is paused rather
+            # than being told it is out of allowance. The two have completely different
+            # remedies and the second one sends somebody to look at a number that is fine.
+            refuse("tenant_paused",
+                   f"This tenant is paused, so {key} was not called. It would have cost "
+                   f"${cost}. Clear tenant_budget.paused to resume.")
         if cost > self.policy.per_call_ceiling_usd:
             refuse("per_call",
                    f"{key} estimates ${cost}, over the per-call ceiling of "
                    f"${self.policy.per_call_ceiling_usd}.")
         if cost > self.remaining_usd:
+            # Names `ceiling_usd`, the one in force, rather than the environment's. When a
+            # tenant's own ceiling is the binding one, quoting the deployment's would send
+            # somebody to raise a variable that is not what stopped them.
             refuse("daily",
                    f"{key} estimates ${cost} but only ${self.remaining_usd} of the "
-                   f"${self.policy.daily_ceiling_usd} daily ceiling is left.")
+                   f"${self.ceiling_usd} daily ceiling is left.")
         return cost
 
     def record(self, cost_usd: Decimal) -> None:
@@ -308,7 +382,15 @@ class Gate:
         return {
             "paid_enabled": self.policy.paid_enabled,
             "dry_run": self.policy.dry_run,
-            "ceiling_usd": str(self.policy.daily_ceiling_usd),
+            # The ceiling in force, which is what a person reading this row wants to know.
+            # The deployment's own number is kept alongside it rather than replaced,
+            # because "the tenant was the binding limit" and "the deployment was" are the
+            # two different diagnoses, and one number cannot say which.
+            "ceiling_usd": str(self.ceiling_usd),
+            "policy_ceiling_usd": str(self.policy.daily_ceiling_usd),
+            "tenant_ceiling_usd": (None if self.tenant_ceiling_usd is None
+                                   else str(self.tenant_ceiling_usd)),
+            "tenant_paused": self.tenant_paused,
             "spent_usd": str(self.already_spent_usd),
             "incurred_usd": str(self.incurred_usd),
             "refused": [

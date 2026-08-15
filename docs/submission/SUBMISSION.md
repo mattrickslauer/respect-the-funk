@@ -247,6 +247,12 @@ Stated here so a judge does not have to find it:
   `SHOW CHANGEFEED JOBS` returns nothing, because creating one draws RUs continuously and
   nobody authorised that spend. Built is not running.
 - **Not Bedrock.** See WHERE.
+- **Not a paid product.** `platform/schema/033_account_billing.sql` makes the tenant column
+  real, `POST /claim` creates a bounded free tenant with no Stripe configuration present,
+  and `platform/web/rtf_platform/billing.py` speaks Stripe in **test mode only** — it
+  refuses a live key on purpose. No checkout session has been created against Stripe by
+  this code, no customer exists, and no payment has been taken. The prices in `plans.py`
+  are prices that have been written down.
 
 Every one of these was true and unstated at some point in this project's life, and each is
 written down here because a submission that claims everything is one a judge stops

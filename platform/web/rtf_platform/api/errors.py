@@ -94,6 +94,38 @@ ALREADY_QUEUED = "already_queued"
 #: talking to this person, across every campaign. Also not an error.
 THREAD_OCCUPIED = "thread_occupied"
 
+#: `outreach.PlanLimitReached` — the tenant's plan allows no more open conversations
+#: this month. Kept strictly separate from `THREAD_OCCUPIED` above, and the separation is
+#: the point: both refuse the same request with a 409 and they mean opposite things.
+#: `thread_occupied` says *this counterparty is taken, pick another*; `plan_limit_reached`
+#: says *you have used the month up, no counterparty will work*. A client that collapsed
+#: them would either offer an upgrade for a name clash or suggest a different name to
+#: somebody who has hit their ceiling. The numbers are in the message, and `plans.py`
+#: composes it so the console and this API cannot describe one limit two ways.
+PLAN_LIMIT_REACHED = "plan_limit_reached"
+
+#: `billing.BillingRefused` where the cause is configuration: Stripe variables unset, a
+#: live key where only a test key is accepted, or a tier with no price id. The deployment
+#: is not finished; nothing the caller does will help, and the message names the exact
+#: environment variables — the same contract `settings.stripe_missing` and the Ask
+#: screen's `mcp_missing` already keep. Never returned as a success with a fake session.
+BILLING_NOT_CONFIGURED = "billing_not_configured"
+
+#: A webhook whose `Stripe-Signature` is absent, malformed, stale or wrong. One code for
+#: all four, and that is on purpose: the caller is either Stripe (in which case the
+#: deployment's secret is wrong and the message says which) or somebody who is not
+#: Stripe, and telling the second one *which part* of their forgery failed is help they
+#: have not earned. The distinction is preserved where it is useful — `BillingRefused`
+#: carries the specific `reason`, which is logged rather than returned.
+BILLING_SIGNATURE_INVALID = "billing_signature_invalid"
+
+#: `accounts.ClaimRefused` — a claim the server declined. The address is malformed, the
+#: address already has an account, or a signup bound was reached. One code because every
+#: one of them is "your request was understood and refused for a stated reason", and the
+#: sentence is what differs; `accounts.ClaimRefused.reason` carries the machine-readable
+#: half for anything that needs to branch.
+CLAIM_REFUSED = "claim_refused"
+
 #: There is no draft on this thread waiting for a decision — it was approved, rejected
 #: or withdrawn between the read and the write.
 NO_DRAFT_WAITING = "no_draft_waiting"
@@ -131,6 +163,8 @@ CODES: frozenset[str] = frozenset({
     NOT_ALLOWED_VALUE, TRANSITION_REFUSED, ALREADY_QUEUED, THREAD_OCCUPIED,
     NO_DRAFT_WAITING, NOTHING_QUEUED, NO_MASTER, SUGGESTION_UNACCEPTABLE,
     NOT_JUSTIFIED, HISTORY_EXPIRED, MALFORMED_REQUEST,
+    PLAN_LIMIT_REACHED, BILLING_NOT_CONFIGURED, BILLING_SIGNATURE_INVALID,
+    CLAIM_REFUSED,
 })
 
 

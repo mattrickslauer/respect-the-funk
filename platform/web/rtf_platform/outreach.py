@@ -24,6 +24,12 @@ column into existence; letting the two drift would take the argument back.
 row sitting there in `pending` is a send that is fully prepared and has not happened —
 which is the honest state of this system and is visible as such in the console rather
 than hidden behind a button that appears to work.
+
+**A conversation is the billable unit, so opening one is metered.** `open_thread` checks
+the tenant's plan allowance before it inserts, and refuses past it. That check lives here
+rather than in a handler for the same reason the other three rules do: `ingest.py`, the
+console and the JSON API all open threads, and a limit enforced at three call sites is a
+limit that is missing from the fourth. `plans.py` holds the numbers.
 """
 
 from __future__ import annotations
@@ -36,7 +42,13 @@ from psycopg.types.json import Jsonb
 
 # `agents` does not import this module, so this direction is safe and the reverse would
 # not be: `justification` replays a shortlist, and the shortlist is agents' to define.
-from rtf_platform import agents
+#
+# `accounts` is imported for two reads and nothing else — the tenant's tier and the
+# month's conversation count. Nothing here writes an account, and `accounts` does not
+# import this module, so the direction holds. The tier numbers themselves are never read
+# from here: `plans.Tier` carries its own refusal, so the limit is stated in one place and
+# this module asks rather than compares.
+from rtf_platform import accounts, agents
 
 #: `PLATFORM-SPEC §2d`'s state machine, as `state -> the states it may become`.
 #:
@@ -90,6 +102,58 @@ class TransitionRefused(RuntimeError):
         super().__init__(
             f"thread {thread_id} is {was} and cannot become {to}. From {was} it may become: {legal}.")
         self.was, self.to = was, to
+
+
+class PlanLimitReached(RuntimeError):
+    """The tenant's plan does not allow another conversation this period.
+
+    A distinct class from `TransitionRefused`, and distinct from the `UniqueViolation`
+    that `one_open_thread_per_counterparty` raises, because all three mean genuinely
+    different things to whoever is looking at the screen: *somebody else is already
+    talking to this person*, *this thread is in the wrong state*, and *you have used the
+    plan up*. Only the last one has an upgrade button as its remedy, and collapsing them
+    would put that button on the other two.
+
+    Carries the tier and the count so the caller can render the arithmetic rather than
+    just the verdict — `api/actions.py` turns it into the `plan_limit_reached` refusal
+    code, and the console renders the sentence. The sentence itself is composed by
+    `plans.Tier.conversation_refusal`, in one place, so the two surfaces cannot come to
+    say different things about the same limit.
+    """
+
+    def __init__(self, message: str, *, plan: str, allowance: int | None,
+                 opened: int) -> None:
+        super().__init__(message)
+        self.plan = plan
+        self.allowance = allowance
+        self.opened = opened
+
+
+def check_plan_allowance(conn: psycopg.Connection, tenant_id: str) -> None:
+    """Raise `PlanLimitReached` if this tenant may not open another conversation.
+
+    Separate from `open_thread` so it can be called before the expensive part of a
+    pipeline — a fleet worker that is about to research a counterparty can ask first,
+    rather than doing the work and discovering the refusal at the write. Nothing does
+    that yet; the seam is here because the alternative is that the first caller who wants
+    it inlines a second copy of the arithmetic.
+
+    Two round trips for a plan-metered tenant, one for a tenant with no account row.
+    They are deliberately not folded into a single statement with subqueries: the count
+    is only meaningful if there is a plan, and the combined query would run the month's
+    range scan on every thread the operator console opens, forever, to save a round trip
+    on the path that does not need it.
+    """
+    tier = accounts.plan_for_tenant(conn, tenant_id)
+    if tier is None:
+        # Not plan-metered. `accounts.plan_for_tenant` explains which tenants those are
+        # and why an absent row must not be read as the free tier.
+        return
+    opened = accounts.conversations_opened_this_period(conn, tenant_id)
+    refusal = tier.conversation_refusal(opened)
+    if refusal is not None:
+        raise PlanLimitReached(refusal, plan=tier.key,
+                               allowance=tier.open_conversations, opened=opened)
 
 
 def idempotency_key(thread_id: Any, ordinal: int, body: str) -> str:
@@ -170,7 +234,26 @@ def open_thread(conn: psycopg.Connection, tenant_id: str, *, campaign_id: str,
     the schema's `thread_decision_is_whole` CHECK means a caller cannot write half of one
     — a rank without the instant it was a rank at cannot be replayed, and an instant
     without a rank cannot be checked against the replay.
+
+    **The plan allowance is checked first, and it is checked here.** A conversation is
+    what this product charges for, so the meter belongs at the one statement that creates
+    one rather than at the three handlers that call it. `PlanLimitReached` propagates the
+    same way the `UniqueViolation` does and for the same reason: an operator wants to be
+    told, a fleet worker wants to move on, and this function should not decide which.
+
+    The check is outside the transaction below, deliberately. Inside, it would hold the
+    read for the length of the insert and serialise every tenant's thread creation
+    against its own meter under `SERIALIZABLE` — `spend.spent_today` avoided the mirror
+    image of this by summing rather than decrementing a counter. Outside, there is a race:
+    two concurrent opens can both read four-of-five and both insert, taking a free tenant
+    to six. That is accepted knowingly. The overrun is bounded by concurrency rather than
+    unbounded, the next open refuses, the money ceiling in `tenant_budget` is a separate
+    and strictly enforced bound, and the cost of the alternative is a lock on the hot path
+    of the product's central write to prevent a customer occasionally getting one
+    conversation more than they paid for.
     """
+    check_plan_allowance(conn, tenant_id)
+
     hlc, rank, distance = decided if decided is not None else (None, None, None)
     with conn.transaction():
         with conn.cursor() as cur:

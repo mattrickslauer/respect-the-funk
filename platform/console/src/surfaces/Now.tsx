@@ -121,25 +121,21 @@ function RowCard({ row }: { row: TodayRow }) {
   );
 }
 
+// The strip was written as a wall of inline styles, and inline styles are the one
+// place a stylesheet cannot follow. That mattered more than tidiness: the labels were
+// set at 10px, which is unreadable on a phone, and no media query in app.css could
+// raise them because a `style` attribute outranks every one of them. It is a `.quiet`
+// class now, so the touch block owns its size along with everything else. Same
+// rendering at desktop, to the pixel — the declarations moved, they did not change.
 function Quiet({ counts }: { counts: Record<string, number> }) {
   const entries = Object.entries(counts ?? {});
   if (entries.length === 0) return null;
   return (
-    <div
-      style={{
-        display: "flex", flexWrap: "wrap", gap: "1.4rem", marginTop: "1.4rem",
-        paddingTop: ".8rem", borderTop: "1px solid var(--rule)",
-      }}
-    >
+    <div className="quiet">
       {entries.map(([k, v]) => (
-        <span key={k} style={{ fontSize: "10px", letterSpacing: ".08em",
-                               textTransform: "uppercase", color: "var(--faint)" }}>
+        <span key={k}>
           {k.replace(/_/g, " ")}{" "}
-          <b style={{ fontFamily: "var(--face-data)", fontSize: "11.5px",
-                      color: "var(--dim)", textTransform: "none",
-                      letterSpacing: 0, fontWeight: 500 }}>
-            {typeof v === "number" ? v.toLocaleString() : String(v)}
-          </b>
+          <b>{typeof v === "number" ? v.toLocaleString() : String(v)}</b>
         </span>
       ))}
     </div>

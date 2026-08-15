@@ -80,6 +80,7 @@ Driver text is never passed through. A refusal will not name a constraint.
 | `transition_refused` | 409 | A thread state change the machine does not allow. The message names both ends and what *is* legal from here. |
 | `already_queued` | 409 | A second approve. `UNIQUE (message_id)` on `outbox` refused it. **Not an error** — the first one worked. |
 | `thread_occupied` | 409 | Somebody already has an open thread with this counterparty, across every campaign. **Not an error.** |
+| `plan_limit_reached` | 409 | The tenant's plan allows no more open conversations this calendar month. The message names the plan, the allowance and the count. |
 | `no_draft_waiting` | 409 | That message is not an unsent outbound draft in this tenant. |
 | `nothing_queued` | 409 | Analysis not queued — already in the frontier, or nobody is credited on the track. |
 | `no_master` | 409 | No current stored master to analyse. |
@@ -90,6 +91,18 @@ Driver text is never passed through. A refusal will not name a constraint.
 `not_justified` and `history_expired` are deliberately separate. "We never had a reason"
 and "we had one and it aged out" are different answers to somebody asking why they were
 contacted, and a console that rendered them identically would be lying about one.
+
+`thread_occupied` and `plan_limit_reached` are separate for the same class of reason.
+Both are 409s on the same endpoint and they mean opposite things: the first says *this
+counterparty is taken, pick another*, the second says *the month is used up, no
+counterparty will work*. Only the second has an upgrade as its remedy.
+
+Three further codes exist in the closed set — `claim_refused`, `billing_not_configured`
+and `billing_signature_invalid` — and **no endpoint in this API raises them.** They
+belong to `POST /claim` and the two `POST /billing/*` endpoints, which live on the
+console application rather than here (the webhook cannot present a cookie, and the claim
+form is a browser POST). They share this envelope because there is one refusal shape for
+the whole deployment, not because they are part of this contract.
 
 ---
 
@@ -424,7 +437,9 @@ on the shortlist — render that as "opened by hand", never as "rank unknown". A
 reason is left absent rather than given a plausible default.
 
 Refuses: `thread_occupied` (409 — somebody already has an open thread with them, across
-every campaign), `not_found` (campaign or counterparty).
+every campaign), `plan_limit_reached` (409 — the tenant's plan allows no more open
+conversations this calendar month; closing one does not give the allowance back, because
+the meter counts conversations started), `not_found` (campaign or counterparty).
 
 ### `POST /api/v1/threads/{thread_id}/close`
 

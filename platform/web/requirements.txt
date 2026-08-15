@@ -13,3 +13,30 @@ jinja2==3.1.6
 psycopg[binary]==3.2.13
 python-multipart==0.0.32
 mangum==0.21.0
+
+# Stripe, for Checkout Sessions only.
+#
+# **Lambda zip size.** `build.sh` vendors this file into the deployment package and the
+# package is size-sensitive — cold start is proportional to unpack time, which is why
+# that script already deletes sourcemaps, `__pycache__` and vendored test directories
+# rather than shipping them.
+#
+# Measured, not estimated: `stripe==15.5.0` is **20.1 MB installed** (2026-08-14, this
+# checkout's .venv), dominated by the generated `stripe/` resource classes and their
+# inline type annotations. It is the largest single dependency in this file by an order
+# of magnitude — `psycopg[binary]` included — and it goes into a package whose unzipped
+# ceiling is 250 MB and which already carries the compiled React console. It fits, and it
+# is not free: unpack time on a cold start is proportional to this. Recorded here so the
+# next person measuring a slow cold start does not have to bisect the requirements file
+# to find it, and so that dropping it later is an informed trade rather than a guess.
+#
+# **What it is not used for.** The webhook does not import it. Signature verification is
+# twenty lines of `hmac` in `billing.py`, deliberately, so that the endpoint deciding
+# whether a stranger may grant themselves a paid plan has no dependency on a vendored
+# package surviving the build — and can be tested exhaustively with no network and no
+# install. `billing.py`'s header has the full argument. If the Checkout call ever moves
+# to a plain HTTPS POST, this line goes away and nothing else changes.
+#
+# The import is inside the function rather than at module scope, so a deployment without
+# it refuses the checkout with a sentence naming this file instead of failing to start.
+stripe==15.5.0

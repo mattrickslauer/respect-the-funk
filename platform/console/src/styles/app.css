@@ -10,6 +10,29 @@
 
    This file owns layout and the components that only exist in a console: the
    shell, the proposal card, the stage chain, the trace disclosure.
+
+   ---------------------------------------------------------------------------
+   A note on the breakpoints, because they run against the habit of this repo.
+
+   Every media query written here before this pass only ever *removed*: narrowed
+   a column, hid a label, dropped a note. That is the reflex that produced a rail
+   of three blank boxes on a tablet — the labels were hidden and there was no icon
+   set behind them, so the navigation simply ceased to exist. A small screen is not
+   a small desktop with things taken away; it is a screen held at arm's length and
+   operated with a thumb, and it needs *more* type and *more* target than a mouse
+   does, not less.
+
+   So the queries below go the other way. Two of them:
+
+     max-width: 900px  — "assume touch". The rail becomes a bottom bar, every
+                         control grows to a 40px minimum, form controls go to 16px,
+                         and the sub-12px type scale steps up. 900px is not chosen
+                         for a device; it is the width at which the 172px rail stops
+                         paying for itself, which is where this file already flipped.
+     max-width: 640px  — "assume one hand". Fixed side-by-side tracks stop being
+                         affordable, so the ranked row stacks and the wordmark goes.
+
+   Neither hides a control, and neither is the only way to reach anything.
    ============================================================================= */
 
 /* ------------------------------------------------------------------ shell --- */
@@ -21,12 +44,38 @@
   grid-template-rows: 44px minmax(0, 1fr);
   grid-template-columns: 172px minmax(0, 1fr);
   grid-template-areas: "brand top" "rail surface";
+  /* `100vh` first as the floor for anything that does not know `dvh`, then `dvh`
+     over the top of it. On a phone `100vh` is the viewport with the browser chrome
+     *retracted*, so a shell sized to it is permanently taller than the window: the
+     bottom rail sits under the address bar and the surface — which is the scroller —
+     never reaches its own end. `dvh` tracks the chrome as it comes and goes, which
+     is the behaviour a pinned, non-scrolling shell needs. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
+  /* The horizontal insets are the shell's because they apply to the chrome at every
+     width; the bottom inset is *not* here, it is on the rail and the surface, so the
+     bar's own background runs under the home indicator instead of leaving a strip of
+     --ground below it. See `viewport-fit=cover` in index.html, which is what makes
+     these non-zero in the first place. */
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
+/* Below 900px the rail moves out of the left column and becomes a bar across the
+   bottom, so the shell goes to three rows and the surface spans the full width.
+   Bottom rather than top because the surface's own header is already at the top and
+   a second bar there pushes the actual work off the first screenful — and because a
+   nav bar at the bottom is the one part of a phone UI that is always in thumb reach. */
 @media (max-width: 900px) {
   .shell {
-    grid-template-columns: 56px minmax(0, 1fr);
+    grid-template-rows: 44px minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "brand   top"
+      "surface surface"
+      "rail    rail";
   }
 }
 
@@ -51,7 +100,10 @@
   background: var(--carrier);
   flex: none;
 }
-@media (max-width: 900px) {
+/* The wordmark used to go at 900px because the rail column it shared was down to
+   56px. The rail is not in that column any more, so it survives all the way to the
+   one-hand width, where the gate chip in the top bar genuinely needs the room. */
+@media (max-width: 640px) {
   .brand .wordmark { display: none; }
 }
 
@@ -73,7 +125,7 @@
   background: var(--panel);
   display: flex;
   flex-direction: column;
-  padding: 0.6rem 0.4rem;
+  padding: 0.6rem 0.4rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
   gap: 1px;
   overflow-y: auto;
 }
@@ -101,6 +153,11 @@
 }
 .rail a[aria-current="page"] .count { color: inherit; }
 .rail .railgap { margin-top: auto; }
+/* Not decoration. This is the only route from the three new surfaces back to the
+   thirteen Jinja views — Facts, Queue, Statements, Fleet, Budgets — which is most of
+   the console. It was previously hidden below 900px, which meant a tablet operator
+   had three screens and no way back to the other ten. It stays at every width; only
+   the sentence explaining it is allowed to go. */
 .rail .railnote {
   padding: 0.6rem 0.55rem 0;
   border-top: 1px solid var(--rule);
@@ -108,15 +165,73 @@
   line-height: 1.5;
   color: var(--faint);
 }
+.rail .railnote a { color: var(--dim); }
+.rail .railnote .gloss { display: block; }
+
+/* --------------------------------------------------- rail as a bottom bar --- */
+/* The old rule here read `.rail a .label { display: none }`. The links contain
+   nothing but that label — there is no icon set in this app and never has been — so
+   below 900px the navigation rendered as three empty boxes. The fix is not to draw
+   icons; it is to stop pretending a 56px column is a rail. Laid across the bottom
+   there is room for the words, which is what an operator actually reads. */
 @media (max-width: 900px) {
-  .rail a .label, .rail .railnote { display: none; }
-  .rail a { justify-content: center; }
+  .rail {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0.25rem;
+    padding: 0.3rem 0.4rem calc(0.3rem + env(safe-area-inset-bottom, 0px));
+    border-right: 0;
+    border-top: 1px solid var(--rule);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  /* An empty spacer div that exists to push the note to the bottom of a column. In
+     a row it is a zero-width nothing that only adds a gap. */
+  .rail .railgap { display: none; }
+  /* Equal tracks so the four destinations read as one set of four, and `min-width:0`
+     so a long label wraps inside its share rather than shoving the others off the
+     end. "Classic console →" takes two lines at 390px; two lines of legible text is
+     the right trade against one line of nothing. */
+  .rail a,
+  .rail .railnote {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 0.3rem;
+    /* 44px is the floor Apple and Google both publish, and this is the control an
+       operator hits most often and most casually. */
+    min-height: 44px;
+    padding: 0.3rem 0.35rem;
+    border-top: 0;
+    line-height: 1.25;
+  }
+  .rail .railnote { border-radius: var(--r-sm); }
+  /* `margin-left: auto` is how the count sits on the right of a full-width row. In a
+     centred item it drags the label off-centre instead. */
+  .rail a .count { margin-left: 0; }
+  /* The one thing that does go. The link itself is the navigation; the sentence
+     listing what is behind it is a gloss, and there is no room for a gloss in a
+     44px bar. It is back the moment the rail is a rail again. */
+  .rail .railnote .gloss { display: none; }
 }
 
 .surface {
   grid-area: surface;
   overflow-y: auto;
-  padding: 1.1rem 1.3rem 4rem;
+  /* The 4rem tail is so the last proposal in a list is not flush against the bottom
+     edge; the inset is added to it because on the wide layout the surface *is* the
+     bottom edge, and on the narrow one it costs nothing. */
+  padding: 1.1rem 1.3rem calc(4rem + env(safe-area-inset-bottom, 0px));
+}
+/* Gutters are a bigger share of a 390px screen than of a 1440px one. 1.3rem either
+   side of 390px is 11% of the width spent on nothing, and the ranked row below needs
+   every pixel of it. */
+@media (max-width: 640px) {
+  .surface { padding-left: 0.85rem; padding-right: 0.85rem; }
 }
 .surface > header { margin-bottom: 1.1rem; max-width: 78ch; }
 .surface > header h1 { font-size: 20px; letter-spacing: -0.02em; }
@@ -327,6 +442,49 @@
    empty text input, which invites a click that does nothing. */
 .ranked li > .chip { justify-self: start; }
 
+/* ------------------------------------------------- ranked, stacked --------- */
+/* The four-track row is `30px | 1fr | 128px | auto`, and three of those four are
+   fixed. On a 390px phone the padding and gaps take ~98px and the meter takes 128
+   more, which leaves the name track at zero and the fourth track — the one holding
+   pin, veto and open — outside the box. `.ranked` is `overflow: hidden`, so those
+   three buttons were not merely cramped, they were unreachable, with no scrollbar to
+   suggest anything was missing. The shortlist, the campaign list and the intent plan
+   all render through this row, so that was three surfaces losing their controls.
+
+   Below 640px the row becomes two tracks: the rank number keeps its gutter, and
+   everything else stacks underneath the name in a full-width column. Explicit
+   `grid-column: 2` on the third and fourth children rather than auto-placement,
+   which would drop them back into the narrow rank gutter. */
+@media (max-width: 640px) {
+  .ranked li {
+    grid-template-columns: 1.7rem minmax(0, 1fr);
+    column-gap: 0.55rem;
+    row-gap: 0.5rem;
+    align-items: start;
+    padding: 0.6rem 0.65rem;
+  }
+  .ranked li > :nth-child(3),
+  .ranked li > :nth-child(4) { grid-column: 2; }
+  /* The intent plan passes an empty `<span />` where the shortlist puts its meter,
+     to hold the track open. A held-open track costs nothing in a row; stacked, it is
+     a blank line and a row-gap between the stage name and its chip. Only the two
+     children pinned to column 2 are safe to drop — dropping an empty child from
+     column 1 would reflow every sibling into the wrong track. */
+  .ranked li > :nth-child(3):empty,
+  .ranked li > :nth-child(4):empty { display: none; }
+  /* Ellipsis on one nowrap line is a reasonable answer when the name has a 1fr track
+     next to a meter. When the name owns the full width, truncating it is just losing
+     the only fact in the row that identifies who this is — let it wrap. */
+  .ranked .who { white-space: normal; overflow: visible; text-overflow: clip; }
+  /* Both were right-aligned to read against a fixed track's edge. Stacked, there is
+     no such edge, and a right-aligned number under a left-aligned name reads as
+     belonging to something else. */
+  .ranked .rank { text-align: left; }
+  .ranked .d { text-align: left; }
+  /* The meter is `display: block` with a 40px floor, so in the stacked column it
+     spans the full width — which is a better bar than the 128px one it replaces. */
+}
+
 /* --------------------------------------------------------------- controls --- */
 .b {
   font: 500 11.5px/1 var(--face-body);
@@ -411,10 +569,126 @@
   background: var(--panel);
   padding: 0.8rem 0.9rem;
 }
+/* The column head. `.panel > h2` is where it started; `.eyebrow` is the same thing
+   named, because the workbench needs one over a list that is not inside a panel and
+   was drawing it with an inline `font:` shorthand. An inline size is a size no media
+   query can reach, which is precisely how a 9.5px label survives a pass that exists
+   to make 9.5px labels bigger. Both selectors, one declaration, one place to raise. */
+.eyebrow,
 .panel > h2 {
   font: 600 9.5px/1 var(--face-display);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--faint);
-  margin-bottom: 0.6rem;
+  margin: 0 0 0.6rem;
+}
+
+/* ------------------------------------------------------------------ quiet --- */
+/* The counters under an empty stream. "Nothing needs you" next to "2,626 leads
+   pending" is a different sentence from "nothing needs you" on its own, which is why
+   this strip exists — and why it needed to come out of Now.tsx's inline styles and
+   into the stylesheet where the touch block below can actually raise its 10px. */
+.quiet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+  margin-top: 1.4rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--rule);
+}
+.quiet > span {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.quiet b {
+  font-family: var(--face-data);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--dim);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ============================================================================
+   Touch widths
+   ============================================================================
+
+   Everything below 900px is assumed to be operated by a thumb, and this block is
+   the half of responsive design this file was missing: it only makes things bigger.
+
+   Three separate defects, one query, because they have one cause. Type here runs
+   from 9.5px to 11.5px, which is a density that only works at 60cm with a mouse to
+   point with. At arm's length it is unreadable, and — the part that is a bug rather
+   than a taste — a form control under 16px makes iOS Safari zoom the page on focus
+   and *not* zoom back when the field blurs, so filling in the intent form leaves the
+   operator on a permanently magnified console with no obvious way out. 16px is the
+   exact threshold; 15.9px triggers it.
+
+   Desktop density is untouched. Nothing in here applies above 900px.
+   ============================================================================ */
+@media (max-width: 900px) {
+  /* --- form controls: 16px is the iOS auto-zoom threshold, not a preference --- */
+  .field input,
+  .field select,
+  .field textarea {
+    font-size: 16px;
+    padding: 0.55rem 0.6rem;
+  }
+  /* A select is also a tap target, and a 30px one next to a 44px button reads as
+     disabled. The textarea keeps its own 6rem floor, which is already larger. */
+  .field input,
+  .field select { min-height: 44px; }
+  .field > span { font-size: 11px; }
+
+  /* --- controls: 40px minimum, per the brief and per every touch guideline --- */
+  /* `.b` was 11.5px type in 0.3rem padding: about 24px tall, which is half a
+     fingertip. `.b.q` is the worst of them — it is transparent and borderless until
+     hover, so on a device with no hover it is unbordered text that happens to be a
+     button, and it is what pin, veto and re-run are drawn with. */
+  .b {
+    font-size: 13px;
+    min-height: 40px;
+    padding: 0.5rem 0.85rem;
+  }
+  /* Stated for the variants too, though they inherit it, because these three are the
+     ones the audit named and a future edit to `.b.q` should have to step over this
+     line to shrink them again. */
+  .b.q,
+  .b.d,
+  .b.p { min-height: 40px; }
+
+  /* The trace disclosure is a control that did not look like one: 10px of uppercase
+     with a triangle, in a 10px line box. Line-height rather than padding gets it to
+     exactly 40px without moving the caret glyph or touching the disclosure's display
+     type, which Safari has historically been fragile about. */
+  .trace summary { font: 12px/40px var(--face-display); }
+
+  /* --- type: every size in this file that was under 12px --- */
+  .rail a { font-size: 14px; }
+  .rail a .count { font-size: 12px; }
+  .rail .railnote { font-size: 12.5px; }
+  .gate { font-size: 12px; }
+  .proposal .kind { font-size: 11px; }
+  .proposal .sub { font-size: 13.5px; }
+  .trace ol { font-size: 13px; }
+  /* The label track was sized for 9.5px. At 11px "how it was found" wraps to three
+     lines in 74px, so the track grows with the type it holds. */
+  .trace li { grid-template-columns: 92px minmax(0, 1fr); }
+  .trace li > span:first-child { font-size: 11px; }
+  .stage .name { font-size: 11px; }
+  .stage .note { font-size: 12px; }
+  .ranked .rank { font-size: 12px; }
+  .ranked .who { font-size: 14px; }
+  .ranked .d { font-size: 12.5px; }
+  .state code { font-size: 12.5px; }
+  .eyebrow,
+  .panel > h2 { font-size: 11px; }
+  .quiet > span { font-size: 11.5px; }
+  .quiet b { font-size: 13px; }
+  /* `.chip` belongs to the shared system and its 10px is right on a dense desktop
+     table. It cannot be fixed at source without changing the landing page and the
+     manual, so it is raised here, scoped to the console's own surfaces. */
+  .surface .chip { font-size: 12px; padding: 3px 8px; }
 }

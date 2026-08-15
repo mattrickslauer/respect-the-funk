@@ -1,0 +1,400 @@
+===============================================================================
+SHOT LIST — 2026-08-15 shoot
+Respect the Funk / CockroachDB x AWS Hackathon ONLY
+===============================================================================
+
+SCOPE       CockroachDB and AWS. Nothing is shot for any other submission.
+            No alternate stack takes, no sponsor-free variants, no pickups for
+            a later cut. The project will not look like this in two weeks and
+            footage shot against a guess is footage thrown away.
+
+COMPANION   docs/submission/SHOOT_SCRIPT.txt is the script and the argument.
+            This file is the capture order and nothing else. Where the two
+            disagree about a claim, SHOOT_SCRIPT.txt wins; where they disagree
+            about a gate, this file is newer.
+
+CAP         3:00 hard. VO measures 2:26 at 115%, leaving ~34s of headroom that
+            is spent on holds, not on extra beats.
+
+DATE        2026-08-14, for a shoot on 2026-08-15.
+
+
+===============================================================================
+GATE STATUS TONIGHT — THREE THINGS CHANGED THE LIST
+===============================================================================
+
+Checked against the repository and .env this evening. Re-check on the day; the
+point of writing them down is that they are falsifiable.
+
+  W6  CORPUS — STILL BLOCKED.
+      PODCASTINDEX_API_KEY and PODCASTINDEX_API_SECRET are not in .env.
+      >>> SHOOT_VOICEOVER.txt OPENS WITH "A HUNDRED AND SEVENTY THOUSAND"
+      >>> AND THAT NUMBER IS NOT IN THE CLUSTER. Say FOURTEEN THOUSAND.
+      The beat is about the ratio, not the magnitude, and it works identically.
+      Signing up for a Podcast Index key is free and takes minutes — if
+      somebody does it tonight and the ingest runs, film the real number and
+      say the real number. Otherwise the line is re-read. Do not round up.
+
+  W2  CHANGEFEED — STILL CUT.
+      Zero rows on 08-10, still zero on 08-13, and VIDEO_SCRIPT.md marks the
+      line CUT. Beat 3 opens on kill -9. The words "a changefeed wakes the
+      next one" are not said tomorrow unless SHOW CHANGEFEED JOBS returns a
+      running job in pre-flight, which nobody has authorised the RU draw for.
+
+  W1  MULTI-REGION — NOT APPLIED, SO BEAT 4 IS A GO/NO-GO.
+      Migration 024 and infra/terraform/multiregion/ are written and validate;
+      the live cluster is Basic, single-region, and SHOW REGIONS says so.
+      Beat 4 requires standing up a throwaway three-region cluster before the
+      camera rolls. That is a morning of work and real money.
+      >>> DECIDE THIS BEFORE THE DAY STARTS, NOT DURING IT.
+      If no: cut beat 4 entirely, say nothing about regions, and the runtime
+      drops to ~1:59 — which is comfortably inside the cap and costs one
+      argument. Beat 5 carries irreplaceability alone and is strong enough.
+
+  W3  TIME TRAVEL — LIVE, BUT ON A TEN-HOUR CLOCK. See ORDER OF THE DAY.
+  W7  MCP IN CONSOLE — SHIPPED. Beat 6's English-question shot is filmable.
+
+
+===============================================================================
+ORDER OF THE DAY — WHY THIS ORDER AND NOT SCRIPT ORDER
+===============================================================================
+
+Beat 5 is the centrepiece and it is governed by gc.ttlseconds, roughly TEN
+HOURS. The send whose ranking gets replayed must still be inside the window at
+the moment the screen is captured. Everything else bends around that.
+
+    MORNING     Pre-flight. Then MAKE THE SEND (PF7). The clock starts here.
+    MIDDAY      Screen captures S1-S14, beat 5 block first while the window
+                is widest.
+    AFTERNOON   Camera. The founder reads to picture he has already seen, which
+                is why screens come first — the holds and the reads have to
+                match, and it is cheaper to re-read a line than to re-capture
+                a terminal.
+    LATE        B-roll and proof plates. No dialogue, no pressure, and the
+                light is better.
+
+Do not shoot camera first. A read paced against an imagined terminal never cuts
+to the real one.
+
+
+===============================================================================
+BLOCK A — PRE-FLIGHT. NOTHING ROLLS UNTIL THESE ARE ANSWERED
+===============================================================================
+
+Run every one and write the answer down. An unrecorded pass is not a pass.
+
+  PF1  Counterparty count. This is the number spoken in beat 1.
+           SELECT count(*) FROM party WHERE party_class = 'counterparty';
+       PASS: whatever it returns. Say that. Do not say last week's.
+
+  PF2  Vector plan still uses the index.
+           EXPLAIN <the shortlist query>
+       PASS: a "vector search" node with "prefix spans". If it degraded to a
+       scan, beat 2 is dead and the day changes — this is what
+       test_vector_plans.py exists to catch, so run the tests too.
+
+  PF3  Changefeed.
+           SHOW CHANGEFEED JOBS;
+       PASS: a running job -> restore the beat 3 line.
+       ZERO ROWS -> the line stays cut. Expected outcome.
+
+  PF4  Regions.
+           SHOW REGIONS;
+       One row -> beat 4 is cut unless the throwaway cluster is up.
+
+  PF5  Lifetime spend. Spoken in beat 6.
+           SELECT sum(cost_micro_usd)/1e6 FROM agent_run;
+       PASS: under the price of a coffee. Film the number, say the number.
+
+  PF6  Cluster is scaled to zero and on the version claimed.
+           node_count: 0, v26.2.5, plan BASIC
+       From the CockroachDB Cloud console. This is also plate P1.
+
+  PF7  THE SEND. One real send to a verified address, with its timestamp
+       recorded, and at least one lesson row that moved a ranking.
+       >>> THIS STARTS THE TEN-HOUR CLOCK FOR BEAT 5.
+       Write the exact timestamp on the whiteboard. You will need it in S11.
+       If there is no lesson row, beat 5 shows the same list twice and there
+       is no beat 5.
+
+
+===============================================================================
+BLOCK B — SCREEN CAPTURES
+===============================================================================
+
+CAPTURE NOTES FOR ALL S-SHOTS
+    Record at 2x the delivery resolution so you can push in without softening.
+    Terminal at large type — a judge watches this at phone size. Dark or light,
+    pick one and never mix. Hide anything with a credential in it. Kill the
+    notification centre. No cursor jitter: type the command off-camera where
+    you can, or type it slowly and deliberately where the typing is the point.
+    Every hold below is a MINIMUM. Silence on a readable terminal is evidence,
+    not dead air.
+
+--- BEAT 5 BLOCK — CAPTURE FIRST, THE CLOCK IS RUNNING --------------------
+
+  S11  The sent message in the console. Click through to the ranking that
+       justified it. Natural mouse movement, one take.
+       HOLD 4s on the message, 3s on the ranking.
+
+  S12  ** THE MONEY SHOT. ** The same shortlist query twice, side by side:
+       left is now, right is AS OF SYSTEM TIME at the timestamp from PF7.
+       The rankings must visibly differ.
+       HOLD 8s minimum. Do not cut away early. This is the shot the whole
+       video is built to earn.
+
+  S13  Push in on the four words of SQL — AS OF SYSTEM TIME '<ts>' — and then
+       on the lesson row that moved her up four places.
+       HOLD 3s each. Highlight in post, not with a mouse.
+
+  S14  The refusal. Ask for a timestamp outside the GC window and let it raise.
+       HOLD 4s on the error text.
+       WHY: this is the shot that proves the time travel is real rather than a
+       rendered page. A system that says "I cannot tell you why, and here is
+       exactly why I cannot" is the argument. Capture it even if the edit
+       cannot fit it — it is the single best answer to a sceptical judge.
+
+--- BEAT 1 ----------------------------------------------------------------
+
+  S1   The count from PF1, full frame, one number.
+       HOLD 3s.
+
+  S2   A shortlist for one artist. Five rows, genre beside each.
+       HOLD 4s.
+
+--- BEAT 2 ----------------------------------------------------------------
+
+  S3   EXPLAIN, full frame. The whole plan visible without scrolling.
+       HOLD 6s. Highlight "vector search" and "prefix spans" in post.
+       Re-run it on the day and film the real output. The model string reads
+       openai:text-embedding-3-small and that is fine — the argument is the
+       prefix spans, not whose embeddings fill them.
+
+  S4   test_tenant_scoping.py failing against a deliberately broken query,
+       then passing.
+       HOLD 2s on the failure. Proof the assertion is real and not decoration.
+
+--- BEAT 3 ----------------------------------------------------------------
+
+  S5   [CUT UNLESS PF3 PASSES] Changefeed job running; a row written to outbox;
+       an agent run appearing seconds later with no poller anywhere.
+
+  S6   kill -9 across half the fleet. The work still completes.
+       HOLD through the completion. Let the terminal do the talking.
+
+  S7   lease_race_demo.py Act 2. Two terminals side by side, both workers
+       named ingest-cli, different tokens.
+           terminal 1 claims b844314c...  owner=ingest-cli  token=2bb498ed...
+           terminal 2 claims b844314c...  owner=ingest-cli  token=6f72beda...
+           terminal 1 tries to complete -> REFUSED: lease lost
+           terminal 2 completes         -> OK
+       HOLD 5s on the REFUSED line. Frame both terminals in one shot — the
+       whole point is that the two names are identical.
+
+--- BEAT 4 — ONLY IF W1 WENT GO -------------------------------------------
+
+  S8   SHOW RANGES FROM TABLE contact_route. Two rows held side by side, one
+       US contact on us-east-1 replicas, one EU contact on eu-west-1.
+       HOLD 6s. Slow down here, this is an argument beat.
+
+  S9   SHOW SURVIVAL GOAL FROM DATABASE defaultdb;  ->  region
+       HOLD 3s.
+
+  S10  Take a region offline. The shortlist keeps answering.
+       HOLD through the recovery.
+
+--- BEAT 6 ----------------------------------------------------------------
+
+  S15  The spend number from PF5.
+       HOLD 3s.
+
+  S16  The console's natural-language box. A real question typed in English,
+       answered over the catalogue through the Cloud Managed MCP Server.
+       HOLD through the answer. Type a question a label would actually ask.
+
+  S17  node_count: 0 in the CockroachDB Cloud console.
+       HOLD 3s. This is the last frame before the close.
+
+
+===============================================================================
+BLOCK C — CAMERA. THE FOUNDER, SYNC SOUND
+===============================================================================
+
+THE ONE RULE THAT MATTERS
+    >>> SHOOT EVERY BEAT AT TWO FRAME SIZES. <<<
+    You are cutting away to screens and back inside almost every beat. With a
+    single camera and a single size, every cut back is a jump cut. Two sizes
+    per beat is what buys you the freedom to overlay anywhere.
+        SIZE A — medium close-up, chest up. The anchor.
+        SIZE B — tighter, shoulders up, slightly different angle.
+    Same read, same energy, both sizes, before moving on to the next beat.
+
+  C1   BEAT 1 — the problem is precision.  ~11s.  Sizes A + B.
+       "...maybe two hundred of them matter. Miss by a little, and you are not
+       marketing. You are spam."
+       >>> SAY FOURTEEN THOUSAND unless PF1 says otherwise. See W6 above.
+       NOTE: "You are spam" is the stake. Land it flat and let it sit. Do not
+       smile through it.
+
+  C2   BEAT 2 — the filters are inside the index.  ~28s.  Sizes A + B.
+       Ends on the concession: "pgvector can do the similarity. It cannot make
+       one decision do both jobs."
+       NOTE: the concession is doing work. Deliver it generously, not
+       grudgingly — handing the opposition its best argument is what makes
+       beat 5 believable.
+
+  C3   BEAT 3 — the database is the runtime.  ~31s.  Sizes A + B.
+       >>> OPEN ON "So kill half the fleet mid-run." The changefeed sentence is
+       cut. Do not say "the database is the event bus" as an unsupported
+       assertion — if PF3 failed, the first paragraph goes with it.
+       ALT TAKE: record the full paragraph WITH the changefeed line as a safety
+       only if PF3 passed. Otherwise do not record it at all — a take that
+       cannot be used is a take that gets used by mistake at 2am.
+
+  C4   BEAT 4 — the row lives where the law says.  ~27s.  Sizes A + B.
+       ONLY IF W1 WENT GO. If no-go, do not record this beat in any form.
+       NOTE: "because she is a European contact" — a person, not a row. The
+       whole video is about a system that acts on people. Slow down.
+
+  C5   BEAT 5 — what did it believe, when it acted?  ~28s.  Sizes A + B,
+       and a third take at size A for safety. This is the centrepiece.
+       "Every agentic system can tell you what it knows. This one tells you
+       what it believed, when it acted."
+       NOTE: do not step on that line. Beat of silence before it and after it.
+       The next sentence — "Postgres cannot do that at any price" — is said
+       plainly, not triumphantly.
+
+  C6   BEAT 6 — close.  ~11s.  Sizes A + B.
+       Ends on "All of that cost less than a coffee."
+       NOTE: end warm. The judge should finish thinking "I could build on
+       this", not "that must have taken a team".
+
+  C7   SAFETIES, after all beats are in the can:
+       - Every spoken NUMBER as an isolated pickup: the count, the spend.
+         Numbers are the thing most likely to change between now and the edit,
+         and a clean pickup saves a full re-read.
+       - 30 SECONDS OF ROOM TONE. Non-negotiable. Camera rolling, everybody
+         silent. Without it every audio cut clicks.
+       - One take of the thesis sentence, unscripted, straight to lens:
+         "We map the music industry into a vector index and then mail real
+         human beings, one at a time." Useful as a cold open if the edit needs
+         one. Not in the script; costs twenty seconds to have.
+
+  CONTINUITY
+       Photograph the setup before the first take: camera position, height,
+       lens, lighting, wardrobe, mic placement. Not for a pickup shoot — there
+       is no pickup shoot for this submission — but because if a card fails
+       you are rebuilding this on the 16th.
+
+
+===============================================================================
+BLOCK D — B-ROLL. NO DIALOGUE
+===============================================================================
+
+Shot after the camera block, when the pressure is off. All of it is overlay
+material; none of it carries an argument on its own.
+
+  B1   Hands on keyboard, the approval moment. The human gate is the product —
+       every message this system prepares waits for a person. Get a clean
+       insert of the click.
+
+  B2   The console on a laptop in a real room. Not a screenshot — a screen with
+       a room behind it. This is what tells a judge the thing exists.
+
+  B3   Over-the-shoulder, working through the shortlist. Slow push in.
+
+  B4   The label environment: records, sleeves, whatever is actually on the
+       desk. Establishes who the user is in two seconds without a word of VO.
+
+  B5   Founder reading a reply. Any real screen, no fabricated content.
+
+  B6   Wide of the workspace, empty, at the top or the tail. A landing frame.
+
+  B7   Hands only, typing the English question that becomes S16. Cutaway
+       cover for the MCP beat.
+
+  B8   The laptop lid closing, or the room going quiet. A tail for the close —
+       "it scales to zero between releases" wants an image, and this is the
+       cheapest honest one.
+
+
+===============================================================================
+BLOCK E — PROOF PLATES. THE REQUIRED-TOOLS SHOTS
+===============================================================================
+
+These exist to satisfy the checklist, not the narrative. Most will run under
+the close as overlay with no VO of their own. Capture all of them; the edit
+decides.
+
+COCKROACHDB
+
+  P1   Cloud console, cluster page: name respect-the-funk, v26.2.5, plan BASIC,
+       node_count 0, region aws-us-east-1. One clean frame.
+
+  P2   The SQL shell answering a live query, so the cluster is visibly a
+       cluster and not a local Postgres in a costume.
+
+  P3   SHOW default_transaction_isolation;  ->  serializable.  2s.
+
+  P4   The four vector indexes listed — party_shortlist, chunk_semantic,
+       lesson_semantic, fact_semantic. 3s. This is the "distributed vector
+       indexing" tool claim on screen.
+
+  P5   The Cloud Managed MCP Server answering — list_clusters or list_tables.
+       This is the second required CockroachDB tool and it needs to be visible
+       somewhere, even for two seconds.
+
+  P6   Usage / spend page showing the near-zero figure.
+
+AWS
+
+  P7   The Lambda Function URL live in a browser, address bar readable. This is
+       the functional demo URL on the submission form and a judge will click
+       it — show it working.
+
+  P8   AWS console, the Lambda function page: the function, its URL config,
+       recent invocations. Proof the console runs ON Lambda rather than beside
+       it.
+
+  P9   S3: a master uploading browser-straight-to-bucket by presigned PUT.
+       Get the network tab in frame if you can — the claim is that a 60MB WAV
+       never passes through a 15-minute function, and the network tab is what
+       proves it.
+
+  P10  The S3 bucket showing the tenant/date/run-ID layout.
+
+  >>> DO NOT FILM BEDROCK. It is implemented and unreachable on this account,
+      both walls measured. AWS is satisfied by Lambda and S3, which are real
+      and in use. Nothing about Bedrock appears on screen or in the VO.
+
+
+===============================================================================
+WHAT IS NOT SHOT TOMORROW
+===============================================================================
+
+  - Anything about a changefeed, unless PF3 returned a running job.
+  - Anything about regions, unless W1 went go before the day started.
+  - Bedrock, in any form.
+  - Any scale claim. Label the N. "Fourteen thousand" is a real number and
+    "a hundred and seventy thousand" is not one yet.
+  - Seven days of time travel. Ten hours is what the cluster serves today.
+  - Any alternate-stack take. This shoot serves one submission.
+
+
+===============================================================================
+WRAP — BEFORE ANYTHING IS TORN DOWN
+===============================================================================
+
+  [ ] Every S-shot has a readable frame, checked at phone size, not on the
+      capture monitor.
+  [ ] 30 seconds of room tone exists.
+  [ ] Both frame sizes exist for every beat that was shot.
+  [ ] The PF7 timestamp is written down somewhere that is not a terminal
+      scrollback.
+  [ ] Cards backed up in two places before the throwaway cluster (if any) is
+      destroyed.
+  [ ] If a three-region cluster was stood up: TEAR IT DOWN, and confirm the
+      teardown. A region cannot be removed from a cluster once added, which is
+      why it was a throwaway in the first place.
+  [ ] Every number spoken on camera matches a number captured on screen.
+      If one does not, re-read the line tonight while the setup is still up.

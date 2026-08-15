@@ -53,9 +53,20 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 
 from rtf_platform import (
-    agents, auth, db, demo, fleet, mcp, outreach, repo, research,
-    settings as settings_mod, spend, statements,
+    accounts, agents, auth, billing, db, demo, fleet, mcp, outreach, plans, repo,
+    research, settings as settings_mod, spend, statements,
 )
+# The refusal envelope, borrowed rather than reinvented. `/billing/checkout` and
+# `/billing/webhook` are machine-to-machine endpoints on a router that otherwise speaks
+# HTML, and they need a body a program can branch on. `api/errors.py` already defines
+# exactly one such shape, with a closed set of codes and a test that enumerates it, and
+# writing a second one here would give this deployment two error contracts differing
+# only in which file they were typed into.
+#
+# The import direction is the safe one: `api.errors` imports nothing from the console —
+# only FastAPI — so this creates no cycle, and it is the reverse of the coupling
+# `api/__init__.py` argues against (an API package reaching into the HTML layer).
+from rtf_platform.api import errors as api_errors
 from rtf_platform.domain import (
     ARTIST_STATUSES, CREDIT_ROLES, DEFAULT_TYPE, RECORDING_STATUSES, ArtistType,
     Platform, ProfileMode, canonical_isrc, unrecognised,
@@ -68,27 +79,60 @@ SETTINGS = settings_mod.load()
 
 # ------------------------------------------------------------------ plumbing
 
+def _resolve_account(token: str) -> Any:
+    """A per-tenant token to its `account` row, for `auth.principal_from_cookie`.
+
+    Mirrors `api/deps._resolve_account`, deliberately rather than by import: that module
+    builds the JSON API's contract and this one builds the console's, and `api/deps.py`
+    itself argues that borrowing five lines across that seam couples the two in the
+    direction that hurts later. The five lines are these, and they are the whole of it.
+
+    Returns `None` on an unconfigured deployment so a fresh checkout still renders its
+    landing page. `_conn()` is what refuses when something actually needs to read.
+    """
+    if not SETTINGS.configured:
+        return None
+    return accounts.account_for_token(_conn(), token)
+
+
 def current_principal(
     rtf_session: Annotated[str | None, Cookie()] = None,
 ) -> auth.Principal:
-    return auth.principal_from_cookie(rtf_session, SETTINGS.admin_token)
+    """Who is asking: the shared operator token first, then a per-tenant token by hash.
+
+    The resolver is passed here and in `require_operator` and nowhere else — those two
+    are the console's only composition roots for a principal, and `auth.py` explains why
+    it is injected rather than imported.
+    """
+    return auth.principal_from_cookie(rtf_session, SETTINGS.admin_token,
+                                      _resolve_account)
 
 
 Principal = Annotated[auth.Principal, Depends(current_principal)]
 
 
 def require_operator(
-    rtf_session: Annotated[str | None, Cookie()] = None,
+    principal: Annotated[auth.Principal, Depends(current_principal)],
 ) -> auth.Principal:
-    """The gate. All but `/`, `/manual`, `/signin`, `/demo` and `/healthz` sit behind it.
+    """The gate. All but the public routes sit behind it.
+
+    Public, and enumerated in one place so the list cannot grow silently: `/` (the
+    landing page), `/manual`, `/signin`, `POST /demo`, `POST /claim`,
+    `POST /billing/webhook` and `/healthz`.
 
     A 303 with a Location rather than a 401: an unauthenticated browser should land on
     the page that explains what this is and offers a way in, not on a wall. Declared as
     a dependency so a new console route is private by the act of annotating its
     principal — the failure mode of a `_require(...)` call at the top of each handler is
     the one route where somebody forgets it.
+
+    It now depends on `current_principal` rather than re-deriving the principal from the
+    cookie itself. Not tidying: two places building a principal is two places that can
+    come to build it from different credentials, and the per-tenant path is exactly the
+    kind of thing that would get added to one of them. FastAPI caches the dependency
+    within a request, so a page that annotates both `Principal` and `Operator` still
+    resolves once and makes at most one lookup.
     """
-    principal = auth.principal_from_cookie(rtf_session, SETTINGS.admin_token)
     if not principal.authenticated:
         raise HTTPException(
             status_code=303, detail="Sign in first.", headers={"Location": "/"}
@@ -117,11 +161,52 @@ def _conn() -> psycopg.Connection:
         return db.connect(SETTINGS.database_url)
 
 
-def _tenant_id(conn: psycopg.Connection) -> str | None:
-    """None until the first artist is saved. Read pages render an empty state
-    rather than erroring, so a fresh deployment is browsable before it has data."""
+def _tenant_id(conn: psycopg.Connection,
+               principal: auth.Principal | None = None) -> str | None:
+    """Whose rows this request may see.
+
+    A signed-in tenant carries its own id on the principal, resolved from `account` by
+    the token in the cookie, and that id wins. Everything downstream of this function
+    already scopes by whatever it is handed — `repo.py`'s first rule — so this one line
+    is what turns thirty-two migrations' worth of `tenant_id` columns into an enforced
+    boundary rather than a column.
+
+    Falling through to `SETTINGS.tenant_slug` is the **operator** path and nothing else.
+    An operator principal carries no tenant by construction (`auth.py` keeps it that
+    way), so the shared admin token continues to see the deployment's configured label
+    exactly as it did before accounts existed. `principal=None` — the handful of call
+    sites below that have no principal in scope — resolves the same way, and each of
+    those is annotated with why that is correct rather than left to look like an
+    oversight.
+
+    None until the first artist is saved. Read pages render an empty state rather than
+    erroring, so a fresh deployment is browsable before it has data.
+    """
+    if principal is not None and principal.tenant_id:
+        return principal.tenant_id
     tenant = repo.get_tenant(conn, SETTINGS.tenant_slug)
     return str(tenant["id"]) if tenant else None
+
+
+def _tenant_id_for_write(conn: psycopg.Connection,
+                         principal: auth.Principal) -> str:
+    """`_tenant_id`, but for the three writes that may legitimately create the tenant.
+
+    `repo.py`'s header: "There is no seed file. The label row is created by
+    `ensure_tenant` the first time somebody saves an artist." That is still true, and it
+    is true only of the operator. A signed-in tenant's row was created by `POST /claim`
+    before it ever had a cookie, so the `ensure_tenant` branch is unreachable for it —
+    and reaching it would be a bug of the worst available kind, quietly writing one
+    tenant's artist into another's rows.
+
+    Extracted rather than repeated at the three call sites (`artists_create`,
+    `roster_create`, `imports_upload`) because the version of this that gets it wrong is
+    the one somebody writes from memory at the fourth.
+    """
+    tenant_id = _tenant_id(conn, principal)
+    if tenant_id is not None:
+        return tenant_id
+    return str(repo.ensure_tenant(conn, SETTINGS.tenant_slug, "Respect the Funk")["id"])
 
 
 #: Value -> chip tone. One mapping for the whole product, so `failed` in the queue and
@@ -243,7 +328,11 @@ def _ctx(request: Request, principal: auth.Principal, *,
     return {
         "request": request,
         "principal": principal,
-        "tenant_slug": SETTINGS.tenant_slug,
+        # The signed-in tenant's own slug when there is one, so a claimed account sees
+        # its label in the header rather than the deployment's. Empty for the operator
+        # and for anonymous, both of which are looking at the configured tenant — the
+        # same fallback `_tenant_id` makes and for the same reason.
+        "tenant_slug": principal.tenant_slug or SETTINGS.tenant_slug,
         "type_groups": ArtistType.grouped(),
         "default_type": DEFAULT_TYPE,
         # Stored value -> what a human reads. A row whose type is absent here is
@@ -251,6 +340,23 @@ def _ctx(request: Request, principal: auth.Principal, *,
         "type_labels": {t.value: t.label for t in ArtistType},
         "nav": _nav(conn, tenant_id),
         "scopes": demo.SCOPES,
+        # The pricing table, from the one place it is defined, so a template can render
+        # the tiers without restating a single number. A page that hardcoded "50
+        # conversations" would be a page that goes on saying 50 after the tier changes,
+        # and the first symptom would be a customer quoting it back.
+        "tiers": plans.TIERS,
+        "plan_period": plans.PERIOD,
+        # What the signed-in principal is on, resolved rather than raw, so a template can
+        # ask `plan.name` instead of matching on a key. `None` for anonymous and for the
+        # operator — the operator is not a customer and `auth.OPERATOR_PLAN` deliberately
+        # does not resolve to a tier.
+        "plan": plans.BY_KEY.get(principal.plan),
+        # Billing state for anything that renders it. `stripe_test_mode` is read off the
+        # key's own prefix (see `settings.stripe_mode`), so a "test mode" badge cannot be
+        # shown next to a live key or hidden next to a test one.
+        "stripe_configured": SETTINGS.stripe_configured,
+        "stripe_missing": SETTINGS.stripe_missing,
+        "stripe_test_mode": SETTINGS.stripe_test_mode,
         "here": None,
         "insp_kicker": "",
         "insp_title": "",
@@ -381,6 +487,13 @@ def demo_tune(artist: str = "hallow-youth", window: str = "now") -> JSONResponse
         return JSONResponse({"error": "unknown window"}, status_code=400)
 
     conn = _conn()
+    # Deliberately the deployment's own tenant and not a caller's. This route takes no
+    # principal at all — it is the public demo of R1, pinned to the artist and the
+    # windows the submission describes, and the whole point is that a judge with no
+    # credential can run it. Scoping it to a signed-in tenant would make it answer
+    # differently depending on who happened to be signed in, which is the opposite of a
+    # reproducible demo, and scoping it to *any* caller's tenant would need a principal
+    # this route deliberately does not ask for.
     tenant_id = _tenant_id(conn)
     if tenant_id is None:
         return JSONResponse({"error": "no tenant"}, status_code=503)
@@ -421,6 +534,15 @@ def _landing(request: Request, principal: auth.Principal, *,
              form: dict[str, str] | None = None) -> Response:
     # Read live. If the cluster is unreachable the page still renders — a landing page
     # that 500s because a counter could not be fetched is worse than one that says so.
+    #
+    # `principal` is in scope and is deliberately *not* passed to `_tenant_id`. These
+    # counters are the deployment's own — the 14,173 counterparties the submission cites
+    # and the landing copy is written around — and they describe what this system has
+    # done, not what the reader's tenant has. A tenant that claimed an account ten
+    # seconds ago would otherwise be shown a landing page arguing for the product with
+    # its own four zeros, which reads as a broken deployment rather than as a new
+    # account. The console, one click away, is where their numbers are and is scoped to
+    # them everywhere.
     try:
         conn = _conn()
         stats = _demo_stats(conn, _tenant_id(conn) or "")
@@ -449,7 +571,7 @@ def home(request: Request, principal: Principal, sel: str = "") -> Response:
     # nothing rather than falling back to fixtures. A fixture on the home screen is the
     # one place a demo is most likely to be mistaken for the product.
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     items, quiet = research.today(conn, tenant_id) if tenant_id else ([], ())
     row = demo.select(items, sel or None)
     return templates.TemplateResponse(
@@ -477,6 +599,9 @@ def manual(request: Request, principal: Principal) -> Response:
     """
     try:
         conn = _conn()
+        # The deployment's tenant, for the same reason `_landing` uses it: these two
+        # figures are cited in the manual's prose as facts about this system's index, and
+        # rewriting them per reader would make the sentences around them false.
         stats = _demo_stats(conn, _tenant_id(conn) or "")
     except Exception:  # noqa: BLE001 — the document is worth more than its counters
         stats = {}
@@ -528,7 +653,7 @@ def demo_request(
 def _cards(request: Request, principal: auth.Principal, *, here: str, template: str,
            build, key: str, kicker: str, error: str = "") -> Response:
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     rows, stats = ([], ()) if tenant_id is None else build(conn, tenant_id)
     sel_id = request.query_params.get("sel", "")
     row = demo.select(rows, sel_id or None)
@@ -557,7 +682,7 @@ def approvals_approve(request: Request, principal: Operator, message_id: str) ->
     from a form, never a link — see the note in the inspector's actions block."""
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     thread_id = _thread_of(conn, tenant_id, message_id)
     if thread_id is None:
         return RedirectResponse("/approvals?error=That+draft+is+no+longer+waiting.",
@@ -584,7 +709,7 @@ def approvals_approve(request: Request, principal: Operator, message_id: str) ->
 def approvals_reject(request: Request, principal: Operator, message_id: str) -> Response:
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     thread_id = _thread_of(conn, tenant_id, message_id)
     if thread_id is None:
         return RedirectResponse("/approvals?error=That+draft+is+no+longer+waiting.",
@@ -625,7 +750,7 @@ def _live(request: Request, principal: auth.Principal, build, sel_id: str | None
     operator keeps the row they were looking at instead of landing on an error page.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         empty = demo.View(key="", title="", blurb="", stats=(), cols=(), rows=(),
                           empty="Nothing here yet — save an artist first.")
@@ -657,7 +782,7 @@ def _artists_page(
     the field instead of on an error page that loses their place.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     creating = sel == "new"
 
     if tenant_id is None:
@@ -718,10 +843,9 @@ def artists_create(request: Request, principal: Operator,
                              error=str(exc.detail), status_code=400)
 
     conn = _conn()
-    # Creates the label row on first save, which is why there is no seed file.
-    tenant = repo.ensure_tenant(conn, SETTINGS.tenant_slug, "Respect the Funk")
+    tenant_id = _tenant_id_for_write(conn, principal)
     try:
-        created = repo.create_party(conn, str(tenant["id"]), name=name, type_=artist_type)
+        created = repo.create_party(conn, tenant_id, name=name, type_=artist_type)
     except psycopg.errors.UniqueViolation:
         return _artists_page(
             request, principal, sel="new", form=typed, status_code=409,
@@ -744,7 +868,7 @@ def artists_update(request: Request, principal: Operator, artist_id: str,
                              error=f"{status!r} is not a supported status.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     current = repo.get_party(conn, tenant_id, artist_id) if tenant_id else None
     if current is None:
         raise HTTPException(status_code=404, detail="No such artist.")
@@ -774,7 +898,7 @@ def artists_delete(principal: Operator, artist_id: str) -> Response:
     """Reached only from the confirmation step, which names what cascades with it."""
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is not None:
         repo.delete_party(conn, tenant_id, artist_id)
     return RedirectResponse("/artists", status_code=303)
@@ -798,7 +922,7 @@ def artist_profile_add(request: Request, principal: Operator, artist_id: str,
                              profile_error=f"{mode!r} is not a supported mode.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None or repo.get_party(conn, tenant_id, artist_id) is None:
         raise HTTPException(status_code=404, detail="No such artist.")
 
@@ -841,7 +965,7 @@ def suggestion_accept(principal: Operator, suggestion_id: str,
     """
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is not None:
         try:
             repo.accept_suggestion(conn, tenant_id, suggestion_id,
@@ -856,7 +980,7 @@ def suggestion_reject(principal: Operator, suggestion_id: str,
                       back: str = "/") -> Response:
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is not None:
         repo.reject_suggestion(conn, tenant_id, suggestion_id,
                                by=principal.subject or "operator")
@@ -867,7 +991,7 @@ def suggestion_reject(principal: Operator, suggestion_id: str,
 def artist_profile_delete(principal: Operator, artist_id: str, profile_id: str) -> Response:
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is not None:
         repo.delete_presence(conn, tenant_id, artist_id, profile_id)
     return RedirectResponse(f"/artists?sel={artist_id}", status_code=303)
@@ -891,7 +1015,7 @@ def _imports_page(request: Request, principal: auth.Principal, *,
     a second click on a screen that is usually empty gets it missed.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     view = (research.imports(conn, tenant_id) if tenant_id
             else demo.View(key="imports", title="Statements",
                            blurb=_IMPORTS_BLURB, stats=(), cols=(), rows=(),
@@ -951,9 +1075,8 @@ async def imports_upload(
     confirmed = confirm_unverified.strip().lower() in {"yes", "on", "true", "1"}
 
     conn = _conn()
-    tenant = repo.ensure_tenant(conn, SETTINGS.tenant_slug, "Respect the Funk")
     report = statements.load(
-        conn, str(tenant["id"]), text,
+        conn, _tenant_id_for_write(conn, principal), text,
         filename=(file.filename or "")[:200], distributor=distributor,
         imported_by=principal.subject,
         allow_unverified=confirmed,
@@ -1019,7 +1142,7 @@ def queue_run_now(principal: Operator, lead_id: str) -> Response:
     """
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         return RedirectResponse(
             "/queue?error=" + _q("There is no tenant yet, so there is no frontier."),
@@ -1101,7 +1224,7 @@ def _threads_page(request: Request, principal: auth.Principal, *, sel: str = "",
     press the button that would be refused, because it is not drawn.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         view = demo.View(key="threads", title="Threads", blurb="", stats=(), cols=(),
                          rows=(), empty="Nothing here yet — save an artist first.")
@@ -1155,7 +1278,7 @@ def threads_advance(principal: Operator, thread_id: str, to: str) -> Response:
     """
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     try:
         outreach.advance(conn, tenant_id, thread_id, to,
                          reason=f"moved by {principal.subject}")
@@ -1182,7 +1305,7 @@ def threads_draft(request: Request, principal: Operator, thread_id: str,
                              error="A draft needs a subject and a body.",
                              status_code=400)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     try:
         outreach.draft(conn, tenant_id, thread_id, subject=subject, body=body)
     except outreach.TransitionRefused as exc:
@@ -1204,7 +1327,7 @@ def threads_close(principal: Operator, thread_id: str, outcome: str) -> Response
     if outcome not in outreach.CLOSED:
         raise HTTPException(status_code=400, detail=f"{outcome!r} is not a closing state.")
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     try:
         outreach.advance(conn, tenant_id, thread_id, outcome,
                          reason=f"closed by {principal.subject}")
@@ -1244,7 +1367,7 @@ def _tracks_page(
     places renders every validation failure twice.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     creating = sel == "new"
 
     if tenant_id is None:
@@ -1344,7 +1467,7 @@ def tracks_create(request: Request, principal: Operator,
                             error=str(exc), status_code=400)
 
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         return _tracks_page(
             request, principal, sel="new", form=typed, status_code=400,
@@ -1384,7 +1507,7 @@ def tracks_update(request: Request, principal: Operator, recording_id: str,
                             error=f"{status!r} is not a supported status.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None or repo.get_recording(conn, tenant_id, recording_id) is None:
         raise HTTPException(status_code=404, detail="No such recording.")
 
@@ -1415,7 +1538,7 @@ def tracks_delete(principal: Operator, recording_id: str) -> Response:
 
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         return RedirectResponse("/tracks", status_code=303)
 
@@ -1452,7 +1575,7 @@ def tracks_credit_add(request: Request, principal: Operator, recording_id: str,
                                          f"offers.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         raise HTTPException(status_code=404, detail="No such recording.")
     if repo.get_recording(conn, tenant_id, recording_id) is None:
@@ -1476,7 +1599,7 @@ def tracks_credit_delete(principal: Operator, recording_id: str,
                          credit_id: str) -> Response:
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is not None:
         repo.delete_credit(conn, tenant_id, recording_id, credit_id)
     return RedirectResponse(f"/tracks?sel={recording_id}", status_code=303)
@@ -1499,7 +1622,7 @@ def tracks_analyse(principal: Operator, recording_id: str) -> Response:
 
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         return RedirectResponse("/tracks", status_code=303)
 
@@ -1588,7 +1711,7 @@ async def masters_claim(request: Request, principal: Operator,
         return _refused("that request body was not JSON.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         return _refused("there is no tenant yet — save an artist first.")
     if not _recording_exists(conn, tenant_id, recording_id):
@@ -1648,7 +1771,7 @@ def masters_confirm(principal: Operator, recording_id: str, asset_id: str) -> Re
 
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         return _refused("there is no tenant yet.")
 
@@ -1681,7 +1804,7 @@ def masters_delete(principal: Operator, recording_id: str, asset_id: str) -> Res
 
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         return RedirectResponse(f"/tracks?sel={recording_id}", status_code=303)
 
@@ -1713,7 +1836,7 @@ def _campaigns_page(request: Request, principal: auth.Principal, *, sel: str = "
     every other campaign, and a bulk button makes that consequence invisible.
     """
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     creating = sel == "new"
 
     if tenant_id is None:
@@ -1800,7 +1923,7 @@ def campaigns_create(request: Request, principal: Operator,
                                error=f"{channel!r} is not a supported channel.",
                                status_code=400)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         return _campaigns_page(request, principal, sel="new", form=typed,
                                error="Add an artist before creating a campaign.",
@@ -1824,7 +1947,7 @@ def campaigns_open_thread(principal: Operator, campaign_id: str,
     """
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
 
     # The ranking is recomputed here rather than carried from the page that rendered the
     # button, and the difference is the whole value of the record. A hidden field holding
@@ -1846,6 +1969,14 @@ def campaigns_open_thread(principal: Operator, campaign_id: str,
     try:
         outreach.open_thread(conn, tenant_id, campaign_id=campaign_id,
                              counterparty_id=counterparty_id, decided=decided)
+    except outreach.PlanLimitReached as exc:
+        # The plan meter, rendered as its own sentence and not folded into the collision
+        # below. They are both refusals of the same button and they mean opposite things:
+        # one says pick somebody else, the other says nobody will work this month. The
+        # message is composed by `plans.Tier.conversation_refusal` so this page and the
+        # JSON API quote the same limit in the same words.
+        return RedirectResponse(
+            f"/campaigns?sel={campaign_id}&error=" + _q(str(exc)), status_code=303)
     except psycopg.errors.UniqueViolation:
         return RedirectResponse(
             f"/campaigns?sel={campaign_id}&error="
@@ -1868,7 +1999,7 @@ def campaigns_set_state(principal: Operator, campaign_id: str, state: str) -> Re
     if state not in ("draft", "running", "paused", "done"):
         raise HTTPException(status_code=400, detail=f"{state!r} is not a campaign state.")
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is not None:
         outreach.set_campaign_state(conn, tenant_id, campaign_id, state)
     return RedirectResponse(f"/campaigns?sel={campaign_id}", status_code=303)
@@ -1916,12 +2047,219 @@ def signout() -> Response:
     return response
 
 
+# ------------------------------------------------------- claiming an account
+#
+# The public half of multi-tenancy. `POST /claim` is the only route on this router that
+# writes without a principal, and the only one that mints a credential.
+#
+# **It works with no Stripe configuration and that is a requirement, not a happy
+# accident.** The free tier is the tier a judge with no card uses, and a signup path that
+# touched a payment provider would fail whenever that provider was unconfigured (which is
+# this deployment's state), unreachable, or having an incident. Nothing below imports
+# `billing`.
+
+#: How long a claimed session lasts. Ninety days rather than the operator cookie's twelve
+#: hours, and the difference deserves stating because it looks like a weaker choice.
+#:
+#: The operator can always sign in again: they hold `PLATFORM_ADMIN_TOKEN` and can type it
+#: back in. A claimed tenant cannot. The raw token is shown once, at claim, and is not
+#: recoverable from the database — only its hash is stored — and there is no email
+#: verification in this build, so `POST /claim` deliberately refuses to re-issue a token
+#: for a known address. An expiring cookie is therefore not "sign in again", it is
+#: "lose the account".
+#:
+#: That is a genuine defect and it is bounded rather than hidden: ninety days, the token
+#: is returned in the response body for any client that asks for JSON so it can be kept,
+#: and the real fix — a signed, expiring link sent to the address — is a different
+#: function that needs a mail sender this build does not have.
+CLAIM_COOKIE_SECONDS = 60 * 60 * 24 * 90
+
+
+def _refusal_json(status: int, code: str, message: str) -> JSONResponse:
+    """One refusal shape for the three machine-readable endpoints on this router.
+
+    Borrowed from `api/errors.py` rather than invented here — see the import comment at
+    the top of this file. Building the `Refusal` and taking its `.body` (rather than
+    writing the dict) is what keeps the envelope identical to the JSON API's, including
+    the mirrored top-level `message`, and what makes an undeclared code raise instead of
+    shipping.
+    """
+    refusal = api_errors.Refusal(status, code, message)
+    return JSONResponse(refusal.body, status_code=refusal.status_code)
+
+
+def _wants_json(request: Request) -> bool:
+    """Whether the caller is a program rather than a browser.
+
+    Checked on `Accept` alone. A browser sends `text/html` first and never
+    `application/json`, and a script that wants the token has to ask for it — which is
+    the right way round, because the token in a response body is a credential and should
+    be produced deliberately rather than to whoever happened to POST a form.
+    """
+    return "application/json" in (request.headers.get("accept") or "").lower()
+
+
+@router.post("/claim")
+def claim(request: Request, email: Annotated[str, Form()] = "") -> Response:
+    """Create a tenant, mint its token, set the cookie, and land in the console.
+
+    Public and unauthenticated, which is the point and also the risk. What bounds it is
+    written out in full on `accounts.MAX_CLAIMS_PER_HOUR` — four different kinds of bound,
+    what each one stops, and the one thing (per-IP limiting) that is deliberately not done
+    because behind a Function URL it would be theatre. The short version: one tenant per
+    address, twenty an hour cluster-wide, five hundred in total, and a twenty-cent daily
+    money ceiling on every one of them enforced by a spend gate that predates billing.
+
+    Everything that can be refused is refused before anything is written, and a refusal
+    says which of those bounds it hit rather than "something went wrong" — a person who
+    typed a malformed address and a person who arrived during somebody else's burst need
+    different things.
+
+    The response depends on who asked. A browser gets a 303 into the console with an
+    httpOnly cookie, which is the same shape `/signin` uses. A client that sent
+    `Accept: application/json` gets the raw token in the body, **once**, because it is
+    not stored and cannot be reissued; see `CLAIM_COOKIE_SECONDS` for why that matters
+    more here than it would in a system with password reset.
+    """
+    conn = _conn()
+    try:
+        account, token = accounts.claim(conn, email)
+    except accounts.ClaimRefused as exc:
+        if _wants_json(request):
+            return _refusal_json(409, api_errors.CLAIM_REFUSED, str(exc))
+        # The console's own idiom: carry the sentence back to the page the form was on
+        # rather than serving an error page, so the person keeps their place. `/` is the
+        # landing page for an anonymous visitor, which is where the form lives.
+        return RedirectResponse("/?error=" + _q(str(exc)), status_code=303)
+
+    if _wants_json(request):
+        response: Response = JSONResponse({
+            "tenant_id": str(account["tenant_id"]),
+            "tenant_slug": account["tenant_slug"],
+            "email": account["email"],
+            "plan": account["plan"],
+            # Shown once. Not recoverable: only its sha256 is stored.
+            "token": token,
+            "note": ("Keep this token. It is not stored in recoverable form and cannot "
+                     "be reissued, because nothing here verifies that you own the "
+                     "address you typed."),
+        }, status_code=201)
+    else:
+        response = RedirectResponse("/", status_code=303)
+
+    # Same cookie flags as `/signin`: httpOnly so console JavaScript cannot read it and
+    # an XSS cannot exfiltrate it, secure so it never crosses plain HTTP, lax so a link
+    # from an email still arrives signed in while a cross-site POST does not.
+    response.set_cookie(
+        auth.COOKIE_NAME, token, httponly=True, secure=True, samesite="lax",
+        max_age=CLAIM_COOKIE_SECONDS,
+    )
+    return response
+
+
+# --------------------------------------------------------------------- billing
+#
+# Two endpoints, and `billing.py` holds the argument for the shape of them. The one line
+# worth repeating here: **the webhook writes a plan and a ceiling and enforces nothing.**
+# `spend.Gate` and `outreach.open_thread` were enforcing limits before payments existed
+# and go on doing it if every webhook in the world is lost.
+
+@router.post("/billing/checkout")
+def billing_checkout(request: Request, principal: Operator,
+                     plan: Annotated[str, Form()] = "") -> Response:
+    """Start a Stripe Checkout for the signed-in tenant. JSON in, JSON out.
+
+    Returns `{"url": ...}` for the client to redirect to, or a refusal that names exactly
+    which environment variables are missing. **It does not pretend to succeed.** There is
+    no stub session, no fake URL and no "billing is coming soon" page: an operator whose
+    `STRIPE_PRICE_ROSTER` is unset needs to read that string, and a checkout that appeared
+    to work and then 404'd at Stripe would cost them an afternoon.
+
+    Refuses the operator principal. The shared admin token is scoped to no tenant by
+    construction, so there is nobody to subscribe — and inventing one (the deployment's
+    configured tenant, say) would attach a real subscription to the wrong party.
+    """
+    _require_write(principal)
+    if not principal.tenant_id:
+        return _refusal_json(
+            409, api_errors.BILLING_NOT_CONFIGURED,
+            "This session is the shared operator token, which is not scoped to a tenant "
+            "and so cannot hold a subscription. Sign in with a tenant token, or claim "
+            "an account.")
+
+    conn = _conn()
+    account = accounts.get_account(conn, principal.tenant_id)
+    if account is None:
+        return _refusal_json(
+            409, api_errors.BILLING_NOT_CONFIGURED,
+            "This tenant has no account row, so there is no email to bill and no plan "
+            "to change.")
+
+    base = str(request.base_url).rstrip("/")
+    try:
+        session = billing.checkout_session(
+            SETTINGS,
+            tenant_id=principal.tenant_id,
+            email=str(account["email"]),
+            plan_key=plan.strip(),
+            # Stripe substitutes the real id into `{CHECKOUT_SESSION_ID}`, which is what
+            # lets the landing page tell a completed checkout from a bookmark. The plan
+            # itself is *not* granted from this redirect — only the webhook writes it, so
+            # a forged success URL grants nothing.
+            success_url=f"{base}/?checkout={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{base}/",
+        )
+    except billing.BillingRefused as exc:
+        return _refusal_json(503, api_errors.BILLING_NOT_CONFIGURED, str(exc))
+    return JSONResponse(session)
+
+
+@router.post("/billing/webhook")
+async def billing_webhook(request: Request) -> Response:
+    """Stripe's callback. Public by necessity, authenticated by signature.
+
+    Public because Stripe has no cookie and cannot be given one; authenticated because
+    every byte of it is HMAC'd with `STRIPE_WEBHOOK_SECRET` and
+    `billing.verify_signature` refuses anything that does not match — including, and
+    especially, every request when that secret is unset. An unverified billing webhook is
+    an unauthenticated way to grant paid plans, so there is no configuration of this
+    deployment in which this endpoint trusts a body.
+
+    `await request.body()` before anything parses it. The signature covers the raw bytes,
+    and a body that has been through `json.loads` and back out again differs in key order
+    and whitespace — which is the classic way this check gets broken while still looking
+    correct.
+
+    A bad signature is a 400, not a 401. Stripe retries on 5xx and eventually disables an
+    endpoint that keeps failing; a 4xx says "this delivery is wrong" rather than "come
+    back later", which is the true statement and the one that does not turn a wrong
+    secret into a silently dead webhook.
+    """
+    payload = await request.body()
+    try:
+        billing.verify_signature(payload, request.headers.get("stripe-signature"),
+                                 SETTINGS.stripe_webhook_secret)
+        event = billing.parse_event(payload)
+    except billing.BillingRefused as exc:
+        return _refusal_json(400, api_errors.BILLING_SIGNATURE_INVALID, str(exc))
+
+    try:
+        result = billing.handle_event(_conn(), event)
+    except (billing.BillingRefused, accounts.ClaimRefused) as exc:
+        # A verified event this deployment cannot act on: a tenant it does not have, or a
+        # plan it does not define. 422 rather than 400 — the request was well-formed and
+        # genuinely from Stripe, and the fault is a mismatch between what Stripe holds and
+        # what this cluster does, which is a thing a person has to go and look at.
+        return _refusal_json(422, api_errors.BILLING_NOT_CONFIGURED, str(exc))
+    return JSONResponse(result)
+
+
 # ------------------------------------------------------- roster CRUD (real)
 
 @router.get("/roster", response_class=HTMLResponse)
 def roster_page(request: Request, principal: Operator, q: str = "") -> Response:
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     artists = repo.list_parties(conn, tenant_id, q) if tenant_id else []
     return templates.TemplateResponse(
         request, "artists.html", _ctx(request, principal, artists=artists, q=q)
@@ -1932,7 +2270,7 @@ def roster_page(request: Request, principal: Operator, q: str = "") -> Response:
 def roster_rows(request: Request, principal: Operator, q: str = "") -> Response:
     """The fragment htmx swaps in on search. Same template the full page uses."""
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     artists = repo.list_parties(conn, tenant_id, q) if tenant_id else []
     return templates.TemplateResponse(
         request, "components/_artist_rows.html", _ctx(request, principal, artists=artists, q=q)
@@ -1962,17 +2300,16 @@ def roster_create(
     artist_type = _validated_type(type)
 
     conn = _conn()
-    # Creates the label row on first save, which is why there is no seed file.
-    tenant = repo.ensure_tenant(conn, SETTINGS.tenant_slug, "Respect the Funk")
+    tenant_id = _tenant_id_for_write(conn, principal)
     with _friendly_conflict(name):
-        repo.create_party(conn, str(tenant["id"]), name=name, type_=artist_type)
+        repo.create_party(conn, tenant_id, name=name, type_=artist_type)
     return RedirectResponse("/roster", status_code=303)
 
 
 @router.get("/roster/{artist_id}", response_class=HTMLResponse)
 def roster_detail(request: Request, principal: Operator, artist_id: str) -> Response:
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     artist = repo.get_party(conn, tenant_id, artist_id) if tenant_id else None
     if artist is None:
         raise HTTPException(status_code=404, detail="No such artist.")
@@ -1997,7 +2334,7 @@ def roster_update(
         raise HTTPException(status_code=400, detail="An artist needs a name.")
 
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     current = repo.get_party(conn, tenant_id, artist_id) if tenant_id else None
 
     # A type this build no longer defines is kept if the form sent it back
@@ -2019,7 +2356,7 @@ def roster_update(
 def roster_delete(request: Request, principal: Operator, artist_id: str) -> Response:
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is not None:
         repo.delete_party(conn, tenant_id, artist_id)
     artists = repo.list_parties(conn, tenant_id) if tenant_id else []
@@ -2042,7 +2379,7 @@ def _ask_page(request: Request, principal: auth.Principal, *, asked: str = "",
     conn = _conn()
     return templates.TemplateResponse(
         request, "console/ask.html",
-        _ctx(request, principal, conn=conn, tenant_id=_tenant_id(conn), here="ask",
+        _ctx(request, principal, conn=conn, tenant_id=_tenant_id(conn, principal), here="ask",
              live=True, error=error, asked=asked, answer=answer,
              questions=mcp.QUESTIONS,
              mcp_configured=SETTINGS.mcp_configured,
@@ -2095,7 +2432,7 @@ def ask_run(request: Request, principal: Operator,
     """
     _require_write(principal)
     conn = _conn()
-    tenant_id = _tenant_id(conn)
+    tenant_id = _tenant_id(conn, principal)
     if tenant_id is None:
         return _ask_page(request, principal, asked=q,
                          error="There is no tenant on this cluster yet, so there is "

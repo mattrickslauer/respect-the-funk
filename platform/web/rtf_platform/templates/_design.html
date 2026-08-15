@@ -40,10 +40,29 @@
    ## The rule about colour, inherited from _console.html and not negotiable
 
    Colour carries meaning and nothing else. There is no decorative hue in this file.
-   If a thing is grey it is because it is fine. The two brand hues — phosphor amber
-   and carrier teal — mark *emphasis* and *liveness* respectively and are not
-   interchangeable. The CockroachDB purple is quarantined at the bottom: it is
-   somebody else's trademark and it is never used for our own UI.
+   If a thing is grey it is because it is fine. The CockroachDB purple is quarantined:
+   it is somebody else's trademark and it is never used for our own UI.
+
+   ## Two poles, and a lamp
+
+   There are three hues and they are not interchangeable.
+
+     `carrier`  teal  — the cold pole. A thing that is *on*, answering, or measured.
+                        Liveness and evidence. It belongs to the index.
+     `phosphor` amber — the warm pole. Emphasis: the thing being asserted, ranked,
+                        or put in front of a person to decide.
+     `onair`    red   — the lamp. An act that cannot be undone. A message leaving,
+                        an outbox row in flight, a counterparty going `opted_out`.
+
+   **Red is not for errors.** In a transmitter room red means on-air, and a failed
+   job is not an irreversible act — so `--err` is rust and it is the only red-adjacent
+   thing that is allowed to be common. If you are reaching for `--onair` to mark a
+   problem, the token you want is `--err`. If you are reaching for it to decorate,
+   there is no token you want.
+
+   The reason this is a rule and not a preference: `--onair` should appear perhaps
+   three times in the entire product. A hue that shows up everywhere stops meaning
+   anything, and this one has a job.
    ============================================================================= #}
 <style>
 /* ---------------------------------------------------------------- tokens --- */
@@ -54,25 +73,40 @@
   --panel-2:#ebe6db;
   --rule:#ded7c9;
   --rule-soft:#e9e3d7;
+  /* Stronger than `--rule`, for the edge of a control rather than the edge of a
+     region. Its absence is why `_console.html` carried a `--line2` of its own. */
+  --rule-strong:#c9c0ad;
 
   --ink:#181c22;
   --ink-2:#3d454f;
   --dim:#5f6875;
   --faint:#8a8f98;
 
-  /* --- the two brand hues, darkened to hold contrast on paper --------------- */
+  /* --- the two poles, darkened to hold contrast on paper -------------------- */
+  /*     Cold marks what was measured; warm marks what is being asserted or     */
+  /*     acted on. See the note above `--onair` for why that split is the whole */
+  /*     colour system rather than a pair of accents.                           */
   --phosphor:#9a5f00;          /* emphasis. The meter, the eyebrow, the accent. */
   --phosphor-bright:#c47c05;
   --phosphor-wash:rgba(196,124,5,.10);
   --carrier:#0d7a70;           /* liveness. A thing that is on, or answering.   */
   --carrier-wash:rgba(13,122,112,.10);
 
+  /* --- the lamp ------------------------------------------------------------- */
+  /*     Reserved, absolutely, for an act that cannot be undone: a message       */
+  /*     leaving, an outbox row in flight, a counterparty going `opted_out`.     */
+  --onair:#c62a1c;
+  --onair-wash:rgba(198,42,28,.10);
+
   /* --- semantic tones. Run state and severity, from _console.html. ---------- */
+  /*     `--err` is rust, not red, and that is the rule not an accident: in a    */
+  /*     transmitter room red means on-air. A failed job is not an irreversible  */
+  /*     act and must not borrow the one colour that is.                        */
   --ok:#2f7d52;
-  --warn:#94701f;
-  --err:#a83a34;
+  --warn:#8a6a1c;
+  --err:#9c4a22;
   --info:#2b6699;
-  --err-wash:rgba(168,58,52,.09);
+  --err-wash:rgba(156,74,34,.09);
 
   /* --- provenance. The spine of the product: how a fact was obtained. ------- */
   /*     These three are load-bearing. The manual teaches them and the console  */
@@ -92,12 +126,22 @@
   --face-body:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   --face-data:var(--face-display);
 
+  /*     The scale was flat — 12/15/17/19 is four sizes that all read as "text",   */
+  /*     which is why every page had to reach for weight and colour to make a      */
+  /*     hierarchy. It now opens up at the top, where hierarchy is actually        */
+  /*     wanted, and stays exactly as it was in the body sizes, where it was fine. */
+  --step--2:10.5px;            /* eyebrow, chip, column head. Always with caps.  */
   --step--1:12px;
   --step-0:15px;
   --step-1:17px;
-  --step-2:19px;
-  --step-3:clamp(23px,3vw,29px);
-  --step-4:clamp(30px,4.6vw,50px);
+  --step-2:20px;
+  --step-3:clamp(24px,3.2vw,33px);
+  --step-4:clamp(32px,5vw,58px);
+  --step-5:clamp(46px,8vw,104px); /* one measured number, alone, at full width.  */
+
+  /*     Caps tracking as a token, because it was typed as .1em, .12em, .14em,    */
+  /*     .16em, .18em and .2em across six files and no two labels matched.        */
+  --track-caps:.16em;
 
   /* --- metrics ------------------------------------------------------------- */
   --measure:68ch;
@@ -115,13 +159,17 @@
    occurrence is not the one a reader (or a test scanning for the block) wants. */
 @media (prefers-color-scheme:dark){
   :root:not([data-ground]){
-    --ground:#0a0e14; --panel:#121924; --panel-2:#18202c;
-    --rule:#242f3d; --rule-soft:#1b2330;
-    --ink:#e9eef6; --ink-2:#c3cdda; --dim:#8b99ab; --faint:#667486;
+    /* Identical to the transmitter block below, deliberately. There used to be two
+       slightly different darks here — #0a0e14 and #080b11, four rules apart — which
+       is a fork nobody chose and nobody could see. There is one dark room. */
+    --ground:#06080c; --panel:#0d1219; --panel-2:#121924;
+    --rule:#1b232f; --rule-soft:#151c26; --rule-strong:#2a3644;
+    --ink:#e6ecf4; --ink-2:#c0cad8; --dim:#7d8b9e; --faint:#525f72;
     --phosphor:#ffb340; --phosphor-bright:#ffc266; --phosphor-wash:rgba(255,179,64,.11);
-    --carrier:#3fd6c5; --carrier-wash:rgba(63,214,197,.10);
-    --ok:#4fb477; --warn:#d2a24c; --err:#ff8272; --info:#6ba3d0;
-    --err-wash:rgba(255,130,114,.10);
+    --carrier:#2fd4c4; --carrier-wash:rgba(47,212,196,.10);
+    --onair:#ff3b2f; --onair-wash:rgba(255,59,47,.12);
+    --ok:#4fb477; --warn:#d9a441; --err:#e8734a; --info:#6ba3d0;
+    --err-wash:rgba(232,115,74,.10);
     --measured:#63b3c4; --inferred:#8b949e; --asserted:#c9a25e;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.32);
   }
@@ -129,13 +177,14 @@
 
 /* --- ground: transmitter. Pinned dark, for the surfaces that are a room. ---- */
 :root[data-ground="transmitter"]{
-  --ground:#080b11; --panel:#0f151e; --panel-2:#131b26;
-  --rule:#1c2531; --rule-soft:#161d27;
-  --ink:#e9eef6; --ink-2:#c3cdda; --dim:#8493a6; --faint:#5c6a7d;
+  --ground:#06080c; --panel:#0d1219; --panel-2:#121924;
+  --rule:#1b232f; --rule-soft:#151c26; --rule-strong:#2a3644;
+  --ink:#e6ecf4; --ink-2:#c0cad8; --dim:#7d8b9e; --faint:#525f72;
   --phosphor:#ffb340; --phosphor-bright:#ffc266; --phosphor-wash:rgba(255,179,64,.11);
-  --carrier:#35d0c0; --carrier-wash:rgba(53,208,192,.10);
-  --ok:#4fb477; --warn:#d2a24c; --err:#ff6b6b; --info:#6ba3d0;
-  --err-wash:rgba(255,107,107,.10);
+  --carrier:#2fd4c4; --carrier-wash:rgba(47,212,196,.10);
+  --onair:#ff3b2f; --onair-wash:rgba(255,59,47,.12);
+  --ok:#4fb477; --warn:#d9a441; --err:#e8734a; --info:#6ba3d0;
+  --err-wash:rgba(232,115,74,.10);
   --measured:#63b3c4; --inferred:#8b949e; --asserted:#c9a25e;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.32);
 }

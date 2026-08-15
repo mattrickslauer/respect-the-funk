@@ -53,7 +53,7 @@ from typing import Annotated, Any
 import psycopg
 from fastapi import Cookie, Depends, Header
 
-from rtf_platform import auth, db, repo, settings as settings_mod
+from rtf_platform import accounts, auth, db, repo, settings as settings_mod
 from rtf_platform.api import errors
 
 #: Read once at import, matching `routes.py`. A test that needs a different token
@@ -79,13 +79,40 @@ def _token(cookie: str | None, authorization: str | None) -> str | None:
     return None
 
 
+def _resolve_account(token: str) -> Any:
+    """Turn a per-tenant token into its `account` row, for `auth.principal_from_cookie`.
+
+    Opens the connection lazily — inside the function, only when the admin comparison has
+    already failed — so an operator request costs no database work to authenticate and an
+    unconfigured deployment does not raise while working out that somebody is anonymous.
+
+    `SETTINGS.configured` being false returns `None` rather than raising, and that is the
+    one judgement call here. A deployment with no `DATABASE_URL` cannot resolve a tenant
+    token, so nobody holding one is authenticated — but the *operator* path never reaches
+    this function, which means the console still admits the person who can go and set the
+    variable. Raising instead would 500 every request on a fresh checkout, including the
+    landing page, which resolves a principal like everything else. The refusal that
+    matters is not lost: `connection()` below raises `NOT_CONFIGURED` the moment anything
+    tries to read.
+    """
+    if not SETTINGS.configured:
+        return None
+    return accounts.account_for_token(connection(), token)
+
+
 def current_principal(
     rtf_session: Annotated[str | None, Cookie()] = None,
     authorization: Annotated[str | None, Header()] = None,
 ) -> auth.Principal:
-    """Who is asking. `auth.ANONYMOUS` when nobody is."""
+    """Who is asking. `auth.ANONYMOUS` when nobody is.
+
+    Two credentials resolve here now, in this order: the shared operator token, compared
+    in constant time against `PLATFORM_ADMIN_TOKEN` exactly as before, and — only if that
+    fails — a per-tenant token looked up by hash in `account`. `auth.py` explains why the
+    order is not negotiable and why the resolver is injected rather than imported.
+    """
     return auth.principal_from_cookie(
-        _token(rtf_session, authorization), SETTINGS.admin_token)
+        _token(rtf_session, authorization), SETTINGS.admin_token, _resolve_account)
 
 
 Principal = Annotated[auth.Principal, Depends(current_principal)]
@@ -162,7 +189,10 @@ def connection() -> psycopg.Connection:
 Conn = Annotated[psycopg.Connection, Depends(connection)]
 
 
-def current_tenant(conn: Conn) -> str:
+def current_tenant(
+    conn: Conn,
+    principal: Annotated[auth.Principal, Depends(current_principal)],
+) -> str:
     """The tenant, or a refusal — never `None` passed onward.
 
     `routes.py` lets `_tenant_id` return `None` and renders an empty state, which is
@@ -175,7 +205,24 @@ def current_tenant(conn: Conn) -> str:
 
     So the absence is a refusal with its own code, and the client can say what is
     actually true.
+
+    **The principal's tenant wins when it has one, and this is the line that makes
+    multi-tenancy real on this surface.** A per-tenant token resolves to a row in
+    `account`, and that row's `tenant_id` is the only tenant that request may see; every
+    read and every write on this router takes its scope from here, so there is no handler
+    that could be written to see another tenant's rows without going around this
+    dependency. `PLATFORM_TENANT_SLUG` remains the answer for the operator principal,
+    which carries no tenant by construction — that is the superuser path, unchanged, and
+    it is why `Principal.is_operator` is `tenant_id is None` rather than a flag.
+
+    Note what is *not* re-checked here: whether the tenant row still exists. The account
+    row has a foreign key to `tenant` with `ON DELETE CASCADE`, so a tenant that has been
+    deleted takes its account with it and the token stops resolving one step earlier, at
+    authentication. Verifying it again would be a second round trip to learn something
+    the schema already guarantees.
     """
+    if principal.tenant_id:
+        return principal.tenant_id
     tenant = repo.get_tenant(conn, SETTINGS.tenant_slug)
     if tenant is None:
         raise errors.Refusal(

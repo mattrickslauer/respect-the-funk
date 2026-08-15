@@ -60,7 +60,8 @@
             <button class="btn btn-quiet danger"
                     hx-delete="/ui/songs/{{ song.id }}/lyrics/lines/{{ line.id }}"
                     hx-confirm="Remove this line?"
-                    hx-target="#song-lyric-lines" hx-swap="outerHTML">Remove</button>
+                    hx-target="#song-lyric-lines" hx-swap="outerHTML"
+                    hx-disabled-elt="this">Remove</button>
           </div>
 
           {# Folded, like the section rows: reading the lyric is the common act and
@@ -70,7 +71,8 @@
             <summary>Edit line</summary>
             <form class="form-inline tight"
                   hx-post="/ui/songs/{{ song.id }}/lyrics/lines/{{ line.id }}"
-                  hx-target="#song-lyric-lines" hx-swap="outerHTML">
+                  hx-target="#song-lyric-lines" hx-swap="outerHTML"
+                  hx-disabled-elt="find button">
               <label class="grow">Words
                 <input name="text" value="{{ line.text }}" required></label>
               <label>Start <span class="hint">ms</span>
@@ -101,7 +103,8 @@
     </p>
     <form class="form"
           hx-post="/ui/songs/{{ song.id }}/lyrics/text"
-          hx-target="#song-lyric-lines" hx-swap="outerHTML">
+          hx-target="#song-lyric-lines" hx-swap="outerHTML"
+          hx-disabled-elt="find button">
       <label>Lyric
         <textarea name="text" rows="14"
                   placeholder="One line per line of the song">{{ lyrics.text if lyrics else "" }}</textarea>
@@ -117,7 +120,8 @@
     <form class="form form-inline"
           hx-post="/ui/songs/{{ song.id }}/lyrics/lines"
           hx-target="#song-lyric-lines" hx-swap="outerHTML"
-          hx-on::after-request="if(event.detail.successful) this.reset()">
+          hx-on::after-request="if(event.detail.successful) this.reset()"
+          hx-disabled-elt="find button">
       <label class="grow">Words <input name="text" required placeholder="Say it back to me"></label>
       <label>Start <span class="hint">ms</span><input name="start_ms" type="number" value="0"></label>
       <label>End <span class="hint">ms</span><input name="end_ms" type="number" value="0"></label>

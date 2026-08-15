@@ -26,12 +26,12 @@
       <dt>Recorded</dt><dd>{{ artist.consent.signed_at.strftime("%Y-%m-%d %H:%M UTC") if artist.consent.signed_at else "—" }}</dd>
       {% if artist.consent.notes %}<dt>Notes</dt><dd>{{ artist.consent.notes }}</dd>{% endif %}
     </dl>
-    <form hx-post="/ui/artists/{{ artist.id }}/consent" hx-target="#consent" hx-swap="outerHTML">
+    <form hx-post="/ui/artists/{{ artist.id }}/consent" hx-target="#consent" hx-swap="outerHTML" hx-disabled-elt="find button">
       <input type="hidden" name="granted" value="false">
       <button class="btn btn-danger btn-quiet" type="submit">Withdraw consent</button>
     </form>
   {% else %}
-    <form class="form" hx-post="/ui/artists/{{ artist.id }}/consent" hx-target="#consent" hx-swap="outerHTML">
+    <form class="form" hx-post="/ui/artists/{{ artist.id }}/consent" hx-target="#consent" hx-swap="outerHTML" hx-disabled-elt="find button">
       <input type="hidden" name="granted" value="true">
       <label>Signed by <input name="signed_by" required placeholder="Legal name on the release"></label>
       <label>Notes <input name="notes" placeholder="Agreement reference, scope, expiry"></label>

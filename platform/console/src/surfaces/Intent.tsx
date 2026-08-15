@@ -23,7 +23,7 @@ import { useNavigate } from "react-router-dom";
 import {
   useArtists, useBudgets, useCommitIntent, useSummary,
 } from "../api/queries";
-import { Failure, money } from "../components/primitives";
+import { Button, Failure, money } from "../components/primitives";
 import { STOCKED_CHANNELS, planStages } from "./plan";
 import type { Channel, PlannedStage } from "../api/types";
 
@@ -211,9 +211,14 @@ export default function Intent() {
             that would is refused before it costs anything.
           </p>
 
-          <button
+          {/* The label holds at "Create campaign" throughout. This press ends in a
+              navigation, so the window between the click and the new screen is the
+              only chance to say anything at all — and "creating…" spent that window
+              replacing the sentence that names what is being created. The trace
+              says the same thing without taking the words away. */}
+          <Button
             className="b p"
-            disabled={commit.isPending}
+            busy={commit.isPending}
             onClick={() =>
               commit.mutate(
                 { name, goal, artistId, channel, stages },
@@ -221,8 +226,8 @@ export default function Intent() {
               )
             }
           >
-            {commit.isPending ? "creating…" : "Create campaign"}
-          </button>
+            Create campaign
+          </Button>
 
           {commit.isError ? (
             <div style={{ marginTop: ".7rem" }}>

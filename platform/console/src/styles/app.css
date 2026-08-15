@@ -507,6 +507,51 @@
 .b.q:hover:not(:disabled) { color: var(--ink); border-color: var(--rule); }
 .b.d { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, transparent); }
 
+/* A write that has left and not yet landed.
+ *
+ * Drawn as a trace sweeping the bottom edge, which is the meter's material —
+ * a bar of phosphor — put in motion, rather than a spinner glyph borrowed from
+ * somewhere else. Three reasons it is the edge and not a glyph, in order of how
+ * much they matter:
+ *
+ * 1. The label does not move. These controls sit in rows of three; swapping
+ *    "pin" for "working…" widens the button mid-press and slides `veto` under a
+ *    cursor that is already travelling. It also throws away the one piece of
+ *    information the operator needs to read back — what they pressed.
+ * 2. `.b.q` is 24px of transparent nothing until hover. There is no room inside
+ *    one for a glyph, but there is always an edge.
+ * 3. It composes with `:disabled`. Every sibling control locks during a write;
+ *    only the pressed one carries the trace, and only it keeps full opacity.
+ *    That pairing is what makes the state legible rather than merely present.
+ */
+.b { position: relative; overflow: hidden; }
+.b.busy:disabled { opacity: 1; cursor: progress; }
+.b.busy::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 45%;
+  height: 2px;
+  background: var(--phosphor);
+  animation: trace 1.05s ease-in-out infinite;
+}
+/* `.b.p` is already phosphor-on-ground, so a phosphor trace on it would be a
+   bar drawn in the background colour. It runs in the ink instead. */
+.b.p.busy::after { background: var(--ground); opacity: 0.72; }
+
+@keyframes trace {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(222%); }
+}
+
+/* Reduced motion still gets a state, not silence — the trace stops travelling
+   and holds the full width. "Busy" is information; the animation is only how it
+   is usually delivered. */
+@media (prefers-reduced-motion: reduce) {
+  .b.busy::after { animation: none; width: 100%; }
+}
+
 .field { display: block; margin: 0 0 0.55rem; }
 .field > span {
   display: block;

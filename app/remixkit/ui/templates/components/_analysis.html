@@ -18,7 +18,8 @@
     {% if song.master_key and analysis_available and not busy %}
       <button class="btn btn-quiet"
               hx-post="/ui/songs/{{ song.id }}/analysis"
-              hx-target="#song-analysis" hx-swap="outerHTML">
+              hx-target="#song-analysis" hx-swap="outerHTML"
+              hx-disabled-elt="this">
         {{ "Re-measure" if analysis else "Measure the master" }}
       </button>
     {% endif %}

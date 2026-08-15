@@ -489,6 +489,59 @@ input::placeholder,textarea::placeholder{color:#5d5872}
 .btn-quiet{font-size:12.5px;padding:5px 11px}
 .btn-danger:hover{border-color:var(--err);color:#f0a58a}
 
+/* ---- a control that is waiting on a write ----
+   Every POST and DELETE on this console goes out through one of these, and until
+   now the only thing that happened when you pressed one was the site-wide
+   `.htmx-request` fade at 55% — the same fade a panel gets while it re-renders.
+   On a button that reads as "greyed out", which is what a control says when it
+   is *unavailable*, so the one gesture that means "your press landed" was drawn
+   in the vocabulary of "your press did nothing".
+
+   Busy is a trace sweeping the bottom edge instead: the meter's own material, a
+   bar of gold, put in motion. It costs no layout, so a `Set` next to a `Delete`
+   does not shift under a cursor mid-press, and it fits `.btn-quiet` and `.del`,
+   which are too small to hold a glyph. The control stays at full strength while
+   it runs — dimming is reserved for genuinely unavailable, which is what
+   `hx-disabled-elt` does to the rest of the row.
+
+   htmx puts `.htmx-request` on whichever element carries the `hx-*` attribute,
+   so both shapes on this console are covered: a button that posts directly, and
+   a form that posts with a submit button inside it. */
+.btn,.btn-ghost,.del{position:relative;overflow:hidden}
+
+/* A control locked out for the duration of a write, by `hx-disabled-elt`:
+   unavailable, and drawn as such. This comes first so the busy rules below can
+   take the opacity back — every busy control is also a disabled one, since
+   `hx-disabled-elt="this"` locks the very button that is working. */
+.btn:disabled,.btn-ghost:disabled,.del:disabled{opacity:0.45;cursor:not-allowed}
+.btn:disabled:hover{border-color:var(--rule)}
+
+/* …and the busy one keeps full strength. Both halves of every pair are spelled
+   out rather than relying on source order alone: `form.htmx-request button` is
+   less specific than `.btn:disabled`, so a submit button inside a posting form
+   would otherwise take the fade — carrying a trace while looking unavailable,
+   which is the exact ambiguity this state exists to remove. */
+.btn.htmx-request,.btn.htmx-request:disabled,
+.btn-ghost.htmx-request,.btn-ghost.htmx-request:disabled,
+.del.htmx-request,.del.htmx-request:disabled,
+form.htmx-request button:not([type=button]),
+form.htmx-request button:not([type=button]):disabled{opacity:1;cursor:progress}
+.btn.htmx-request::after,.btn-ghost.htmx-request::after,.del.htmx-request::after,
+form.htmx-request button:not([type=button])::after{
+  content:"";position:absolute;left:0;bottom:0;width:45%;height:2px;
+  background:var(--gold);animation:trace 1.05s ease-in-out infinite}
+/* `.btn-primary` is already gold-on-dark, so a gold trace on one would be a bar
+   drawn in its own background. It runs in the ink instead. */
+.btn-primary.htmx-request::after,
+form.htmx-request .btn-primary:not([type=button])::after{background:#0e0c14;opacity:0.72}
+@keyframes trace{from{transform:translateX(-100%)}to{transform:translateX(222%)}}
+/* Reduced motion still gets a state, not silence: the trace stops travelling and
+   holds the full width. Busy is information; the sweep is only how it is usually
+   delivered. */
+@media (prefers-reduced-motion:reduce){
+  .btn.htmx-request::after,.btn-ghost.htmx-request::after,.del.htmx-request::after,
+  form.htmx-request button:not([type=button])::after{animation:none;width:100%}}
+
 .notice{border-radius:6px;padding:10px 13px;margin-bottom:11px;font-size:13.5px}
 /* A blocking notice sits between the identity bar and the deck, and must not scroll:
    it is the reason the controls below it will refuse. `flex:none` so it costs its own
@@ -547,6 +600,13 @@ input::placeholder,textarea::placeholder{color:#5d5872}
 .sha{font-size:10.5px}
 
 .htmx-request{opacity:0.55;transition:opacity 120ms}
+/* …but not a form that is mid-write. The fade is right for a region being
+   re-rendered, where "this content is stale" is the whole message. On a form it
+   composites over the submit button and drags the trace down with it — opacity
+   set on a parent is not something a child can opt out of — so the one element
+   that knows what is happening ends up the dimmest thing on screen. The
+   button's trace is this form's indicator instead. */
+form.htmx-request{opacity:1}
 .asset .dl{color:var(--gold);text-decoration:none;font-size:11px;margin-top:2px}
 .asset .dl:hover{text-decoration:underline}
 
@@ -1020,6 +1080,13 @@ dialog.drawer[open]{animation:drawer-in 180ms cubic-bezier(0.2,0.7,0.3,1)}
 .asset-acts{position:absolute;top:5px;right:5px;display:flex;gap:4px;opacity:0;
   transition:opacity 120ms}
 .asset:hover .asset-acts,.asset:focus-within .asset-acts{opacity:1}
+/* …and it stays up while its delete is in flight. This bar is revealed on hover,
+   so without this the sequence is: press ×, confirm the dialog — which moves the
+   pointer off the tile — and the controls fade out mid-request, taking the busy
+   trace with them. The frame is being removed from the bucket, which is the
+   longest and least reversible round trip on the page and the worst one to
+   perform in silence. */
+.asset-acts:has(.htmx-request){opacity:1}
 .asset-acts button{background:rgba(14,12,20,0.86);border:1px solid var(--rule);
   color:var(--ink-2);border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;
   box-shadow:var(--lift-1)}

@@ -13,7 +13,8 @@
 <form class="form"
       hx-post="/ui/auth/request-code"
       hx-target="#auth-step"
-      hx-swap="innerHTML">
+      hx-swap="innerHTML"
+      hx-disabled-elt="find button">
   <input type="hidden" name="next" value="{{ next }}">
   <label>Email
     <input type="email" name="email" value="{{ email }}" required autofocus

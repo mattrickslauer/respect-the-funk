@@ -29,7 +29,8 @@
             hx-delete="/ui/artists/{{ artist.id }}"
             hx-target="#roster"
             hx-swap="outerHTML"
-            hx-confirm="Remove {{ artist.name }} from the roster? This is refused if they still have songs, identities or kits — delete those first.">
+            hx-confirm="Remove {{ artist.name }} from the roster? This is refused if they still have songs, identities or kits — delete those first."
+            hx-disabled-elt="this">
       Remove
     </button>
   </div>

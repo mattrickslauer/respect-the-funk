@@ -527,7 +527,7 @@
          since those join that form by `form="repricer"` and travel in its `FormData`. So
          what is bought is not a re-derivation of what was priced; it is the same form. #}
       <form hx-post="/ui/kits" hx-target="#queued" hx-swap="innerHTML"
-            hx-include="#repricer">
+            hx-include="#repricer" hx-disabled-elt="find button">
         {# The two things the priced form has no opinion about: which record this is, and
            whose. Everything else rides in from `#repricer`. #}
         <input type="hidden" name="song_id" value="{{ song.id }}">

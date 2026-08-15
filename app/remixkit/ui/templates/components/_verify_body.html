@@ -33,7 +33,8 @@
             hx-post="/ui/verify"
             hx-target="#report"
             hx-swap="innerHTML"
-            hx-encoding="multipart/form-data">
+            hx-encoding="multipart/form-data"
+            hx-disabled-elt="find button">
         <div class="panel-head"><h3>Upload</h3></div>
         <div class="form-inline tight">
           <label>Asset or manifest <input type="file" name="file" required></label>

@@ -473,6 +473,101 @@ def claim(conn: psycopg.Connection, raw_email: str) -> tuple[dict[str, Any], str
     return created, token
 
 
+def account_by_email(conn: psycopg.Connection, raw_email: str) -> dict[str, Any] | None:
+    """The account registered to an address, or `None`.
+
+    The read behind `sign_in`'s get-or-create. Normalises first, because
+    `account_by_email` is a UNIQUE index over the *normalised* column and looking up a raw
+    form would miss a row that is certainly there — the exact bug `normalise_email`'s
+    single definition exists to prevent.
+    """
+    email = normalise_email(raw_email)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {_ACCOUNT_COLUMNS} {_ACCOUNT_FROM} WHERE a.email = %s", (email,))
+        return cur.fetchone()
+
+
+def rotate_token(conn: psycopg.Connection, tenant_id: str) -> str:
+    """Issue a new token for an existing account and invalidate the old one.
+
+    One statement, and the invalidation is not a separate step: `account.token_hash` is a
+    single column, so writing the new digest is what revokes the previous one. That is the
+    whole of revocation in this schema and migration 033 wrote down the cost —
+    **one session per account**, so signing in on a phone signs the laptop out. The growth
+    path is an additive `account_token` table; it is not built.
+
+    A tenant with no account row raises rather than silently creating one. Rotation is for
+    an account that exists; conjuring one here would mean a caller who passed the wrong id
+    got a working credential for a tenant nobody claimed.
+    """
+    token = mint_token()
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE account SET token_hash = %s, updated_at = now()
+                WHERE tenant_id = %s""",
+            (hash_token(token), tenant_id))
+        if cur.rowcount == 0:
+            raise ClaimRefused(
+                f"No account exists for tenant {tenant_id!r}, so no token can be issued "
+                f"for it. Nothing was changed.",
+                reason="no_account")
+    return token
+
+
+def sign_in(conn: psycopg.Connection, raw_email: str) -> tuple[dict[str, Any], str]:
+    """The account for a **verified** address, creating it if this is the first time.
+
+    `(account, raw_token)`, the same shape `claim` returns and for the same reason: the
+    caller's only job with the token is to put it in an httpOnly cookie.
+
+    **Call this only after `otp.verify_code` has succeeded for the same address.** Nothing
+    in this function checks that, and it cannot: it takes an address, not a proof. Its
+    entire safety rests on the caller having proved ownership first, which is why there is
+    exactly one caller and why `routes.py` calls the two in order on one line each.
+
+    This is what replaces `POST /claim`, and the difference is worth stating because it
+    looks like a loosening. `claim` **refuses** a known address — deliberately, because
+    handing a fresh credential to whoever typed an email is account takeover with a form
+    in front of it, and nothing verified the typist. Here the address has been verified,
+    so the refusal protects nothing and costs a returning tenant their account. First
+    arrival creates; every later arrival rotates.
+
+    What is *not* relaxed: `MAX_ACCOUNTS` and `MAX_CLAIMS_PER_HOUR` still apply, through
+    `claim`, on the creating path. Proving you own an address does not bound how many
+    addresses you own, and those two numbers bound how much database a stranger can cause
+    to exist.
+    """
+    email = normalise_email(raw_email)
+    existing = account_by_email(conn, email)
+
+    if existing is None:
+        try:
+            return claim(conn, email)
+        except ClaimRefused as exc:
+            if exc.reason != "email_taken":
+                raise
+            # Lost a race with a concurrent first sign-in for this address — in practice a
+            # double-submitted form. `claim`'s transaction rolled back, so the winner's
+            # account is intact and complete; the right answer is the one the winner got,
+            # not a refusal shown to the person who has just proved they own the address.
+            # Re-read rather than retry `claim`, which would refuse again by design.
+            existing = account_by_email(conn, email)
+            if existing is None:
+                # The index said the address was taken and the table says it is not.
+                # Nothing sane produces that, so it raises instead of looping.
+                raise ClaimRefused(
+                    f"{email} was reported as already registered, but no account for it "
+                    f"can be read back. Nothing was changed.",
+                    reason="inconsistent") from exc
+
+    tenant_id = str(existing["tenant_id"])
+    token = rotate_token(conn, tenant_id)
+    refreshed = get_account(conn, tenant_id)
+    assert refreshed is not None          # rotate_token raises if the row is absent
+    return refreshed, token
+
+
 def _tenant_slug(email: str) -> str:
     """A URL-safe key for the new tenant, unique by construction.
 

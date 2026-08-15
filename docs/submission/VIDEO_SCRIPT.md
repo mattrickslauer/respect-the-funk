@@ -70,8 +70,28 @@ The script may describe what the product *will* do; it may not show what does no
 | 🔴 | **A lesson reordered the shortlist** | **`lesson` = 0 rows.** The index exists and has never held one. **Seed this before shooting** — it is the tie-breaker criterion. |
 | ⛔ | ~~"A changefeed wakes the next agent"~~ | **STILL CUT — 2026-08-13.** `changefeed.py` now composes the statement and consumes the feed, and `SHOW CHANGEFEED JOBS` still returns zero, because creating it draws RUs continuously and nobody has authorised that spend. Built is not running. Restore the line only if the *job* exists on shoot day. |
 
-**Three things gate shooting: restore the five editors, seed one real lesson, and leave
-the changefeed line out unless the job — not the module — exists.**
+### Addendum — 2026-08-14, the contactability beat
+
+Migrations 023 and 026–032 were applied to the cluster on 2026-08-14 and the first contact
+harvest ran. `DEMO_SCRIPT.md` §3 was rewritten against the result. New claims:
+
+| | Claim | State |
+|---|---|---|
+| ✅ | **2,351 contact routes**, `email 1622 · phone 501 · form 228` | **live** — was 1 row (a self-test) the day before |
+| ✅ | 439 counterparties reachable, of 14,170 | **live** — say "hundreds", not "thousands" |
+| ✅ | **Zero fabricated addresses** across 1,622 emails | **audited 2026-08-14** — no `example.com`, no vendor addresses |
+| ✅ | **7 harvests refused by `robots.txt`**; agents stopped | **live** — in `lead.last_error`, filmable |
+| ✅ | Many routes per counterparty, several channels at once | **built** — `UNIQUE (tenant_id, party_id, channel, value)` |
+| ✅ | Route predicate is an allowlist in SQL, not a Python branch | **built** — `sender._prepare`; excludes `bounced`/`invalid`/`opted_out` by construction |
+| ✅ | An `inferred` route is refused, not merely deprioritised | **built** — the ordering-is-not-a-predicate fix |
+| 🟡 | `channel` admits `postal` and `social`, so a DM channel inherits the boundary | **true as a model claim only.** Zero `social` rows, no adapter. See the Telegram/WhatsApp rule in `DEMO_SCRIPT.md`. |
+| 🔴 | **A `contact_route` row in `opted_out`** | **NOT FILMABLE.** 2,350 `unverified`, 1 `verified`, **0 `opted_out`**. The old §3 told the shoot to film this and it was never in the table. Mark one by hand or film the CHECK instead. |
+| ⛔ | ~~"We message curators on WhatsApp / Telegram"~~ | **never say it.** No adapter, no route, no message. The model claim is the only permitted one. |
+| ⛔ | ~~"GDPR/PECR/CAN-SPAM compliant"~~ | **never say it.** `contact_country` exists as of 2026-08-14; no jurisdiction decision has been made with it. |
+
+**Five things gate shooting: restore the five editors, seed one real lesson, leave the
+changefeed line out unless the job — not the module — exists, produce an `opted_out` row
+or film the constraint instead, and re-run the channel counts on the day.**
 
 ---
 

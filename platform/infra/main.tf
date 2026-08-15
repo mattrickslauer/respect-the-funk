@@ -59,7 +59,31 @@ provider "aws" {
 }
 
 locals {
-  name = "spindle-${var.env}"
+  # **Deliberately still `rtf-platform`, after the package was renamed to `spindle`.**
+  #
+  # This looks like a leftover and is not. Every resource in this stack derives its name
+  # from here, and an AWS resource name is part of its identity: changing it is not a
+  # rename, it is a destroy and a create. Following the package rename here produced a
+  # plan of 23 to add and 22 to destroy, which would have meant
+  #
+  #   * a **new Function URL** — `console_url` is the deployed address, and the old one
+  #     stops answering the moment the Lambda is replaced;
+  #   * a **replaced masters bucket**. `aws_s3_bucket.masters` has no `force_destroy` and
+  #     the live bucket is not empty, so the destroy fails with `BucketNotEmpty` — *after*
+  #     Terraform has already torn down the log groups, the IAM roles and the function.
+  #     The failure mode is not "apply refused", it is "apply stopped halfway";
+  #   * a new ECR repository, leaving the classifier image behind in the old one.
+  #
+  # None of that buys anything. What the rename was for — one name for the codebase — is
+  # a property of the repository, and the tag below already carries the new name for
+  # anyone filtering the console. Renaming the resources is a migration with a data copy,
+  # a URL change and an image re-push in it, and it should be done as that, on purpose,
+  # rather than as a side effect of a `sed` over the source tree.
+  #
+  # If it is ever done: copy the masters objects to the new bucket first, add
+  # `force_destroy` or empty the old one, re-push the classifier image, and expect
+  # `console_url` to change.
+  name = "rtf-platform-${var.env}"
 }
 
 # ------------------------------------------------------------------ the bundle

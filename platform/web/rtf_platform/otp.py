@@ -291,7 +291,15 @@ def request_code(conn: psycopg.Connection, raw_email: str,
             # Stable for a given code, so a retried send is identifiable as the same
             # message in the raw headers. The digest rather than the code, because an
             # idempotency key travels in a header and reaches logs.
-            idempotency_key=f"otp:{hash_code(email, code)[:32]}",
+            #
+            # **The separator is a hyphen and must stay one.** SES carries this as a
+            # message *tag*, and a tag value may contain only ASCII letters, digits,
+            # underscore and hyphen. The first version of this line used `otp:` — the
+            # colon made SES answer `InvalidParameterValue`, which `mail._PERMANENT`
+            # correctly classifies as never-retry, so every sign-in code failed to send,
+            # permanently, for every address. The mail layer was behaving exactly right
+            # with a message it should never have been handed.
+            idempotency_key=f"otp-{hash_code(email, code)[:32]}",
         )
     except Exception:
         # Not swallowed and not translated — the caller must see why mail failed. The row

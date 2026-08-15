@@ -182,6 +182,32 @@ class AgainstTheCluster(unittest.TestCase):
             otp.verify_code(self.conn, email, code)
         self.assertEqual("no_challenge", caught.exception.reason)
 
+    def test_the_idempotency_key_is_a_valid_ses_tag_value(self):
+        """A regression test for a bug that took the whole sign-in funnel down.
+
+        SES carries this key as a message tag, and a tag value may contain only ASCII
+        letters, digits, underscore and hyphen. The first version of `request_code` used
+        `otp:<digest>`; the colon made SES answer `InvalidParameterValue`, which
+        `mail._PERMANENT` classifies as never-retry — so every code failed to send, for
+        every address, and correctly was not retried.
+
+        Asserted here rather than only in `mail.py`'s sanitiser because this module is
+        what chooses the string, and a guard downstream is not a reason to emit something
+        invalid upstream.
+        """
+        import re
+
+        email = self._address()
+        self._request(email)
+        key = self.mailer.sent[-1]["idempotency_key"]
+        self.assertIsNotNone(re.fullmatch(r"[A-Za-z0-9_-]{1,256}", key), key)
+
+    def test_the_idempotency_key_does_not_leak_the_code(self):
+        """It travels in a header and reaches logs, so it carries the digest."""
+        email = self._address()
+        code = self._request(email)
+        self.assertNotIn(code, self.mailer.sent[-1]["idempotency_key"])
+
     def test_the_raw_code_is_not_in_the_database(self):
         """The property the digest exists for, asserted the same way `test_accounts.py`
         asserts it for the token."""

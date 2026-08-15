@@ -7,6 +7,15 @@
      operator who wants to zoom a table of call signs is allowed to. #}
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}Console{% endblock %} — Respect the Funk</title>
+  {# What lets a decision post without throwing the page away. The action controls
+     carry `hx-post` alongside their ordinary `method`/`action`, so this script is an
+     enhancement rather than a requirement: if it fails to load, every button on this
+     console goes back to being a plain form submit that works. That is the reason the
+     forms were left intact rather than rewritten as bare buttons.
+
+     Same version and same source as `_layout.html`, which is the public side of the
+     site — one htmx on the origin, not two. #}
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
 {% include "_design.html" %}
   <style>
     /* =====================================================================
@@ -328,6 +337,46 @@
     .b.p { background:var(--selink); border-color:var(--selink); color:var(--bg); font-weight:560; }
     .b.d { color:var(--err); }
     .b:focus-visible, .navitem:focus-visible, tbody tr:focus-visible { outline:2px solid var(--selink); outline-offset:-2px; }
+
+    /* A control that has sent a write and is waiting.
+
+       These used to be plain form submits: the page went white and came back, and
+       between those two states there was nothing to look at and no way to tell a
+       slow accept from a click that missed. They post over htmx now, so the answer
+       arrives without a reload — which means the waiting has to be drawn, because a
+       page that does not flash is a page with no feedback at all unless you add
+       some.
+
+       It is a trace along the bottom edge rather than a spinner glyph. The label
+       does not move, which matters when Accept and Reject sit a third of a
+       centimetre apart and a width change slides one under a travelling cursor; and
+       these buttons are 11.5px tall, with no room inside for a glyph but always an
+       edge.
+
+       htmx marks whichever element carries the `hx-*` attribute, and on this console
+       that is the wrapping form — the form is what keeps working when JavaScript does
+       not. So both shapes are matched: a button that posts on its own behalf, and a
+       submit button inside a posting form. */
+    .b { position:relative; overflow:hidden; }
+    /* `hx-disabled-elt` locks the control while it writes, so a decision cannot be
+       posted twice. The fade says unavailable; the busy one keeps full strength, so
+       a held control and a working one do not look alike. Both halves are spelled
+       out against `:disabled` rather than left to source order — a bare
+       `form.htmx-request .b` is less specific than `.b:disabled` and would lose. */
+    .b:disabled { opacity:.45; cursor:not-allowed; }
+    .b.htmx-request, .b.htmx-request:disabled,
+    form.htmx-request .b, form.htmx-request .b:disabled { opacity:1; cursor:progress; }
+    .b.htmx-request::after, form.htmx-request .b::after {
+      content:""; position:absolute; left:0; bottom:0; width:45%; height:2px;
+      background:var(--selink); animation:trace 1.05s ease-in-out infinite;
+    }
+    /* `.b.p` is already drawn in `--selink`, so a trace in it would be invisible. */
+    .b.p.htmx-request::after, form.htmx-request .b.p::after { background:var(--bg); opacity:.72; }
+    @keyframes trace { from { transform:translateX(-100%); } to { transform:translateX(222%); } }
+    /* Reduced motion keeps the state and drops only the travel. */
+    @media (prefers-reduced-motion:reduce) {
+      .b.htmx-request::after, form.htmx-request .b::after { animation:none; width:100%; }
+    }
 
     /* ---- today -------------------------------------------------------- */
     .queue { padding:.5rem .9rem 1rem; }

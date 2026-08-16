@@ -1,0 +1,60 @@
+{# =============================================================================
+   _mark_chip.html — the same mark, at chrome size
+   =============================================================================
+
+   `_mark.html` at 20px is a smudge, and it was measured rather than assumed: 64 bars
+   five units wide land on about a third of a device pixel each, the four groove rings
+   collapse into one grey ring, and the disc — the thing that makes it a record —
+   ends up smaller than the halo around it. What renders is an asterisk. So the chrome
+   gets a redrawn mark rather than a scaled one, which is the ordinary answer to this
+   and the reason real marks ship in sizes.
+
+   The rule the redraw follows: **the disc has to win.** At this size the bars are the
+   first thing to turn into fuzz and the last thing that should be allowed to set the
+   silhouette. So the disc is proportionally much larger than on the hero (r=16 against
+   a 24-unit half-box, where the hero's is 88 against 165), the bars are short enough
+   to read as a halo on it rather than a sun behind it, and three of the four grooves
+   are gone because they were one grey ring at any size that fits in a header.
+
+   **The 8 bars are the same waveform, resampled, not redrawn.** They come from the
+   `norm()` in `docs/brand/mark.py` — the same three cosine harmonics as the hero, at
+   N=8 with the radii scaled to this box. So the tall bar is at the top and the short
+   one at the bottom on both marks, which is the thing a reader would notice if it
+   were wrong and could not name if it were right. Re-run that formula to change it;
+   do not nudge a rect.
+
+   Below about 18px even these go muddy, so the console rail hides them — see the
+   `.brand .spindle-chip .rays` rule in `_console.html`. That is the third and last
+   step of the same ladder: 64 bars on the hero, 8 in a header, none in the favicon
+   (`_design.html`) or the rail.
+
+   Static, deliberately. The hero turns because it is the one place a logo is allowed
+   to be the thing you look at. A header rides above every page in the product, and a
+   header that is always moving is a header nobody can read past.
+
+   `aria-hidden`, because every call site puts the wordmark next to it.
+
+   Needs `_design.html` for its tokens — see `_mark.html`'s header for what happens on
+   a surface that does not include it.
+   ============================================================================= #}
+<svg class="spindle-chip" viewBox="0 0 48 48" width="22" height="22"
+     aria-hidden="true" focusable="false">
+  <g transform="translate(24, 24)">
+    <circle r="16" fill="var(--panel-2)"/>
+    <circle r="16" fill="none" stroke="var(--phosphor)" stroke-opacity="0.36"/>
+    <circle r="11" fill="none" stroke="var(--phosphor)" stroke-opacity="0.16"/>
+    <circle r="6.4" fill="var(--phosphor)" fill-opacity="0.92"/>
+    <circle r="2.1" fill="var(--ground)"/>
+    <circle r="2.1" fill="none" stroke="var(--ink)" stroke-opacity="0.7" stroke-width="0.7"/>
+    <g class="rays" fill="var(--phosphor)">
+      <rect x="-1.30" y="-22.50" width="2.60" height="5.00" rx="1.30" transform="rotate(0)" opacity="0.95"/>
+      <rect x="-1.30" y="-20.40" width="2.60" height="2.90" rx="1.30" transform="rotate(45)" opacity="0.59"/>
+      <rect x="-1.30" y="-20.90" width="2.60" height="3.40" rx="1.30" transform="rotate(90)" opacity="0.67"/>
+      <rect x="-1.30" y="-21.40" width="2.60" height="3.90" rx="1.30" transform="rotate(135)" opacity="0.76"/>
+      <rect x="-1.30" y="-19.30" width="2.60" height="1.80" rx="1.30" transform="rotate(180)" opacity="0.40"/>
+      <rect x="-1.30" y="-21.40" width="2.60" height="3.90" rx="1.30" transform="rotate(225)" opacity="0.76"/>
+      <rect x="-1.30" y="-20.90" width="2.60" height="3.40" rx="1.30" transform="rotate(270)" opacity="0.68"/>
+      <rect x="-1.30" y="-20.40" width="2.60" height="2.90" rx="1.30" transform="rotate(315)" opacity="0.59"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,169 @@
+{# =============================================================================
+   _mark.html — the Spindle mark: a record read as a spectrum
+   =============================================================================
+
+   This is the mark from the README and the repository's social preview
+   (`docs/brand/thumbnail.svg`), on the page. Until 2026-08-15 the site drew a
+   different thing — `_logo.html`, a wooden top, mid-spin — on the argument that a
+   spindle is also the peg a top spins on and that a turning top says "the fleet is
+   up" where a still record says "catalogue". The argument was fine and the outcome
+   was not: the repository, the social card and the deck showed a record, the site
+   showed a top, and a product with two logos has none. The record wins because it is
+   the one already committed as a raster in three places outside this app. `_logo.html`
+   was deleted in the same commit; `git show f1c8cdd:apps/spindle/web/spindle/templates/_logo.html`
+   has it, and the geometry is worth reading before anyone re-draws it.
+
+   Included, not a file, for the same reason `_design.html` is: there is no static
+   mount in this app. See that file's header for the argument.
+
+   ## The bars are not hand-authored
+
+   The 64 radial bars below are pasted verbatim out of `docs/brand/thumbnail.svg`,
+   which gets them from `docs/brand/mark.py` — three summed cosine harmonics, which is
+   what makes the left half mirror the right. Nudging an individual `<rect>` here only
+   makes that symmetry drift, and drifts it away from the PNG at the same time. To
+   change the geometry: edit `mark.py`, re-run it, paste into the SVG, re-render the
+   PNG, and paste the same group in here. Everything else on this mark is drawn.
+
+   ## Two things changed on the way in, and only two
+
+   **The colours are tokens.** `thumbnail.svg` hardcodes copper `#d97f4a`, which is
+   exactly `--phosphor` on the lathe ground — the SVG has to, because a social card has
+   no stylesheet. On the page it reads from `_design.html`, so the mark follows the
+   ground it is dropped on instead of being a beige-on-beige hole in the manual.
+   **This partial therefore only renders correctly on a surface that includes
+   `_design.html`.** That is `landing.html`, `_public.html`, `_console.html` and
+   `manual.html`. It is deliberately *not* `_layout.html`, which still carries its own
+   wireframe-stage tokens and would resolve `var(--phosphor)` to nothing and paint the
+   mark black. Do not include this there until that layout joins the design system.
+
+   **The viewBox is cropped to the mark.** `thumbnail.svg` is 1280×640 of card, with
+   the disc at (640, 274) and bars reaching r=165. The box below is the 330×330 square
+   around exactly that, so the coordinates still match the source file rect for rect
+   and a diff between the two is readable.
+
+   ## The turn
+
+   The bar field is the only asymmetric thing on the disc — every other element is a
+   circle, so rotating them would be a no-op. So the animation is on the bars alone,
+   and what it renders is the record turning. 48 seconds a revolution: a real 33⅓ is
+   1.8s and looks like a loading spinner at this size, which is a status, and this is
+   a logo. `transform-box:view-box` is load-bearing — without it the origin resolves
+   against the group's bounding box, which is not centred, because the bars differ in
+   height. The inner `translate` stays an attribute and the rotation is CSS on the
+   wrapper, so the two compose rather than the CSS replacing the attribute.
+
+   `prefers-reduced-motion` stops it, and what remains is the mark exactly as the PNG
+   draws it.
+   ============================================================================= #}
+<style>
+.spindle-mark{display:block;width:100%;height:auto}
+.spindle-mark .platter{
+  transform-box:view-box;transform-origin:640px 274px;
+  animation:sm-turn 48s linear infinite;
+}
+@keyframes sm-turn{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spindle-mark .platter{animation:none}}
+</style>
+
+<svg class="spindle-mark" viewBox="475 109 330 330" role="img"
+     aria-label="Spindle — a record read as a spectrum">
+  <defs>
+    <!-- Light behind the mark, so the disc sits in the page rather than on it. -->
+    <radialGradient id="sm-glow">
+      <stop offset="0"   stop-color="var(--phosphor)" stop-opacity="0.16"/>
+      <stop offset="0.6" stop-color="var(--phosphor)" stop-opacity="0.05"/>
+      <stop offset="1"   stop-color="var(--phosphor)" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sm-disc" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="var(--panel-2)"/>
+      <stop offset="1" stop-color="var(--panel)"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="640" cy="274" r="165" fill="url(#sm-glow)"/>
+
+  <!-- Grooves. -->
+  <circle cx="640" cy="274" r="88" fill="url(#sm-disc)"/>
+  <circle cx="640" cy="274" r="88" fill="none" stroke="var(--phosphor)" stroke-opacity="0.30"/>
+  <circle cx="640" cy="274" r="72" fill="none" stroke="var(--phosphor)" stroke-opacity="0.13"/>
+  <circle cx="640" cy="274" r="58" fill="none" stroke="var(--phosphor)" stroke-opacity="0.10"/>
+  <circle cx="640" cy="274" r="44" fill="none" stroke="var(--phosphor)" stroke-opacity="0.08"/>
+
+  <!-- Label, and the hole the product is named after. The rim is what stops the
+       hole reading as a dot rather than as something a post goes through. -->
+  <circle cx="640" cy="274" r="27" fill="var(--phosphor)" fill-opacity="0.92"/>
+  <circle cx="640" cy="274" r="8.5" fill="var(--ground)"/>
+  <circle cx="640" cy="274" r="8.5" fill="none" stroke="var(--ink)"
+          stroke-opacity="0.70" stroke-width="2"/>
+
+  <!-- The waveform. Pasted from `docs/brand/thumbnail.svg`; see the header. -->
+  <g class="platter">
+      <g transform="translate(640, 274)" fill="var(--phosphor)">
+        <rect x="-2.50" y="-165.00" width="5.00" height="69.00" rx="2.50" transform="rotate(0.000)" opacity="0.950"/>
+        <rect x="-2.50" y="-159.56" width="5.00" height="63.56" rx="2.50" transform="rotate(5.625)" opacity="0.885"/>
+        <rect x="-2.50" y="-147.40" width="5.00" height="51.40" rx="2.50" transform="rotate(11.250)" opacity="0.738"/>
+        <rect x="-2.50" y="-137.09" width="5.00" height="41.09" rx="2.50" transform="rotate(16.875)" opacity="0.614"/>
+        <rect x="-2.50" y="-133.91" width="5.00" height="37.91" rx="2.50" transform="rotate(22.500)" opacity="0.576"/>
+        <rect x="-2.50" y="-135.86" width="5.00" height="39.86" rx="2.50" transform="rotate(28.125)" opacity="0.599"/>
+        <rect x="-2.50" y="-136.99" width="5.00" height="40.99" rx="2.50" transform="rotate(33.750)" opacity="0.613"/>
+        <rect x="-2.50" y="-134.10" width="5.00" height="38.10" rx="2.50" transform="rotate(39.375)" opacity="0.578"/>
+        <rect x="-2.50" y="-129.60" width="5.00" height="33.60" rx="2.50" transform="rotate(45.000)" opacity="0.524"/>
+        <rect x="-2.50" y="-127.93" width="5.00" height="31.93" rx="2.50" transform="rotate(50.625)" opacity="0.504"/>
+        <rect x="-2.50" y="-129.89" width="5.00" height="33.89" rx="2.50" transform="rotate(56.250)" opacity="0.527"/>
+        <rect x="-2.50" y="-131.35" width="5.00" height="35.35" rx="2.50" transform="rotate(61.875)" opacity="0.545"/>
+        <rect x="-2.50" y="-128.12" width="5.00" height="32.12" rx="2.50" transform="rotate(67.500)" opacity="0.506"/>
+        <rect x="-2.50" y="-121.48" width="5.00" height="25.48" rx="2.50" transform="rotate(73.125)" opacity="0.426"/>
+        <rect x="-2.50" y="-118.15" width="5.00" height="22.15" rx="2.50" transform="rotate(78.750)" opacity="0.386"/>
+        <rect x="-2.50" y="-124.05" width="5.00" height="28.05" rx="2.50" transform="rotate(84.375)" opacity="0.457"/>
+        <rect x="-2.50" y="-138.00" width="5.00" height="42.00" rx="2.50" transform="rotate(90.000)" opacity="0.625"/>
+        <rect x="-2.50" y="-151.95" width="5.00" height="55.95" rx="2.50" transform="rotate(95.625)" opacity="0.793"/>
+        <rect x="-2.50" y="-157.85" width="5.00" height="61.85" rx="2.50" transform="rotate(101.250)" opacity="0.864"/>
+        <rect x="-2.50" y="-154.52" width="5.00" height="58.52" rx="2.50" transform="rotate(106.875)" opacity="0.824"/>
+        <rect x="-2.50" y="-147.88" width="5.00" height="51.88" rx="2.50" transform="rotate(112.500)" opacity="0.744"/>
+        <rect x="-2.50" y="-144.65" width="5.00" height="48.65" rx="2.50" transform="rotate(118.125)" opacity="0.705"/>
+        <rect x="-2.50" y="-146.11" width="5.00" height="50.11" rx="2.50" transform="rotate(123.750)" opacity="0.723"/>
+        <rect x="-2.50" y="-148.07" width="5.00" height="52.07" rx="2.50" transform="rotate(129.375)" opacity="0.746"/>
+        <rect x="-2.50" y="-146.40" width="5.00" height="50.40" rx="2.50" transform="rotate(135.000)" opacity="0.726"/>
+        <rect x="-2.50" y="-141.90" width="5.00" height="45.90" rx="2.50" transform="rotate(140.625)" opacity="0.672"/>
+        <rect x="-2.50" y="-139.01" width="5.00" height="43.01" rx="2.50" transform="rotate(146.250)" opacity="0.637"/>
+        <rect x="-2.50" y="-140.14" width="5.00" height="44.14" rx="2.50" transform="rotate(151.875)" opacity="0.651"/>
+        <rect x="-2.50" y="-142.09" width="5.00" height="46.09" rx="2.50" transform="rotate(157.500)" opacity="0.674"/>
+        <rect x="-2.50" y="-138.91" width="5.00" height="42.91" rx="2.50" transform="rotate(163.125)" opacity="0.636"/>
+        <rect x="-2.50" y="-128.60" width="5.00" height="32.60" rx="2.50" transform="rotate(168.750)" opacity="0.512"/>
+        <rect x="-2.50" y="-116.44" width="5.00" height="20.44" rx="2.50" transform="rotate(174.375)" opacity="0.365"/>
+        <rect x="-2.50" y="-111.00" width="5.00" height="15.00" rx="2.50" transform="rotate(180.000)" opacity="0.300"/>
+        <rect x="-2.50" y="-116.44" width="5.00" height="20.44" rx="2.50" transform="rotate(185.625)" opacity="0.365"/>
+        <rect x="-2.50" y="-128.60" width="5.00" height="32.60" rx="2.50" transform="rotate(191.250)" opacity="0.512"/>
+        <rect x="-2.50" y="-138.91" width="5.00" height="42.91" rx="2.50" transform="rotate(196.875)" opacity="0.636"/>
+        <rect x="-2.50" y="-142.09" width="5.00" height="46.09" rx="2.50" transform="rotate(202.500)" opacity="0.674"/>
+        <rect x="-2.50" y="-140.14" width="5.00" height="44.14" rx="2.50" transform="rotate(208.125)" opacity="0.651"/>
+        <rect x="-2.50" y="-139.01" width="5.00" height="43.01" rx="2.50" transform="rotate(213.750)" opacity="0.637"/>
+        <rect x="-2.50" y="-141.90" width="5.00" height="45.90" rx="2.50" transform="rotate(219.375)" opacity="0.672"/>
+        <rect x="-2.50" y="-146.40" width="5.00" height="50.40" rx="2.50" transform="rotate(225.000)" opacity="0.726"/>
+        <rect x="-2.50" y="-148.07" width="5.00" height="52.07" rx="2.50" transform="rotate(230.625)" opacity="0.746"/>
+        <rect x="-2.50" y="-146.11" width="5.00" height="50.11" rx="2.50" transform="rotate(236.250)" opacity="0.723"/>
+        <rect x="-2.50" y="-144.65" width="5.00" height="48.65" rx="2.50" transform="rotate(241.875)" opacity="0.705"/>
+        <rect x="-2.50" y="-147.88" width="5.00" height="51.88" rx="2.50" transform="rotate(247.500)" opacity="0.744"/>
+        <rect x="-2.50" y="-154.52" width="5.00" height="58.52" rx="2.50" transform="rotate(253.125)" opacity="0.824"/>
+        <rect x="-2.50" y="-157.85" width="5.00" height="61.85" rx="2.50" transform="rotate(258.750)" opacity="0.864"/>
+        <rect x="-2.50" y="-151.95" width="5.00" height="55.95" rx="2.50" transform="rotate(264.375)" opacity="0.793"/>
+        <rect x="-2.50" y="-138.00" width="5.00" height="42.00" rx="2.50" transform="rotate(270.000)" opacity="0.625"/>
+        <rect x="-2.50" y="-124.05" width="5.00" height="28.05" rx="2.50" transform="rotate(275.625)" opacity="0.457"/>
+        <rect x="-2.50" y="-118.15" width="5.00" height="22.15" rx="2.50" transform="rotate(281.250)" opacity="0.386"/>
+        <rect x="-2.50" y="-121.48" width="5.00" height="25.48" rx="2.50" transform="rotate(286.875)" opacity="0.426"/>
+        <rect x="-2.50" y="-128.12" width="5.00" height="32.12" rx="2.50" transform="rotate(292.500)" opacity="0.506"/>
+        <rect x="-2.50" y="-131.35" width="5.00" height="35.35" rx="2.50" transform="rotate(298.125)" opacity="0.545"/>
+        <rect x="-2.50" y="-129.89" width="5.00" height="33.89" rx="2.50" transform="rotate(303.750)" opacity="0.527"/>
+        <rect x="-2.50" y="-127.93" width="5.00" height="31.93" rx="2.50" transform="rotate(309.375)" opacity="0.504"/>
+        <rect x="-2.50" y="-129.60" width="5.00" height="33.60" rx="2.50" transform="rotate(315.000)" opacity="0.524"/>
+        <rect x="-2.50" y="-134.10" width="5.00" height="38.10" rx="2.50" transform="rotate(320.625)" opacity="0.578"/>
+        <rect x="-2.50" y="-136.99" width="5.00" height="40.99" rx="2.50" transform="rotate(326.250)" opacity="0.613"/>
+        <rect x="-2.50" y="-135.86" width="5.00" height="39.86" rx="2.50" transform="rotate(331.875)" opacity="0.599"/>
+        <rect x="-2.50" y="-133.91" width="5.00" height="37.91" rx="2.50" transform="rotate(337.500)" opacity="0.576"/>
+        <rect x="-2.50" y="-137.09" width="5.00" height="41.09" rx="2.50" transform="rotate(343.125)" opacity="0.614"/>
+        <rect x="-2.50" y="-147.40" width="5.00" height="51.40" rx="2.50" transform="rotate(348.750)" opacity="0.738"/>
+        <rect x="-2.50" y="-159.56" width="5.00" height="63.56" rx="2.50" transform="rotate(354.375)" opacity="0.885"/>
+      </g>
+  </g>
+</svg>

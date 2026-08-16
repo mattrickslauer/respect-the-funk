@@ -31,10 +31,13 @@
       --sunk:var(--panel-2);
       --line:var(--rule);
       --line2:var(--rule-strong);
-      /* One local name did two jobs: the primary button and the brand dot. Under
-         two poles those are different things — a button is the warm pole, because
-         it is the thing being put in front of a person, and the dot is the cold
-         one, because it means the system is up. Split rather than compromised. */
+      /* One local name did two jobs: the primary button and the brand dot. Those
+         are different things under two poles — a button is the warm pole, because it
+         is the thing being put in front of a person — so the name was split. The dot
+         has since gone: it was the cold pole on the argument that it meant "the
+         system is up", but it was a static span that said so on a page that had
+         already rendered, which is not a signal. `_mark_chip.html` stands there now
+         and only claims to be the logo. This name is now just the button. */
       --accent:var(--phosphor);
     }
     * { box-sizing:border-box; }
@@ -56,7 +59,9 @@
        brand is exactly the shape that reveals it. */
     header.top .wordmark { font-weight:640; letter-spacing:-.015em; white-space:nowrap; }
     header.top { flex-wrap:wrap; }
-    header.top .dot { width:7px; height:7px; border-radius:50%; background:var(--carrier); }
+    /* `flex:none`, because an SVG with a viewBox is happy to be squashed to nothing
+       as a flex item and takes the mark with it. */
+    header.top .spindle-chip { flex:none; }
     header.top nav { margin-left:auto; display:flex; gap:.5rem; align-items:center; }
 
     /* ---- buttons ------------------------------------------------------- */
@@ -124,7 +129,7 @@
 </head>
 <body>
   <header class="top">
-    <span class="dot"></span>
+{% include "_mark_chip.html" %}
     <span class="wordmark">Spindle</span>
     <nav>{% block topnav %}{% endblock %}</nav>
   </header>

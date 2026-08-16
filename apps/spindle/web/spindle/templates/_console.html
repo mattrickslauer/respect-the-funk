@@ -102,6 +102,16 @@
       font-weight:640; letter-spacing:-.01em; font-size:13px;
     }
     .brand .dot { width:7px; height:7px; border-radius:50%; background:var(--ok); flex:none; }
+    /* 16px, not the chip's own 22: the rail sets this line at 13px and a mark taller
+       than its wordmark stops being a mark and starts being a picture. `flex:none`
+       or the SVG is squashed away as a flex item.
+
+       The rays come off at this size. They are a 2.6-unit bar in a 48-unit box, which
+       is under a device pixel at 16px, and what a sub-pixel copper bar renders as is
+       a grey smear around a disc. The disc, the groove and the lit hole survive the
+       size; that is the mark here. See `_mark_chip.html` for the rest of the ladder. */
+    .brand .spindle-chip { width:16px; height:16px; flex:none; }
+    .brand .spindle-chip .rays { display:none; }
     .scope { padding:0 .6rem .6rem; }
     .scope select {
       width:100%; font:inherit; font-size:12px; padding:.32rem .4rem;
@@ -582,7 +592,10 @@
 <div class="app">
 
   <aside class="rail">
-    <div class="brand"><span class="dot" title="fleet healthy"></span><span>Spindle</span></div>
+    {# Mark, name, then status. The health dot used to lead, which put a green dot
+       where a reader looks for the logo and left the product unbranded in its own
+       chrome. Status trailing the name is the ordinary order and frees the front. #}
+    <div class="brand">{% include "_mark_chip.html" %}<span>Spindle</span><span class="dot" title="fleet healthy"></span></div>
     <div class="scope">
       {# The scope switcher renders scope_kind as a control. Tenant-wide work has no
          artist, so "All artists" is a real tier and not an empty filter. #}

@@ -71,7 +71,28 @@
    The reason this is a rule and not a preference: `--cut` should appear perhaps
    three times in the entire product. A hue that shows up everywhere stops meaning
    anything, and this one has a job.
+
+   ## The favicon is here because this file is the thing every surface includes
+
+   It is the one brand asset that has to be a `<link>` rather than markup, and it
+   rides along with the tokens for the same reason they do: there is no static mount,
+   so `/favicon.ico` is a 404 and the icon has to arrive inline. That also means it
+   only reaches the four surfaces that include this file — `landing.html`,
+   `_public.html`, `_console.html`, `manual.html`. `_layout.html` does not include it
+   and gets no icon; see `_mark.html` for why that layout is left out of all of this.
+
+   Its two colours are typed as hex, not tokens, and that is not an oversight — a
+   data URI has no cascade to read from. They are `--panel` and `--phosphor` on the
+   lathe ground, which is also what `docs/brand/thumbnail.svg` hardcodes for the same
+   reason. Change one and change all three.
+
+   The drawing is the mark stripped to what survives 16 pixels: two grooves, the
+   copper label, the hole. The 64 bars are not in it. They are the mark's whole
+   character and they are also the first thing to turn into grey fuzz at tab size,
+   and a fuzzy logo is worse than a plain one. `_mark_chip.html` is the intermediate
+   size, at 12 bars.
    ============================================================================= #}
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%2314120f'/%3E%3Cg%20transform='translate(16%2016)'%3E%3Ccircle%20r='11.5'%20fill='none'%20stroke='%23d97f4a'%20stroke-opacity='.45'%20stroke-width='1.3'/%3E%3Ccircle%20r='8'%20fill='none'%20stroke='%23d97f4a'%20stroke-opacity='.22'%20stroke-width='1'/%3E%3Ccircle%20r='5.2'%20fill='%23d97f4a'/%3E%3Ccircle%20r='1.7'%20fill='%2314120f'/%3E%3C/g%3E%3C/svg%3E">
 <style>
 /* ---------------------------------------------------------------- tokens --- */
 :root{

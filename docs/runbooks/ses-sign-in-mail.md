@@ -166,11 +166,18 @@ DNS exists.
 
 ### Publish two records
 
+**As of 2026-08-16 Terraform does this**, once the Route 53 migration in
+`docs/runbooks/dns-to-route53.md` completes: `aws_route53_record.mail_from_mx` and
+`_spf` in `dns.tf` create both records, and `ses_mail_from_records` returns an empty list
+so nobody adds them a second time by hand. The manual path below applies only to a
+deployment whose zone is still somewhere else.
+
 ```
 terraform -chdir=infra/terraform/spindle output ses_mail_from_records
 ```
 
-At the registrar (this domain's DNS is **not** in Route 53, so Terraform cannot do it):
+At the registrar (when this domain's DNS is **not** in Route 53, so Terraform cannot do
+it):
 
 | Name | Type | Value |
 |---|---|---|
@@ -218,11 +225,37 @@ an unsubscribe link. A sign-in code is transactional; adding an opt-out to one i
 recipient to reply STOP to a login email, and `otp.py` explains what that would do to a
 counterparty in an active campaign.
 
-### Check the reply-to is a real mailbox
+### The reply-to is not a real mailbox
 
-`mail_reply_to` is `spindle@<domain>`. This domain's MX points at the registrar's
-forwarding service, so that address delivers **only if a forwarder exists for it**. A
-reply-to that bounces is a reputation cost, and it is invisible until somebody replies.
+**Corrected 2026-08-16.** This section used to say that the domain's MX pointed at the
+registrar's forwarding service and that `spindle@` would deliver if a forwarder existed.
+That was wrong, and the truth is worse:
+
+```
+$ dig +noall +answer MX mattrickslauer.com @dns1.registrar-servers.com
+$ dig +noall +answer TXT mattrickslauer.com @dns1.registrar-servers.com
+```
+
+Both empty, asked of the authoritative nameserver rather than a cache. **There is no MX
+record on this domain at all**, so `spindle@mattrickslauer.com` — the address published
+as `mail_reply_to` on every sign-in code and every pitch — cannot receive mail. A curator
+who replies gets a bounce.
+
+Two consequences worth separating:
+
+- **Sign-in is unaffected.** Nobody replies to a six-digit code.
+- **Outreach is not.** A reply is the outcome the whole pipeline exists to produce, and
+  it is currently being thrown away by the mail system before anybody sees it. The reply
+  a pitch is asking for is the one thing that cannot arrive.
+
+`dns.tf` deliberately does **not** invent an MX during the Route 53 migration. Choosing
+where this domain's mail lands is a decision with a provider and a monthly cost attached,
+and a guessed MX that silently drops replies is worse than an absent one that bounces
+them loudly. Add it in the change that makes the choice.
+
+Note that `m@mattrickslauer.com` is a verified SES *email identity*, which proves only
+that somebody once confirmed a link — it is not evidence that the domain can receive mail
+today.
 
 ## Verifying end to end
 

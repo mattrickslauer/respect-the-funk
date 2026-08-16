@@ -128,9 +128,13 @@ class StubMailer:
         self._raises = raises
 
     def send(self, *, to: str, subject: str, body: str,
-             idempotency_key: str) -> mail.Sent:
+             idempotency_key: str, reply_to: str = "") -> mail.Sent:
+        # `reply_to` arrived with `040_mailbox.sql`: the platform identity sends every
+        # tenant's mail from one address, so the thread is encoded in a plus-addressed
+        # Reply-To per message. This stub gaining the parameter is the mechanism its own
+        # docstring describes working — the protocol changed and this failed loudly.
         self.calls.append({"to": to, "subject": subject, "body": body,
-                           "idempotency_key": idempotency_key})
+                           "idempotency_key": idempotency_key, "reply_to": reply_to})
         if self._raises is not None:
             raise self._raises
         return mail.Sent(provider_message_id="stub-provider-id", cost_usd="0.0001")
@@ -146,7 +150,7 @@ class MailerThatMustNotBeCalled:
     """
 
     def send(self, *, to: str, subject: str, body: str,
-             idempotency_key: str) -> mail.Sent:
+             idempotency_key: str, reply_to: str = "") -> mail.Sent:
         raise AssertionError(
             f"the Sender called the provider for {to!r} — this path must never send")
 

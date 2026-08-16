@@ -58,6 +58,7 @@ livelock rather than a leak. `_reschedule_after_lease_loss` is where that is dec
 
 from __future__ import annotations
 
+import random
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -78,6 +79,43 @@ LEASE_SECONDS = 120
 #: Rows one worker takes per pass. Small: a big batch is a big lease, and a worker that
 #: dies holding thirty leads strands all thirty for the full lease duration.
 BATCH = 5
+
+#: How many times the write-phase transaction is re-run after a `SerializationFailure`.
+#:
+#: CockroachDB is SERIALIZABLE and its contract is that the *client* retries a
+#: `RETRY_SERIALIZABLE` — it is a normal outcome under contention, not an error. Until
+#: 2026-08-16 nothing on this path did, and the reason it never showed is that nothing had
+#: ever run two workers at once: one drain, one lead at a time, nothing to contend with.
+#:
+#: The Cohere backfill is the first thing that does. Six workers embedding into one
+#: `party_shortlist` vector index produced a 5.8% failure rate — 6 of 104 runs — and the
+#: errors name exactly where: `RETRY_SERIALIZABLE`, and `locking metadata for insert into
+#: partition 1`, which is two workers landing in the same C-SPANN partition at once. Every
+#: one of those was a lead that did its paid Bedrock call, threw away the vector, and
+#: backed off to be embedded again later. The money is spent at `fetch`; failing at the
+#: write is the most expensive place to fail.
+#:
+#: Ten, exponential, jittered. `repo._retrying` argues the exponent — retrying at the same
+#: cadence reproduces the contention that caused it — and this keeps its own constant
+#: rather than importing that one, because the two bound different things: that one covers
+#: a single long cascade, this one covers many short transactions racing.
+#:
+#: **Five was measured and was not enough.** With six workers the failures did not stop,
+#: and the key in the error text says why they were never going to:
+#:
+#:     /Table/172/9/…/"openai:text-embedding-3-small"/"counterparty"/"contactable"/…
+#:
+#: That is the `party_shortlist` vector index, and those are its prefix columns. A
+#: re-embed moves a row from the `openai:…` partition to the `bedrock:cohere…` one, so
+#: every worker is deleting from the *same* prefix at the same time. The contention is not
+#: incidental to the backfill, it **is** the backfill: one hot C-SPANN partition that
+#: every migrating row must leave.
+#:
+#: Hence the jitter, which matters more than the extra attempts. Without it, N workers
+#: that collide once retry in lockstep at identical exponential intervals and collide
+#: again — the retry schedule itself keeps them synchronised. The randomised term is what
+#: breaks up the convoy, and it is the difference between retrying and re-colliding.
+WRITE_RETRIES = 10
 
 #: After this many failures a lead is parked rather than retried. A poisoned row that
 #: retries forever spends real money on an error nobody has read.
@@ -813,12 +851,44 @@ def work_once(conn: psycopg.Connection, tenant_id: str, agent_name: str,
         try:
             renew(conn, lead, agent_name)
             write = _writer(conn, agent, lead, gate)
-            with conn.transaction():
-                _reacquire(conn, lead, agent_name)
-                outcome = write()
-                record_run(conn, lead, agent_name, outcome, gate,
-                           state="ok", error="", started=started)
-                complete(conn, lead, outcome, agent_name=agent_name)
+            # Retried rather than failed, per `WRITE_RETRIES`. Safe to repeat for the
+            # reason `repo.delete_recording` gives: a transaction that raises
+            # `SerializationFailure` committed nothing, so a second attempt starts from
+            # exactly the state the first one saw. Three things make that true here
+            # specifically, and all three are why the retry wraps *this* block and not a
+            # wider one:
+            #
+            #   * **The paid call is already outside it.** `_writer` ran `fetch` before
+            #     the transaction opened, and `write` is the closure over what it
+            #     returned. Re-running the closure re-runs database statements against a
+            #     rolled-back transaction; it does not re-embed and it does not re-spend.
+            #   * **The gate is not charged in here.** `gate.incurred_usd` was moved
+            #     during `fetch`. `record_run` reads it; nothing in this block adds to it,
+            #     so a retry cannot double-count the cost.
+            #   * **The fence is re-evaluated.** `_reacquire` is the first statement of
+            #     every attempt, so a lease lost while the earlier attempts were
+            #     contending is discovered on the next one and raises `LeaseLost` — which
+            #     is not a `SerializationFailure`, so it leaves this loop immediately
+            #     rather than being retried into the ground.
+            for attempt in range(WRITE_RETRIES + 1):
+                try:
+                    with conn.transaction():
+                        _reacquire(conn, lead, agent_name)
+                        outcome = write()
+                        record_run(conn, lead, agent_name, outcome, gate,
+                                   state="ok", error="", started=started)
+                        complete(conn, lead, outcome, agent_name=agent_name)
+                    break
+                except psycopg.errors.SerializationFailure:
+                    if attempt >= WRITE_RETRIES:
+                        raise
+                    # Full jitter over the exponential window rather than the window
+                    # itself. Sleeping the exact backoff keeps colliding workers in step
+                    # with each other; sleeping a random point inside it is what actually
+                    # separates them. Capped so a late attempt cannot sit for a minute
+                    # holding a lease it will lose anyway.
+                    window = min(0.05 * (2 ** attempt), 2.0)
+                    time.sleep(random.uniform(0.0, window))
         except LeaseLost as exc:
             _record_lease_lost(conn, lead, agent_name, gate, started, exc)
         except LeadFailed as exc:

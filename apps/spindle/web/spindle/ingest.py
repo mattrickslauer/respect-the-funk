@@ -26,8 +26,8 @@ import psycopg
 from psycopg.rows import dict_row
 
 from spindle import (
-    agents, fcc, fleet, mail, outreach, podcastindex, profiles, radiobrowser, sender,
-    spend, streams,
+    agents, fcc, fleet, listen, mail, outreach, podcastindex, profiles, radiobrowser,
+    sender, settings, spend, streams,
 )
 
 
@@ -845,20 +845,101 @@ def send_self_test(conn: psycopg.Connection, tenant_id: str, address: str,
     elif state not in {"drafted", "awaiting_human", "queued"}:
         sys.exit(f"thread {thread['id']} is {state}; not a state this smoke test drives")
 
+    # **`queued` means this thread is already prepared, and re-preparing it is not a
+    # no-op — it is a crash that writes.** Running `--self-test` twice used to reach
+    # here with the thread at `queued`, draft a *second* message, and then call
+    # `approve`, which asks for `queued -> queued` and is refused by `outreach.advance`.
+    # The traceback came after the duplicate draft was already committed, so the
+    # observable result of "run it again" was an orphan message row and a stack trace.
+    #
+    # The state check above admits `queued` because reaching this function with a
+    # prepared thread is ordinary — `--self-test --send` is a reasonable thing to type,
+    # and `--send` is handled by a separate branch in `main`. So the fix is to admit it
+    # and then do nothing, rather than to refuse: the outbox row already exists, and
+    # saying so is more useful than an error about a state machine.
+    if state == "queued":
+        print("already prepared; the outbox row is waiting. Deliver it with --send "
+              "on its own.")
+        return str(thread["id"])
+
+    # What we can actually offer, which is not necessarily what the copy used to claim.
+    # The old body promised a WAV on every send; the only stored asset on this cluster
+    # is an MP3. `listen.for_message` names the format from `recording_asset.mime`, and
+    # returns nothing at all when there is no stored master — in which case the body
+    # below keeps its "on request" wording and is still true.
+    asset = _self_test_master(conn, tenant_id, artist_slug)
+
+    body = ("Hi,\n\n"
+            "I run Respect the Funk. We have a new dance single from Hallow Youth "
+            "called Losing Sleep and I think it fits what you programme.\n\n"
+            "It is 124bpm. If it is not right for you, telling me so is genuinely "
+            "useful and I will not send you another.\n\n"
+            "Thanks for listening,\n"
+            "Respect the Funk")
+    if asset is None:
+        body = body.replace(
+            "It is 124bpm.",
+            "It is 124bpm, and I can send a WAV, a one-sheet and clearance details "
+            "on request.")
+
     message = outreach.draft(
         conn, tenant_id, str(thread["id"]),
         subject="Hallow Youth — Losing Sleep (dance, 124bpm)",
-        body=("Hi,\n\n"
-              "I run Respect the Funk. We have a new dance single from Hallow Youth "
-              "called Losing Sleep and I think it fits what you programme.\n\n"
-              "It is 124bpm, and I can send a WAV, a one-sheet and clearance details "
-              "on request. If it is not right for you, telling me so is genuinely "
-              "useful and I will not send you another.\n\n"
-              "Thanks for listening,\n"
-              "Respect the Funk"))
+        body=body)
+
+    # The link can only be minted once the message exists, because a token is per
+    # message — two pitches about one record to two curators have to be distinguishable
+    # or the attribution is worthless. So the body is written, then amended, rather than
+    # composed in one pass against an id that does not exist yet.
+    if asset is not None:
+        link, label = listen.for_message(
+            conn, tenant_id, message_id=str(message["id"]),
+            recording_asset_id=str(asset["id"]), counterparty_id=str(target),
+            base_url=settings.load().public_base_url)
+        with conn.cursor() as cur:
+            cur.execute("UPDATE message SET body = %s WHERE tenant_id = %s AND id = %s",
+                        (listen.append_link(body, link, format_label=label),
+                         tenant_id, str(message["id"])))
+
     outreach.approve(conn, tenant_id, str(thread["id"]), str(message["id"]),
                      approver="send_self_test")
     return str(thread["id"])
+
+
+def _self_test_master(conn: psycopg.Connection, tenant_id: str,
+                      artist_slug: str) -> dict[str, Any] | None:
+    """This artist's most recently uploaded stored master, or None.
+
+    **Ordered by the asset, not by the recording**, and that distinction is the whole
+    function. Picking the newest *recording* and then asking for its master is the
+    obvious shape and it is wrong: Hallow Youth has two recordings created in the same
+    minute — `Denial (Radio Edit)` and `Losing Sleep` — and only the second has audio.
+    The obvious version returned None for an artist whose master was sitting right there,
+    which read as "no audio uploaded" rather than "asked the wrong question".
+
+    So the join runs the other way: start from stored masters, and take the newest. What
+    comes back is the record this label most recently put audio behind, which is also the
+    one a pitch is most likely to be about.
+
+    None is still an ordinary answer — one `recording_asset` row exists across the whole
+    cluster — and it is why every caller treats it as a branch rather than an error. A
+    pitch with no audio to link is a pitch, not a failure.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT a.id, a.mime
+                 FROM recording_asset a
+                 JOIN recording r ON r.id = a.recording_id AND r.tenant_id = a.tenant_id
+                 JOIN party_credit pc
+                   ON pc.subject_kind = 'recording' AND pc.subject_id = r.id
+                  AND pc.tenant_id = r.tenant_id AND pc.role = 'main_artist'
+                 JOIN party p ON p.id = pc.party_id AND p.tenant_id = r.tenant_id
+                WHERE a.tenant_id = %s AND p.slug = %s
+                  AND a.kind = 'master' AND a.state = 'stored'
+             ORDER BY a.uploaded_at DESC NULLS LAST
+                LIMIT 1""",
+            (tenant_id, artist_slug))
+        return cur.fetchone()
 
 
 def show_shortlist(conn: psycopg.Connection, tenant_id: str, slug: str) -> int:

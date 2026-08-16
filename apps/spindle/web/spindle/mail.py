@@ -25,6 +25,28 @@ inconvenient:
 
 SES is also AWS, which keeps the deployment on one cloud and one IAM model.
 
+### What changed on 2026-08-16, and which half of that argument survived
+
+`GmailMailer` now exists below, so the section above needs qualifying rather than
+deleting — because it was answering a different question than the one that has since been
+asked.
+
+It was asking *what should the platform send through*, and the answer is unchanged: SES,
+for all three reasons, and the platform identity is what every free tenant sends on. What
+`040_mailbox.sql` added is a second question — *what should a paying tenant send through*
+— and there the three objections read differently. The worker is not borrowing somebody's
+interactive session, it is replaying a refresh token that tenant granted for exactly this
+purpose. The daily limit applies to a mailbox its owner chose to use, at a volume their
+plan already caps well below it. And the suspension risk lands on a domain they own and
+control rather than on a shared identity every other tenant depends on — which inverts the
+third objection completely: sending a label's cold outreach from *our* domain is the
+version where one tenant's mistake costs everybody.
+
+The bounce feedback loop is the one real loss, and it is a loss. SES publishes bounces and
+complaints to SNS and Gmail does not, so a tenant on their own mailbox will not have
+`contact_route.state` learn from a hard bounce the way a platform-sent one does. Nothing
+here compensates for that yet; it is recorded rather than solved.
+
 ## At-most-once, deliberately
 
 The gap between "we called SES" and "we recorded that we called SES" is the only place a
@@ -86,7 +108,7 @@ class Sent:
 
 class Mailer(Protocol):
     def send(self, *, to: str, subject: str, body: str,
-             idempotency_key: str) -> Sent: ...
+             idempotency_key: str, reply_to: str = "") -> Sent: ...
 
 
 #: SES hard-fails these; retrying makes the sender's reputation worse, never better.
@@ -145,7 +167,21 @@ class SESMailer:
 
 
     def send(self, *, to: str, subject: str, body: str,
-             idempotency_key: str) -> Sent:
+             idempotency_key: str, reply_to: str = "") -> Sent:
+        """`reply_to` overrides the configured address, per message.
+
+        The instance-level `reply_to` was correct while every message went to the same
+        mailbox, and it stops being correct the moment a reply has to say *which thread*
+        it belongs to. `040_mailbox.sql` explains the mechanism: the platform sends on
+        behalf of every free tenant from one identity, so the routing has to travel in
+        the address itself as `spindle+<reply_token>@…`, and that address differs per
+        send.
+
+        Defaulting to the configured value rather than requiring the argument keeps the
+        transactional path — `otp.py`'s sign-in codes — working unchanged. Those have no
+        thread and want the plain mailbox, and a required parameter would have forced
+        every caller to have an opinion about a feature most of them are not part of.
+        """
         import boto3                                   # noqa: PLC0415 — see docstring
         from botocore.exceptions import ClientError    # noqa: PLC0415
 
@@ -154,7 +190,7 @@ class SESMailer:
             response = client.send_email(
                 Source=self.sender,
                 Destination={"ToAddresses": [to]},
-                ReplyToAddresses=[self.reply_to],
+                ReplyToAddresses=[reply_to or self.reply_to],
                 Message={
                     "Subject": {"Data": subject, "Charset": "UTF-8"},
                     "Body": {"Text": {"Data": body, "Charset": "UTF-8"}},
@@ -230,3 +266,127 @@ def compliant_body(body: str, *, postal_address: str, unsubscribe: str) -> str:
         f"Reply STOP and we will not contact you again from this system.\n"
         f"{unsubscribe}".rstrip() + "\n"
     )
+
+
+# --------------------------------------------------------------- the tenant's own
+
+class SMTPMailer:
+    """Plain SMTP, for every provider that is not Google.
+
+    This is the send half of what `mailbox.imap` reads, and the two are configured from
+    one `mail_account` row. That pairing is deliberate: a tenant who can read their
+    mailbox but not send from it, or the reverse, has a half-connected account that will
+    fail on whichever half nobody tested.
+
+    ## Two rules that are not configurable
+
+    **TLS is always started.** The credential on this connection is the tenant's actual
+    mailbox password — not a scoped token, not an API key — and a config flag that could
+    turn it off is a flag somebody will turn off to make a connection work. There is no
+    parameter for it here for that reason.
+
+    **An authentication failure is permanent.** `mailbox/__init__.py`'s header has the
+    argument in full: a provider asked repeatedly for a password it has already refused
+    will lock the mailbox at its end, and the tenant then cannot fix it from their side
+    either. So a rejected login raises with `permanent=True`, which stops `sender.py`
+    retrying it, and the account is marked failed for a person to act on.
+    """
+
+    def __init__(self, *, sender: str, host: str, port: int, password: str,
+                 reply_to: str = "") -> None:
+        self.sender = sender
+        self.host = host
+        self.port = port
+        self.reply_to = reply_to or sender
+        # Named with a leading underscore and never placed in a message or a repr. The
+        # realistic leak for this value is a traceback, which is why `send` below builds
+        # its own error strings rather than passing the provider's through.
+        self._password = password
+
+    def __repr__(self) -> str:
+        return f"<SMTPMailer sender={self.sender!r} host={self.host!r}>"
+
+    def send(self, *, to: str, subject: str, body: str,
+             idempotency_key: str, reply_to: str = "") -> Sent:
+        import smtplib                                # noqa: PLC0415 — stdlib, lazy
+        from email.message import EmailMessage        # noqa: PLC0415
+
+        message = EmailMessage()
+        message["From"] = self.sender
+        message["To"] = to
+        message["Subject"] = subject
+        message["Reply-To"] = reply_to or self.reply_to
+        # The same forensic aid SES gets as a message tag. It is not an idempotency
+        # guarantee — SMTP has no such parameter either — and `sender.py`'s claim
+        # discipline remains the actual guarantee. See `SESMailer.send`'s docstring.
+        message["X-Spindle-Idempotency-Key"] = _tag_value(idempotency_key)
+        message.set_content(body)
+
+        try:
+            with smtplib.SMTP(self.host, self.port, timeout=30) as server:
+                server.starttls()
+                server.login(self.sender, self._password)
+                server.send_message(message)
+        except smtplib.SMTPAuthenticationError as exc:
+            raise MailRefused(
+                f"{self.host} rejected the stored credential for {self.sender}. "
+                f"Reconnect the mailbox with a current password — providers that use "
+                f"app passwords will refuse one that has been revoked. (SMTP "
+                f"{exc.smtp_code})", permanent=True) from None
+        except smtplib.SMTPRecipientsRefused as exc:
+            raise MailRefused(f"{self.host} refused the recipient {to}",
+                              permanent=True) from None
+        except smtplib.SMTPException as exc:
+            # Everything else — a dropped connection, a greylisting deferral, a server
+            # too busy — is transient by default. Wrong in the safe direction: a retried
+            # transient costs one more attempt, a non-retried permanent costs a pitch.
+            raise MailRefused(f"{self.host} refused the message "
+                              f"({type(exc).__name__})") from None
+
+        # SMTP returns no message id, so we mint the identity we will later match a reply
+        # against, and put it in the header we sent. Without this the second rung of
+        # `inbound`'s ladder — matching `In-Reply-To` against `provider_message_id` —
+        # would have nothing to compare with for every non-Gmail tenant.
+        return Sent(provider_message_id=str(message["Message-ID"] or "").strip("<>"),
+                    cost_usd="0")
+
+
+class GmailMailer:
+    """Gmail's API, under the same OAuth grant `mailbox.gmail` polls with.
+
+    One credential for both directions rather than two, because they are the same grant:
+    a tenant who authorises us to read their mailbox and send as them does it once, and a
+    design needing two consents would be asking twice for what Google issues as one.
+    """
+
+    def __init__(self, *, sender: str, refresh_token: str, client: Any = None,
+                 reply_to: str = "") -> None:
+        self.sender = sender
+        self.reply_to = reply_to or sender
+        self._client = client
+        self._refresh_token = refresh_token
+
+    def __repr__(self) -> str:
+        return f"<GmailMailer sender={self.sender!r}>"
+
+    def send(self, *, to: str, subject: str, body: str,
+             idempotency_key: str, reply_to: str = "") -> Sent:
+        import base64                                 # noqa: PLC0415
+        from email.message import EmailMessage        # noqa: PLC0415
+
+        from spindle.mailbox import gmail             # noqa: PLC0415 — avoids a cycle
+
+        message = EmailMessage()
+        message["From"] = self.sender
+        message["To"] = to
+        message["Subject"] = subject
+        message["Reply-To"] = reply_to or self.reply_to
+        message["X-Spindle-Idempotency-Key"] = _tag_value(idempotency_key)
+        message.set_content(body)
+
+        client = self._client or gmail.RestClient(self._refresh_token)
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        sent = client.send_raw(raw)
+        # Gmail's own id, not the RFC Message-ID. `inbound.message_id_candidates` handles
+        # both forms, which is the same accommodation SES needed.
+        return Sent(provider_message_id=str(sent.get("id", "")), cost_usd="0")

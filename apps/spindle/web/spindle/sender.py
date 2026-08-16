@@ -49,7 +49,8 @@ from typing import Any
 
 import psycopg
 
-from spindle import mail, settings as settings_mod, spend
+from spindle import inbound, mail, settings as settings_mod, spend
+from spindle.mailbox import identity as mailbox_identity
 
 #: Outbox rows claimed per pass. Small on purpose: each one is a network call to a
 #: provider and an irreversible act, and a large batch lengthens the window in which a
@@ -102,6 +103,54 @@ def claim(conn: psycopg.Connection, tenant_id: str, worker: str, *,
             {"worker": worker, "tenant": tenant_id, "batch": batch},
         )
         return list(cur.fetchall())
+
+
+def reply_to_for(conn: psycopg.Connection, tenant_id: str, thread_id: str,
+                 base: str) -> str:
+    """The plus-addressed `Reply-To` this thread's mail should carry, minting the token
+    on first use.
+
+    ## Why the token is minted here and not when the thread opens
+
+    A thread that is never mailed never needs an address, and minting at `open_thread`
+    would fill `thread_by_reply_token` — a unique index — with tokens for conversations
+    that will never receive anything. Minting on the way out ties the token's existence
+    to the only event that makes it meaningful: a message going somewhere a reply can
+    come back from.
+
+    ## Why the second call must return the first token
+
+    A thread sends more than once — a follow-up, a re-send after a soft bounce — and the
+    curator's mailbox already contains the first address. If a second send minted a second
+    token, a reply to the *first* pitch would arrive bearing a token that no longer
+    resolves, and rung one of the ladder would fail on the single case it exists for. So
+    the UPDATE is conditional on the column still being empty, and a caller that loses
+    that race reads the winner's value rather than overwriting it.
+
+    That conditional UPDATE is also what makes this safe under two senders working the
+    same thread concurrently: `WHERE reply_token = ''` means exactly one of them writes,
+    and CockroachDB's SERIALIZABLE default means the loser sees the winner's row rather
+    than a torn one. No lock is needed and none is taken.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE thread SET reply_token = %s
+                WHERE tenant_id = %s AND id = %s AND reply_token = ''
+             RETURNING reply_token""",
+            (inbound.mint_reply_token(), tenant_id, thread_id))
+        row = cur.fetchone()
+        if row is None:
+            # Either the thread already had a token, or another sender minted one
+            # between our UPDATE and now. Both are the same question, with the same
+            # answer: whatever is in the column.
+            cur.execute("SELECT reply_token FROM thread WHERE tenant_id = %s AND id = %s",
+                        (tenant_id, thread_id))
+            row = cur.fetchone()
+            if row is None:
+                raise NoContactRoute(
+                    f"thread {thread_id} does not exist, so there is no address for a "
+                    "reply to come back to")
+    return inbound.reply_address(base, str(row["reply_token"]))
 
 
 def _prepare(conn: psycopg.Connection, row: dict[str, Any]) -> dict[str, Any]:
@@ -320,7 +369,17 @@ def send_once(conn: psycopg.Connection, tenant_id: str, worker: str, *,
             "anything is claimed: every message needs a physical address and a working "
             "opt-out, and neither is invented here.")
 
-    mailer = mailer or mail.load()
+    # Whose address this tenant sends under, resolved *before* anything is claimed and
+    # for the same reason the two guards above run first: `identity_for` refuses a
+    # downgraded plan and a failed mailbox, and discovering either after a claim would
+    # strand rows in `claimed` that this module never retries.
+    #
+    # An injected `mailer` still wins, which keeps the suite's stub transport working —
+    # but the identity is resolved either way, because it also decides the `Reply-To`
+    # and the opt-out address below, and those are properties of the message rather than
+    # of the transport carrying it.
+    identity = mailbox_identity.for_tenant(conn, tenant_id)
+    mailer = mailer or mailbox_identity.mailer_for(identity)
     gate = spend.Gate.open(conn, tenant_id)
 
     delivered = 0
@@ -331,15 +390,29 @@ def send_once(conn: psycopg.Connection, tenant_id: str, worker: str, *,
             _record_failure(conn, row, str(exc), permanent=True)
             continue
 
+        # The opt-out names the address a reply actually reaches. On the platform
+        # identity that is the shared mailbox; on a tenant's own it is theirs. Using
+        # `config.mail_reply_to` unconditionally — as this did — would print the
+        # platform's address in a message sent from a label's domain, telling a curator
+        # to unsubscribe by writing to a mailbox that is not the sender's.
         body = mail.compliant_body(
             prepared["body"], postal_address=config.mail_postal_address,
-            unsubscribe=f"Reply to {config.mail_reply_to} to be removed.")
+            unsubscribe=f"Reply to {identity.reply_to} to be removed.")
+
+        # Only the platform identity tags its `Reply-To`. `Identity.uses_reply_token`
+        # carries the reasoning: one shared mailbox needs the thread encoded in the
+        # address, and a tenant's own mailbox does not — the reply lands where we poll
+        # and `In-Reply-To` identifies the thread without a tracking-looking address.
+        reply_to = (reply_to_for(conn, tenant_id, str(row["thread_id"]),
+                                 identity.reply_to)
+                    if identity.uses_reply_token else identity.reply_to)
 
         try:
             gate.check("aws:ses:SendEmail", requests=1)
             sent = mailer.send(to=prepared["to"], subject=prepared["subject"],
                                body=body,
-                               idempotency_key=prepared["idempotency_key"])
+                               idempotency_key=prepared["idempotency_key"],
+                               reply_to=reply_to)
         except spend.SpendRefused as exc:
             # Not a failure of the send; the send never happened. Back to pending with
             # `attempts` untouched, so raising the ceiling really is all it takes to

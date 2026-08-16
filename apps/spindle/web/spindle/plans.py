@@ -103,13 +103,29 @@ class Tier:
     #: nobody uses.
     artists: int | None
 
-    #: Whether outbound mail is permitted for this tier *as a matter of plan*. Note that
-    #: this is the second of two locks and not the only one: `api/reads.sender_wired` is
-    #: hardcoded `False` and no Sender claims the outbox on any tier, so nothing sends
-    #: today regardless of what this says. This flag exists so that when sending is
-    #: eventually wired, turning it on does not turn it on for free accounts as a side
-    #: effect.
+    #: Whether outbound mail is permitted for this tier *as a matter of plan*.
+    #:
+    #: This used to say it was "the second of two locks", the first being that nothing
+    #: sent at all. That is no longer true and the correction matters: `sender.py` drains
+    #: the outbox and calls a real provider, so **this flag is now the only lock**, and it
+    #: is load-bearing rather than anticipatory. Enforced at
+    #: `mailbox.identity.identity_for`, which refuses before anything is claimed.
     sends_enabled: bool
+
+    #: Whether this tier may connect its **own** mailbox — Gmail by OAuth, or any
+    #: provider over IMAP and SMTP — and so send pitches from its own address rather than
+    #: through the platform's shared SES identity.
+    #:
+    #: This is the paid boundary, and the reason it is a boundary is a real per-tenant
+    #: cost rather than a made-up one: a connected mailbox means a credential held in AWS
+    #: Secrets Manager for that tenant alone (see `vault.py`), which is billed per secret
+    #: per month. A free tier that could connect would let an anonymous signup create a
+    #: standing charge, which is the same argument `daily_spend_cap_usd` makes one line
+    #: down and `POST /claim` being public makes urgent.
+    #:
+    #: A tier with `connects_mailbox` but not `sends_enabled` would be selling a setting
+    #: with no effect; `test_reply_routing.py` asserts that combination never occurs.
+    connects_mailbox: bool
 
     #: Seeded into `tenant_budget.daily_ceiling_usd` when the plan is written. Dollars per
     #: rolling 24 hours of metered API spend — embeddings, the Ask screen's router call,
@@ -217,7 +233,21 @@ TIERS: tuple[Tier, ...] = (
         price_usd_month=0,
         open_conversations=5,
         artists=1,
-        sends_enabled=False,
+        # Changed 2026-08-16, and it is worth recording why the old comment on
+        # `sends_enabled` — "so that when sending is eventually wired, turning it on does
+        # not turn it on for free accounts as a side effect" — is being overruled rather
+        # than overlooked. That comment was protecting against sending arriving *by
+        # accident*. This is a decision: a free tenant sends through the platform's SES
+        # identity, from the platform's address, so that they can watch a pitch go out and
+        # a reply come back before paying. A trial of an outreach product that cannot
+        # reach anybody is not a trial.
+        #
+        # What keeps it bounded is the meter that was already there: `open_conversations`
+        # is 5 a month, `daily_spend_cap_usd` is $0.20, and OTP sign-in already proves the
+        # address belongs to somebody. What a free tenant may *not* do is send from their
+        # own domain — that is `connects_mailbox`, and it is the paid line.
+        sends_enabled=True,
+        connects_mailbox=False,
         # Twenty cents a day. Enough for the Ask screen and a few hundred embeddings,
         # which is enough to see the product work; nowhere near enough for an anonymous
         # signup to cost this project money. `POST /claim` is public on a scale-to-zero
@@ -235,6 +265,7 @@ TIERS: tuple[Tier, ...] = (
         open_conversations=50,
         artists=3,
         sends_enabled=True,
+        connects_mailbox=True,
         daily_spend_cap_usd=Decimal("2.00"),
         stripe_price_setting="stripe_price_label",
         summary="An independent label running three acts. Fifty conversations a month "
@@ -247,6 +278,7 @@ TIERS: tuple[Tier, ...] = (
         open_conversations=250,
         artists=None,
         sends_enabled=True,
+        connects_mailbox=True,
         daily_spend_cap_usd=Decimal("8.00"),
         stripe_price_setting="stripe_price_roster",
         summary="A full roster, no cap on how many acts. The meter is conversations, "
@@ -259,6 +291,7 @@ TIERS: tuple[Tier, ...] = (
         open_conversations=None,
         artists=None,
         sends_enabled=True,
+        connects_mailbox=True,
         # Not zero, and not a number pretending to be a negotiated ceiling. A Catalogue
         # tenant's real ceiling is written into `tenant_budget` by hand as part of the
         # agreement; this is the value that row is seeded with if somebody forgets, and

@@ -17,7 +17,20 @@ from typing import ClassVar
 class Settings:
     database_url: str
     masters_bucket: str
+    public_base_url: str
     region: str
+
+    #: Which deployment this is — `prod`, `staging`, a developer's name. Used as a path
+    #: segment in `vault.secret_name`, where the IAM policy for mailbox credentials is
+    #: written against `spindle/<env>/mailbox/*`.
+    #:
+    #: It is in the path because staging is usually restored from a production backup, so
+    #: the two share tenant ids. Without this segment a staging deployment would hold ARNs
+    #: that resolve against production's secrets, and a test run there would send mail as
+    #: a real label from a real mailbox. Defaulted to `dev` rather than to `prod`: a
+    #: deployment that forgot to set it should fail to find production's secrets, not find
+    #: them.
+    env: str
     classifier_function: str
     mail_sender: str
     mail_reply_to: str
@@ -254,6 +267,21 @@ class Settings:
         """
         return bool(self.masters_bucket)
 
+    @property
+    def listen_links_configured(self) -> bool:
+        """Whether a pitch may carry a link to the master.
+
+        Both halves are required and they fail for unrelated reasons: without a bucket
+        there is no audio to serve, and without a public base URL there is no address to
+        serve it from. Reported as one property because the drafter asks one question —
+        *can this pitch carry a link* — and a pitch that carries half a link carries a
+        broken one.
+
+        False is an ordinary state, not a misconfiguration. The pitch simply keeps the
+        wording it had before links existed; `listen.append_link` is what enforces that.
+        """
+        return bool(self.masters_bucket and self.public_base_url)
+
 
 def load() -> Settings:
     return Settings(
@@ -272,6 +300,17 @@ def load() -> Settings:
         # run `terraform apply` has no bucket — and the console reports it rather
         # than inventing a local directory nothing else in the system can read.
         masters_bucket=os.environ.get("PLATFORM_MASTERS_BUCKET", ""),
+        # The origin for a URL handed to somebody who is not holding a session — today
+        # the listen links in outbound pitches, which are read in a mail client where a
+        # relative path resolves against nothing.
+        #
+        # No default, and specifically not the Function URL. A link is the one artefact
+        # here that leaves the system and cannot be corrected afterwards: it is sitting
+        # in somebody's inbox, and `*.lambda-url.us-east-1.on.aws` in a cold email is
+        # both unrecognisable to the reader and a deliverability cost on a domain whose
+        # reputation was fixed at some effort. `listen.mint` raises when this is empty
+        # rather than guessing, which is `NO FALLBACKS` at the point it matters most.
+        public_base_url=os.environ.get("PLATFORM_PUBLIC_BASE_URL", "").rstrip("/"),
         # The genre classifier Lambda. Empty means `analyse_recording` measures tempo
         # and writes no genre at all, rather than falling back to something weaker and
         # labelling it the same way — the run summary says which happened.
@@ -348,4 +387,7 @@ def load() -> Settings:
         region=(os.environ.get("PLATFORM_REGION")
                 or os.environ.get("AWS_REGION")
                 or "us-east-1"),
+        # `dev`, not `prod`. See the field's own comment: the safe direction for a
+        # deployment that forgot to set this is to look for secrets that are not there.
+        env=os.environ.get("PLATFORM_ENV", "dev").strip() or "dev",
     )

@@ -1,61 +1,65 @@
-A hundred and seventy thousand radio stations, curators and shows. For any
-given single, maybe two hundred of them matter.
+An independent label puts out a record. For anyone to hear it, somebody has to
+find the few hundred people who might actually play it — programmers,
+curators, show hosts — and write to each of them personally, with a real
+pitch.
 
-Miss by a little, and you are not marketing. You are spam.
+That's weeks of work per release. Most labels never do it. So most records
+just disappear.
 
-This is CockroachDB's vector index. Look at the plan: the filters live
-inside the index prefix. Tenant, model, contactable. The search runs in
-the filtered subspace — not a scan with a WHERE clause bolted on
-afterwards.
+Spindle does it. Every night, for every artist on the roster.
 
-And that prefix starts with tenant_id. The same column a static test
-proves every single statement in this codebase carries.
+Get it wrong and you're not marketing, you're spam. So the whole thing turns
+on picking the right few hundred.
 
-One column. Our security boundary and our partition key at once.
+That shortlist is a vector search in CockroachDB, with the filters — tenant,
+model, contactable — living inside the index itself, not bolted on after.
 
-pgvector can do the similarity. It cannot make one decision do both jobs.
+And that index starts with tenant_id. One column doing our security boundary
+and our partition key at once.
 
-No orchestrator. Agents never call each other — a changefeed on the memory
-tables wakes the next one. The database is the event bus.
+pgvector can do the similarity. It can't make one decision do both jobs.
 
-So kill half the fleet mid-run. The work still finishes. A dead worker's
-lease expires and the row comes back on its own.
+The index is never finished, either. Agents are adding to these records all
+day — what a station plays, who runs it, what they said last time.
 
-And the one thing we can never take back — the send — commits its claim
-before the network call. Two workers, same name, one lead. The name cannot
-tell them apart. The token can.
+And there's no orchestrator. Agents don't call each other — a changefeed on
+the memory tables wakes the next one.
 
-Serializable by default. A fence that fails closed.
+So kill half the fleet mid-run. The work still finishes. The lease expires and
+the row comes back.
 
-We email real people. So we hold real data about them — and European law
-says where that data may live.
+The send claims its lease before the network call. Two workers, same name. The
+name can't tell them apart. The token can.
 
-Same table. Same query. This row is in Virginia. This one is physically in
-Ireland, because she is a European contact.
+When people write back, the reply finds its own thread — every pitch carries a
+token we minted for one conversation.
 
-One logical table. Residency per row, enforced by the database instead of
-by us remembering. In Postgres that is three databases and a
-synchronisation problem you own forever.
+We're holding contact details for real people, and European law says where
+that data can live. Same table, same query: this row is in Virginia, this one
+is physically in Ireland.
 
+Residency per row, enforced by the database instead of by us remembering to.
 Now lose a region. It keeps answering.
 
-We emailed this curator on Tuesday. Why her?
+It spends the label's money too, on its own, up to a ceiling. Last night it
+asked to put more behind one record, and I approved it.
 
-Here is the same shortlist, re-run against the memory exactly as it was at
-the moment we sent. Same index. Same embeddings. Same lesson that moved
-her up four places.
+So this morning — what was it looking at when it asked? I can't just query it.
+We never stop collecting, so those metrics have been overwritten and the
+thread states have moved on.
 
-Four extra words of SQL. No audit table. No event log. No versioned copy
-of anything.
+But the ledger row stored the exact logical timestamp it decided at. Four
+extra words of SQL, pointed at that timestamp, and they come back. Not a copy
+of them.
 
-Every agentic system can tell you what it knows. This one tells you what
-it believed, when it acted.
+Then it re-runs the valuation against those old numbers and checks it still
+gets the same answer.
+
+No audit table. No event log. No versioned copy of anything.
 
 Postgres cannot do that at any price.
 
-One database. The index, the scheduler, the outbox, the event bus, the
-audit log. Ask it questions in English.
+One database doing the index, the scheduler, the outbox, the event bus and the
+ledger. It scales to zero between releases.
 
-It scales to zero between releases.
-
-All of that cost less than a coffee.
+It's live today at spindle.mattrickslauer.com. Go and make it big.

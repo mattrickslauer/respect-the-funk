@@ -234,6 +234,72 @@
     th.c-num { text-align:right; }
     .empty { padding:3rem 1rem; text-align:center; color:var(--faint); font-size:12px; }
 
+    /* ---- beginner rails ----------------------------------------------- */
+    /* A strip under the page head, on every console screen, until a tenant has an
+       artist, a track and a master. `spindle/onboarding.py` decides when; this only
+       decides what it looks like.
+
+       It sits between `.head` and the view's own content rather than inside `.head`,
+       because it is not about this page — the same three steps render on Tracks and on
+       Budgets. Putting it in the head would make it read as this screen's subtitle.
+
+       Warm rather than neutral, and this is the one place in the console that borrows
+       the selection colour for something that is not selected. The justification is
+       that `--phosphor` is the system's emphasis pole and this is the only element on
+       the page asking to be read before the work is. It gets that once; a second warm
+       strip would spend the pole and neither would be noticed. */
+    .startbar {
+      flex:none; padding:.5rem .9rem .55rem;
+      background:var(--phosphor-wash); border-bottom:1px solid var(--line);
+      display:flex; flex-direction:column; gap:.28rem;
+    }
+    .startrow { display:flex; align-items:center; gap:.55rem; flex-wrap:wrap; }
+    .startkick {
+      flex:none; font-size:var(--step--2); font-weight:640;
+      letter-spacing:var(--track-caps); text-transform:uppercase; color:var(--phosphor);
+    }
+    /* `flex:1` so it eats the slack and the trailing controls sit hard right, whether
+       or not the CTA is drawn. Two `margin-left:auto` children would split the gap
+       between them instead, which puts the dismiss control in the middle of nowhere. */
+    .startsteps {
+      flex:1 1 auto; min-width:0; margin:0; padding:0; list-style:none;
+      display:flex; flex-wrap:wrap; gap:.15rem .7rem;
+    }
+    .startsteps li {
+      display:flex; align-items:center; gap:.3rem; font-size:12px; color:var(--dim);
+    }
+    /* Colour and a mark, never `text-decoration:line-through`. Strike-through
+       propagates to descendants and cannot be lifted off the tick in most engines, so
+       the ✓ would be struck out too — a done step would render as a crossed-out
+       confirmation, which reads as cancelled rather than complete. */
+    .startsteps li .tick { flex:none; font-size:11px; color:var(--faint); }
+    .startsteps li.done { color:var(--faint); }
+    .startsteps li.done .tick { color:var(--ok); }
+    .startsteps li.now { color:var(--ink); font-weight:560; }
+    .startsteps li.now .tick { color:var(--phosphor); }
+    .startcta {
+      flex:none; padding:.22rem .55rem; border-radius:var(--r);
+      border:1px solid var(--phosphor); color:var(--phosphor);
+      font-size:11.5px; font-weight:560; white-space:nowrap;
+    }
+    .startcta:hover { background:var(--phosphor); color:var(--ground); }
+    .startx { flex:none; margin:0; }
+    .startx button {
+      /* 24px, which is under the 44px touch target the responsive block enforces on
+         real controls. Deliberate: dismissing is the one action on this strip that
+         nobody should hit by accident while reaching for the CTA beside it. The mobile
+         block below gives it back its height once the strip has room to breathe. */
+      width:24px; height:24px; padding:0; line-height:1; cursor:pointer;
+      background:none; border:1px solid transparent; border-radius:var(--r-sm);
+      color:var(--faint); font:inherit; font-size:14px;
+    }
+    .startx button:hover { border-color:var(--line2); color:var(--ink); }
+    .startwhy { margin:0; font-size:11.5px; color:var(--dim); max-width:88ch; }
+    .startsell { margin:0; font-size:11.5px; color:var(--faint); max-width:88ch; }
+    .startsell b { color:var(--dim); font-weight:560; }
+    .startsell a { color:var(--phosphor); border-bottom:1px solid var(--phosphor-wash); }
+    .startsell a:hover { border-bottom-color:var(--phosphor); }
+
     /* ---- chips -------------------------------------------------------- */
     /* Stays unscoped so a chip can be drawn on any element; the `c-` prefix on cell
        classes is what keeps a chip *column* from accidentally matching this rule. */
@@ -513,6 +579,13 @@
       .stat i, .chip, .prov, .navitem .b { font-size:11px; }
       .navitem { font-size:14px; }
       .blurb, .card .m, .card .p, .kv, .ednote { font-size:13px; }
+      /* Same correction as `.blurb`: these were set for a desk-distance panel. The
+         steps and the dismiss control also become real touch targets here — the strip
+         has the width for them once it is the full page. */
+      .startwhy, .startsell { font-size:13px; }
+      .startsteps li { font-size:13px; }
+      .startcta { font-size:13px; padding:.4rem .7rem; }
+      .startx button { width:34px; height:34px; font-size:16px; }
       td.c-num, td.c-mono, td.c-bar, td.c-spark { font-size:12.5px; }
       h1 { font-size:16px; }
 
@@ -657,6 +730,77 @@
       <p class="blurb">{% block blurb %}{% endblock %}</p>
       {% block stats %}{% endblock %}
     </div>
+
+    {# The beginner rails. `start` is `None` for everybody except a signed-in tenant who
+       still has a step outstanding and has not dismissed the strip in this browser —
+       `routes._start_rails` enumerates the four ways to get there — so this block is
+       absent from the console within about two minutes of somebody starting work, and
+       absent from the public pages entirely because they do not extend this file.
+
+       `start.next_step` is never `None` inside this block: `onboarding.state` returns
+       `None` when every step is done, which is the same condition. Not defended against
+       here on purpose — a `{% if %}` around it would turn a broken invariant into a
+       silently half-drawn banner, and the render error is the signal. #}
+    {% if start %}
+      <section class="startbar" aria-label="Getting started">
+        <div class="startrow">
+          <span class="startkick">Start here</span>
+          <ol class="startsteps">
+            {% for step in start.steps %}
+              <li class="{% if step.done %}done{% elif step.key == start.next_step.key %}now{% endif %}">
+                {# A tick for done and a ring for not. Both are glyphs rather than
+                   colour alone, so the state survives a monochrome screen and a reader
+                   who cannot separate the two greens. #}
+                <span class="tick" aria-hidden="true">{{ '✓' if step.done else '○' }}</span>
+                <span>{{ step.label }}</span>
+              </li>
+            {% endfor %}
+          </ol>
+
+          {# Drawn only when the step's control exists. The master step points into the
+             Tracks inspector for a selected recording, and before there is a recording
+             there is nothing to select — so the step shows as text and the sentence
+             below says what to do instead of a button leading somewhere empty. #}
+          {% if start.next_step.ready %}
+            <a class="startcta" href="{{ start.next_step.href }}">{{ start.next_step.cta }} →</a>
+          {% endif %}
+
+          <form method="post" action="/start/dismiss" class="startx">
+            {# Back to the page the strip was drawn on, query string included, so
+               dismissing from `/tracks?sel=…` does not also lose the selected track.
+               `routes._safe_back` checks it before redirecting. #}
+            <input type="hidden" name="back"
+                   value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}">
+            <button type="submit" title="Hide this in this browser"
+                    aria-label="Hide getting started">×</button>
+          </form>
+        </div>
+
+        <p class="startwhy">{{ start.next_step.blurb }}</p>
+
+        {# The upsell, and the whole of it. One sentence, no button: `/account` is where
+           the checkout that works lives, and it already renders whether Stripe is
+           configured, whether the key is a test key, and that sending is off on every
+           tier. Restating any of that here is how the two come to disagree.
+
+           Every figure is `plans.TIERS` read through the object — see `plans.py` on why
+           a number typed into a template is a number that goes on being wrong. #}
+        {% if start.upgrade %}
+          {# Full stops between the clauses rather than dashes and colons. Both tier
+             summaries are written as sentences in `plans.py` and begin with a capital,
+             so joining them with an em-dash or a colon reads as a typo in the middle of
+             a paid pitch. #}
+          <p class="startsell">
+            You are on <b>{{ start.tier.name }}</b>. {{ start.tier.summary }}
+            <b>{{ start.upgrade.name }}</b> is ${{ start.upgrade.price_usd_month }} a
+            month. {{ start.upgrade.summary }}
+            The three steps above need nothing you do not already have.
+            <a href="/account">See plans →</a>
+          </p>
+        {% endif %}
+      </section>
+    {% endif %}
+
     {% block centre %}{% endblock %}
   </main>
 

@@ -13,6 +13,8 @@ produce a working-looking system that returns nonsense.
 
 from __future__ import annotations
 
+import io
+import json
 import os
 import unittest
 from decimal import Decimal
@@ -139,8 +141,68 @@ class Loading(unittest.TestCase):
     def test_every_provider_is_priced(self):
         # An adapter whose key is missing from the rate card cannot be called at all.
         # Catching that here is cheaper than catching it mid-backfill.
-        for key in (embed.OpenAIEmbedder.key, embed.BedrockEmbedder.key):
+        for key in (embed.OpenAIEmbedder.key, embed.BedrockEmbedder.key,
+                    embed.CohereBedrockEmbedder.key):
             self.assertIn(key, spend.RATES, f"{key} has no rate card entry")
+
+    def test_bedrock_cohere_is_never_inferred_only_asked_for(self):
+        # Bedrock must not be what you get by default — the rule `load()` states for
+        # Titan applies unchanged to the provider that actually works, because the
+        # difference between them is billing, not intent.
+        with _env(OPENAI_API_KEY="sk-test"):
+            self.assertIsInstance(embed.load(), embed.OpenAIEmbedder)
+
+
+class CohereBedrock(unittest.TestCase):
+    """The adapter, against a fake client. The live call is in `test_bedrock.py`."""
+
+    class _Client:
+        def __init__(self, dims: int = 1024) -> None:
+            self.dims = dims
+            self.batches: list[int] = []
+
+        def invoke_model(self, **kwargs):
+            texts = json.loads(kwargs["body"])["texts"]
+            self.batches.append(len(texts))
+            payload = {"embeddings": [[0.1] * self.dims for _ in texts],
+                       "id": "fake", "response_type": "embeddings_floats",
+                       "texts": texts}
+            return {"body": io.BytesIO(json.dumps(payload).encode()),
+                    "ResponseMetadata": {
+                        "HTTPHeaders": {"x-amzn-bedrock-input-token-count": "5"}}}
+
+    def test_indexes_as_a_document_by_default(self):
+        # The corpus side is the one every current caller of `load()` is on.
+        self.assertEqual(embed.CohereBedrockEmbedder.input_type, "search_document")
+
+    def test_the_model_travels_onto_every_vector(self):
+        vectors = embed.CohereBedrockEmbedder(client=self._Client()).embed(["a", "b"])
+        self.assertEqual([v.model for v in vectors],
+                         ["bedrock:cohere.embed-english-v3"] * 2)
+
+    def test_more_than_the_provider_ceiling_is_rechunked_not_refused(self):
+        # 97 in one call is a ValidationException that loses the whole call, so the
+        # adapter has to split. 100 is 96 + 4.
+        client = self._Client()
+        vectors = embed.CohereBedrockEmbedder(client=client).embed(["t"] * 100)
+        self.assertEqual(len(vectors), 100)
+        self.assertEqual(client.batches, [96, 4])
+
+    def test_a_failure_reports_how_many_vectors_were_already_paid_for(self):
+        # `EmbeddingUnavailable.completed` is what stops a resumed backfill paying twice.
+        class Dies(self._Client):
+            def invoke_model(self, **kwargs):
+                if self.batches:
+                    raise RuntimeError("second call dies")
+                return super().invoke_model(**kwargs)
+
+        with self.assertRaises(embed.EmbeddingUnavailable) as caught:
+            embed.CohereBedrockEmbedder(client=Dies()).embed(["t"] * 100)
+        self.assertEqual(caught.exception.completed, 96)
+
+    def test_a_wrong_width_from_the_model_is_refused_at_the_boundary(self):
+        with self.assertRaises(embed.EmbeddingUnavailable):
+            embed.CohereBedrockEmbedder(client=self._Client(dims=768)).embed(["a"])
 
 
 class Batching(unittest.TestCase):

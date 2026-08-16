@@ -206,6 +206,66 @@ class OpenAIEmbedder:
 
 
 @dataclass
+class CohereBedrockEmbedder:
+    """`cohere.embed-english-v3` on Bedrock — the AWS path that actually runs here.
+
+    `BedrockEmbedder` below is Titan, and Titan's on-demand quota on this account is a
+    non-adjustable zero that the 2026-08-16 account upgrade did not move (re-measured, not
+    assumed). This adapter exists because Titan is not the only embedder on Bedrock: the
+    same account, the same region and the same `bedrock-runtime` client reach Cohere v3,
+    which is `ACTIVE`, on-demand, natively 1024-wide and — measured — returns vectors.
+
+    So the choice this class represents is *not* OpenAI-versus-AWS on quality. It is that
+    the embedding half of this system can run on AWS at all.
+
+    ## Why `input_type` is a field and not a constant
+
+    Cohere v3 is trained asymmetrically — the corpus goes in as `search_document`, a query
+    as `search_query` — and `bedrock.cohere_request_body` refuses to guess. The port's
+    `embed()` has no notion of which side of a retrieval it is serving, so the distinction
+    has to live on the adapter instance. `load()` builds the indexing one, because every
+    current caller of `embed.load()` that writes a row is indexing.
+
+    **The query side is deliberately not wired up yet, and that is a known cost.**
+    `agents.shortlist` embeds an operator's query through the same `load()`, so today a
+    query is embedded as a document. That is symmetric use of an asymmetric model: it
+    retrieves, and it retrieves slightly worse than it could. It is recorded here rather
+    than fixed silently because fixing it means threading an input type through four call
+    sites, and doing that in the same change as a provider switch would make a retrieval
+    regression and a provider regression indistinguishable if either appeared.
+
+    ## Why the batching is here rather than in `embed_batch`
+
+    `embed_batch` already chunks for the spend gate, on its own accounting. Cohere's limit
+    is a hard 96 per `InvokeModel` — 97 is a `ValidationException` that fails the entire
+    call — so this adapter re-chunks whatever it is handed. Two chunkers is not redundancy:
+    the gate's is about money and this one is about a provider limit, and collapsing them
+    would tie the batch size a backfill can afford to a number AWS chose.
+    """
+
+    client: object  # boto3 bedrock-runtime; typed loosely to keep boto3 out of the zip
+    input_type: str = "search_document"
+    key: str = bedrock.COHERE_KEY
+    model: str = bedrock.COHERE_MODEL
+
+    def embed(self, texts: Sequence[str]) -> list[Vector]:
+        out: list[Vector] = []
+        for start in range(0, len(texts), bedrock.COHERE_MAX_BATCH):
+            chunk = list(texts[start:start + bedrock.COHERE_MAX_BATCH])
+            try:
+                result = bedrock.embed_many_cohere(
+                    self.client, chunk, dimensions=DIMENSIONS,
+                    input_type=self.input_type)
+            except bedrock.BedrockUnavailable as exc:
+                # `len(out)` is how many vectors are already paid for. A chunk that fails
+                # bills nothing — Bedrock charges per successful invocation — so the
+                # already-completed chunks are the whole of what was spent.
+                raise EmbeddingUnavailable(str(exc), completed=len(out)) from exc
+            out.extend(Vector(values, self.model) for values in result.values)
+        return out
+
+
+@dataclass
 class BedrockEmbedder:
     """Titan Text Embeddings V2 on demand, natively 1024.
 
@@ -312,6 +372,16 @@ def load(post: Post = _post) -> Embedder:
             raise EmbeddingUnavailable("RTF_EMBED_PROVIDER=openai but OPENAI_API_KEY is unset.")
         return OpenAIEmbedder(api_key=openai_key, post=post)
 
+    # Spelled `bedrock-cohere` and never bare `cohere`: Cohere sells the same model
+    # directly, so the unqualified name would not say which vendor is being billed or
+    # which credential is required. `test_unknown_provider_does_not_silently_pick_one`
+    # uses `cohere` as its example of a name that must NOT resolve, and it still is one.
+    if choice == "bedrock-cohere":
+        try:
+            return CohereBedrockEmbedder(client=bedrock.runtime_client())
+        except bedrock.BedrockUnavailable as exc:
+            raise EmbeddingUnavailable(str(exc)) from exc
+
     if choice == "bedrock":
         try:
             return BedrockEmbedder(client=bedrock.runtime_client())
@@ -329,9 +399,11 @@ def load(post: Post = _post) -> Embedder:
 
     raise EmbeddingUnavailable(
         "No embedding provider configured. Set OPENAI_API_KEY, or set "
-        "RTF_EMBED_PROVIDER to 'openai', 'bedrock-batch' (bulk backfills; needs "
-        "RTF_BEDROCK_BATCH_BUCKET and RTF_BEDROCK_BATCH_ROLE_ARN) or 'bedrock' "
-        "(on-demand Titan, whose quota on this account is a non-adjustable zero)."
+        "RTF_EMBED_PROVIDER to 'bedrock-cohere' (cohere.embed-english-v3 on Bedrock — "
+        "the AWS path that runs on this account), 'openai', 'bedrock-batch' (bulk "
+        "backfills; needs RTF_BEDROCK_BATCH_BUCKET and RTF_BEDROCK_BATCH_ROLE_ARN) or "
+        "'bedrock' (on-demand Titan, whose quota on this account is a non-adjustable "
+        "zero)."
     )
 
 

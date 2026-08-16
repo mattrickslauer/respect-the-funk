@@ -77,12 +77,22 @@ carried `WHERE tenant_id = %s AND model = %s` and its two scalar subqueries agai
 
 If a unit's reference fails its zone check, the whole statement fails — unless the
 exact (whitespace-normalised) unit text is in `ALLOWLIST` below, with a comment
-justifying why that specific statement is genuinely tenant-free. The allowlist is
-empty: every statement this test's runs found un-scoped got the predicate added rather
-than excused (see the commits this test landed in), and `agents._write_map_source`
-INSERTs `demo_request` and `tenant` never come up because those two tables are not in
-`TENANT_SCOPED_TABLES` — the row that has no tenant yet, and the tenant row itself,
-correctly have no `tenant_id` predicate to carry.
+justifying why that specific statement is genuinely tenant-free.
+
+The allowlist held nothing until 2026-08-16: every statement this test's runs found
+un-scoped got the predicate added rather than excused (see the commits this test landed
+in), and `agents._write_map_source` INSERTs `demo_request` and `tenant` never come up
+because those two tables are not in `TENANT_SCOPED_TABLES` — the row that has no tenant
+yet, and the tenant row itself, correctly have no `tenant_id` predicate to carry.
+
+**It now holds exactly one entry**, and the shape of that entry is the standard for any
+future one. `listen.resolve`'s first query resolves a listen-link token to the tenant
+that owns it. It cannot carry a `tenant_id` predicate because it is the statement that
+*discovers* the tenant — the token in the URL is the entire credential, held by a curator
+with no account. What made it allowlistable rather than simply excused is that it was cut
+down to fit: three columns, one table, no joins, with every subsequent read scoped by the
+`tenant_id` it returns. The single joined query it replaced would have excused five
+tables at once. Demand the same of the next one.
 
 ## What would make this test itself untrustworthy, and why each is guarded against
 
@@ -162,6 +172,21 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     # would hand that to whoever else is on the cluster. Added in the same commit as the
     # migration, per the note on `035` above.
     "audience_profile", "audience_segment",
+    # `039`'s pair, and the lint went red on them rather than being told — the third time
+    # the note on `010` has described. `listen_token` is the per-message link a curator
+    # is sent and `listen_event` is what she did with it, so between them they record
+    # which named person opened which pitch and when. A statement that lost its tenant
+    # predicate would let one label read another's engagement, which is the whole
+    # attribution signal `039` exists to produce.
+    "listen_token", "listen_event",
+    # `040`'s pair. `mail_account` points at the credential for a tenant's own mailbox —
+    # a statement of its that lost the predicate would let one label send as another, or
+    # read the ARN that lets them. `inbound_unmatched` holds the full body of replies the
+    # correlation ladder could not place, which is private correspondence belonging to
+    # exactly one label; `040`'s header records that this table's `tenant_id` was made
+    # NOT NULL specifically so it could stay in *this* list rather than escape into
+    # `UNSCOPED_BY_DESIGN` and take its bodies out of the lint's reach.
+    "mail_account", "inbound_unmatched",
 )
 
 #: A reference to a table, tagged with which keyword introduced it — the keyword is
@@ -187,7 +212,60 @@ _WHERE_ZONE_ENDERS = {"GROUP BY", "ORDER BY", "LIMIT", "RETURNING", "HAVING",
 #: statement drops out of the allowlist and has to be re-justified rather than staying
 #: silently excused forever. Empty: nothing found by this test's first run stayed
 #: unscoped — see the module docstring.
-ALLOWLIST: dict[str, str] = {}
+ALLOWLIST: dict[str, str] = {
+    # `listen.resolve`, first half. **The one statement in this codebase that cannot
+    # carry a tenant predicate, because it is the statement that discovers the tenant.**
+    #
+    # A listen link is handed to a curator who has no account and never will — the token
+    # in the URL is the whole credential, exactly as `account.token_hash` is for a
+    # session cookie. Nothing on the request names a tenant, so there is nothing to scope
+    # this lookup by; the `tenant_id` it returns is what scopes everything after it.
+    #
+    # `account` avoids appearing here only because it is not in TENANT_SCOPED_TABLES.
+    # `listen_token` is, and correctly so: every other statement against it — the mint,
+    # the revocation sweep, the event insert — is tenant-scoped and must stay that way.
+    #
+    # What earns the entry is how little is inside it. Three columns, one table, no
+    # joins. `resolve` was deliberately split into two queries so that the unscoped half
+    # touches `listen_token` and nothing else; the joined version that reached
+    # `recording_asset`, `recording`, `party_credit` and `party` would have excused all
+    # five. If this statement grows a join, the key stops matching and it lands back here
+    # for re-argument, which is the mechanism working.
+    "SELECT id, tenant_id, recording_asset_id FROM listen_token WHERE token_hash = %s "
+    "AND state = 'active' AND expires_at > %s":
+        "the token is the credential and this is the lookup that resolves it to a "
+        "tenant; scoping it would require already knowing the answer",
+
+    # `inbound._thread_by_token`, and the second of the pair. The entry above called
+    # itself "the one statement in this codebase that cannot carry a tenant predicate";
+    # `040_mailbox.sql` produced the other one, and it is the same shape for the same
+    # reason — a token handed to somebody outside the system, coming back in as the only
+    # evidence of who it belongs to.
+    #
+    # Here the token is the plus-address a curator replies to, `spindle+<token>@…`. On
+    # the platform path every tenant's replies arrive in **one shared mailbox**, so a
+    # message carries no other indication of ownership: not the recipient (shared), not
+    # the sender (a curator, who belongs to no tenant), not the headers (forgeable and
+    # frequently absent). The token is it.
+    #
+    # What earns the entry, in the terms the entry above set: two columns, one table, no
+    # joins. The ladder's *other* three rungs — the header match and the sender match —
+    # are separate statements that each carry `WHERE tenant_id = %s` and are linted
+    # normally. Only the rung that discovers the tenant is exempt, and it was written as
+    # its own query so that the exemption could be that narrow.
+    #
+    # The safety property is an inversion worth stating explicitly, because it is the
+    # opposite of what the signature suggests: `deliver` takes a `tenant_id` argument and
+    # then **prefers what this statement returns over it**. A caller therefore cannot
+    # steer a reply into a tenant the token does not name. That is pinned directly by
+    # `test_inbound.TheCorrelationLadder.
+    # test_a_token_from_another_tenant_does_not_deliver_into_this_one`, which passes the
+    # wrong tenant in on purpose and asserts the token wins.
+    "SELECT id, tenant_id FROM thread WHERE reply_token = %s":
+        "the reply token is how an arriving message names its thread and its tenant; "
+        "one shared inbox serves every tenant, so scoping this would require already "
+        "knowing the answer",
+}
 
 #: Interpolations this resolver is permitted to treat as an opaque *value* rather than
 #: give up on, keyed by `(file, enclosing function, variable name)` with the reason.

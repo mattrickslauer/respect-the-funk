@@ -54,8 +54,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.templating import Jinja2Templates
 
 from spindle import (
-    accounts, agents, auth, billing, db, demo, fleet, mail, mcp, otp, outreach, plans,
-    platforms, repo, research, settings as settings_mod, spend, statements,
+    accounts, agents, auth, billing, db, demo, fleet, listen, mail, mcp, onboarding, otp,
+    outreach, plans, platforms, repo, research, settings as settings_mod, spend,
+    statements, storage,
 )
 # The refusal envelope, borrowed rather than reinvented. `/billing/checkout` and
 # `/billing/webhook` are machine-to-machine endpoints on a router that otherwise speaks
@@ -356,6 +357,39 @@ def _one_count(conn: psycopg.Connection, sql: str, params: tuple[Any, ...]) -> i
         return int((cur.fetchone() or {}).get("n", 0))
 
 
+def _start_rails(request: Request, principal: auth.Principal,
+                 conn: psycopg.Connection | None, tenant_id: str | None,
+                 ) -> onboarding.Rails | None:
+    """The beginner banner's state for this request, or `None` to draw nothing.
+
+    Four ways to get `None`, and they are checked in this order because each is cheaper
+    than the next — the query is last, and three of the four never reach it:
+
+      1. **Anonymous.** The landing page, the manual and sign-in all render through
+         `_ctx` too, and none of them has a tenant to have a roster.
+      2. **No connection or no tenant.** Same degradation `_nav` takes for its badges.
+      3. **Dismissed in this browser.** `onboarding.py` argues for why that is a cookie
+         and only a cookie.
+      4. **Nothing left to do.** `onboarding.state` returns `None` when every step is
+         done, so the banner's disappearance is a property of the catalogue rather than
+         of anybody remembering to hide it.
+
+    `psycopg.OperationalError` is swallowed here and nowhere else, matching `_nav`
+    exactly: a dead socket should not turn every console page into a 500 over a hint.
+    Deliberately not `psycopg.Error` — the broad catch is what turned a mistyped column
+    into a permanently blank rail while `_nav` was being written, and a permanently
+    absent banner is the same bug with the same silence.
+    """
+    if not principal.authenticated or conn is None or tenant_id is None:
+        return None
+    if request.cookies.get(onboarding.COOKIE_NAME) == onboarding.DISMISSED:
+        return None
+    try:
+        return onboarding.state(conn, tenant_id, principal.plan)
+    except psycopg.OperationalError:
+        return None
+
+
 def _ctx(request: Request, principal: auth.Principal, *,
          conn: psycopg.Connection | None = None, tenant_id: str | None = None,
          **extra: Any) -> dict[str, Any]:
@@ -385,6 +419,12 @@ def _ctx(request: Request, principal: auth.Principal, *,
         # rendered as its raw value rather than blanked.
         "type_labels": {t.value: t.label for t in ArtistType},
         "nav": _nav(conn, tenant_id),
+        # The beginner rails, or `None`. Computed in `_ctx` rather than per route for
+        # the same reason `nav` is: the banner is chrome, it belongs to `_console.html`,
+        # and a route that forgot to pass it would silently be the one screen with no
+        # guidance on it. `None` is the ordinary case for everybody past their first
+        # afternoon, and the template draws nothing for it.
+        "start": _start_rails(request, principal, conn, tenant_id),
         "scopes": demo.SCOPES,
         # The pricing table, from the one place it is defined, so a template can render
         # the tiers without restating a single number. A page that hardcoded "50
@@ -1019,6 +1059,117 @@ def manual(request: Request, principal: Principal) -> Response:
     )
 
 
+# ------------------------------------------------------------------- listen links
+#
+# Three public routes, and they are public in a different way from everything else here.
+# `/`, `/manual` and `/signin` are open because anybody may read them. These are open
+# because the **token is the credential** — a curator who was sent a record has no
+# account, will never have one, and asking them to make one in order to hear a song they
+# did not ask for is how a pitch becomes an annoyance.
+#
+# That makes the resolver the security boundary, so it is deliberately the only thing
+# these handlers trust. `listen.resolve` takes no tenant and none of them calls
+# `_tenant_id`: the row carries its own tenant and every subsequent query is scoped by
+# that, never by anything read off the request. It is a separate function from
+# `_showcase_tenant_id` for the same reason that one is separate from `_tenant_id` —
+# three ways of answering "whose rows" that must never collapse into two.
+#
+# **All three failure modes render the same 404.** Unknown, revoked and expired are one
+# `TokenInvalid`, and the page does not say which. A caller holding a guessed token must
+# not learn it was never real, and a caller holding a withdrawn one must not have it
+# confirmed that it once worked.
+
+
+def _client_ip(request: Request) -> str:
+    """The viewer's address, for hashing and nothing else.
+
+    Behind CloudFront `request.client.host` is an edge node, identical for thousands of
+    people, which would make every event look like the same visitor. `X-Forwarded-For`
+    carries the real chain and its first entry is the client — trusted here *only*
+    because this deployment is reached through CloudFront, and used *only* as an input to
+    a hash that distinguishes a reload from a forward. Nothing is authorised by it, so a
+    spoofed value costs an inaccurate count and nothing more.
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
+def _resolve_listen(token: str) -> tuple[psycopg.Connection, listen.Resolved]:
+    conn = _conn()
+    try:
+        return conn, listen.resolve(conn, token)
+    except listen.TokenInvalid:
+        # `from None`, so the log carries the 404 and not a chained "during handling of
+        # the above exception". The TokenInvalid is not a fault worth a traceback — it is
+        # the ordinary outcome of a link that expired, and burying the useful line under
+        # a stack trace is how a log stops being read.
+        raise HTTPException(status_code=404,
+                            detail="That link is no longer available.") from None
+
+
+def _listen_storage(resolved: listen.Resolved) -> storage.Storage:
+    """The bucket the asset says it is in, not the one this deployment prefers.
+
+    `recording_asset.bucket` is stored per row, so an asset written before a bucket
+    change still resolves. Falling back to `SETTINGS.masters_bucket` would sign a URL for
+    an object that is not there and hand the curator a 404 from S3.
+    """
+    return storage.load(resolved.bucket, SETTINGS.region)
+
+
+@router.get("/listen/{token}", response_class=HTMLResponse)
+def listen_page(request: Request, principal: Principal, token: str) -> Response:
+    """The landing page a pitch links to.
+
+    The audio is *not* a presigned URL embedded here. It is `/listen/{token}/audio`,
+    which redirects, so the signature is minted per request, never appears in view
+    source, and cannot be copied out of the page and shared after the fact.
+    """
+    conn, resolved = _resolve_listen(token)
+    listen.record_event(conn, resolved, "view", ip=_client_ip(request),
+                        user_agent=request.headers.get("user-agent", ""))
+    return templates.TemplateResponse(
+        request, "listen.html",
+        _ctx(request, principal, resolved=resolved, token=token),
+    )
+
+
+@router.get("/listen/{token}/audio")
+def listen_audio(request: Request, token: str) -> Response:
+    """Redirect to a freshly-signed URL for the bytes.
+
+    A 302 rather than streaming through this function, and that is the same rule
+    `storage.py`'s header states about uploads: no master transits a Lambda. It also
+    hands Range requests to S3, which implements them — so the player can seek, which it
+    could not do through a handler that did not.
+    """
+    conn, resolved = _resolve_listen(token)
+    listen.record_event(conn, resolved, "audio", ip=_client_ip(request),
+                        user_agent=request.headers.get("user-agent", ""))
+    url = _listen_storage(resolved).presign_get(resolved.object_key,
+                                                expires_in=listen.AUDIO_TTL)
+    return RedirectResponse(url, status_code=302)
+
+
+@router.get("/listen/{token}/download")
+def listen_download(request: Request, token: str) -> Response:
+    """The same object, as a file rather than a stream.
+
+    `download_as` is what makes S3 send `Content-Disposition: attachment`. Without it a
+    programmer who clicked Download gets a browser tab playing the record, which is the
+    thing they already had.
+    """
+    conn, resolved = _resolve_listen(token)
+    listen.record_event(conn, resolved, "download", ip=_client_ip(request),
+                        user_agent=request.headers.get("user-agent", ""))
+    url = _listen_storage(resolved).presign_get(
+        resolved.object_key, expires_in=listen.AUDIO_TTL,
+        download_as=resolved.download_filename)
+    return RedirectResponse(url, status_code=302)
+
+
 @router.post("/demo", response_class=HTMLResponse)
 def demo_request(
     request: Request,
@@ -1215,7 +1366,14 @@ def _artists_page(
 
     return templates.TemplateResponse(
         request, "console/table.html",
-        _ctx(request, principal, here="artists", view=view, sel=sel_row, live=True,
+        # `conn` and `tenant_id` are handed on rather than left to default. They were
+        # already open in this function and were not being passed, so the rail on this
+        # page — and on Tracks and Statements, which had the same omission — drew every
+        # badge blank while Today drew them populated. A badge that is absent on three
+        # screens out of eight is worse than one that is absent everywhere: it reads as
+        # "nothing is waiting" on exactly the pages an operator works from.
+        _ctx(request, principal, conn=conn, tenant_id=tenant_id,
+             here="artists", view=view, sel=sel_row, live=True,
              insp_kicker="artist",
              insp_title=(sel_row or {}).get("name", "—"),
              insp_new=None if creating else ("/artists?sel=new", "New artist")),
@@ -1434,7 +1592,8 @@ def _imports_page(request: Request, principal: auth.Principal, *,
         "id": "new", "file": "Import", "insp": upload}
     return templates.TemplateResponse(
         request, "console/table.html",
-        _ctx(request, principal, here="imports", view=view, sel=sel_row, live=True,
+        _ctx(request, principal, conn=conn, tenant_id=tenant_id,
+             here="imports", view=view, sel=sel_row, live=True,
              insp_kicker="statement", insp_title=sel_row.get("file", "Import")),
         status_code=status_code,
     )
@@ -1800,7 +1959,8 @@ def _tracks_page(
 
     return templates.TemplateResponse(
         request, "console/table.html",
-        _ctx(request, principal, here="tracks", view=view, sel=sel_row, live=True,
+        _ctx(request, principal, conn=conn, tenant_id=tenant_id,
+             here="tracks", view=view, sel=sel_row, live=True,
              insp_kicker="track",
              insp_title=(sel_row or {}).get("title", "—"),
              insp_new=None if creating else ("/tracks?sel=new", "New track"),
@@ -2581,6 +2741,37 @@ def signout() -> Response:
     """
     response = RedirectResponse("/", status_code=303)
     response.delete_cookie(auth.COOKIE_NAME)
+    return response
+
+
+@router.post("/start/dismiss")
+def start_dismiss(principal: SignedIn, back: Annotated[str, Form()] = "/") -> Response:
+    """Stop drawing the beginner banner in this browser.
+
+    `SignedIn` rather than open, even though the cookie is harmless: an anonymous POST
+    here would be a stranger setting a cookie on our origin, which is not an attack
+    worth naming but is also not a thing this router does anywhere else.
+
+    Not `_require_write`. Dismissing a hint is not a write to the tenant — nothing about
+    the label changes, and the same person on the same account sees the banner again in
+    a different browser. Gating it behind the write check would be claiming a
+    significance the cookie does not have.
+
+    The flags differ from `_set_session`'s on purpose, and the difference is the point:
+    this cookie is *not* `httponly`, because it is not a credential and there is nothing
+    to protect from script that reading it would compromise. It keeps `secure` and
+    `samesite=lax`, because there is no reason for it to cross plain HTTP or to be
+    settable from another origin either.
+
+    `back` comes from a form on whichever page the banner was drawn on, so it is
+    attacker-controlled in the ordinary sense and goes through `_safe_back` — the same
+    check every other return-to-where-you-were redirect in this file uses.
+    """
+    response: Response = RedirectResponse(_safe_back(back), status_code=303)
+    response.set_cookie(
+        onboarding.COOKIE_NAME, onboarding.DISMISSED,
+        secure=True, samesite="lax", max_age=onboarding.COOKIE_SECONDS,
+    )
     return response
 
 

@@ -26,6 +26,8 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
+import psycopg
+
 from spindle import fleet, spend
 
 HAVE_DB = bool(os.environ.get("DATABASE_URL"))
@@ -281,6 +283,72 @@ class Claiming(unittest.TestCase):
             cur.execute("SELECT count(*) AS n FROM agent_run WHERE tenant_id = %s "
                         "AND state = 'ok'", (self.tenant,))
             self.assertEqual(cur.fetchone()["n"], 2)
+
+    def test_a_serialization_failure_is_retried_rather_than_losing_the_paid_fetch(self):
+        """CockroachDB's contract is that the client retries `RETRY_SERIALIZABLE`.
+
+        Measured in production 2026-08-16: six workers embedding into one
+        `party_shortlist` vector index failed 6 of 104 runs, several of them on
+        `locking metadata for insert into partition 1` — two workers in one C-SPANN
+        partition. Each failure threw away a vector that had already been paid for at
+        Bedrock, because the money moves in `fetch` and the loss happens at the write.
+
+        The fetch must run exactly once across the retries and the write must land.
+        """
+        lead_id = self._lead()
+        fetches: list[int] = []
+        attempts: list[int] = []
+
+        def fetch(conn, lead, gate):
+            fetches.append(1)
+            return {"value": 42}
+
+        def write(conn, lead, gate, prepared):
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise psycopg.errors.SerializationFailure(
+                    "restart transaction: RETRY_SERIALIZABLE - simulated")
+            return fleet.Outcome(summary="wrote", facts=1)
+
+        worked = fleet.work_once(self.conn, self.tenant, "prober",
+                                 fleet.NetworkAgent(fetch=fetch, write=write),
+                                 kinds=["probe"])
+
+        self.assertEqual(worked, 1)
+        self.assertEqual(len(attempts), 3, "the write phase should have been re-run")
+        self.assertEqual(len(fetches), 1,
+                         "the paid fetch must not be repeated by a write-phase retry")
+        self.assertEqual(self._state(lead_id)["state"], "done")
+        with self.conn.cursor() as cur:
+            # Exactly one run row: the rolled-back attempts wrote nothing, which is the
+            # property that stops a retry turning into duplicate history.
+            cur.execute("SELECT count(*) AS n FROM agent_run WHERE lead_id = %s", (lead_id,))
+            self.assertEqual(cur.fetchone()["n"], 1)
+
+    def test_a_write_that_never_stops_failing_still_gives_up(self):
+        """The retry is bounded. An unbounded one turns a permanently contended row into
+        a worker that never moves on."""
+        self._lead()
+
+        def agent(conn, lead, gate):
+            raise psycopg.errors.SerializationFailure("restart transaction: forever")
+
+        # Contained by `work_once`'s own catch-all rather than escaping the fleet, but the
+        # point is that it terminates at all.
+        fleet.work_once(self.conn, self.tenant, "prober", agent, kinds=["probe"])
+
+    def test_a_lease_lost_is_not_retried_as_if_it_were_contention(self):
+        """`LeaseLost` means somebody else owns the lead. Retrying it would be re-running
+        a write the fence has already refused, five more times."""
+        lead_id = self._lead()
+        calls: list[int] = []
+
+        def agent(conn, lead, gate):
+            calls.append(1)
+            raise fleet.LeaseLost("someone else took it")
+
+        fleet.work_once(self.conn, self.tenant, "prober", agent, kinds=["probe"])
+        self.assertEqual(len(calls), 1, "a lease loss must leave the retry loop at once")
 
     def test_a_network_agents_successful_write_commits_with_completion(self):
         """`fleet.NetworkAgent` is the shape a real agent that calls out to a source

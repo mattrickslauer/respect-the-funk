@@ -172,7 +172,7 @@ Tests:
 
 ```bash
 cd apps/spindle/web && .venv/bin/python -m pytest -q
-# 746 passed, 316 skipped — the skipped ones need a disposable cluster.
+# 788 passed, 342 skipped — the skipped ones need a disposable cluster.
 ```
 
 The suite refuses to start against the production cluster and says so; the fence and the

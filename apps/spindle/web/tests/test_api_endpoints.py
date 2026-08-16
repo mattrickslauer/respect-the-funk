@@ -125,14 +125,21 @@ class ApiAgainstTheCluster(unittest.TestCase):
         self.assertEqual(0, out["returned"])
         self.assertFalse(out["truncated"])
 
-    def test_the_inbox_says_its_adapter_is_missing(self) -> None:
-        """An empty inbox and an absent integration look identical otherwise."""
+    def test_the_inbox_reports_its_adapter_as_present(self) -> None:
+        """Replaces `test_the_inbox_says_its_adapter_is_missing`. That test was right
+        for as long as no inbound adapter existed; `040_mailbox.sql` and `inbound.py`
+        built one, and a console that keeps reporting an integration as absent while it
+        runs is lying in the same way — just in the flattering direction — as one that
+        reports success it did not have."""
         out = reads.inbox(OPERATOR, self.conn, self.tenant)
-        self.assertIs(False, out["inbound_adapter_wired"])
+        self.assertIs(True, out["inbound_adapter_wired"])
 
-    def test_approvals_says_nothing_will_send(self) -> None:
+    def test_approvals_reports_that_a_sender_exists(self) -> None:
+        """`sender.py` drains the outbox and calls a provider. Whether a *particular*
+        tenant may send is a plan and mailbox question answered by
+        `mailbox.identity.identity_for`, not by this deployment-wide flag."""
         out = reads.approvals(OPERATOR, self.conn, self.tenant)
-        self.assertIs(False, out["sender_wired"])
+        self.assertIs(True, out["sender_wired"])
 
     def test_counterparty_filters_reach_the_database(self) -> None:
         self._counterparty("Findable Curator")

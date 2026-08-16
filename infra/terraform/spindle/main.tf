@@ -15,9 +15,18 @@
 #     environment variables are already encrypted at rest with an AWS-managed KMS
 #     key at no charge. Revisit when something needs rotation without a deploy.
 #   * No ECR. A zip deployment avoids per-GB image storage entirely.
-#   * No CloudFront, no custom domain, no ACM. The Function URL is a working HTTPS
-#     endpoint. A domain is a $12/year decision to take when there is something
-#     worth pointing it at.
+#
+# The list used to carry a fourth entry — "No CloudFront, no custom domain, no ACM. The
+# Function URL is a working HTTPS endpoint. A domain is a $12/year decision to take when
+# there is something worth pointing it at." **That decision was taken on 2026-08-16** and
+# `domain.tf` is the result; what made it worth taking was outbound mail, which pays a
+# deliverability cost on every send that carries an opaque `*.on.aws` link. CloudFront
+# itself stays inside its perpetual free tier at this volume (1TB out, 10M requests a
+# month) and ACM certificates are free, so the compute story above is unchanged.
+#
+# Idle cost is therefore no longer exactly $0.00. It is **$0.50/month**, all of it the
+# Route 53 hosted zone `dns.tf` creates. That is the honest number and it is stated here
+# rather than left to contradict the opening line.
 #
 # What does cost money, eventually: Lambda invocations beyond the free tier
 # (1M requests + 400k GB-seconds per month, which this will not approach), and
@@ -47,6 +56,26 @@ provider "aws" {
   # Every taggable resource this stack creates carries these, without any
   # resource having to remember to. This is what makes the platform's spend
   # separable from RemixKit's in Cost Explorer — group by the Project tag.
+  default_tags {
+    tags = {
+      Project   = "spindle"
+      Env       = var.env
+      ManagedBy = "terraform"
+      Repo      = "respect-the-funk"
+      Component = "console"
+    }
+  }
+}
+
+# CloudFront reads viewer certificates from us-east-1 only, whatever region the stack
+# runs in. `var.region` is us-east-1 today, so this alias resolves to the same place as
+# the provider above — it exists so that moving the stack to another region does not
+# silently produce a certificate CloudFront will refuse to attach. `domain.tf` is the
+# only consumer.
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
   default_tags {
     tags = {
       Project   = "spindle"
@@ -170,8 +199,8 @@ resource "aws_ses_domain_dkim" "mail" {
 # Three CNAMEs, which is what DKIM signing needs. Created only when the zone is here to
 # create them in; otherwise `ses_dkim_records` in outputs.tf carries them out.
 resource "aws_route53_record" "ses_dkim" {
-  count   = var.mail_domain == "" || var.mail_route53_zone_id == "" ? 0 : 3
-  zone_id = var.mail_route53_zone_id
+  count   = var.mail_domain == "" || !local.mail_zone_known ? 0 : 3
+  zone_id = local.mail_zone_id
   name    = "${aws_ses_domain_dkim.mail[0].dkim_tokens[count.index]}._domainkey.${var.mail_domain}"
   type    = "CNAME"
   ttl     = 600
@@ -352,15 +381,23 @@ resource "aws_s3_bucket_cors_configuration" "masters" {
 
   cors_rule {
     allowed_methods = ["PUT", "GET", "HEAD"]
-    allowed_origins = [
+    # `compact` because the custom domain is optional: with `dns_domain` unset,
+    # `local.console_host` is "" and an empty string in this list is not a permissive
+    # origin, it is a malformed one that S3 rejects on apply.
+    allowed_origins = compact([
       # The console itself. `function_url` carries a trailing slash and an Origin
       # header never does, so an untrimmed value matches nothing at all.
       trimsuffix(aws_lambda_function_url.console.function_url, "/"),
+      # The same console under its custom domain. Both entries are live at once and
+      # deliberately so — the Function URL keeps answering until an Origin Access
+      # Control closes it (see domain.tf), and dropping it from this list before then
+      # breaks uploads from the address the submission docs still advertise.
+      local.dns_enabled ? "https://${local.console_host}" : "",
       # `dev.sh`, so the upload path can be exercised before it is deployed. This is
       # the one origin here that is not ours, and it is bounded: an attacker who can
       # serve from a victim's localhost:8000 already has the machine.
       "http://localhost:8000",
-    ]
+    ])
     allowed_headers = ["*"]
     expose_headers  = ["ETag"]
     max_age_seconds = 3000
@@ -432,6 +469,17 @@ resource "aws_lambda_function" "console" {
       # console offers uploads. AWS_REGION is provided by the runtime itself, which
       # is why `settings.load` reads it and no region is passed here.
       PLATFORM_MASTERS_BUCKET = aws_s3_bucket.masters.bucket
+
+      # The origin for any URL this deployment puts in front of somebody who is not
+      # holding a session — today that is the listen links in outbound pitches. It must
+      # be absolute: the recipient is reading it in a mail client, where a relative path
+      # resolves against nothing.
+      #
+      # Empty until `dns_domain` is set, and empty is checked rather than defaulted.
+      # `listen.py` raises when asked to mint a link without it instead of falling back
+      # to the Function URL, because a pitch is not the place to discover that this
+      # deployment does not know its own name.
+      PLATFORM_PUBLIC_BASE_URL = local.dns_enabled ? "https://${local.console_host}" : ""
 
       # The console does not invoke the classifier — `analyse_recording` runs in a
       # worker, not in this function. It is set here so the console can *report* the

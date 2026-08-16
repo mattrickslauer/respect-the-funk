@@ -75,12 +75,17 @@ def summary(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
         "leads_failed": int(queue_counts.get("failed", 0)),
         "leads_due": waiting["lead"],
         "suggestions_pending": len(research.pending_suggestions(conn, tenant)),
-        # Stated rather than implied. Nothing claims `outbox` and nothing writes
-        # inbound mail, so a client showing "3 queued" should be able to say why none
-        # of them has left, and a client showing an empty inbox should be able to say
-        # that the table is real and the adapter is not.
-        "sender_wired": False,
-        "inbound_adapter_wired": False,
+        # Stated rather than implied, so a client showing "3 queued" or an empty inbox
+        # can say whether that is the data or the plumbing.
+        #
+        # Both were hardcoded `False` and both were true when written: nothing claimed
+        # `outbox` and nothing wrote inbound mail. `sender.py` closed the first gap and
+        # `040_mailbox.sql` closed the second, at which point these two constants became
+        # the console telling clients an integration is missing while it runs. That is
+        # the failure this repository keeps naming — reporting success is bad, and
+        # reporting absence while working is the same lie pointed the other way.
+        "sender_wired": True,
+        "inbound_adapter_wired": True,
     }
 
 
@@ -277,20 +282,26 @@ def approvals(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]
         rows,
         lambda r: shapes.draft(r, research.rows_draft_basis(conn, tenant, r["thread_id"])),
         queued_unsent=research.count_outbox_pending(conn, tenant),
-        sender_wired=False)
+        sender_wired=True)
 
 
 @router.get("/inbox")
 def inbox(principal: SignedIn, conn: Conn, tenant: Tenant) -> dict[str, Any]:
     """Replies, newest first.
 
-    **Nothing writes these.** There is no mail provider and no inbound adapter, so an
-    empty result here is the correct answer rather than a failed query, and
-    `inbound_adapter_wired` says so in the response instead of leaving a client to
-    conclude that the label has no replies.
+    This used to open "**Nothing writes these.**", and it was accurate: there was no
+    inbound adapter, so an empty result meant an absent integration rather than a quiet
+    label, and `inbound_adapter_wired: false` was how a client could tell.
+
+    `040_mailbox.sql` and `inbound.py` wrote the adapter, so the flag now reports `true`
+    and an empty result means what it appears to mean. What it does **not** claim is that
+    any particular tenant is connected — a tenant with no `mail_account` row receives on
+    the platform identity, and one whose mailbox is in `failed` receives nothing at all.
+    That is per-tenant state and belongs on the account view, not in a deployment-wide
+    boolean that would be answering a different question than the one it is asked.
     """
     return shapes.listing(research.rows_inbox(conn, tenant), shapes.reply,
-                          inbound_adapter_wired=False,
+                          inbound_adapter_wired=True,
                           threads_awaiting_reply=research.count_awaiting_reply(conn, tenant))
 
 

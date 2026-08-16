@@ -260,6 +260,170 @@ class OnDemand(unittest.TestCase):
             bedrock.embed_one(Garbage(), "hello", dimensions=1024)
 
 
+# ----------------------------------------------------------- Cohere on Bedrock
+#
+# The Titan tests above assert the shape of a path that cannot run on this account. These
+# assert the shape of the one that can, and the interesting difference is where the truth
+# lives: Titan reports its token count in the JSON body, Cohere reports it in an HTTP
+# header. Everything that follows from that — a header being a string, being absent, or
+# being nonsense — is a way for a paid call to look free, so it gets its own tests.
+
+
+def _cohere(n: int = 1, dims: int = 1024, fill: float = 0.1) -> dict:
+    return {"embeddings": [[fill] * dims for _ in range(n)],
+            "id": "fake", "response_type": "embeddings_floats",
+            "texts": ["t"] * n}
+
+
+class FakeCohereRuntime:
+    """A `bedrock-runtime` whose response carries headers, as the real one does."""
+
+    def __init__(self, *payloads, tokens="4", raises: Exception | None = None,
+                 headers: dict | None = None) -> None:
+        self.payloads = list(payloads)
+        self.tokens = tokens
+        self.raises = raises
+        self.headers = headers
+        self.calls: list[dict] = []
+
+    def invoke_model(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.raises is not None:
+            raise self.raises
+        payload = self.payloads.pop(0) if self.payloads else _cohere()
+        headers = self.headers
+        if headers is None:
+            headers = {bedrock.COHERE_TOKEN_HEADER: self.tokens}
+        return {"body": io.BytesIO(json.dumps(payload).encode()),
+                "ResponseMetadata": {"HTTPHeaders": headers}}
+
+
+class CohereRequestBody(unittest.TestCase):
+
+    def test_states_input_type_and_truncate_rather_than_defaulting_them(self):
+        body = bedrock.cohere_request_body(["a", "b"], input_type="search_document")
+        self.assertEqual(body, {"texts": ["a", "b"], "input_type": "search_document",
+                                "truncate": "END"})
+
+    def test_an_unknown_input_type_is_refused_before_the_call(self):
+        # The real hazard: a wrong input_type does not error at Cohere, it just retrieves
+        # worse. So it has to be refused locally or it is never noticed at all.
+        with self.assertRaises(bedrock.BedrockUnavailable) as caught:
+            bedrock.cohere_request_body(["a"], input_type="document")
+        self.assertIn("search_document", str(caught.exception))
+
+    def test_over_the_batch_ceiling_is_refused_naming_both_numbers(self):
+        # 97 is a ValidationException that fails the whole call, measured 2026-08-16.
+        texts = ["t"] * (bedrock.COHERE_MAX_BATCH + 1)
+        with self.assertRaises(bedrock.BedrockUnavailable) as caught:
+            bedrock.cohere_request_body(texts, input_type="search_document")
+        self.assertIn(str(bedrock.COHERE_MAX_BATCH), str(caught.exception))
+        self.assertIn("97", str(caught.exception))
+
+    def test_an_empty_text_anywhere_in_the_batch_is_refused_by_position(self):
+        # 95 good vectors and one meaningless one is the failure that never raises.
+        with self.assertRaises(bedrock.BedrockUnavailable) as caught:
+            bedrock.cohere_request_body(["fine", "   ", "also fine"],
+                                        input_type="search_document")
+        self.assertIn("position 1", str(caught.exception))
+
+    def test_no_texts_at_all_is_refused(self):
+        with self.assertRaises(bedrock.BedrockUnavailable):
+            bedrock.cohere_request_body([], input_type="search_document")
+
+
+class ParseCohereOutput(unittest.TestCase):
+
+    def test_happy_path_returns_every_vector_and_the_billed_count(self):
+        got = bedrock.parse_cohere_output(
+            _cohere(n=3), input_tokens="17", count=3, dimensions=1024, where="w")
+        self.assertEqual(len(got.values), 3)
+        self.assertEqual({len(v) for v in got.values}, {1024})
+        self.assertEqual(got.input_tokens, 17)
+
+    def test_a_short_batch_raises_because_it_would_misalign_every_later_row(self):
+        # Every returned vector is well-formed, so nothing downstream would notice that
+        # row 40 is now carrying row 41's counterparty.
+        with self.assertRaises(bedrock.BedrockUnavailable) as caught:
+            bedrock.parse_cohere_output(_cohere(n=2), input_tokens="4", count=3,
+                                        dimensions=1024, where="w")
+        self.assertIn("misalign", str(caught.exception))
+
+    def test_a_nan_is_caught_here_because_nothing_downstream_would(self):
+        payload = _cohere(n=1)
+        payload["embeddings"][0][5] = float("nan")
+        with self.assertRaises(bedrock.BedrockUnavailable) as caught:
+            bedrock.parse_cohere_output(payload, input_tokens="4", count=1,
+                                        dimensions=1024, where="w")
+        self.assertIn("stops ranking", str(caught.exception))
+
+    def test_the_wrong_width_names_the_model_rather_than_the_request(self):
+        # Cohere takes no dimensions argument, so a width change is a model change.
+        with self.assertRaises(bedrock.BedrockUnavailable) as caught:
+            bedrock.parse_cohere_output(_cohere(n=1, dims=768), input_tokens="4",
+                                        count=1, dimensions=1024, where="w")
+        self.assertIn("768", str(caught.exception))
+
+    def test_a_missing_token_header_refuses_rather_than_costing_zero(self):
+        # The whole reason this is tested separately from Titan: the count is not in the
+        # body, so "absent" is a thing that can happen without the response looking wrong.
+        for absent in (None, "", "not-a-number"):
+            with self.subTest(absent=absent), \
+                    self.assertRaises(bedrock.BedrockUnavailable) as caught:
+                bedrock.parse_cohere_output(_cohere(), input_tokens=absent, count=1,
+                                            dimensions=1024, where="w")
+            self.assertIn("uncosted paid call", str(caught.exception))
+
+    def test_a_dict_of_embeddings_is_refused_rather_than_guessed_at(self):
+        payload = _cohere()
+        payload["embeddings"] = {"float": [[0.1] * 1024]}
+        with self.assertRaises(bedrock.BedrockUnavailable) as caught:
+            bedrock.parse_cohere_output(payload, input_tokens="4", count=1,
+                                        dimensions=1024, where="w")
+        self.assertIn("embedding_types", str(caught.exception))
+
+
+class CohereOnDemand(unittest.TestCase):
+
+    def test_sends_the_model_id_and_content_types(self):
+        client = FakeCohereRuntime()
+        bedrock.embed_many_cohere(client, ["hello"], dimensions=1024,
+                                  input_type="search_document")
+        sent = client.calls[0]
+        self.assertEqual(sent["modelId"], bedrock.COHERE_MODEL_ID)
+        self.assertEqual(sent["accept"], "application/json")
+        self.assertEqual(json.loads(sent["body"])["input_type"], "search_document")
+
+    def test_a_width_this_model_cannot_produce_is_refused_before_the_call(self):
+        client = FakeCohereRuntime()
+        with self.assertRaises(bedrock.BedrockUnavailable) as caught:
+            bedrock.embed_many_cohere(client, ["hello"], dimensions=768,
+                                      input_type="search_document")
+        self.assertIn("768", str(caught.exception))
+        self.assertEqual(client.calls, [])
+
+    def test_a_throttle_is_still_translated_to_the_bedrock_type(self):
+        client = FakeCohereRuntime(raises=FakeError("ThrottlingException"))
+        with self.assertRaises(bedrock.BedrockThrottled):
+            bedrock.embed_many_cohere(client, ["hello"], dimensions=1024,
+                                      input_type="search_document")
+
+    def test_missing_response_metadata_is_a_refusal_not_a_free_call(self):
+        client = FakeCohereRuntime(headers={})
+        with self.assertRaises(bedrock.BedrockUnavailable) as caught:
+            bedrock.embed_many_cohere(client, ["hello"], dimensions=1024,
+                                      input_type="search_document")
+        self.assertIn("uncosted paid call", str(caught.exception))
+
+    def test_header_case_does_not_decide_whether_a_call_is_costed(self):
+        # botocore lowercases these, but a dict lookup does not, so this must not depend
+        # on that remaining true.
+        client = FakeCohereRuntime(headers={"X-Amzn-Bedrock-Input-Token-Count": "9"})
+        got = bedrock.embed_many_cohere(client, ["hello"], dimensions=1024,
+                                        input_type="search_document")
+        self.assertEqual(got.input_tokens, 9)
+
+
 # ------------------------------------------------------------------ batch input
 
 class BatchInput(unittest.TestCase):

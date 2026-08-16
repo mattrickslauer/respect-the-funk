@@ -268,19 +268,35 @@ class TheTierTable(unittest.TestCase):
         """Pinned so the pricing UI, which imports these, cannot be silently contradicted
         by an edit here. Changing a price is changing this test, on purpose."""
         free, label, roster, catalogue = plans.TIERS
-        self.assertEqual((0, 5, 1, False), (free.price_usd_month, free.open_conversations,
-                                            free.artists, free.sends_enabled))
+        self.assertEqual((0, 5, 1, True), (free.price_usd_month, free.open_conversations,
+                                           free.artists, free.sends_enabled))
         self.assertEqual((49, 50, 3), (label.price_usd_month, label.open_conversations,
                                        label.artists))
         self.assertEqual((199, 250, None), (roster.price_usd_month,
                                             roster.open_conversations, roster.artists))
         self.assertIsNone(catalogue.price_usd_month)
 
-    def test_the_free_tier_cannot_send(self):
-        """Two locks and this is the second; the first is that nothing sends at all. This
-        one exists so that wiring the sender later does not wire it for free accounts as
-        a side effect."""
-        self.assertFalse(plans.FREE.sends_enabled)
+    def test_the_free_tier_may_send_but_not_from_its_own_address(self):
+        """Replaces `test_the_free_tier_cannot_send`, and the replacement is a product
+        decision rather than a relaxed assertion — so it is worth being explicit about
+        what was traded.
+
+        The old test guarded against sending being wired for free accounts *by accident*,
+        back when nothing sent at all. Sending is wired now (`sender.py` drains the
+        outbox), and the decision taken on 2026-08-16 is that a free tenant sends through
+        the platform's SES identity: an outreach product a prospect cannot watch work is
+        not a trial of anything.
+
+        What actually holds the line has moved rather than disappeared, and this test now
+        pins both halves. A free tenant may send (`sends_enabled`), and may **not** send
+        from their own connected mailbox (`connects_mailbox`) — that is the paid boundary,
+        and it is the one with a real per-tenant cost behind it, a stored credential in
+        Secrets Manager. The volume ceiling is unchanged and asserted below and in
+        `test_the_free_tier_has_a_small_money_ceiling`.
+        """
+        self.assertTrue(plans.FREE.sends_enabled)
+        self.assertFalse(plans.FREE.connects_mailbox)
+        self.assertEqual(plans.FREE.open_conversations, 5)
 
     def test_the_free_tier_has_a_small_money_ceiling(self):
         """`POST /claim` is public. This number is what stops an account that gets

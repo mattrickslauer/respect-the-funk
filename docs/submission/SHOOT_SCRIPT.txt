@@ -1,452 +1,210 @@
 ===============================================================================
-SHOOT SCRIPT — "What did it believe, when it acted?"
-Spindle / CockroachDB x AWS Hackathon
+SHOOT SCRIPT — Spindle
+CockroachDB x AWS Hackathon · 2026-08-16
 ===============================================================================
 
-STATUS      DRAFT FOR REVIEW. Not binding until the Day-4 gate in the build
-            plan passes.
-SUPERSEDES  docs/submission/DEMO_SCRIPT.md, written for the pre-build state,
-            whose "what must not be said" forbids four things this depends on.
-            See CHANGES FROM DEMO_SCRIPT.md at the bottom.
-RUNTIME     393 spoken words. 2:48 read straight at 140 wpm; 2:26 at 115%.
-            That leaves ~34s of headroom under the 3:00 cap, and the headroom
-            is the point: it buys long holds on the EXPLAIN, the two rankings
-            and the region failure. Silence on a readable terminal is not dead
-            air — it is the evidence. Counts below are measured, not estimated;
-            re-measure after editing any VO block.
-DATE        2026-08-13
+The words you say are in SHOOT_VOICEOVER.txt and nowhere else. That file is the
+script. This one is what goes around it.
+
+FORMAT   One continuous take to camera at a desk. Visuals go on top afterwards.
+         The take has to stand on its own.
+RUNTIME  461 words. 3:11 at 145 wpm · 2:58 at 155 · 2:48 at 165.
+         Read it cold once and time it. If you're slow, the first thing out is
+         the reply-token line, then the second residency line.
+CTA      Ends on spindle.mattrickslauer.com. Verified live and serving today —
+         200 on / and /manual, correct titles, CloudFront in front of Route 53.
 
 
 -------------------------------------------------------------------------------
-THE THESIS, IN ONE SENTENCE
+WHAT THE VIDEO HAS TO DO, IN ORDER
 -------------------------------------------------------------------------------
 
-    We map the music industry into a vector index and then mail real human
-    beings, one at a time — and CockroachDB is the only reason we can do that
-    in the right jurisdiction and prove afterwards what we believed when we
-    did it.
+    1. Say what this is and why anyone should care.        (first 25 seconds)
+    2. Make precision the thing everything depends on.
+    3. Show the machine is real and runs itself.
+    4. Land the one thing only CockroachDB can do.
+    5. Tell them where to go.
 
-Every beat serves that sentence. If a shot does not advance it, cut it, however
-good it looks. No brand story. No founder story. No feature tour.
+Earlier drafts opened on internal machinery — a budget raise, a row count — and
+never answered (1) at all. A viewer who doesn't know what the product is has no
+reason to care that the shortlist is a filtered vector search.
 
+So the opening is now the label's actual problem: finding the few hundred
+people who might play a record, and writing to each of them personally, which
+is weeks of work that most labels simply never do. *So most records just
+disappear.* That's the line that buys the next two and a half minutes.
 
--------------------------------------------------------------------------------
-THREE RULES THAT GOVERN EVERY BEAT
--------------------------------------------------------------------------------
-
-1. EVERY CLAIM IS ON SCREEN AS OUTPUT, not asserted by a voice. Show the
-   EXPLAIN. Show the refusal. Show SHOW RANGES. A judge who mutes the audio
-   should still be able to verify the argument.
-
-2. THE VIDEO AND THE REPOSITORY ARGUE THE SAME THING. Assume the judge never
-   opens the app and the repo is read by a model. TOOLS.md and the sponsor
-   audit are what gets read when the video ends.
-
-3. CONCEDE THE REPLACEABLE PARTS. Volunteering that pgvector could serve the
-   retrieval is what makes beats 4 and 5 land. A pitch that claims everything
-   is unique gets nothing believed.
+The autonomous budget raise moved from the cold open to two-thirds in. It's a
+much stronger beat once the viewer knows what's spending the money.
 
 
 -------------------------------------------------------------------------------
-THE ARC — SIX BEATS
+NO NUMBERS. ANYWHERE.
 -------------------------------------------------------------------------------
 
-    #  BEAT                             WORDS  @115%  WEIGHT     DEPENDS ON
-    1  The problem is precision            32    11s  setup      W6
-    2  The filters are inside the index    81    28s  proof      (built)
-    3  The database is the runtime         90    31s  proof      W2
-    4  The row lives where the law says    77    27s  ARGUMENT   W1
-    5  What did it believe, when it acted? 80    28s  ARGUMENT   W3
-    6  Close                               33    11s  landing    W7
-                                         -----  -----
-                                           393   2:26
-
-    Beats 4 and 5 are the video. Everything before them is earning the right to
-    make those two claims; everything after is getting out of the way. If you
-    are over time, cut from 1, 2 and 6 — never from 4 or 5.
-
-    Previous draft had seven beats. The lease-token beat merged into beat 3:
-    it shared a kill -9 with the changefeed beat, and by its own admission
-    argued correct engineering rather than irreplaceability. One strong beat
-    beats two adjacent ones.
-
-
-===============================================================================
-BEAT 1 — THE PROBLEM IS PRECISION, NOT REACH
-===============================================================================
-
-SCREEN
-    Terminal. One query, one number, held:
-
-        SELECT count(*) FROM party WHERE party_class = 'counterparty';
-         count
-        --------
-          14170        <- FILM THE REAL NUMBER ON THE DAY
-
-    Cut to a shortlist for one artist. Five rows, genre beside each.
-
-VO
-    A hundred and seventy thousand radio stations, curators and shows. For any
-    given single, maybe two hundred of them matter.
-
-    Miss by a little, and you are not marketing. You are spam.
-
-WHY
-    States the problem as a retrieval problem and puts the N on screen before
-    anyone thinks to ask. "You are spam" is the stake — it makes precision a
-    moral constraint rather than a performance metric, which is what licenses
-    the whole rest of the video.
-
-DEPENDS ON  W6, and as of 2026-08-13 W6 IS BLOCKED, so the fallback is the
-            script. The Podcast Index adapter, its migration, its ingest stage
-            and its worker are all built and tested; ingesting needs an API key
-            (PODCASTINDEX_API_KEY / PODCASTINDEX_API_SECRET) that nobody has
-            requested yet. Signing up is free and takes minutes — if somebody
-            does it, the corpus moves and this number moves with it.
-FALLBACK    Say fourteen thousand, which is what the cluster holds. It works
-            identically, because the beat is about the RATIO — a few hundred
-            that matter out of everything — and not about the magnitude. Never
-            round up, and do not say "and growing" unless it is.
-
-            The evidence corpus behind R2 is a separate and genuinely complete
-            number worth having ready if asked: 22,057 chunks over 14,018
-            parties, every one of them embedded on 2026-08-13.
-
-
-===============================================================================
-BEAT 2 — THE FILTERS ARE INSIDE THE INDEX
-===============================================================================
-
-SCREEN
-    EXPLAIN, full frame. Hold it long enough to actually read. Highlight
-    "vector search" and "prefix spans".
-
-        • vector search
-            table: party@party_shortlist
-            target count: 20
-            prefix spans: [/'1f9e6dd3…'/'openai:text-embedding-3-small'
-                           /'counterparty'/'contactable' - …]
-
-    Then two seconds of the static test failing against a deliberately broken
-    query — proof the assertion is real and not decoration.
-
-VO
-    This is CockroachDB's vector index. Look at the plan: the filters live
-    inside the index prefix. Tenant, model, contactable. The search runs in the
-    filtered subspace — not a scan with a WHERE clause bolted on afterwards.
+There is not a single digit in the spoken script — checked programmatically.
+There should not be one in the visuals either.
 
-    And that prefix starts with tenant_id. The same column a static test proves
-    every single statement in this codebase carries.
-
-    One column. Our security boundary and our partition key at once.
+Nobody remembers that the index holds forty-three thousand rows, and nobody
+was going to be convinced by it. Worse, a number is the only kind of claim a
+viewer can catch you on. Counts, costs and row totals are out of the voice and
+out of the overlays.
 
-    pgvector can do the similarity. It cannot make one decision do both jobs.
+What replaces them is the point of the next section: pictures that make a
+concept obvious in two seconds. A query plan held on screen for eight seconds
+is a wall of text that reads as "technical" and communicates nothing. A
+diagram of the same idea lands before the sentence describing it finishes.
 
-WHY
-    "prefix spans" is the detail a technical judge reads as real. But the
-    second half is the strongest idea in the system and has never been said out
-    loud: filtered ANN and multi-tenant isolation fall out of ONE schema
-    decision. Correctness and performance from the same column.
+
+-------------------------------------------------------------------------------
+THE VISUALS — CONCEPTS, NOT SCREENSHOTS
+-------------------------------------------------------------------------------
+
+Ranked. If you only build three, build 1, 2 and 3.
+
+RANK 1 · THE FILTERED SUBSPACE                            (over the index beat)
+    A dense field of dots — everyone in the industry. Three labelled gates
+    close in sequence (tenant, model, contactable) and all but a wedge of the
+    field greys out. The search then happens *inside* the wedge: a point drops
+    in, nearest neighbours light up.
+    Cut against the wrong version for half a second: search the whole field
+    first, then throw most results away. The contrast is the whole beat.
 
-    The concession in the last line is doing work. It is the first of two
-    places we hand the opposition its best argument, which is what makes the
-    irreplaceable beats credible when they arrive.
+RANK 2 · THE TIME SLIDER                                  (over the replay beat)
+    A valuation card with a few bars on it. A timeline runs underneath with a
+    marked point labelled "decided here". Drag the playhead back to the mark
+    and the bars visibly change to different values — then a tick appears:
+    re-run, same answer.
+    This is the money shot. It explains AS OF SYSTEM TIME to someone who has
+    never heard of it, in about three seconds, with no SQL on screen.
 
-DEPENDS ON  Nothing. Already true, already asserted by test_vector_plans.py on
-            every run.
-NOTE        Re-run EXPLAIN on the day and film the real output. The model string
-            reads openai:text-embedding-3-small and will keep reading it — see
-            WHAT MUST NOT BE SAID item 6. That changes nothing about this beat:
-            the argument is the prefix spans, not whose embeddings fill them.
+RANK 3 · THE MAP                                        (over the residency beat)
+    One table icon. Two pins, Virginia and Ireland, with a line from the table
+    to each. Then the US region greys out and the line to Ireland stays lit
+    while the query keeps returning. No `SHOW RANGES` output.
 
+RANK 4 · THE CHAIN                                       (over the runtime beat)
+    A central database pulsing; agents light up one after another as the pulse
+    reaches them — never agent-to-agent, always through the middle. Then half
+    the agents go black and the pulse simply routes around them.
+    Immediately after: two identical worker icons reach for the same row. One
+    gets a key, the other's hand bounces off it.
 
-===============================================================================
-BEAT 3 — THE DATABASE IS THE RUNTIME
-===============================================================================
+RANK 5 · THE INDEX FILLING UP                       (over the "never finished")
+    The same dot field from Rank 1, with new facts landing on records as small
+    bright pulses — continuous, ambient, under the whole line. This one is
+    texture rather than explanation, and it sets up the replay beat: things
+    keep changing, which is why the old numbers are gone.
 
-SCREEN
-    Three moves, fast:
+RANK 6 · THE TOKEN                                        (over the reply line)
+    An envelope leaves carrying a coloured tag. It comes back with the same
+    tag. The tag snaps it onto the right thread in a list.
 
-    1. SHOW CHANGEFEED JOBS — one running job. A row written to outbox, and
-       with no poller running anywhere, an agent run appears two seconds later.
-    2. kill -9 across half the fleet. The work still completes.
-    3. lease_race_demo.py Act 2 — both workers named ingest-cli:
+TEXTURE, NOT INFORMATION
+    A second or two of real terminal output is worth having as a flash — the
+    EXPLAIN with `prefix spans`, the lease race refusing a second worker — so
+    it's visible that this is a running system. Never long enough to read.
+    If a viewer is reading, they've stopped listening.
 
-           terminal 1 claims b844314c…  owner=ingest-cli  token=2bb498ed…
-           terminal 2 claims b844314c…  owner=ingest-cli  token=6f72beda…
-           terminal 1 tries to complete -> REFUSED: lease lost
-           terminal 2 completes         -> OK
 
-VO
-    No orchestrator. Agents never call each other — a changefeed on the memory
-    tables wakes the next one. The database is the event bus.
-
-    So kill half the fleet mid-run. The work still finishes. A dead worker's
-    lease expires and the row comes back on its own.
-
-    And the one thing we can never take back — the send — commits its claim
-    before the network call. Two workers, same name, one lead. The name cannot
-    tell them apart. The token can.
-
-    Serializable by default. A fence that fails closed.
-
-WHY
-    The brief's headline criterion is "memory as integral to agent
-    functionality — not supplementary". This is the sharpest available answer:
-    the memory layer is not where agents look things up, it is what makes them
-    run at all. A row changing IS the scheduling primitive.
-
-    Merging the lease token in here is what makes the beat land. Alone it was a
-    correctness footnote; here it completes the thought — the database starts
-    the work AND refuses the work that should not happen. Same substrate, both
-    directions.
-
-    A missed pitch costs nothing. A second pitch to a curator who already got
-    one costs us that curator permanently. That asymmetry is why the fence
-    fails closed.
-
-DEPENDS ON  W2 (changefeed to Lambda). The lease half is already built.
-FALLBACK    If W2 slipped, cut the first paragraph and open on kill -9. Do NOT
-            soften it to "the database could wake agents" — SHOW CHANGEFEED
-            JOBS returning nothing is a ten-second falsification. The beat
-            still works as a resilience-and-refusal beat.
-
-
-===============================================================================
-BEAT 4 — THE ROW LIVES WHERE THE LAW SAYS
-===============================================================================
-
-    *** ARGUMENT BEAT. Slow down. Let the two rows sit on screen. ***
-
-SCREEN
-    SHOW RANGES FROM TABLE contact_route. Two rows, side by side, held:
-    one US contact on us-east-1 replicas, one EU contact on eu-west-1.
-    Same table. Same query. Different continents.
-
-        SHOW SURVIVAL GOAL FROM DATABASE defaultdb;   ->  region
-
-    Then take a region offline. The shortlist keeps answering.
-
-VO
-    We email real people. So we hold real data about them — and European law
-    says where that data may live.
-
-    Same table. Same query. This row is in Virginia. This one is physically in
-    Ireland, because she is a European contact.
-
-    One logical table. Residency per row, enforced by the database instead of
-    by us remembering. In Postgres that is three databases and a
-    synchronisation problem you own forever.
-
-    Now lose a region. It keeps answering.
-
-WHY
-    This answers "why not Postgres" with no hedging at all.
-
-    It matters that it is contact_route specifically. That table holds personal
-    data for named individuals our agents actually contact. This is not a
-    synthetic demo of a feature — it is the one table where residency is a
-    legal obligation rather than an architectural preference.
-
-    "Because she is a European contact" is deliberate. A person, not a row.
-    The whole video is about a system that acts on people.
-
-DEPENDS ON  W1 (three-region cluster, REGIONAL BY ROW, SURVIVE REGION FAILURE).
-FALLBACK    CUT THE BEAT ENTIRELY and say nothing about regions. SHOW REGIONS
-            on Basic returns one row and a judge checks it instantly. Beat 5
-            can carry the irreplaceability argument alone — it is strong enough.
-IMPORTANT   The hosted demo runs single-region on Basic. This beat is filmed
-            against an ephemeral cluster stood up from committed Terraform and
-            torn down after. THE SUBMISSION TEXT MUST SAY SO PLAINLY. See WHAT
-            MUST NOT BE SAID, item 1.
-
-
-===============================================================================
-BEAT 5 — WHAT DID IT BELIEVE, WHEN IT ACTED?
-===============================================================================
-
-    *** THE CENTREPIECE. Give it the most room. Nothing else in this video is
-        Postgres-impossible at any price. This is. ***
-
-SCREEN
-    A sent message in the console. Click through to the ranking that justified
-    it. Then the same shortlist query, twice, side by side:
-
-        - now
-        - AS OF SYSTEM TIME, at the exact timestamp stamped on that send
-
-    Different rankings. Same query. Highlight the four words of SQL, and the
-    lesson row that moved her.
-
-VO
-    We emailed this curator on Tuesday. Why her?
-
-    Here is the same shortlist, re-run against the memory exactly as it was at
-    the moment we sent. Same index. Same embeddings. Same lesson that moved her
-    up four places.
-
-    Four extra words of SQL. No audit table. No event log. No versioned copy of
-    anything.
-
-    Every agentic system can tell you what it knows. This one tells you what it
-    believed, when it acted.
-
-    Postgres cannot do that at any price.
-
-WHY
-    Every agentic memory demo answers "what does the agent know". Almost none
-    answers "why did it decide that, THEN" — because answering it normally
-    means building an event-sourcing subsystem: temporal tables, a versioned
-    copy of every embedding, an audit log of every rerank. And even then you
-    only replay what you thought in advance to record.
-
-    AS OF SYSTEM TIME replays state nobody chose to record — including the
-    vector ranking itself. That is the difference between an audit log and a
-    time machine.
-
-    "What it believed, when it acted" is the line the whole video is built to
-    earn. Do not step on it. Let it sit before the close.
-
-    The moral weight is the point: this system emails strangers. Reconstructing
-    the exact belief state behind an irreversible act is not a feature. It is
-    the condition for being allowed to run it at all.
-
-DEPENDS ON  W3 (time travel on the production path + outreach audit trail).
-CONSTRAINT  Reachable depth is governed by gc.ttlseconds and is roughly TEN
-            HOURS today, not seven days — the GC threshold only moves forward
-            from when it was raised. Pick a send inside the window. If asked:
-            "seven days of retention from the day we raised it; ten hours
-            available today."
-
-
-===============================================================================
-BEAT 6 — CLOSE
-===============================================================================
-
-SCREEN
-    SELECT sum(cost_micro_usd)/1e6 FROM agent_run;   -> film the real number.
-    The console's natural-language box: a question typed in English, answered
-    over the catalogue through the Cloud Managed MCP Server.
-    Then: node_count: 0.
-
-VO
-    One database. The index, the scheduler, the outbox, the event bus, the
-    audit log. Ask it questions in English.
-
-    It scales to zero between releases.
-
-    All of that cost less than a coffee.
-
-WHY
-    Consolidation is the practical argument under the whole video: not Postgres
-    plus a vector store plus Redis plus a queue plus an audit pipeline. One
-    system, five jobs, zero nodes at rest.
-
-    The MCP flash is deliberate — it satisfies the second required CockroachDB
-    tool by being a product feature rather than developer tooling.
-
-    End on cost because it reframes everything above as achievable rather than
-    expensive. The judge should finish thinking "I could build on this", not
-    "that must have taken a team".
-
-DEPENDS ON  W7 (MCP in the console).
-FALLBACK    Drop the English-question clause and that shot. Vector indexing
-            plus the ccloud CLI already satisfies 2-of-4, so nothing breaks.
-
-
-===============================================================================
-WHAT MUST BE TRUE BEFORE THE CAMERA ROLLS
-===============================================================================
-
-Nothing here may be filmed against a claim that is not true on the day.
-
-  [ ] W6 — corpus at its measured cap; the count on screen is real.
-  [ ] W4 — party_fact and party_chunk backfilled, so R2 retrieval is not an
-      empty table sitting behind a confident sentence.
-  [ ] W2 — SHOW CHANGEFEED JOBS returns a running job, or beat 3 opens on
-      kill -9 instead.
-  [ ] W3 — at least one real send exists WITH its as-of timestamp recorded,
-      and at least one lesson row, so beat 5 shows two genuinely different
-      rankings rather than the same list twice. THIS IS THE LONG POLE.
-  [ ] W1 — ephemeral three-region cluster up, REGIONAL BY ROW applied,
-      SHOW RANGES filmed, cluster torn down after. Or beat 4 is cut.
-  [ ] Re-run every EXPLAIN and every count on the day. The plans are asserted
-      by tests, but film the real output, never this file's copy of it.
-  [ ] One real send to a verified address. SES sandbox is sufficient.
-
-
-===============================================================================
-WHAT MUST NOT BE SAID
-===============================================================================
-
-1. DO NOT IMPLY THE HOSTED DEMO IS MULTI-REGION. It runs on Basic,
-   single-region. Beat 4 is filmed against an ephemeral cluster. The submission
-   must say, in plain words: "the hosted demo runs single-region; the
-   multi-region topology is reproducible from the committed Terraform in under
-   twenty minutes and is shown in the video." A claim a judge can falsify with
-   one SHOW REGIONS is worse than no claim — and that rule does not relax
-   because the capability is real but not currently deployed.
-
-2. NO SCALE CLAIMS. 175k is twelve times where we started and enough to make
-   the index necessary. It is not a distributed-systems problem, and saying it
-   is invites the one comparison we lose. Label the benchmark with its N.
-
-3. DO NOT CLAIM SEVEN DAYS OF TIME TRAVEL. Ten hours is what the cluster can
-   serve today.
-
-4. DO NOT CLAIM ANY BEAT WHOSE WORKSTREAM SLIPPED. Every beat has a fallback
-   for exactly this reason. Cutting a beat costs fifteen seconds. Getting
-   caught costs the submission.
-
-5. NO FEATURE TOUR. Every capability named here is named because it does a job
-   in this product. If it has no job, it is not in the video, however
-   impressive it sounds.
-
-6. DO NOT CLAIM BEDROCK. It is implemented and unreachable on this account, and
-   both walls were measured rather than assumed:
-
-     - on-demand inference quota is 0 requests/minute, and Service Quotas marks
-       it Adjustable: false (L-26C560CE), so it cannot be raised;
-     - batch inference returns "Your account is not authorized to perform this
-       action. Please create a support case" — reproduced in us-east-1 and
-       us-west-2, with a real IAM role and a real bucket, while
-       simulate_principal_policy says the caller IS allowed.
-
-   The Service Quotas table publishes batch's 100k-records-per-job row for every
-   account whether or not batch is switched on, which is what misled two earlier
-   passes at this: a quota is a number, an entitlement is a permission.
-
-   Embeddings are openai:text-embedding-3-small and will be on the 18th. AWS is
-   satisfied by Lambda and S3, which are real and in use. The Bedrock adapter
-   stays in the tree as the demonstrated-correct path behind a switch AWS throws;
-   that is a sentence for the repository, not for the video.
-
-
-===============================================================================
-CHANGES FROM DEMO_SCRIPT.md (2026-08-11)
-===============================================================================
-
-DEMO_SCRIPT.md forbade four things because they were not built. This script
-depends on all four, and each is now a workstream with an acceptance test:
-
-    changefeed      forbidden 08-11  ->  beat 3, gated on W2
-    multi-region    forbidden 08-11  ->  beat 4, gated on W1
-    Bedrock         forbidden 08-11  ->  STILL FORBIDDEN, and now for a measured
-                                        reason rather than an unbuilt one. See
-                                        item 6 below.
-    scale           forbidden 08-11  ->  beat 1, gated on W6, still labelled
-
-The prohibition was correct on 08-11 and remains correct for anything that does
-not land. The gates, not the ambition, are what keep this honest.
-
-Structural changes from that draft:
-
-  - Seven beats became six. The lease-token beat merged into beat 3.
-  - Beat 5 (time travel) moves from a demo endpoint onto the production path,
-    which turns it from a capability claim into a product claim.
-  - Beat 2 gains the tenant_id argument, which existed in the schema since
-    migration 009 and has never appeared in any pitch.
-  - The title changed. "What did it believe, when it acted?" is the question
-    the product answers and no competitor's will.
-
-===============================================================================
+-------------------------------------------------------------------------------
+SHOOTING IT
+-------------------------------------------------------------------------------
+
+Desk, chest-up, eyeline on the lens. One frame throughout — the visuals are
+the variety, and a moving camera fights them.
+
+Audio is the product. Mic within a foot, off-axis, out of frame. Record 30
+seconds of room tone before you start; the editor needs it at every seam and
+can't make it later.
+
+One take, then two more. Don't shoot it beat by beat — the pacing is relative
+and a stitched take loses it.
+
+Four pauses that have to be performed. A pause made in the edit is silence; a
+pause you performed is a thought.
+
+    after "most records just disappear"
+    after "you're spam"
+    after "the token can"
+    after "Not a copy of them. Them."      (count two)
+
+The shortest sentence in each stretch is the one that lands. Slow it by half:
+"Spindle does it." · "You're spam." · "The token can." · "Them."
+
+The last line is a dare, not a plea. Say "go and break it" like you mean it.
+
+Never say "as you can see."
+
+
+-------------------------------------------------------------------------------
+WHAT YOU NEED WORKING BEFORE YOU ROLL
+-------------------------------------------------------------------------------
+
+Not an audit — just what has to exist for there to be footage.
+
+N1  A REAL BUDGET RAISE, MADE THE MORNING OF THE SHOOT.
+    `budget_raise`, `recording_budget` and `autonomy` are all empty, and every
+    row in `decision` came from the seeder. The replay beat has nothing to
+    point at until you make one.
+
+    Do it on the day: set an autonomy policy, let the planner propose a raise
+    over the ceiling, approve it. That writes a real decision with a real
+    `at_hlc`. It has to be the same day regardless — time travel only reaches
+    back about ten hours, and this morning's seeded rows are already outside
+    it. I tried replaying one and got "must be after replica GC threshold."
+
+N2  A running changefeed. Zero right now. If it stays that way, drop "a
+    changefeed on the memory tables wakes the next one" and open on "So kill
+    half the fleet." The beat still works.
+
+N3  Inbound mail. `040_mailbox.sql` isn't applied, so the tables don't exist on
+    the cluster. Code and tests are green; nothing has run against a real
+    mailbox. If it stays red, cut the reply-token line — it's your first cut
+    for time anyway.
+
+N4  Three-region cluster for the map beat. `SHOW REGIONS` returns one row
+    today. Stand the ephemeral one up from the committed Terraform, film it,
+    tear it down.
+
+
+-------------------------------------------------------------------------------
+THE THREE THINGS NOT TO SAY
+-------------------------------------------------------------------------------
+
+Short list, because with no numbers in the script most of the exposure is gone.
+
+1  DON'T IMPLY THE HOSTED DEMO IS MULTI-REGION. It runs single-region. The
+   residency beat is shot on an ephemeral cluster from committed Terraform,
+   and the submission text should say so in one plain sentence. It's the one
+   claim a judge can check without leaving their seat.
+
+2  DON'T SAY A CONTACT IS EUROPEAN. Every contact route we hold with a country
+   on it reads US. "This one is physically in Ireland" describes the row on
+   screen, and that's where it stops.
+
+3  DON'T CLAIM BEDROCK. Implemented, unreachable on this account, both walls
+   measured. Embeddings are OpenAI. AWS is covered by Lambda, S3, SES and
+   Secrets Manager, all real and in use.
+
+If asked directly: no curator has replied to a pitch yet, and no artist has
+granted the Instagram audience scope. Both are built, both are empty. Neither
+belongs in the video.
+
+
+-------------------------------------------------------------------------------
+NUMBERS — FOR ANSWERING QUESTIONS ONLY
+-------------------------------------------------------------------------------
+
+Measured against `respect-the-funk` on 2026-08-16. None of these goes in the
+script or on screen. They're here so you have an answer if someone asks.
+
+    counterparties indexed    43,191
+    carrying an embedding     33,300
+    live facts                111,189
+    contact routes            2,351, over 439 reachable counterparties
+    countries in the index    90
+    agent runs                81,038
+    total spend               $0.267263
+    tests                     880 passing, 393 skipped
+    time travel depth         about 10.5 hours

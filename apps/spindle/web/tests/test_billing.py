@@ -37,7 +37,7 @@ def _settings(**overrides) -> settings_mod.Settings:
     argument is about one level up.
     """
     base = dict(
-        database_url="", masters_bucket="",
+        database_url="", masters_bucket="", public_base_url="", env="test",
         region="us-east-1", classifier_function="", mail_sender="", mail_reply_to="",
         mail_postal_address="", cockroach_api_key="", cockroach_cluster_id="",
         mcp_url="", openai_api_key="",
@@ -797,6 +797,14 @@ class TheTemplatesDoNotAssertWhatALiveDeploymentFalsifies(unittest.TestCase):
     into the template context, Jinja would compare `Undefined != 'live'`, get `True`, and
     render both sentences again — on a live deployment, under a button that charges a
     card, with no error anywhere. So this checks the guard *and* the variable feeding it.
+
+    Narrowed to the console on 2026-08-16. The landing page's copy went the other way:
+    rather than guard a disclaimer it does not need, it stopped making one. A public
+    pricing page read by somebody deciding whether to buy has no business reporting
+    which Stripe key the deployment holds or what has not been built yet, so the
+    sentence, the mode badge and the "what this page does not claim" note were deleted
+    outright. `AGainstTheLandingPageTalkingAboutItself` below keeps them gone; the
+    account page is signed-in and still says what it says, behind the guard.
     """
 
     LANDING = "spindle/templates/landing.html"
@@ -804,7 +812,6 @@ class TheTemplatesDoNotAssertWhatALiveDeploymentFalsifies(unittest.TestCase):
 
     #: (template, sentence). Each must sit behind a live-mode guard.
     GUARDED = (
-        (LANDING, "No customer is paying for this today"),
         (ACCOUNT, "Nothing on this page has ever been billed"),
     )
 
@@ -832,11 +839,13 @@ class TheTemplatesDoNotAssertWhatALiveDeploymentFalsifies(unittest.TestCase):
 
     def test_live_mode_renders_a_badge_of_its_own(self):
         """`stripe_test_mode` is false for live *and* for unconfigured, so a template
-        branching only on it leaves the loudest state as the silent one."""
-        for relative in (self.LANDING, self.ACCOUNT):
-            with self.subTest(template=relative):
-                source = self._read(relative)
-                self.assertIn("stripe_mode == 'live'", source)
+        branching only on it leaves the loudest state as the silent one.
+
+        The console only: the landing page no longer branches on Stripe's mode at all,
+        which is the stronger version of this guarantee — there is no state left for it
+        to report wrongly."""
+        source = self._read(self.ACCOUNT)
+        self.assertIn("stripe_mode == 'live'", source)
 
     def test_the_context_actually_carries_stripe_mode(self):
         """Without this the guards above degrade to always-true and say so to nobody."""
@@ -867,3 +876,73 @@ class TheTemplatesDoNotAssertWhatALiveDeploymentFalsifies(unittest.TestCase):
         self.assertEqual(
             "CLAIM",
             template.render(stripe_mode="unconfigured", stripe_test_mode=False))
+
+
+class AGainstTheLandingPageTalkingAboutItself(unittest.TestCase):
+    """Added 2026-08-16.
+
+    The landing page is the one surface read by somebody who has not bought anything
+    yet, and it had accumulated a register borrowed from a submission document: which
+    Stripe key the deployment was holding, what had not been built, what nobody had been
+    billed for, how the numbers on the page were obtained. None of it is an argument for
+    buying and some of it actively undersells — an aside explaining that a capability
+    does not exist yet reads as a warning to a customer and as candour only to a
+    reviewer.
+
+    This is a grep rather than a render because the failure mode is somebody adding one
+    sentence back, in good faith, in six months. It checks the rendered body only: the
+    Jinja comments explaining *why* the copy went are meant to survive, and a naive
+    substring search over the whole file would forbid the explanation along with the
+    thing explained.
+    """
+
+    LANDING = "spindle/templates/landing.html"
+
+    #: Substrings that may not appear in anything the reader sees. Each was on the page
+    #: before this test existed.
+    BANNED = (
+        "Stripe live mode",
+        "Stripe test mode",
+        "What this page does not claim",
+        "No customer is paying for this today",
+        "No payout path exists",
+        "every number queried on page load",
+        "a judge stops",
+    )
+
+    def _body(self) -> str:
+        """The template with its Jinja comments stripped, i.e. roughly what a reader
+        gets. `{# ... #}` is non-greedy and spans newlines; nothing else in this file
+        produces that delimiter pair."""
+        import re
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent.parent
+        source = (root / self.LANDING).read_text(encoding="utf-8")
+        return re.sub(r"\{#.*?#\}", "", source, flags=re.S)
+
+    def test_none_of_the_retired_meta_copy_came_back(self):
+        body = self._body()
+        for phrase in self.BANNED:
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(
+                    phrase, body,
+                    f"{phrase!r} is back on the landing page. It describes the state of "
+                    f"the deployment or of the page rather than the product, which is "
+                    f"not what this surface is for.")
+
+    def test_the_comment_stripper_actually_strips(self):
+        """The test above is only as good as `_body`. A stripper that silently returned
+        the file unchanged would make every assertion above pass for the wrong reason —
+        no, harder: it would make them *fail* loudly, since the comments quote the banned
+        phrases. This pins the behaviour either way."""
+        import re
+
+        stripped = re.sub(r"\{#.*?#\}", "", "a{# b #}c{# d\ne #}f", flags=re.S)
+        self.assertEqual("acf", stripped)
+
+    def test_the_body_is_not_accidentally_empty(self):
+        """A stripper that ate the whole file would also pass the ban list."""
+        body = self._body()
+        self.assertIn("Spindle remembers who said yes", body)
+        self.assertGreater(len(body), 20_000)

@@ -1,6 +1,39 @@
+# The console's canonical address: the custom domain once `dns_domain` is set, and the
+# Function URL until then. One output rather than two so that everything downstream —
+# the submission docs, a curl in a runbook, whoever is being shown the demo — reads the
+# address that is actually meant to be used, without having to know which stage of the
+# domain migration this deployment is in.
+#
+# The Function URL is still published below, because it keeps answering (domain.tf says
+# why it is not closed in the same change) and because a name that has not propagated yet
+# is not a name you can debug with.
 output "console_url" {
-  value       = aws_lambda_function_url.console.function_url
+  value       = local.dns_enabled ? "https://${local.console_host}" : aws_lambda_function_url.console.function_url
   description = "The console. This is the demo URL PLATFORM-SPEC §8 day 12 requires."
+}
+
+output "console_function_url" {
+  value       = aws_lambda_function_url.console.function_url
+  description = "The origin behind the domain, still open. Use it to tell a DNS problem from an app problem."
+}
+
+# **The one manual step left in the DNS migration.** Route 53 is authoritative for this
+# domain only once these four nameservers replace `dns1/dns2.registrar-servers.com` at
+# the registrar. Everything in dns.tf is inert until that happens — which is the safe
+# ordering, not a caveat: the zone is fully built and checkable before any resolver is
+# asked to consult it.
+#
+# Nothing downstream can proceed past this either. `aws_acm_certificate_validation`
+# resolves its record over public DNS, so the certificate stays PENDING_VALIDATION and
+# the apply waits here until the switch is made.
+output "dns_nameservers" {
+  description = "Set these as the domain's nameservers at the registrar. Empty when dns_domain is unset."
+  value       = local.dns_enabled ? aws_route53_zone.main[0].name_servers : []
+}
+
+output "dns_zone_id" {
+  description = "The hosted zone. Also what mail_route53_zone_id would have been, had it needed setting by hand."
+  value       = local.dns_enabled ? aws_route53_zone.main[0].zone_id : ""
 }
 
 output "function_name" {
@@ -41,7 +74,7 @@ output "changefeed_webhook_url" {
 output "ses_dkim_records" {
   description = "CNAMEs to add manually when mail_route53_zone_id is unset."
   value = (
-    var.mail_domain == "" || var.mail_route53_zone_id != ""
+    var.mail_domain == "" || local.mail_zone_known
     ? []
     : [for token in aws_ses_domain_dkim.mail[0].dkim_tokens : {
       name  = "${token}._domainkey.${var.mail_domain}"
@@ -82,9 +115,13 @@ output "outreach_mail_configured" {
 # failing when sign-in codes landed in spam.
 #
 # The MX value is region-specific: `feedback-smtp.<region>.amazonses.com`.
+#
+# Empty once `dns_domain` is set, on the same argument as `ses_dkim_records` above:
+# `aws_route53_record.mail_from_mx` and `_spf` now create these, and printing them anyway
+# would invite somebody to add by hand what Terraform already owns.
 output "ses_mail_from_records" {
-  description = "MX and TXT to publish for the MAIL FROM subdomain, so SPF aligns."
-  value = var.mail_domain == "" ? [] : [
+  description = "MX and TXT to publish for the MAIL FROM subdomain, so SPF aligns. Empty once dns_domain manages them."
+  value = var.mail_domain == "" || local.dns_enabled ? [] : [
     {
       name  = "bounce.${var.mail_domain}"
       type  = "MX"

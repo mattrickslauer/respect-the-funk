@@ -30,4 +30,15 @@ fi
 export PLATFORM_ADMIN_TOKEN="${PLATFORM_ADMIN_TOKEN:-dev}"
 
 cd "$here"
+
+# uvicorn lives in requirements-dev.txt, not requirements.txt — see the header of that
+# file for why. So a venv built with `pip install -r requirements.txt` looks complete,
+# imports the app fine, and fails here with bash's "No such file or directory", which
+# names the missing binary and not the install that omitted it. Say which install.
+if [[ ! -x .venv/bin/uvicorn ]]; then
+  echo "dev.sh: no .venv/bin/uvicorn — this venv was built without the dev extras." >&2
+  echo "        .venv/bin/pip install -r requirements-dev.txt" >&2
+  exit 1
+fi
+
 exec .venv/bin/uvicorn spindle.main:app --reload --port "${PORT:-8099}"

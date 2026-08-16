@@ -127,7 +127,8 @@ class Storage(Protocol):
     def presign_put(self, key: str, *, content_type: str,
                     expires_in: int = PUT_TTL) -> str: ...
 
-    def presign_get(self, key: str, *, expires_in: int = GET_TTL) -> str: ...
+    def presign_get(self, key: str, *, expires_in: int = GET_TTL,
+                    download_as: str | None = None) -> str: ...
 
     def head(self, key: str) -> Head | None:
         """What is at `key`, or None if nothing is. Never raises for absence."""
@@ -152,7 +153,22 @@ def object_key(tenant_id: str, kind: str, content_hash: str, mime: str) -> str:
 
     The suffix is cosmetic (see `_SUFFIX`); identity is the hash.
     """
-    return f"masters/{tenant_id}/{kind}/{content_hash}{_SUFFIX.get(mime, '')}"
+    return f"masters/{tenant_id}/{kind}/{content_hash}{suffix_for(mime)}"
+
+
+def suffix_for(mime: str) -> str:
+    """`.wav` for a WAV, and empty for anything not in `_SUFFIX`.
+
+    Public because `listen.py` needs the same answer for a different reason: `object_key`
+    uses it so a human reading a bucket listing can tell a WAV from an MP3, and the
+    download filename uses it so the file a curator saves opens in the right application.
+    Two callers, one table — and the alternative was a second mapping that would disagree
+    with this one the first time a format was added to only one of them.
+
+    Empty rather than `.bin` for an unknown type, on `_SUFFIX`'s own argument: identity is
+    the hash, and inventing an extension is a claim about the bytes that nothing checked.
+    """
+    return _SUFFIX.get(mime, "")
 
 
 class S3Storage:
@@ -195,10 +211,28 @@ class S3Storage:
             ExpiresIn=expires_in,
         )
 
-    def presign_get(self, key: str, *, expires_in: int = GET_TTL) -> str:
+    def presign_get(self, key: str, *, expires_in: int = GET_TTL,
+                    download_as: str | None = None) -> str:
+        """A URL to read the object with.
+
+        `download_as` sets `ResponseContentDisposition`, which is how S3 is told to send
+        `attachment` rather than let the browser decide from the content type. Without it
+        a WAV opens in a media player tab and an MP3 starts playing — fine for the
+        embedded player, wrong for a download button that a programmer clicked expecting
+        a file on disk.
+
+        The name is quoted and stripped of quotes and newlines first. That is not
+        cosmetic: the value is interpolated into a response header, and a title
+        containing a `"` or a CRLF would otherwise be a header-injection vector reachable
+        from a track title somebody typed into the console.
+        """
+        params: dict[str, str] = {"Bucket": self.bucket, "Key": key}
+        if download_as:
+            safe = download_as.replace('"', "").replace("\r", "").replace("\n", "")
+            params["ResponseContentDisposition"] = f'attachment; filename="{safe}"'
         return self._client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": self.bucket, "Key": key},
+            Params=params,
             ExpiresIn=expires_in,
         )
 

@@ -1,0 +1,89 @@
+{% extends "_public.html" %}
+
+{# =============================================================================
+   listen.html — what a curator sees when they click the link in a pitch
+   =============================================================================
+
+   The only page in this application whose reader has no account and never will.
+   Everything else on the public surface is arguing something — the landing page
+   argues to a judge, the manual argues to a label. This argues nothing. Somebody
+   was sent a record; the job is to play it in one click and get out of the way.
+
+   ## Why it extends `_public.html` rather than carrying its own look
+
+   Because `_design.html`'s header is right. Four palettes drifted apart in this
+   repository before that file existed, and a fifth — written for the one surface
+   most likely to be seen by somebody outside the company — is exactly how a fifth
+   would start. The page a stranger judges the label by should be the page most
+   firmly inside the design system, not least.
+
+   `_public.html` also already carries `noindex, nofollow`, which matters more here
+   than it does on the sign-in page: these URLs point at commercial masters, and a
+   search engine that indexed one would make a per-recipient link a public one.
+
+   ## The audio element does not hold a presigned URL
+
+   `src` is `/listen/<token>/audio`, which 302s to a freshly-signed S3 URL per
+   request. Embedding the signature would put it in view-source, in the browser
+   history and in anything that scrapes the page — and it would be stale fifteen
+   minutes later, so a curator who left the tab open would find a dead player.
+
+   `preload="none"` is deliberate. The redirect is a request that records an event,
+   and a browser that preloaded metadata would log a listen for a page nobody
+   played. Counting an open as a play would make the one number this feature
+   produces a lie.
+   ============================================================================= #}
+
+{% block title %}{{ resolved.artist_name or "A record" }} — {{ resolved.recording_title }}{% endblock %}
+
+{% block body %}
+<div class="wrap">
+  <section>
+    <p class="kicker">Sent to you by Respect the Funk</p>
+
+    <h1 class="track">{{ resolved.recording_title }}</h1>
+    <p class="by">{{ resolved.artist_name or "Unknown artist" }}</p>
+
+    <p class="meta">
+      {{ resolved.format_name }}{% if resolved.duration_label %} · {{ resolved.duration_label }}{% endif %}
+    </p>
+
+    <audio class="player" controls preload="none" src="/listen/{{ token }}/audio">
+      {# A browser with no audio support is rare and the download is the answer for
+         it, so the fallback is the same link the button uses rather than a message
+         telling somebody to upgrade a browser they did not choose. #}
+      <a href="/listen/{{ token }}/download">Download the {{ resolved.format_name }}</a>
+    </audio>
+
+    <p class="actions">
+      <a class="btn p lg" href="/listen/{{ token }}/download">Download the {{ resolved.format_name }}</a>
+    </p>
+
+    <p class="notice">
+      Want a one-sheet, clearance details or a different format? <b>Just reply to the
+      email</b> — it reaches a person.
+    </p>
+  </section>
+
+  <footer>
+    This link was made for one recipient and stops working eventually. If it has
+    expired and you still want the record, reply to the email and we will send a new one.
+  </footer>
+</div>
+
+<style>
+  /* Local to this page. Two rules only — everything else is `_public.html`, and the
+     point of the file is that this page does not invent a look of its own. */
+  .kicker {
+    font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--faint); font-weight:640; margin:0 0 1.4rem;
+  }
+  /* `h1` in `_public.html` is capped at 17ch for a headline. A track title is not a
+     headline and a long one should wrap normally rather than be forced narrow. */
+  h1.track { max-width:none; margin-bottom:.35rem; }
+  .by { font-size:20px; color:var(--dim); margin:0 0 .5rem; font-weight:520; }
+  .meta { font-size:13px; color:var(--faint); margin:0 0 1.8rem; letter-spacing:.02em; }
+  .player { width:100%; margin:0 0 1.6rem; }
+  .actions { margin:0 0 2.2rem; }
+</style>
+{% endblock %}

@@ -92,6 +92,18 @@ RATES: dict[str, Rate] = {
              "quota is a default row published for every account and is not evidence the "
              "capability is on (measured 2026-08-13).",
     ),
+    "bedrock:cohere.embed-english-v3": Rate(
+        "Cohere Embed English v3 (Bedrock, on-demand)",
+        usd_per_mtok_in=Decimal("0.10"),
+        note="The published Bedrock on-demand price, $0.0001 per 1K input tokens. Five "
+             "times OpenAI's small embedder per token and still $0.0001 per counterparty "
+             "at these profile lengths — the reason to be on it is that it runs on this "
+             "account, which Titan does not. Unlike the two Titan rows above this one is "
+             "reachable: measured 2026-08-16, InvokeModel returns 1024-wide unit-norm "
+             "vectors, 96 texts per call. Cost is charged against Bedrock's own "
+             "x-amzn-bedrock-input-token-count header rather than the estimator, so this "
+             "rate is applied to a measured number and not a guessed one.",
+    ),
     "bedrock:anthropic.claude-sonnet-4-5": Rate(
         "Claude Sonnet 4.5 via Bedrock",
         usd_per_mtok_in=Decimal("3.00"), usd_per_mtok_out=Decimal("15.00"),

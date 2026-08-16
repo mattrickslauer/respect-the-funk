@@ -131,6 +131,86 @@ BATCH_KEY = f"{MODEL}:batch"
 #: which number was wrong and what the alternatives are.
 SUPPORTED_DIMENSIONS = (256, 512, 1024)
 
+# ------------------------------------------------------------ Cohere on Bedrock
+#
+# Titan is the model this module was written for and the one it cannot run: the on-demand
+# RPM quota on account 821135790223 is `0.0` with `Adjustable: false`, re-measured
+# 2026-08-16 and unchanged by the account upgrade. What *did* change is that this is no
+# longer the only Bedrock embedder on the account. `cohere.embed-english-v3` is `ACTIVE`,
+# supports `ON_DEMAND`, and — measured 2026-08-16, not read from documentation — actually
+# returns vectors.
+#
+# It is a better fit than Titan was, for three reasons that are worth stating because they
+# are why this is not a downgrade taken under duress:
+#
+#   * **It is natively 1024-wide.** Titan reaches 1024 by Matryoshka truncation and OpenAI
+#     reaches it by asking for fewer dimensions than the model has. Cohere v3 *is* 1024,
+#     so the schema's `VECTOR(1024)` stops being a width three providers each arrive at by
+#     a different route and becomes the model's own.
+#   * **It is unit-norm already.** Measured: L2 = 1.000026 and 1.000132 on two real
+#     profile strings. `request_body` pins Titan's `normalize=true` precisely so the two
+#     providers produce the same *kind* of object; Cohere needs no flag to do it, and the
+#     measurement is recorded here so nobody has to re-derive that it was checked.
+#   * **It embeds 96 texts per call.** Titan's API takes one `inputText` per invocation,
+#     so a backfill on that path is a loop of 36,198 round trips. This is 96 at a time,
+#     which is the difference between a backfill that runs in minutes and one that runs
+#     overnight. The 96 is measured, not assumed: 96 succeeds and 97 is a
+#     `ValidationException`.
+#
+# ## The quota table lies in both directions, and only one thing settles it
+#
+# This module's Titan section warns that Service Quotas publishes default rows for every
+# account whether or not the capability is on, so a *number* there is not evidence of
+# capability. Cohere is the same trap seen from the other side, and it is worth writing
+# down because the obvious reading of the table would have stopped this change dead.
+#
+# Measured 2026-08-16 on account 821135790223:
+#
+#   * Service Quotas reports `0.0`, `Adjustable: false` for *"On-demand model inference
+#     tokens per minute for Cohere Embed English"* — the identical shape to the Titan row
+#     that really is a hard stop.
+#   * And the model answers anyway. **40 sequential `InvokeModel` calls with botocore
+#     retries disabled: 40 succeeded, 0 throttled, 11.6s wall clock, ~207 successful
+#     requests per minute.** With `max_attempts=0` there is no retry to hide a throttle,
+#     so this is not a burst allowance being papered over — it is the sustained rate.
+#
+# The distinction that matters: for Titan the *empirical* result agreed with the table
+# (6/6 throttled), and for Cohere it contradicts it. So the rule this module already
+# followed is now load-bearing in both directions — **the quota table is never the
+# evidence, the call is.** Anyone re-checking whether this provider still works should
+# re-run the burst, not re-read the quota.
+
+#: The Cohere model id, exactly as `InvokeModel` wants it.
+COHERE_MODEL_ID = "cohere.embed-english-v3"
+
+#: What goes in the `embedding_model` column for this provider. Distinct from `MODEL`
+#: because these vectors are *not* comparable with Titan's or OpenAI's — and that is
+#: exactly what the `party_shortlist` index prefix is for. See `embed.py`'s header.
+COHERE_MODEL = f"bedrock:{COHERE_MODEL_ID}"
+
+#: `spend.RATES` key. Same derivation argument as `ON_DEMAND_KEY`.
+COHERE_KEY = COHERE_MODEL
+
+#: Cohere v3's width is fixed by the model. There is no `dimensions` field in its request
+#: body, so unlike Titan this is a number to *check against*, never one to ask for.
+COHERE_DIMENSIONS = 1024
+
+#: Texts per `InvokeModel`. Measured 2026-08-16: 96 accepted, 97 rejected with
+#: `ValidationException`. Written down because exceeding it fails the whole call, so a
+#: backfill has to chunk by construction rather than discover this on batch 380.
+COHERE_MAX_BATCH = 96
+
+#: Cohere v3 is trained asymmetrically: the corpus and the query go in under different
+#: `input_type`s and the model places them accordingly. Passing the wrong one does not
+#: error, it just retrieves worse — which is the failure mode this module exists to make
+#: impossible to reach by accident, so the value is required and validated.
+COHERE_INPUT_TYPES = ("search_document", "search_query", "classification", "clustering")
+
+#: Bedrock reports what it billed in a response *header* rather than in Cohere's JSON
+#: body. Named here because the whole cost path depends on this string being right, and a
+#: typo in it would produce a call that looks free.
+COHERE_TOKEN_HEADER = "x-amzn-bedrock-input-token-count"
+
 #: Quota *"Records per batch inference job for Titan Text Embeddings V2"* = 100,000
 #: (adjustable), measured 2026-08-13. Written down here so a 370k backfill is chunked into
 #: four jobs by construction rather than discovering the ceiling from a rejected job after
@@ -469,6 +549,198 @@ def embed_one(client: Any, text: str, *, dimensions: int) -> TitanEmbedding:
         raise BedrockUnavailable(f"InvokeModel returned non-JSON for {MODEL_ID}: {exc}") from exc
 
     return parse_output(payload, dimensions=dimensions, where="InvokeModel")
+
+
+# ------------------------------------------------- Cohere on-demand path
+
+def cohere_request_body(texts: Sequence[str], *, input_type: str,
+                        truncate: str = "END") -> dict[str, Any]:
+    """The Cohere v3 payload, with the same "state it rather than default it" rule.
+
+    `input_type` has no default for the reason `COHERE_INPUT_TYPES` gives: the wrong one
+    is not an error, it is a quieter retrieval, and a default here would make the corpus
+    and the query agree by luck. The caller that indexes and the caller that searches are
+    different call sites and must each say which they are.
+
+    `truncate='END'` is sent explicitly. Cohere's own default rejects anything over the
+    context window, and a backfill that dies on one long profile after 30,000 successful
+    rows has failed in the most expensive possible place. Truncating the tail of an
+    over-long profile loses the least important part of it; refusing the row loses the
+    counterparty. `parse_cohere_output` still checks what came back, so this cannot
+    silently become "embedded the wrong thing".
+
+    Empty text is refused for exactly the reason `request_body` refuses it, and refused
+    *per element* — a batch of 96 where element 40 is blank would otherwise write 95 good
+    vectors and one meaningless one, and the meaningless one is indistinguishable from a
+    real vector once it is in the index.
+    """
+    if input_type not in COHERE_INPUT_TYPES:
+        raise BedrockUnavailable(
+            f"{input_type!r} is not a Cohere input type. Known: "
+            f"{', '.join(COHERE_INPUT_TYPES)}. The corpus is embedded with "
+            f"'search_document' and a query with 'search_query'; using one for the other "
+            f"does not raise, it just retrieves worse."
+        )
+    if not texts:
+        raise BedrockUnavailable("Refusing to call InvokeModel with no texts.")
+    if len(texts) > COHERE_MAX_BATCH:
+        raise BedrockUnavailable(
+            f"{COHERE_MODEL_ID} accepts {COHERE_MAX_BATCH} texts per call and got "
+            f"{len(texts)}. Chunk before calling; the whole call fails otherwise."
+        )
+    for index, text in enumerate(texts):
+        if not text or not text.strip():
+            raise BedrockUnavailable(
+                f"Refusing to embed empty text at position {index} of {len(texts)}. An "
+                f"empty profile is an upstream bug, and the vector it would produce is "
+                f"indistinguishable from a real one once written."
+            )
+    return {"texts": list(texts), "input_type": input_type, "truncate": truncate}
+
+
+@dataclass(frozen=True)
+class CohereEmbeddings:
+    """A whole batch's vectors, plus what Bedrock says it charged for the batch.
+
+    Batch-shaped rather than one-per-object because that is the shape of the truth here:
+    Bedrock reports one `x-amzn-bedrock-input-token-count` for the *call*, not per text,
+    and splitting that total across 96 texts would be inventing a per-row number nobody
+    measured. `TitanEmbedding` can carry its own count because Titan's API is one text per
+    invocation; this one cannot, and says so by its shape.
+    """
+
+    values: list[list[float]]
+    input_tokens: int
+
+
+def parse_cohere_output(payload: Any, *, input_tokens: Any, count: int,
+                        dimensions: int, where: str) -> CohereEmbeddings:
+    """Cohere's response, checked as hard as Titan's and for the same reasons.
+
+    Everything `parse_output` argues applies unchanged: a short vector fails at the
+    database, a `NaN` fails nowhere, and an uncosted paid call must not be allowed to
+    succeed. Two things differ, and both are places to be more careful rather than less.
+
+    **The count is external to the body.** Cohere's JSON carries `embeddings`, `id`,
+    `texts` and `response_type` and no token figure at all — the billed number arrives in
+    an HTTP header, which is a string, may be absent, and is not part of the model's
+    contract. It is therefore validated here rather than trusted: absent or unparseable is
+    a refusal, not a zero. Rounding a cost to zero is the one direction a spend system may
+    never round, and a header is exactly the kind of thing that quietly stops being sent.
+
+    **The batch has to come back whole.** Titan returns one vector for one text so a
+    length mismatch is impossible; here, 96 texts returning 95 vectors would misalign
+    every row after the gap against the wrong counterparty. Nothing downstream would
+    raise — they are all well-formed vectors — so the check has to happen here.
+    """
+    if not isinstance(payload, dict):
+        raise BedrockUnavailable(f"{where}: expected a JSON object, got {type(payload).__name__}.")
+
+    rows = payload.get("embeddings")
+    # Cohere returns a bare list for `embeddings_floats` and a dict keyed by embedding
+    # type when `embedding_types` is requested. This module never requests the latter, so
+    # a dict here means the API changed under us and guessing which key to take would be
+    # picking a representation at random.
+    if not isinstance(rows, list):
+        keys = sorted(payload) if payload else "nothing"
+        raise BedrockUnavailable(
+            f"{where}: response has no 'embeddings' list; it has {keys}. A dict here "
+            f"means `embedding_types` was honoured, which this module never asks for."
+        )
+    if len(rows) != count:
+        raise BedrockUnavailable(
+            f"{where}: sent {count} texts and got {len(rows)} vectors. A partial batch "
+            f"misaligns every row after the gap against the wrong subject, and every one "
+            f"of those vectors is well-formed, so nothing downstream would notice."
+        )
+
+    out: list[list[float]] = []
+    for row_index, values in enumerate(rows):
+        if not isinstance(values, list):
+            raise BedrockUnavailable(
+                f"{where}: embedding {row_index} is {type(values).__name__}, not a list.")
+        if len(values) != dimensions:
+            raise BedrockUnavailable(
+                f"{where}: embedding {row_index} has {len(values)} dimensions, not "
+                f"{dimensions}. {COHERE_MODEL_ID} is natively {COHERE_DIMENSIONS}-wide "
+                f"and takes no dimensions argument, so this is a model change, not a "
+                f"misconfigured request."
+            )
+        floats: list[float] = []
+        for index, value in enumerate(values):
+            if not isinstance(value, (int, float)) or isinstance(value, bool) \
+                    or not math.isfinite(value):
+                raise BedrockUnavailable(
+                    f"{where}: embedding {row_index} dimension {index} is {value!r}, "
+                    f"which is not a finite number. A NaN in a vector makes every "
+                    f"distance against it NaN, and nothing downstream raises — the "
+                    f"shortlist just stops ranking."
+                )
+            floats.append(float(value))
+        out.append(floats)
+
+    # `int(...)` on the header rather than `isinstance`: it arrives as a string, and the
+    # failure to convert is the diagnosis.
+    try:
+        tokens = int(input_tokens)
+    except (TypeError, ValueError) as exc:
+        raise BedrockUnavailable(
+            f"{where}: {COHERE_TOKEN_HEADER} was {input_tokens!r}, which is not an "
+            f"integer, so the call cannot be costed. An uncosted paid call is not "
+            f"allowed to succeed."
+        ) from exc
+    if tokens < 0:
+        raise BedrockUnavailable(
+            f"{where}: {COHERE_TOKEN_HEADER} was {tokens}, which is not a token count.")
+    return CohereEmbeddings(values=out, input_tokens=tokens)
+
+
+def embed_many_cohere(client: Any, texts: Sequence[str], *, dimensions: int,
+                      input_type: str) -> CohereEmbeddings:
+    """One `InvokeModel` carrying up to `COHERE_MAX_BATCH` texts.
+
+    `dimensions` is passed in and checked against the model's native width rather than
+    requested from it, so a caller whose schema is not 1024 finds out here — naming both
+    numbers — instead of at the database with a width mismatch.
+    """
+    if dimensions != COHERE_DIMENSIONS:
+        raise BedrockUnavailable(
+            f"{COHERE_MODEL_ID} is natively {COHERE_DIMENSIONS}-wide and has no "
+            f"dimensions argument, so it cannot produce the {dimensions} this caller "
+            f"asked for."
+        )
+    body = cohere_request_body(texts, input_type=input_type)
+    try:
+        response = client.invoke_model(
+            modelId=COHERE_MODEL_ID,
+            body=json.dumps(body),
+            accept="application/json",
+            contentType="application/json",
+        )
+    except Exception as exc:  # noqa: BLE001 — funnelled, never swallowed; see the header
+        raise _translate(exc, "InvokeModel") from exc
+
+    stream = response.get("body") if isinstance(response, dict) else None
+    if stream is None or not hasattr(stream, "read"):
+        raise BedrockUnavailable(
+            f"InvokeModel returned no readable body for {COHERE_MODEL_ID}; got {response!r}."
+        )
+    try:
+        payload = json.loads(stream.read())
+    except ValueError as exc:
+        raise BedrockUnavailable(
+            f"InvokeModel returned non-JSON for {COHERE_MODEL_ID}: {exc}") from exc
+
+    headers = {}
+    if isinstance(response, dict):
+        metadata = response.get("ResponseMetadata")
+        if isinstance(metadata, dict) and isinstance(metadata.get("HTTPHeaders"), dict):
+            # Header names are case-insensitive on the wire and botocore lowercases them,
+            # but a dict lookup is not, so this does not depend on that staying true.
+            headers = {str(k).lower(): v for k, v in metadata["HTTPHeaders"].items()}
+    return parse_cohere_output(
+        payload, input_tokens=headers.get(COHERE_TOKEN_HEADER),
+        count=len(texts), dimensions=dimensions, where="InvokeModel")
 
 
 # --------------------------------------------------------------- batch path

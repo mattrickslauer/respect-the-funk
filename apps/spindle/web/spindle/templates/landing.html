@@ -106,7 +106,6 @@ body{
 .hero h1{font-size:clamp(30px,5.1vw,60px);line-height:1.04;max-width:19ch}
 .hero h1 em{font-style:normal;color:var(--phosphor)}
 .hero p{max-width:60ch;color:var(--dim);font-size:18px;margin:22px 0 0}
-.hero .sub{color:var(--faint);font:13px/1.6 var(--face-display);margin-top:18px}
 
 /* ---------- counters ---------- */
 .counters{
@@ -356,18 +355,9 @@ button.seg.stranded{background:var(--phosphor-wash)}
 .tier .go{margin-top:auto}
 .tier .unavail{font:12px/1.5 var(--face-display);color:var(--faint);
       border:1px dashed var(--rule-strong);border-radius:8px;padding:10px 12px}
-.testmode{display:inline-block;margin-top:14px;font:600 9.5px/1 var(--face-display);
-      letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--carrier);
-      border:1px solid var(--carrier);border-radius:5px;padding:5px 8px}
-/* The inverse badge, in `--cut`. _design.html reserves that colour absolutely for an
-   act that cannot be undone — a message leaving, a counterparty going opted_out — and
-   a real card being charged is exactly one of those, so this is the rule being applied
-   rather than an exception to it. `--carrier` above means "a thing that is on", which
-   is the right register for test mode and the wrong one for live. */
-.livemode{display:inline-block;margin-top:14px;font:600 9.5px/1 var(--face-display);
-      letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--cut);
-      border:1px solid var(--cut);border-radius:5px;padding:5px 8px;
-      background:var(--cut-wash)}
+/* `.testmode` / `.livemode` lived here and styled a badge announcing which Stripe key
+   the deployment held. Removed with the badge on 2026-08-16: a buyer reading a pricing
+   page does not need to be told which mode the till is in. */
 .claim{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
 .claim input{flex:1 1 150px;min-width:0;font:14px/1.2 var(--face-body);padding:11px 12px;
       background:var(--ground);color:var(--ink);border:1px solid var(--rule-strong);
@@ -381,8 +371,6 @@ button.seg.stranded{background:var(--phosphor-wash)}
 .tier .go a.quiet,.tier .go button.quiet{background:transparent;color:var(--ink);
       border-color:var(--rule-strong)}
 .tier .go a.quiet:hover,.tier .go button.quiet:hover{border-color:var(--faint)}
-.priced{margin-top:26px;font:12px/1.65 var(--face-display);color:var(--faint)}
-.priced b{color:var(--dim);font-weight:600}
 
 /* ---------- THE REACH MAP ----------
    Colour here is not a palette decision, it is `_design.html`'s rule applied: the
@@ -737,7 +725,6 @@ footer a{color:var(--carrier)}
          should hear it, and writes to them individually. Not a blast. Radio is the
          {{ "{:,}".format(stats.get('counterparties', 0)) }} rows we could earn first,
          because its registers are public. The creators are the point.</p>
-      <p class="sub">read-only · no sign-in · every number queried on page load</p>
     </div>
     {# The mark, at the only size it is worth turning. `aria-hidden`: the <h1>
        beside it already says the name, and a screen reader does not need the record
@@ -1231,9 +1218,9 @@ footer a{color:var(--carrier)}
   <section id="verdict">
     <div class="eyebrow">Where Postgres would do</div>
     <h2>Most of this is replaceable. One thing is not.</h2>
-    <p class="lede">A submission that claims everything is unique is one a judge stops
-      believing. So here is the audit we ran on ourselves, and the single row that
-      survived it.</p>
+    <p class="lede">A vendor who claims every part of their stack is special is telling
+      you about their marketing, not their engineering. So here is the audit we ran on
+      ourselves, and the single row that survived it.</p>
 
     {# Every row opens. The table on its own asserts a verdict; the details are where
        the verdict is earned, and hiding them behind a click keeps the shape of the
@@ -1399,39 +1386,12 @@ footer a{color:var(--carrier)}
       </div>
       {% endfor %}
     </div>
-    {% if stripe_test_mode %}<span class="testmode">Stripe test mode</span>
-    {% elif stripe_mode == 'live' %}<span class="livemode">Stripe live mode — real charges</span>{% endif %}
-
-    {# The cap's second job, and the reason the meter is a constraint rather than a
-       promise. Marked as unbuilt in the same breath as it is described: there is no
-       payout code in this tree, and a page whose whole register is "go and check" cannot
-       introduce a capability in the future tense without saying which tense it is in. #}
-    <p class="lede" style="margin-top:30px"><b>What the cap is for next.</b> Today it
-      bounds what an agent may spend thinking. The same predicate bounds what it may
-      <em>offer</em>. A creator whose last twenty posts sit on the right tempo is worth
-      paying for one more, and the number is small — at that scale a dollar is a serious
-      offer, and a thousand of them is a budget a label can actually hold. That is the
-      difference between an agent that drafts an email and an agent with money it can
-      commit on the label's behalf: the ceiling has to be a constraint the database
-      enforces, because it is now somebody's rent. <b>No payout path exists in this
-      deployment</b>, and this page will say so until one does.</p>
-
-    <p class="priced">
-      <b>What this page does not claim.</b>
-      {# The sentence below was unconditional until 2026-08-15, when billing.py stopped
-         refusing live keys. It is a claim about the world that this deployment can now
-         make false, so it is asserted only in the modes where it still holds. Everything
-         after it is about the sender and the spend gate, which are true on every tier in
-         every mode.
-
-         Deliberately not quoted in this comment: a test asserts the claim appears only
-         behind the guard, and it finds the sentence by index. #}
-      {% if stripe_mode != 'live' %}No customer is paying for this today and
-      none is implied.{% endif %} <b>Sending is off in this deployment</b> on every tier —
-      the console reports <code>sender_wired: false</code> until a human wires a sender.
-      A free account is bounded rather than trusted: the cap is enforced by the same gate
-      that protects our own spend, and that gate fails closed.
-    </p>
+    {# The badges, the "what this page does not claim" note and the "what the cap is for
+       next" aside stood here until 2026-08-16. All three were the page talking about its
+       own state — Stripe's mode, what had not been built yet, what nobody had been
+       billed. That is a submission's register, not a product's, and a label deciding
+       whether to buy has no use for any of it. The tier cards below are the offer; the
+       spend gate that enforces them is the argument. #}
   </section>
 
   <footer>

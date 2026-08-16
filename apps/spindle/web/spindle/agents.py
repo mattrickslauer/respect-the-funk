@@ -34,8 +34,8 @@ import psycopg
 from psycopg.types.json import Json
 
 from spindle import (
-    contacts, embed, fcc, fleet, harvested, lessons, podcastindex, radiobrowser, repo,
-    settings as settings_mod, sources, spend, streams, wikipedia,
+    contacts, creators, embed, fcc, fleet, harvested, lessons, podcastindex,
+    radiobrowser, repo, settings as settings_mod, sources, spend, streams, wikipedia,
 )
 
 #: Target chunk size in characters. ~400 tokens at four characters per token, which is
@@ -2553,4 +2553,9 @@ REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     "refresh_stream": streams.refresh_stream,
     "harvest_contacts": contacts.harvest_contacts,
     "harvest_feed_contacts": contacts.harvest_feed_contacts,
+    # `creators.py`, for the same reason. Note it has no `index_creators` sibling and is
+    # not waiting for one: `037_creator_scout.sql` records that no compliant bulk source
+    # for UGC creators exists, so the rows this profiles are typed in by a person. The
+    # asymmetry is a finding, not a gap.
+    "profile_creator": creators.profile_creator,
 }

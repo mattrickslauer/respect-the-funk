@@ -146,6 +146,13 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     # list. All three were already scoped correctly in every statement — the lint simply
     # was not claiming them, which is coverage believed rather than held.
     "contact_route", "recording_asset", "tenant_budget",
+    # `037`'s evidence table. It holds which creator posted over which sound, which is
+    # the shortlisting signal for the whole UGC channel — Pillar 10 §7 ranks on it rather
+    # than on demographics. A statement of its that lost its tenant predicate would let
+    # one label's creator research, the part `037` says costs a person-afternoon to
+    # gather by hand, be read from another's console. Added in the same commit as the
+    # migration, per the note on `035` above.
+    "sound_usage",
 )
 
 #: A reference to a table, tagged with which keyword introduced it — the keyword is

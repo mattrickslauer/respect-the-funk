@@ -1,0 +1,15 @@
+<!doctype html><meta charset=utf-8><title>explain</title><link rel=stylesheet href=slide.css>
+<!-- The plan, cut to the four lines that carry it. A real EXPLAIN is 30 rows and
+     none of them are readable through a monitor in frame. -->
+<div class=screen>
+  <div class=chrome><b>spindle</b> <span>psql · respect-the-funk</span><span class=sp></span><span>us-east-1</span></div>
+  <div class=body>
+    <div class="line prompt">EXPLAIN SELECT id, name FROM party@party_shortlist …</div>
+    <div class=out><span class=hot>• vector search</span>
+    table: party@party_shortlist
+    target count: 20
+    <span class=crdb>prefix spans: [/'1f9e6dd3…'/'openai:text-embedding-3-small'</span>
+    <span class=crdb>               /'counterparty'/'contactable' - …]</span></div>
+    <div class="line sm dim">the filters are inside the index, not applied after it</div>
+  </div>
+</div>

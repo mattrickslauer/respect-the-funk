@@ -1,0 +1,120 @@
+/* slide.css — full-screen plates to be corner-pinned onto the monitor in frame.
+ *
+ * These are the opposite of the overlay scenes in every way that matters:
+ * opaque, rectangular, and full of text. They are what the computer on the desk
+ * appears to be running.
+ *
+ * THE ONE RULE: a real screenshot is unreadable on video. A terminal at its
+ * natural size gives you 24pt type inside a monitor that occupies a third of the
+ * frame, gets keyed through a perspective warp, and then goes through h.264 —
+ * nobody reads a word of it. So these are terminal-SHAPED rather than terminal-
+ * SIZED: the same colours and furniture, three to four times the type, and only
+ * the two or three lines that carry the point.
+ *
+ * Cutting lines is the design work here. If a slide has more than about eight
+ * rows of content it is a screenshot, not a slide, and it will read as texture.
+ *
+ * Rendered at 2560x1440 so there is resolution to spare once the corner-pin has
+ * scaled and rotated it.
+ */
+
+:root {
+  --ground:   #0b0a09;
+  --panel:    #14120f;
+  --rule:     #2a2521;
+  --ink:      #f7f3ec;
+  --dim:      #8c8175;
+  --phosphor: #d97f4a;
+  --bright:   #eb9a67;
+  --crdb:     #a583ff;
+  --good:     #5cb89b;
+  --bad:      #f0432f;
+  --warn:     #c9a04a;
+  --face: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 2560px;
+  height: 1440px;
+  background: var(--ground);
+  font-family: var(--face);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.screen {
+  width: 2560px;
+  height: 1440px;
+  padding: 84px 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+/* The title bar exists so the plate reads as an application rather than as a
+   slide the moment it appears — that read has to happen in under a second. */
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-bottom: 30px;
+  border-bottom: 3px solid var(--rule);
+  font-size: 34px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.chrome b { color: var(--phosphor); font-weight: 600; }
+.chrome .sp { flex: 1; }
+
+.body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 30px; }
+
+/* terminal lines */
+.line { font-size: 46px; line-height: 1.45; white-space: pre; }
+.line.sm { font-size: 38px; }
+.prompt::before { content: '$ '; color: var(--phosphor); }
+.dim { color: var(--dim); }
+.hot { color: var(--bright); }
+.crdb { color: var(--crdb); }
+.good { color: var(--good); }
+.bad  { color: var(--bad); }
+.warn { color: var(--warn); }
+
+/* a bordered result block, the way a query result reads */
+.out {
+  border-left: 6px solid var(--rule);
+  padding: 18px 0 18px 40px;
+  font-size: 44px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+/* tabular results */
+table { border-collapse: collapse; width: 100%; font-size: 42px; }
+th, td { text-align: left; padding: 22px 28px; }
+th {
+  font-size: 30px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--dim); border-bottom: 3px solid var(--rule); font-weight: 500;
+}
+td { border-bottom: 2px solid #1d1a16; }
+tr.on td { color: var(--bright); }
+tr.on td:first-child::before { content: '▸ '; color: var(--phosphor); }
+
+.card {
+  background: var(--panel);
+  border: 3px solid var(--rule);
+  border-radius: 18px;
+  padding: 46px 54px;
+}
+
+.k { color: var(--dim); font-size: 32px; letter-spacing: 0.14em; text-transform: uppercase; }
+.v { font-size: 52px; margin-top: 10px; }
+
+.cols { display: flex; gap: 56px; }
+.cols > * { flex: 1; }
+
+.big { font-size: 96px; font-weight: 600; letter-spacing: -0.01em; }
+.huge { font-size: 132px; font-weight: 600; letter-spacing: -0.02em; }

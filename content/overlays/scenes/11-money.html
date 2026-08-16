@@ -1,0 +1,87 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>11 · it asked for more</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 11 · IT SPENDS THE LABEL'S MONEY                                    10.0s
+ * Over: "It spends the label's money too, on its own, up to a ceiling. Last night
+ *        it asked to put more behind one record, and I approved it."
+ *
+ * A gauge bent round the disc, so money reads on the same instrument as everything
+ * else in the video rather than as a bar chart bolted on at the end.
+ *
+ * The ceiling is the point of the scene. The fill runs up to it and STOPS — the
+ * agent does not sail through — and the extension only happens after the approval
+ * tick lands. An autonomy story where the machine simply takes more is the story
+ * nobody wants to fund.
+ *
+ * No figures on the gauge. The ledger row on the monitor carries the real number.
+ */
+const { win, ease, polar, arc, el, label, lerp, clamp01 } = SP;
+
+const R = 330;
+const A0 = 200, A1 = 520;            // sweeps up the right-hand side, past twelve
+const CEIL = 0.58, ASK = 0.86;
+
+let track, fill, ceilTick, askTick, ask, tick, approved;
+
+const at = (u) => A0 + (A1 - A0) * u;
+
+SP.Scene.define({
+  dur: 10,
+
+  setup(root) {
+    GROOVES.setAttribute('opacity', 0.25);
+
+    track = el('path', { d: arc(R, A0, A1), class: 'wire faint fat',
+                         fill: 'none', opacity: 0.35 }, root);
+    fill = el('path', { class: 'wire fat', fill: 'none' }, root);
+
+    // the ceiling a person chose
+    const c0 = polar(R - 46, at(CEIL)), c1 = polar(R + 46, at(CEIL));
+    ceilTick = el('line', { x1: c0.x, y1: c0.y, x2: c1.x, y2: c1.y,
+                            class: 'wire fat', opacity: 0.9 }, root);
+    const cp = polar(R + 96, at(CEIL));
+    label('ceiling', cp.x, cp.y, { size: 25 }, root);
+
+    // where it wants to get to
+    const a0 = polar(R - 34, at(ASK)), a1 = polar(R + 34, at(ASK));
+    askTick = el('line', { x1: a0.x, y1: a0.y, x2: a1.x, y2: a1.y,
+                           class: 'wire thin', 'stroke-dasharray': '8 8', opacity: 0 }, root);
+    ask = el('path', { class: 'wire', fill: 'none', 'stroke-dasharray': '10 12', opacity: 0 }, root);
+
+    tick = el('path', { d: 'M 900 880 l 34 36 l 74 -84', class: 'wire good fat', opacity: 0 }, root);
+    approved = label('approved', 1080, 892, { size: 32, cls: 'good say', anchor: 'start' }, root);
+    approved.setAttribute('opacity', 0);
+  },
+
+  frame(t) {
+    // 1 · spend climbs to the ceiling and stops there
+    const climb = ease.out(win(t, 0.4, 2.6));
+    const u = climb * CEIL;
+    fill.setAttribute('d', u > 0.004 ? arc(R, A0, at(u)) : arc(R, A0, A0 + 0.01));
+    fill.setAttribute('opacity', climb > 0 ? 1 : 0);
+
+    // 2 · it asks for more — dashed, because this has not happened yet
+    const wants = ease.out(win(t, 3.4, 0.9));
+    askTick.setAttribute('opacity', wants * 0.8);
+    ask.setAttribute('opacity', wants * 0.75);
+    if (wants > 0.01) ask.setAttribute('d', arc(R, at(CEIL), at(lerp(CEIL, ASK, wants))));
+
+    // 3 · a person approves, and only then does it become real
+    const yes = ease.out(win(t, 6.0, 0.5));
+    tick.setAttribute('opacity', yes);
+    approved.setAttribute('opacity', yes);
+
+    const grant = ease.inOut(win(t, 6.4, 1.4));
+    if (grant > 0) {
+      fill.setAttribute('d', arc(R, A0, at(lerp(CEIL, ASK, grant))));
+      ask.setAttribute('opacity', (1 - grant) * 0.75);
+      askTick.setAttribute('opacity', (1 - grant) * 0.8);
+    }
+  },
+});
+</script>

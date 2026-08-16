@@ -60,6 +60,18 @@ diagram of the same idea lands before the sentence describing it finishes.
 THE VISUALS — CONCEPTS, NOT SCREENSHOTS
 -------------------------------------------------------------------------------
 
+*** THESE ARE BUILT. See content/overlays/ and its README. ***
+
+    content/overlays/scenes/      13 animated scenes, transparent background
+    content/overlays/slides/       9 plates for the monitor in frame
+    python3 render.py              -> out/*.mov (ProRes 4444, alpha) + *.webm
+    python3 render_slides.py       -> out/slides/*.png at 2560x1440
+    python3 preview.py 12 20 29    -> single frames on a grey card, to look at
+
+Scene durations are already cut to the spoken paragraphs at 155 wpm and total
+about 2:56. Everything below describes the intent; the README describes the
+mechanics and the two traps in the renderer.
+
 Ranked. If you only build three, build 1, 2 and 3.
 
 RANK 1 · THE FILTERED SUBSPACE                            (over the index beat)

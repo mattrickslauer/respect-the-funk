@@ -1,0 +1,83 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>09 · the reply finds its thread</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 09 · A REPLY FINDS ITS OWN THREAD                                    8.0s
+ * Over: "When people write back, the reply finds its own thread — every pitch
+ *        carries a token we minted for one conversation."
+ *
+ * A pitch leaves carrying a mark, comes back still carrying it, and drops into
+ * the one slot that matches. The mark is a colour rather than a label, because
+ * the audience has to match it in about a third of a second and reading a hex
+ * string takes longer than the shot lasts.
+ *
+ * Four decoy threads, not one. With a single slot there is no matching to watch.
+ */
+const { win, ease, polar, el, label, lerp, clamp01 } = SP;
+
+const TINTS = ['#5cb89b', '#d97f4a', '#7d4dff', '#c9a04a'];
+const MINE = 2;                                  // which thread this reply belongs to
+let slots = [], letter, tag, path, trailN;
+
+const OUT = { x: 1520, y: 300 };
+const HOME = { x: 470, y: 540 };
+
+SP.Scene.define({
+  dur: 8,
+
+  setup(root) {
+    GROOVES.setAttribute('opacity', 0);
+
+    // four open conversations, stacked
+    TINTS.forEach((c, i) => {
+      const y = 300 + i * 130;
+      const g = el('g', {}, root);
+      el('rect', { x: 1080, y: y - 44, width: 470, height: 88, rx: 12,
+                   class: 'wire faint thin', opacity: 0.5 }, g);
+      const chip = el('rect', { x: 1104, y: y - 20, width: 40, height: 40, rx: 8,
+                                fill: c, opacity: 0.5 }, g);
+      slots.push({ g, chip, y, box: g.firstChild });
+    });
+
+    // the pitch going out
+    letter = el('g', {}, root);
+    el('rect', { x: -46, y: -32, width: 92, height: 64, rx: 8, class: 'wire fat' }, letter);
+    el('path', { d: 'M -46 -32 L 0 6 L 46 -32', class: 'wire thin' }, letter);
+    tag = el('rect', { x: 30, y: -46, width: 26, height: 26, rx: 6,
+                       fill: TINTS[MINE] }, letter);
+  },
+
+  frame(t) {
+    // 1 · out it goes, carrying the mark
+    const out = ease.inOut(win(t, 0.3, 1.9));
+    // 2 · and back, still carrying it
+    const back = ease.inOut(win(t, 3.0, 2.1));
+
+    let x, y, s = 1;
+    if (back <= 0) {
+      x = lerp(HOME.x, OUT.x, out);
+      y = lerp(HOME.y, OUT.y, out) - Math.sin(out * Math.PI) * 110;
+    } else {
+      const target = { x: 1104 + 20, y: slots[MINE].y };
+      x = lerp(OUT.x, target.x, back);
+      y = lerp(OUT.y, target.y, back) + Math.sin(back * Math.PI) * 90;
+      s = lerp(1, 0.42, back);
+    }
+    letter.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${s.toFixed(3)})`);
+    letter.setAttribute('opacity', back > 0.94 ? 0 : 1);
+
+    // 3 · the matching slot takes it; the other three stay shut
+    slots.forEach((sl, i) => {
+      const mine = i === MINE;
+      const land = mine ? ease.out(win(t, 4.9, 0.6)) : 0;
+      sl.chip.setAttribute('opacity', mine ? lerp(0.5, 1, land) : 0.5);
+      sl.box.setAttribute('opacity', mine ? lerp(0.5, 1, land) : 0.5);
+      sl.box.setAttribute('class', mine && land > 0.5 ? 'wire' : 'wire faint thin');
+    });
+  },
+});
+</script>

@@ -1,0 +1,92 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>13 · one database, and where to go</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 13 · ONE DATABASE, AND THE ADDRESS                                  12.0s
+ * Over: "One database doing the index, the scheduler, the outbox, the event bus
+ *        and the ledger. It scales to zero between releases."
+ *        "It's live today at spindle.mattrickslauer.com. Go and break it."
+ *
+ * Five orbiting roles collapse into one centre — the consolidation argument, made
+ * once, without a stack diagram. Then everything drains away to nothing, which is
+ * what scaling to zero actually looks like and is the only joke in the video.
+ *
+ * The URL is the last thing on screen and the only full-width type in the whole
+ * set. It is a call to action, so it gets the one moment of scale it needs and
+ * the disc gets out of its way.
+ */
+const { win, ease, polar, el, label, lerp, clamp01 } = SP;
+
+const ROLES = ['index', 'scheduler', 'outbox', 'event bus', 'ledger'];
+const R = 320;
+let nodes = [], spokes = [], core, coreDot, url, host, field;
+
+SP.Scene.define({
+  dur: 12,
+
+  setup(root) {
+    field = SP.grooveField(root, { seed: 3, r0: 190, r1: 452 });
+    field.dots.forEach((d) => { d.node.style.opacity = '0.18'; });
+
+    ROLES.forEach((name, i) => {
+      const deg = (360 / ROLES.length) * i - 90;
+      const p = polar(R, deg);
+      spokes.push(el('line', { x1: 960, y1: 540, x2: p.x, y2: p.y,
+                               class: 'wire thin', opacity: 0 }, root));
+      const g = el('g', {}, root);
+      el('circle', { cx: p.x, cy: p.y, r: 26, class: 'wire' }, g);
+      const cap = label(name, p.x, p.y + 62, { size: 25 }, root);
+      nodes.push({ g, cap, p, deg });
+    });
+
+    core = el('circle', { cx: 960, cy: 540, r: 74, class: 'wire fat', opacity: 0 }, root);
+    coreDot = el('circle', { cx: 960, cy: 540, r: 13, class: 'fill', opacity: 0 }, root);
+
+    SP.scrim(960, 548, 620, 130, root);
+    url = label('spindle.mattrickslauer.com', 960, 540, { size: 62, cls: 'say hot' }, root);
+    url.setAttribute('opacity', 0);
+    host = label('live today', 960, 632, { size: 30 }, root);
+    host.setAttribute('opacity', 0);
+  },
+
+  frame(t) {
+    // 1 · five roles                                    0 – 4
+    nodes.forEach((n, i) => {
+      const u = ease.out(win(t, 0.3 + i * 0.22, 0.6));
+      n.g.setAttribute('opacity', u);
+      n.cap.setAttribute('opacity', u);
+      spokes[i].setAttribute('opacity', u * 0.3);
+    });
+    core.setAttribute('opacity', ease.out(win(t, 1.4, 0.8)) * 0.9);
+    coreDot.setAttribute('opacity', ease.out(win(t, 1.4, 0.8)));
+
+    // 2 · they collapse into one                        4 – 7
+    const pull = ease.inOut(win(t, 4.2, 1.6));
+    nodes.forEach((n, i) => {
+      const x = lerp(n.p.x, 960, pull), y = lerp(n.p.y, 540, pull);
+      n.g.setAttribute('transform', `translate(${(x - n.p.x).toFixed(1)} ${(y - n.p.y).toFixed(1)}) scale(${lerp(1, 0.3, pull).toFixed(3)})`);
+      n.g.setAttribute('transform-origin', `${n.p.x} ${n.p.y}`);
+      n.cap.setAttribute('opacity', (1 - pull));
+      spokes[i].setAttribute('opacity', (1 - pull) * 0.3);
+    });
+
+    // 3 · and then to nothing                           7 – 9
+    const zero = ease.inOut(win(t, 6.6, 1.4));
+    core.setAttribute('r', lerp(74, 4, zero));
+    core.setAttribute('opacity', (1 - zero) * 0.9);
+    coreDot.setAttribute('r', lerp(13, 0, zero));
+    nodes.forEach((n) => n.g.setAttribute('opacity', 1 - zero));
+    field.g.setAttribute('opacity', 1 - zero);
+    GROOVES.setAttribute('opacity', (1 - zero) * 0.5);
+
+    // 4 · the address                                   9 – 12
+    const say = ease.out(win(t, 8.6, 0.8));
+    url.setAttribute('opacity', say);
+    host.setAttribute('opacity', ease.out(win(t, 9.2, 0.7)) * 0.9);
+  },
+});
+</script>

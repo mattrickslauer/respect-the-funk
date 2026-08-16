@@ -1,0 +1,12 @@
+<!doctype html><meta charset=utf-8><title>replay</title><link rel=stylesheet href=slide.css>
+<div class=screen>
+  <div class=chrome><b>spindle</b> <span>replay</span><span class=sp></span><span>same query, two instants</span></div>
+  <div class=body>
+    <div class="line sm">SELECT … FROM party@party_shortlist <span class=crdb>AS OF SYSTEM TIME &#39;…&#39;</span></div>
+    <div class=cols>
+      <div class=card><div class=k>now</div><div class=v class=dim>14 · 3 · 9 · 21</div></div>
+      <div class=card style="border-color:#4b3a7a"><div class=k>at the decision</div><div class="v crdb">9 · 7 · 4 · 18</div></div>
+    </div>
+    <div class=line><span class=dim>re-run against those</span>  →  <span class=good>same answer</span></div>
+  </div>
+</div>

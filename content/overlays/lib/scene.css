@@ -1,0 +1,110 @@
+/* scene.css — shared look for every overlay scene.
+ *
+ * These render onto a transparent canvas and get composited over a desk shot, so
+ * three constraints drive everything here and none of them apply to a web page:
+ *
+ *   1. NO BACKGROUND, EVER. `body` stays transparent; Playwright screenshots with
+ *      omit_background. A single opaque fill anywhere ruins the whole plate.
+ *   2. STROKES SURVIVE COMPRESSION, HAIRLINES DO NOT. Nothing thinner than 2px at
+ *      1920x1080. A 1px line shimmers under h.264 and looks like a rendering bug.
+ *   3. IT MIGHT SIT OVER ANYTHING. The footage behind could be a bright desk or a
+ *      dark shirt, so every mark carries its own contrast: a dark drop-shadow on
+ *      light strokes, and a scrim under type.
+ */
+
+@font-face { font-family: 'PlexFallback'; src: local('IBM Plex Mono'); }
+
+:root {
+  /* Copper phosphor is the house colour — the mark's own. */
+  --phosphor:        #d97f4a;
+  --phosphor-bright: #eb9a67;
+
+  /* Reserved. Purple appears ONLY on the two things nothing else can do:
+     the filters living inside the index prefix, and time travel. If it shows up
+     anywhere else it stops meaning anything. */
+  --crdb:            #7d4dff;
+  --crdb-bright:     #a583ff;
+
+  --carrier: #5cb89b;   /* it worked / it kept answering */
+  --cut:     #f0432f;   /* refused / dead / dropped */
+  --ink:     #f7f3ec;   /* type */
+  --faint:   #8c8175;   /* inert, unlit, not-for-you */
+
+  --face: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: transparent;   /* constraint 1 */
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+}
+
+svg { display: block; width: 1920px; height: 1080px; }
+
+/* Type. Uppercase and tracked out because these are labels on a diagram, not
+   prose — the voice is carrying the prose. Sentence-case sneaks in only on the
+   two full-word callouts, which set .say themselves. */
+.lbl {
+  font-family: var(--face);
+  font-weight: 500;
+  fill: var(--ink);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  paint-order: stroke fill;
+  stroke: rgba(6, 5, 4, 0.55);
+  stroke-width: 5px;      /* a dark rim, so type holds on a bright background */
+  stroke-linejoin: round;
+}
+
+.lbl.say {
+  text-transform: none;
+  letter-spacing: 0.01em;
+  font-weight: 600;
+}
+
+.lbl.dim    { fill: var(--faint); }
+.lbl.hot    { fill: var(--phosphor-bright); }
+.lbl.crdb   { fill: var(--crdb-bright); }
+.lbl.good   { fill: var(--carrier); }
+.lbl.bad    { fill: var(--cut); }
+
+/* The groove field: counterparties as dots on concentric rings.
+ *
+ * Deliberately NOT styled here. A CSS declaration beats a presentation attribute,
+ * so `.dot { fill: … }` would silently win over every per-frame setAttribute and
+ * the field would sit inert through scenes that spend their whole length lighting
+ * it up. Scenes drive these through element.style, which outranks both. */
+
+/* Anything drawn as a line carries a shadow so it never dissolves into footage. */
+.stroke, path, circle, rect, line, ellipse, polyline {
+  vector-effect: non-scaling-stroke;
+}
+
+/* NOTE, and it has bitten this file twice: a CSS declaration beats a presentation
+ * attribute, so `node.setAttribute('stroke', …)` against anything carrying .wire
+ * does NOTHING — the rule below keeps winning and the element stays phosphor.
+ * To recolour at runtime use `node.style.stroke`, or swap the class. */
+.wire {
+  fill: none;
+  stroke: var(--phosphor);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.wire.thin  { stroke-width: 2.5; }
+.wire.fat   { stroke-width: 5; }
+.wire.crdb  { stroke: var(--crdb); }
+.wire.good  { stroke: var(--carrier); }
+.wire.bad   { stroke: var(--cut); }
+.wire.faint { stroke: var(--faint); }
+
+.fill      { fill: var(--phosphor); stroke: none; }
+.fill.crdb { fill: var(--crdb); }
+.fill.good { fill: var(--carrier); }
+.fill.bad  { fill: var(--cut); }
+
+#stage { filter: url(#lift); }

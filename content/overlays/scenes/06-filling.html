@@ -1,0 +1,89 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>06 · the index is never finished</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 06 · FACTS KEEP LANDING                                             10.0s
+ * Over: "The index is never finished, either. Agents are adding to these records
+ *        all day — what a station plays, who runs it, what they said last time."
+ *
+ * Ambient rather than explanatory, and it is doing a job three scenes later: this
+ * is why the numbers behind a past decision are gone. If the audience has watched
+ * facts rain onto the field for ten seconds, "those metrics have been overwritten"
+ * needs no further argument when it arrives.
+ *
+ * So: no labels, no callouts. Facts fall in from outside the disc and land on
+ * records, which brighten and stay slightly brighter. The disc is visibly fuller
+ * at the end than at the start, and nothing says so.
+ */
+const { win, ease, polar, el, lerp, clamp01 } = SP;
+
+let field, marks = [], drops = [];
+const COUNT = 46;
+
+SP.Scene.define({
+  dur: 10,
+
+  setup(root) {
+    field = SP.grooveField(root, { seed: 3, r0: 168, r1: 452 });
+    marks = field.dots;
+
+    // Each fact is one incoming streak aimed at one record. Staggered across the
+    // whole ten seconds so it reads as a steady rain and never as a volley.
+    const rand = SP.rng(31);
+    for (let i = 0; i < COUNT; i++) {
+      const target = marks[Math.floor(rand() * marks.length)];
+      const p = polar(target.r, target.deg);
+      const from = polar(620 + rand() * 120, target.deg + (rand() - 0.5) * 26);
+      drops.push({
+        target, p, from,
+        at: 0.2 + rand() * 8.6,
+        dur: 0.55 + rand() * 0.35,
+        node: el('line', { class: 'wire thin', opacity: 0 }, root),
+      });
+    }
+  },
+
+  frame(t) {
+    GROOVES.setAttribute('opacity', 0.6);
+
+    // baseline: a quiet field, but present. At 0.3 over footage the disc simply
+    // was not there and the streaks looked like they were landing on nothing.
+    marks.forEach((d) => {
+      d.node.style.opacity = '0.42';
+      d.node.style.fill = 'var(--faint)';
+      d.node.setAttribute('r', 3.8);
+    });
+
+    drops.forEach((f) => {
+      const u = win(t, f.at, f.dur);
+      if (u <= 0) { f.node.setAttribute('opacity', 0); return; }
+
+      if (u < 1) {
+        // the streak, travelling in
+        const e = ease.in(u);
+        const tail = Math.max(0, e - 0.16);
+        f.node.setAttribute('x1', lerp(f.from.x, f.p.x, tail).toFixed(1));
+        f.node.setAttribute('y1', lerp(f.from.y, f.p.y, tail).toFixed(1));
+        f.node.setAttribute('x2', lerp(f.from.x, f.p.x, e).toFixed(1));
+        f.node.setAttribute('y2', lerp(f.from.y, f.p.y, e).toFixed(1));
+        f.node.setAttribute('opacity', (0.75 * (1 - u * 0.35)).toFixed(3));
+      } else {
+        f.node.setAttribute('opacity', 0);
+      }
+
+      // once landed, the record stays brighter — the index has grown
+      const since = t - (f.at + f.dur);
+      if (since >= 0) {
+        const flash = Math.exp(-since * 2.4);
+        f.target.node.style.fill = 'var(--phosphor-bright)';
+        f.target.node.style.opacity = (0.55 + 0.45 * flash).toFixed(3);
+        f.target.node.setAttribute('r', (4.4 + 3.4 * flash).toFixed(2));
+      }
+    });
+  },
+});
+</script>

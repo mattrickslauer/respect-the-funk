@@ -1,0 +1,155 @@
+[
+  {
+    "i": 0,
+    "start": 0.0,
+    "end": 14.16,
+    "text": "An independent label puts out a record. For anyone to hear it, somebody has to find the few hundred people who might actually play it \u2014 programmers, curators, show hosts \u2014 and write to each of them personally, with a real pitch.",
+    "gap_to_next": 0.56
+  },
+  {
+    "i": 1,
+    "start": 14.72,
+    "end": 20.72,
+    "text": "That's weeks of work per release. Most labels never do it. So most records just disappear.",
+    "gap_to_next": 0.5
+  },
+  {
+    "i": 2,
+    "start": 21.22,
+    "end": 24.06,
+    "text": "Spindle does it. Every night, for every artist on the roster.",
+    "gap_to_next": 0.72
+  },
+  {
+    "i": 3,
+    "start": 24.78,
+    "end": 30.58,
+    "text": "Get it wrong and you're not marketing, you're spam. So the whole thing turns on picking the right few hundred.",
+    "gap_to_next": 0.34
+  },
+  {
+    "i": 4,
+    "start": 30.92,
+    "end": 40.6,
+    "text": "That shortlist is a vector search in CockroachDB, with the filters \u2014 tenant, model, contactable \u2014 living inside the index itself, not bolted on after.",
+    "gap_to_next": 0.48
+  },
+  {
+    "i": 5,
+    "start": 41.08,
+    "end": 47.7,
+    "text": "And that index starts with tenant_id. One column doing our security boundary and our partition key at once.",
+    "gap_to_next": 1.0
+  },
+  {
+    "i": 6,
+    "start": 48.7,
+    "end": 52.78,
+    "text": "pgvector can do the similarity. It can't make one decision do both jobs.",
+    "gap_to_next": 0.0
+  },
+  {
+    "i": 7,
+    "start": 52.78,
+    "end": 61.36,
+    "text": "The index is never finished, either. Agents are adding to these records all day \u2014 what a station plays, who runs it, what they said last time.",
+    "gap_to_next": 0.36
+  },
+  {
+    "i": 8,
+    "start": 61.72,
+    "end": 66.92,
+    "text": "And there's no orchestrator. Agents don't call each other \u2014 a changefeed on the memory tables wakes the next one.",
+    "gap_to_next": 0.36
+  },
+  {
+    "i": 9,
+    "start": 67.28,
+    "end": 72.84,
+    "text": "So kill half the fleet mid-run. The work still finishes. The lease expires and the row comes back.",
+    "gap_to_next": 0.56
+  },
+  {
+    "i": 10,
+    "start": 73.4,
+    "end": 80.12,
+    "text": "The send claims its lease before the network call. Two workers, same name. The name can't tell them apart. The token can.",
+    "gap_to_next": 0.48
+  },
+  {
+    "i": 11,
+    "start": 80.6,
+    "end": 87.82,
+    "text": "When people write back, the reply finds its own thread \u2014 every pitch carries a token we minted for one conversation.",
+    "gap_to_next": 0.56
+  },
+  {
+    "i": 12,
+    "start": 88.38,
+    "end": 98.8,
+    "text": "We're holding contact details for real people, and European law says where that data can live. Same table, same query: this row is in Virginia, this one is physically in Ireland.",
+    "gap_to_next": 0.82
+  },
+  {
+    "i": 13,
+    "start": 99.62,
+    "end": 105.7,
+    "text": "Residency per row, enforced by the database instead of by us remembering to. Now lose a region. It keeps answering.",
+    "gap_to_next": 0.36
+  },
+  {
+    "i": 14,
+    "start": 106.06,
+    "end": 113.06,
+    "text": "It spends the label's money too, on its own, up to a ceiling. Last night it asked to put more behind one record, and I approved it.",
+    "gap_to_next": 0.2
+  },
+  {
+    "i": 15,
+    "start": 113.26,
+    "end": 122.7,
+    "text": "So this morning \u2014 what was it looking at when it asked? I can't just query it. We never stop collecting, so those metrics have been overwritten and the thread states have moved on.",
+    "gap_to_next": 0.34
+  },
+  {
+    "i": 16,
+    "start": 123.04,
+    "end": 131.98,
+    "text": "But the ledger row stored the exact logical timestamp it decided at. Four extra words of SQL, pointed at that timestamp, and they come back. Not a copy of them.",
+    "gap_to_next": 0.6
+  },
+  {
+    "i": 17,
+    "start": 132.58,
+    "end": 137.14,
+    "text": "Then it re-runs the valuation against those old numbers and checks it still gets the same answer.",
+    "gap_to_next": 0.58
+  },
+  {
+    "i": 18,
+    "start": 137.72,
+    "end": 141.62,
+    "text": "No audit table. No event log. No versioned copy of anything.",
+    "gap_to_next": 0.9
+  },
+  {
+    "i": 19,
+    "start": 142.52,
+    "end": 144.38,
+    "text": "Postgres cannot do that at any price.",
+    "gap_to_next": 0.96
+  },
+  {
+    "i": 20,
+    "start": 145.34,
+    "end": 154.62,
+    "text": "One database doing the index, the scheduler, the outbox, the event bus and the ledger. It scales to zero between releases.",
+    "gap_to_next": 0.54
+  },
+  {
+    "i": 21,
+    "start": 155.16,
+    "end": 160.76,
+    "text": "It's live today at spindle.mattrickslauer.com. Go and make it big."
+  }
+]

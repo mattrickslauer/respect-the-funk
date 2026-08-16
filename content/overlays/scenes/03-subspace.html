@@ -1,0 +1,130 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>03 · filtered subspace</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 03 · THE FILTERED SUBSPACE                                          10.0s
+ * Over: "That shortlist is a vector search in CockroachDB, with the filters —
+ *        tenant, model, contactable — living inside the index itself, not
+ *        bolted on after."
+ *
+ * The whole idea in one picture: three filters close the disc like a dial, and
+ * the search then happens INSIDE what is left. The version to avoid is the
+ * obvious one — search everything, highlight the winners — because that is
+ * precisely the architecture this line distinguishes itself from.
+ *
+ * The sweep is anchored at twelve o'clock and closes clockwise rather than
+ * pinching symmetrically. Symmetric was the first pass and it stranded the three
+ * detents on the opposite side of the disc from the wedge they had produced;
+ * closing one way puts them in sequence around the rim, which is also what makes
+ * them read as three successive cuts rather than as a legend.
+ *
+ * One of only two scenes allowed to use CockroachDB purple.
+ */
+const { win, ease, polar, wedge, el, label, lerp, clamp01 } = SP;
+
+let field, edgeA, edgeB, wash, marks = [], qpt, links = [];
+
+// Each step is how far round the disc the aperture still reaches, in degrees.
+const STEPS = [
+  { at: 0.9, dur: 1.3, span: 240, name: 'tenant' },
+  { at: 2.3, dur: 1.3, span: 140, name: 'model' },
+  { at: 3.7, dur: 1.3, span:  66, name: 'contactable' },
+];
+const FINAL = 66;
+
+SP.Scene.define({
+  dur: 10,
+
+  setup(root) {
+    wash = el('path', { class: 'fill crdb', opacity: 0 }, root);
+    field = SP.grooveField(root, { seed: 11 });
+
+    STEPS.forEach((s) => {
+      const a = polar(438, s.span), b = polar(486, s.span);
+      s.tick = el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+                            class: 'wire crdb thin', opacity: 0 }, root);
+      const p = polar(504, s.span);
+      const right = s.span < 180;
+      s.node = label(s.name, p.x + (right ? 14 : -14), p.y + 8,
+                     { size: 24, cls: 'crdb', anchor: right ? 'start' : 'end' }, root);
+    });
+
+    edgeA = el('line', { class: 'wire crdb', opacity: 0 }, root);
+    edgeB = el('line', { class: 'wire crdb', opacity: 0 }, root);
+
+    // The query, and the neighbours it finds once the aperture has closed.
+    qpt = el('circle', { r: 14, class: 'fill', opacity: 0 }, root);
+    const centre = polar(272, FINAL / 2);
+    const inside = field.dots
+      .filter((d) => d.deg > 6 && d.deg < FINAL - 6 && d.r > 150 && d.r < 400)
+      .sort((a, b) => dist(a, centre) - dist(b, centre));
+    inside.slice(0, 6).forEach((d) => {
+      links.push({ dot: d, line: el('line', { class: 'wire thin', opacity: 0 }, root),
+                   p: polar(d.r, d.deg) });
+    });
+    marks = field.dots;
+  },
+
+  frame(t) {
+    const born = ease.out(win(t, 0, 0.8));
+    field.g.setAttribute('opacity', born);
+    GROOVES.setAttribute('opacity', born);
+
+    // the dial closes, one filter at a time
+    let span = 360;
+    STEPS.forEach((s) => {
+      const u = ease.inOut(win(t, s.at, s.dur));
+      if (u > 0) span = lerp(span, s.span, u);
+      const show = ease.out(win(t, s.at + s.dur * 0.6, 0.45));
+      s.node.setAttribute('opacity', show);
+      s.tick.setAttribute('opacity', show * 0.85);
+    });
+
+    const showEdges = ease.out(win(t, 0.9, 0.4));
+    [[edgeA, 0], [edgeB, span]].forEach(([ln, deg]) => {
+      const a = polar(96, deg), b = polar(470, deg);
+      ln.setAttribute('x1', a.x); ln.setAttribute('y1', a.y);
+      ln.setAttribute('x2', b.x); ln.setAttribute('y2', b.y);
+      ln.setAttribute('opacity', showEdges * 0.9);
+    });
+
+    wash.setAttribute('d', wedge(110, 452, 0, span));
+    // Kept low: the subspace is defined by what is LIT inside it, not by a slab
+    // of colour. At 0.16 the wash buried the very dots it was framing.
+    wash.setAttribute('opacity', showEdges * lerp(0.04, 0.085, ease.out(win(t, 5.0, 0.8))));
+
+    // outside goes inert, inside lights up
+    const heat = ease.out(win(t, 5.0, 0.9));
+    marks.forEach((d) => {
+      const inSector = d.deg <= span;
+      // 0.16 rather than near-zero, so the disc still reads as one object the
+      // wedge is a part of. Fade it out entirely and the wedge floats.
+      const o = inSector ? lerp(0.34, 1, heat) : lerp(0.34, 0.16, ease.inOut(win(t, 0.9, 4.2)));
+      d.node.style.opacity = o.toFixed(3);
+      d.node.style.fill = inSector && heat > 0.35 ? 'var(--phosphor-bright)' : 'var(--faint)';
+      d.node.setAttribute('r', inSector ? lerp(3.4, 5.2, heat).toFixed(2) : 3.4);
+    });
+
+    // the query drops in and finds its neighbours — inside, not across
+    const drop = ease.back(win(t, 5.8, 0.9));
+    const q = polar(lerp(-40, 272, drop), FINAL / 2);
+    qpt.setAttribute('cx', q.x); qpt.setAttribute('cy', q.y);
+    qpt.setAttribute('opacity', clamp01(drop * 1.4));
+
+    links.forEach((lk, i) => {
+      const u = ease.out(win(t, 7.0 + i * 0.11, 0.5));
+      lk.line.setAttribute('x1', q.x); lk.line.setAttribute('y1', q.y);
+      lk.line.setAttribute('x2', lerp(q.x, lk.p.x, u));
+      lk.line.setAttribute('y2', lerp(q.y, lk.p.y, u));
+      lk.line.setAttribute('opacity', u * 0.9);
+      if (u > 0.9) { lk.dot.node.style.fill = 'var(--phosphor-bright)'; lk.dot.node.setAttribute('r', 6.6); }
+    });
+  },
+});
+
+function dist(d, p) { const q = polar(d.r, d.deg); return Math.hypot(q.x - p.x, q.y - p.y); }
+</script>

@@ -1,0 +1,103 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>04 · one column, two jobs</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 04 · ONE COLUMN DOING TWO JOBS                                       8.0s
+ * Over: "And that index starts with tenant_id. One column doing our security
+ *        boundary and our partition key at once."
+ *
+ * The temptation is a box labelled tenant_id with two arrows coming out of it,
+ * which is the diagram every architecture deck has drawn and which shows nothing.
+ *
+ * Instead: the same lines, relabelled. The disc divides into tenant wedges, and
+ * those dividing lines are first named as the isolation boundary and then, with
+ * nothing about the drawing changing, named as the partition boundary. The whole
+ * argument is that these are not two mechanisms — so the picture must not contain
+ * two mechanisms.
+ *
+ * Second and last scene allowed CockroachDB purple.
+ */
+const { win, ease, polar, wedge, el, label, lerp, clamp01 } = SP;
+
+const N = 5;                       // five tenants on the disc
+const CUTS = [0, 72, 144, 216, 288];
+
+let field, marks = [], divs = [], washes = [], nameA, nameB, sweep;
+
+SP.Scene.define({
+  dur: 8,
+
+  setup(root) {
+    field = SP.grooveField(root, { seed: 11, r0: 140, r1: 430 });
+    marks = field.dots;
+
+    CUTS.forEach((deg, i) => {
+      washes.push(el('path', {
+        d: wedge(120, 442, deg, deg + 72), class: 'fill crdb', opacity: 0,
+      }, root));
+      const a = polar(112, deg), b = polar(462, deg);
+      divs.push(el('line', {
+        x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: 'wire crdb', opacity: 0,
+      }, root));
+    });
+
+    // The two names, in the same place, one after the other. Same position on
+    // purpose: they are labels for the one thing, not two items in a list.
+    SP.scrim(960, 968, 430, 92, root);
+    nameA = label('security boundary', 960, 962, { size: 34, cls: 'crdb' }, root);
+    nameB = label('partition key',     960, 962, { size: 34, cls: 'crdb' }, root);
+    nameB.setAttribute('opacity', 0);
+
+    sweep = el('path', { class: 'fill crdb', opacity: 0 }, root);
+  },
+
+  frame(t) {
+    GROOVES.setAttribute('opacity', 0.5);
+
+    // the divisions appear
+    const cut = ease.out(win(t, 0.4, 1.2));
+    divs.forEach((ln, i) => {
+      ln.setAttribute('opacity', ease.out(win(t, 0.4 + i * 0.09, 0.6)) * 0.95);
+    });
+
+    marks.forEach((d) => {
+      const seg = Math.floor(d.deg / 72);
+      d.node.style.opacity = (0.28 + 0.12 * (seg % 2)).toFixed(3);
+      d.node.style.fill = 'var(--faint)';
+    });
+
+    // JOB ONE — isolation. One wedge lights and the rest stay shut out.
+    const iso = ease.inOut(win(t, 1.6, 0.8)) * (1 - ease.inOut(win(t, 4.4, 0.7)));
+    washes.forEach((w, i) => w.setAttribute('opacity', (i === 1 ? iso * 0.13 : 0)));
+    marks.forEach((d) => {
+      if (Math.floor(d.deg / 72) === 1 && iso > 0.3) {
+        d.node.style.opacity = (0.3 + 0.68 * iso).toFixed(3);
+        d.node.style.fill = 'var(--phosphor-bright)';
+      }
+    });
+    nameA.setAttribute('opacity', ease.out(win(t, 1.9, 0.5)) * (1 - ease.inOut(win(t, 4.2, 0.5))));
+
+    // JOB TWO — the same lines are where the data is split. A sweep runs round
+    // the disc landing in each wedge in turn; the boundaries never move.
+    const two = win(t, 4.6, 3.0);
+    if (two > 0 && two < 1) {
+      const seg = Math.min(N - 1, Math.floor(two * N));
+      sweep.setAttribute('d', wedge(120, 442, CUTS[seg], CUTS[seg] + 72));
+      sweep.setAttribute('opacity', 0.15);
+      marks.forEach((d) => {
+        if (Math.floor(d.deg / 72) === seg) {
+          d.node.style.opacity = 0.95;
+          d.node.style.fill = 'var(--crdb-bright)';
+        }
+      });
+    } else {
+      sweep.setAttribute('opacity', 0);
+    }
+    nameB.setAttribute('opacity', ease.out(win(t, 4.7, 0.5)));
+  },
+});
+</script>

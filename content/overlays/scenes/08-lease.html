@@ -1,0 +1,92 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>08 · the name can't, the token can</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 08 · TWO WORKERS, SAME NAME                                          9.0s
+ * Over: "The send claims its lease before the network call. Two workers, same
+ *        name. The name can't tell them apart. The token can."
+ *
+ * The one scene where identical-looking things must be identical on screen. Both
+ * workers get the same glyph, the same size, the same label — if the picture
+ * distinguishes them, the line has nothing to explain.
+ *
+ * The tokens are the only difference, and they are the last thing to appear.
+ */
+const { win, ease, el, label, lerp, clamp01 } = SP;
+
+const LX = 560, RX = 1360, WY = 470, ROW = { x: 960, y: 800 };
+let armL, armR, tokL, tokR, verdictL, verdictR, row;
+
+function worker(root, x) {
+  const g = el('g', {}, root);
+  el('rect', { x: x - 92, y: WY - 62, width: 184, height: 124, rx: 14, class: 'wire' }, g);
+  el('circle', { cx: x, cy: WY - 12, r: 20, class: 'wire thin' }, g);
+  el('path', { d: `M ${x - 34} ${WY + 40} q 34 -46 68 0`, class: 'wire thin' }, g);
+  return g;
+}
+
+SP.Scene.define({
+  dur: 9,
+
+  setup(root) {
+    GROOVES.setAttribute('opacity', 0);
+
+    worker(root, LX); worker(root, RX);
+    // Same name on both. This is the joke and it has to be readable.
+    label('ingest-cli', LX, WY + 108, { size: 27 }, root);
+    label('ingest-cli', RX, WY + 108, { size: 27 }, root);
+
+    row = el('rect', { x: ROW.x - 150, y: ROW.y - 40, width: 300, height: 80, rx: 10,
+                       class: 'wire fat' }, root);
+    label('one lead', ROW.x, ROW.y + 9, { size: 26 }, root);
+
+    armL = el('line', { x1: LX, y1: WY + 66, x2: LX, y2: WY + 66, class: 'wire', opacity: 0 }, root);
+    armR = el('line', { x1: RX, y1: WY + 66, x2: RX, y2: WY + 66, class: 'wire', opacity: 0 }, root);
+
+    tokL = label('2bb498ed', LX, WY + 152, { size: 25, cls: 'hot' }, root);
+    tokR = label('6f72beda', RX, WY + 152, { size: 25, cls: 'hot' }, root);
+    tokL.setAttribute('opacity', 0); tokR.setAttribute('opacity', 0);
+
+    verdictL = label('lease lost', LX, 960, { size: 34, cls: 'bad say' }, root);
+    verdictR = label('ok', RX, 960, { size: 34, cls: 'good say' }, root);
+    verdictL.setAttribute('opacity', 0); verdictR.setAttribute('opacity', 0);
+  },
+
+  frame(t) {
+    // 1 · both reach for the same row, at the same moment
+    const reach = ease.out(win(t, 0.5, 1.1));
+    [[armL, LX], [armR, RX]].forEach(([arm, x]) => {
+      arm.setAttribute('x2', lerp(x, ROW.x, reach).toFixed(1));
+      arm.setAttribute('y2', lerp(WY + 66, ROW.y - 44, reach).toFixed(1));
+      arm.setAttribute('opacity', reach * 0.9);
+    });
+
+    // 2 · the tokens — the only thing that differs
+    tokL.setAttribute('opacity', ease.out(win(t, 2.0, 0.5)));
+    tokR.setAttribute('opacity', ease.out(win(t, 2.2, 0.5)));
+    row.style.stroke = (win(t, 2.0, 0.5) > 0.5 ? 'var(--phosphor-bright)' : 'var(--phosphor)');
+
+    // 3 · one completes, one is refused. The refusal lands FIRST, because the
+    // interesting half is what did not happen.
+    const refuse = ease.out(win(t, 4.4, 0.5));
+    if (refuse > 0) {
+      armL.setAttribute('class', 'wire bad');
+      armL.setAttribute('stroke-dasharray', '12 12');
+      armL.setAttribute('opacity', 0.9 - refuse * 0.35);
+      verdictL.setAttribute('opacity', refuse);
+      tokL.setAttribute('class', 'lbl bad');
+    }
+    const ok = ease.out(win(t, 5.8, 0.5));
+    if (ok > 0) {
+      armR.setAttribute('class', 'wire good fat');
+      verdictR.setAttribute('opacity', ok);
+      tokR.setAttribute('class', 'lbl good');
+      row.style.stroke = ('var(--carrier)');
+    }
+  },
+});
+</script>

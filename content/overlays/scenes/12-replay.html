@@ -1,0 +1,158 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>12 · what was it looking at</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 12 · THE REPLAY — the one thing nothing else can do                 32.0s
+ * Over: "So — last night. Here's the ledger row. It stored the exact logical
+ *        timestamp it decided at."
+ *        "What was it looking at? I can't just query it. We never stop
+ *        collecting, so those metrics have been overwritten and the thread states
+ *        have moved on."
+ *        "Four extra words of SQL, pointed at that timestamp, and they come back.
+ *        Not a copy of them. Them."
+ *        "Then it re-runs the valuation against those old numbers and checks it
+ *        still gets the same answer."
+ *
+ * The valuation is drawn as a radial spectrum — the brand mark, as an instrument
+ * reading. That is not decoration: it means rewinding time visibly reshapes the
+ * record itself, and the audience sees the *same object* in two states rather
+ * than two charts side by side. Two charts would invite "so you stored a copy",
+ * which is the one conclusion this beat must not leave available.
+ *
+ * The playhead runs on an arc, not a bar, for the same reason everything else
+ * here is polar.
+ *
+ * This scene and 04 are the only ones permitted CockroachDB purple, and the purple
+ * arrives at exactly the moment time travel does.
+ */
+const { win, ease, polar, arc, el, label, lerp, clamp01 } = SP;
+
+const N = 24, R0 = 132;
+// The two readings. `then` is what the fleet decided on; `now` is what the tables
+// hold today. They differ everywhere, because a system that never stops collecting
+// does not leave anything unchanged.
+const THEN = [], NOW = [];
+(function () {
+  const a = SP.rng(9), b = SP.rng(17);
+  for (let i = 0; i < N; i++) {
+    const base = 0.32 + 0.55 * Math.abs(Math.cos(i * 0.7) * 0.6 + Math.cos(i * 1.9) * 0.4);
+    THEN.push(clamp01(base + (a() - 0.5) * 0.18));
+    NOW.push(clamp01(base + (b() - 0.5) * 0.52));
+  }
+})();
+
+let bars = [], ghosts = [], railN, head, detent, ledger, sqlN, matchN, matchTick, capN;
+const RAIL_R = 452, RAIL_A0 = 118, RAIL_A1 = 242;   // the arc the playhead runs on
+const MARK = 0.28;                                   // where the decision sits on it
+
+const railAt = (u) => RAIL_A0 + (RAIL_A1 - RAIL_A0) * u;
+
+SP.Scene.define({
+  dur: 32,
+
+  setup(root) {
+    GROOVES.setAttribute('opacity', 0.22);
+
+    for (let i = 0; i < N; i++) {
+      const deg = (360 / N) * i;
+      ghosts.push(el('path', { class: 'wire faint thin', opacity: 0 }, root));
+      bars.push(el('path', { class: 'wire fat', 'stroke-linecap': 'round' }, root));
+      bars[i].dataset.deg = deg;
+      ghosts[i].dataset.deg = deg;
+    }
+
+    el('circle', { cx: 960, cy: 540, r: 74, class: 'wire thin', opacity: 0.5 }, root);
+    el('circle', { cx: 960, cy: 540, r: 12, class: 'fill' }, root);
+
+    // the timeline the decision is pinned to
+    railN = el('path', { d: arc(RAIL_R, RAIL_A0, RAIL_A1), class: 'wire faint',
+                         fill: 'none', opacity: 0 }, root);
+    const d0 = polar(RAIL_R - 26, railAt(MARK)), d1 = polar(RAIL_R + 26, railAt(MARK));
+    detent = el('line', { x1: d0.x, y1: d0.y, x2: d1.x, y2: d1.y,
+                          class: 'wire crdb fat', opacity: 0 }, root);
+    // Placed by hand rather than by radius. Following the rail outward put this
+    // either on top of the playhead or below y=1030, which is inside the zone a
+    // player's scrubber and a platform's caption bar both live in.
+    const dp = polar(RAIL_R, railAt(MARK));
+    ledger = label('decided here', 1252, 886, { size: 26, cls: 'crdb', anchor: 'start' }, root);
+    el('line', { x1: dp.x + 16, y1: dp.y - 10, x2: 1238, y2: 878,
+                 class: 'wire crdb thin', opacity: 0.6 }, root);
+    ledger.setAttribute('opacity', 0);
+
+    head = el('circle', { r: 15, class: 'fill crdb', opacity: 0 }, root);
+
+    capN = label('now', 960, 128, { size: 34 }, root);
+    sqlN = label('as of system time', 960, 128, { size: 34, cls: 'crdb' }, root);
+    sqlN.setAttribute('opacity', 0);
+
+    // The verdict goes on the opposite side of the disc from the timestamp, so
+    // the two purple things and the one green thing are never adjacent.
+    matchTick = el('path', { d: 'M 392 928 l 32 34 l 70 -78', class: 'wire good fat', opacity: 0 }, root);
+    matchN = label('same answer', 512, 946, { size: 32, cls: 'good say', anchor: 'start' }, root);
+    matchN.setAttribute('opacity', 0);
+  },
+
+  frame(t) {
+    /* Timeline of the beat:
+     *  0 – 5   the reading, as it stands today
+     *  5 – 11  it keeps changing — this is what "the numbers are gone" looks like
+     * 11 – 16  the rail and the pinned instant appear
+     * 16 – 22  the playhead travels back to it
+     * 22 – 27  the old reading returns, in purple: them, not a copy of them
+     * 27 – 32  re-run, and it matches
+     */
+    const arrive = ease.out(win(t, 0.3, 1.4));
+    const drift = win(t, 5.0, 6.0);
+    const rewind = ease.inOut(win(t, 16.4, 5.2));
+
+    // How far from "then" the reading currently is: 1 = today, 0 = the decision.
+    let away = arrive * clamp01(0.35 + 0.65 * ease.inOut(drift));
+    if (rewind > 0) away = lerp(away, 0, rewind);
+
+    for (let i = 0; i < N; i++) {
+      const deg = Number(bars[i].dataset.deg);
+      // a little live jitter while facts are landing, gone once we have rewound
+      const jit = drift > 0 && rewind < 0.02
+        ? Math.sin(t * 2.2 + i * 1.7) * 0.03 * ease.inOut(drift) : 0;
+      const v = lerp(THEN[i], NOW[i], away) + jit;
+      const len = arrive * (54 + 210 * v);
+      const a = polar(R0, deg), b = polar(R0 + len, deg);
+      bars[i].setAttribute('d', `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} L ${b.x.toFixed(1)} ${b.y.toFixed(1)}`);
+      bars[i].setAttribute('opacity', arrive * (0.55 + 0.45 * v));
+      bars[i].style.stroke = (rewind > 0.45 ? 'var(--crdb-bright)' : 'var(--phosphor)');
+
+      // once rewound, the ghost shows where today's reading WAS — so the audience
+      // can see that what came back is different, not merely re-drawn
+      const gv = NOW[i];
+      const gl = 54 + 210 * gv;
+      const gb = polar(R0 + gl, deg);
+      ghosts[i].setAttribute('d', `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} L ${gb.x.toFixed(1)} ${gb.y.toFixed(1)}`);
+      ghosts[i].setAttribute('opacity', rewind * 0.45);
+    }
+
+    // the rail, the pinned instant, the playhead
+    const rail = ease.out(win(t, 11.2, 1.0));
+    railN.setAttribute('opacity', rail * 0.5);
+    detent.setAttribute('opacity', ease.out(win(t, 12.2, 0.6)) * 0.95);
+    ledger.setAttribute('opacity', ease.out(win(t, 12.6, 0.6)));
+
+    const headAt = lerp(1, MARK, rewind);
+    const hp = polar(RAIL_R, railAt(headAt));
+    head.setAttribute('cx', hp.x); head.setAttribute('cy', hp.y);
+    head.setAttribute('opacity', ease.out(win(t, 13.4, 0.5)));
+
+    // the label swaps exactly when the query changes
+    capN.setAttribute('opacity', arrive * (1 - ease.inOut(win(t, 16.4, 1.2))));
+    sqlN.setAttribute('opacity', ease.out(win(t, 17.0, 1.0)));
+
+    // re-run, and it matches
+    const chk = ease.out(win(t, 27.4, 0.6));
+    matchTick.setAttribute('opacity', chk);
+    matchN.setAttribute('opacity', chk);
+  },
+});
+</script>

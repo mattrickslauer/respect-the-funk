@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>05 · the concession</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 05 · pgvector CAN DO THE SIMILARITY                                  6.0s
+ * Over: "pgvector can do the similarity. It can't make one decision do both jobs."
+ *
+ * A concession beat, and it has to LOOK like one — generous, not sneering. So the
+ * first half genuinely awards the point: the similarity search completes, ticked,
+ * in full colour. Only then does the second half show the boundaries missing.
+ *
+ * Deliberately the quietest scene in the video. Two rings, one tick, one gap.
+ * Anything more and it starts arguing, which is the opposite of what a concession
+ * is for.
+ */
+const { win, ease, polar, el, label, lerp, clamp01 } = SP;
+
+let ringA, ringB, tick, gapMarks = [], capA, capB;
+
+const R = 150;
+const LX = 640, RX = 1280, Y = 520;
+
+SP.Scene.define({
+  dur: 6,
+
+  setup(root) {
+    GROOVES.setAttribute('opacity', 0);
+
+    // LEFT — similarity. A closed ring: it works.
+    ringA = el('circle', { cx: LX, cy: Y, r: R, class: 'wire good fat',
+                           'stroke-dasharray': 2 * Math.PI * R,
+                           'stroke-dashoffset': 2 * Math.PI * R }, root);
+    tick = el('path', {
+      d: `M ${LX - 42} ${Y} l 30 32 l 62 -70`, class: 'wire good fat', opacity: 0,
+    }, root);
+    capA = label('similarity', LX, Y + 236, { size: 32, cls: 'good' }, root);
+
+    // RIGHT — the same ring, but it cannot close: the dividing lines are absent.
+    ringB = el('circle', { cx: RX, cy: Y, r: R, class: 'wire faint fat',
+                           'stroke-dasharray': '34 26', opacity: 0 }, root);
+    // ghosts of the boundaries that are not there
+    [0, 72, 144, 216, 288].forEach((deg) => {
+      const a = polar(40, deg, RX, Y), b = polar(R + 34, deg, RX, Y);
+      gapMarks.push(el('line', {
+        x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: 'wire faint thin',
+        'stroke-dasharray': '6 14', opacity: 0,
+      }, root));
+    });
+    capB = label('one decision, both jobs', RX, Y + 236, { size: 32, cls: 'dim' }, root);
+    capA.setAttribute('opacity', 0); capB.setAttribute('opacity', 0);
+  },
+
+  frame(t) {
+    // 1 · award the point, properly
+    const draw = ease.out(win(t, 0.2, 1.3));
+    ringA.setAttribute('stroke-dashoffset', (2 * Math.PI * R) * (1 - draw));
+    tick.setAttribute('opacity', ease.back(win(t, 1.4, 0.5)));
+    capA.setAttribute('opacity', ease.out(win(t, 1.5, 0.4)));
+
+    // 2 · and then the part it cannot do
+    const b = ease.out(win(t, 2.9, 0.7));
+    ringB.setAttribute('opacity', b * 0.7);
+    capB.setAttribute('opacity', ease.out(win(t, 3.4, 0.5)));
+    gapMarks.forEach((g, i) => {
+      g.setAttribute('opacity', ease.out(win(t, 3.3 + i * 0.12, 0.4)) * 0.45);
+    });
+  },
+});
+</script>

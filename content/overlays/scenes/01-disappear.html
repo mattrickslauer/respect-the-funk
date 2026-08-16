@@ -1,0 +1,121 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>01 · the record disappears</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 01 · A RECORD, AND EVERYONE WHO WILL NEVER HEAR IT                  26.0s
+ * Over: "An independent label puts out a record… find the few hundred people who
+ *        might actually play it… That's weeks of work per release. Most labels
+ *        never do it. So most records just disappear."
+ *        "Spindle does it. Every night, for every artist on the roster."
+ *
+ * The arc is a small tragedy in four moves: a record exists, the world it needs
+ * to reach turns out to be enormous, a handful of the right people light up, and
+ * then the whole thing goes out. The last four seconds switch it back on.
+ *
+ * The record at the centre is the brand mark reduced to its bones — disc, groove,
+ * spindle hole. It stays at the middle of the frame for the entire video's worth
+ * of scenes, because it is the thing all of this is in service of.
+ */
+const { win, ease, polar, el, label, lerp, clamp01 } = SP;
+
+let disc, hole, field, marks = [], chosen = [], spokes = [], pulse;
+
+SP.Scene.define({
+  dur: 26,
+
+  setup(root) {
+    // the record
+    disc = el('g', {}, root);
+    el('circle', { cx: 960, cy: 540, r: 74, class: 'wire fat' }, disc);
+    el('circle', { cx: 960, cy: 540, r: 55, class: 'wire thin', opacity: 0.5 }, disc);
+    el('circle', { cx: 960, cy: 540, r: 40, class: 'wire thin', opacity: 0.32 }, disc);
+    hole = el('circle', { cx: 960, cy: 540, r: 11, class: 'fill' }, disc);
+
+    field = SP.grooveField(root, { seed: 3, r0: 168, r1: 452 });
+    marks = field.dots;
+
+    // The few who matter. Spread around the disc rather than clustered, because
+    // the point is that they are scattered through the crowd and indistinguishable
+    // from it until something works out which they are.
+    const rand = SP.rng(21);
+    const pool = marks.filter((d) => d.r > 210);
+    for (let i = 0; i < 14; i++) {
+      const d = pool[Math.floor(rand() * pool.length)];
+      if (chosen.includes(d)) continue;
+      chosen.push(d);
+      const p = polar(d.r, d.deg);
+      spokes.push(el('line', {
+        x1: 960, y1: 540, x2: p.x, y2: p.y, class: 'wire thin', opacity: 0,
+      }, root));
+    }
+
+    pulse = el('circle', { cx: 960, cy: 540, r: 74, class: 'wire', opacity: 0 }, root);
+  },
+
+  frame(t) {
+    // 1 · the record exists            0 – 3
+    const rec = ease.out(win(t, 0.2, 1.4));
+    disc.setAttribute('opacity', rec);
+    disc.setAttribute('transform', `translate(960 540) scale(${lerp(0.7, 1, rec)}) translate(-960 -540)`);
+
+    // 2 · the world it has to reach    3 – 9
+    const bloom = ease.out(win(t, 2.6, 3.4));
+    GROOVES.setAttribute('opacity', bloom * 0.9);
+    field.g.setAttribute('opacity', 1);
+    marks.forEach((d, i) => {
+      // ripple outward, so the crowd arrives rather than switching on
+      const lead = clamp01((d.r - 168) / 284) * 0.55;
+      const u = ease.out(win(t, 2.6 + lead * 3.0, 1.0));
+      d.node.style.opacity = (u * 0.32).toFixed(3);
+      d.node.style.fill = 'var(--faint)';
+    });
+
+    // 3 · the few who matter           9 – 15
+    chosen.forEach((d, i) => {
+      const u = ease.out(win(t, 9.0 + i * 0.13, 0.7));
+      const die = ease.inOut(win(t, 15.5, 3.2));
+      const live = u * (1 - die);
+      d.node.style.opacity = Math.max(0.32 * (1 - die), live).toFixed(3);
+      d.node.style.fill = live > 0.25 ? 'var(--phosphor-bright)' : 'var(--faint)';
+      d.node.setAttribute('r', lerp(3.4, 7.0, live).toFixed(2));
+      spokes[i].setAttribute('opacity', (live * 0.5).toFixed(3));
+    });
+
+    // 4 · it goes out                  15.5 – 21
+    const die = ease.inOut(win(t, 15.5, 3.6));
+    marks.forEach((d) => {
+      if (chosen.includes(d)) return;
+      d.node.style.opacity = (Number(d.node.style.opacity) * (1 - die * 0.92)).toFixed(3);
+    });
+    GROOVES.setAttribute('opacity', bloom * 0.9 * (1 - die * 0.8));
+    disc.setAttribute('opacity', rec * (1 - die * 0.85));
+
+    // 5 · switched back on             21 – 26
+    const back = ease.expo(win(t, 21.0, 1.6));
+    if (back > 0) {
+      disc.setAttribute('opacity', lerp(rec * 0.15, 1, back));
+      hole.style.fill = 'var(--phosphor-bright)';
+      GROOVES.setAttribute('opacity', lerp(0.18, 0.9, back));
+      chosen.forEach((d, i) => {
+        const u = ease.out(win(t, 21.2 + i * 0.08, 0.6));
+        d.node.style.opacity = Math.max(0.06, u).toFixed(3);
+        d.node.style.fill = 'var(--phosphor-bright)';
+        d.node.setAttribute('r', lerp(3.4, 7.0, u).toFixed(2));
+        spokes[i].setAttribute('opacity', (u * 0.55).toFixed(3));
+      });
+      marks.forEach((d) => {
+        if (chosen.includes(d)) return;
+        d.node.style.opacity = (back * 0.2).toFixed(3);
+      });
+      // one outward pulse — the fleet starting its round
+      const pu = win(t, 22.6, 2.6);
+      pulse.setAttribute('r', lerp(74, 470, ease.out(pu)));
+      pulse.setAttribute('opacity', pu > 0 && pu < 1 ? (1 - pu) * 0.5 : 0);
+    }
+  },
+});
+</script>

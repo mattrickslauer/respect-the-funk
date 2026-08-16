@@ -1,0 +1,93 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>07 · no orchestrator</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 07 · THE DATABASE IS THE EVENT BUS, AND HALF THE FLEET DIES         16.0s
+ * Over: "And there's no orchestrator. Agents don't call each other — a changefeed
+ *        on the memory tables wakes the next one."
+ *        "So kill half the fleet mid-run. The work still finishes. The lease
+ *        expires and the row comes back."
+ *
+ * Two things have to be legible and only one of them is obvious.
+ *
+ * The obvious one: work survives half the workers dying. Easy — kill them, keep
+ * the progress ring moving.
+ *
+ * The subtle one: agents NEVER talk to each other. Every impulse visibly goes to
+ * the centre and comes back out. If a single line is ever drawn rim-to-rim the
+ * scene has told the opposite of the truth, so there is no such line in here at
+ * all — the geometry makes the claim, not a caption.
+ */
+const { win, ease, polar, arc, el, label, lerp, clamp01 } = SP;
+
+const N = 12, RING = 330;
+let agents = [], hub, spokes = [], progress, deadX = [];
+const DEAD = [1, 2, 5, 6, 9, 10];        // half of them, scattered not adjacent
+
+SP.Scene.define({
+  dur: 16,
+
+  setup(root) {
+    GROOVES.setAttribute('opacity', 0.35);
+
+    for (let i = 0; i < N; i++) {
+      const deg = (360 / N) * i;
+      const p = polar(RING, deg);
+      spokes.push(el('line', {
+        x1: 960, y1: 540, x2: p.x, y2: p.y, class: 'wire thin', opacity: 0.14,
+      }, root));
+      const g = el('g', {}, root);
+      const c = el('circle', { cx: p.x, cy: p.y, r: 21, class: 'wire' }, g);
+      agents.push({ deg, p, g, c, node: el('circle', { cx: p.x, cy: p.y, r: 9, class: 'fill', opacity: 0.25 }, g) });
+    }
+
+    hub = el('circle', { cx: 960, cy: 540, r: 46, class: 'wire fat' }, root);
+    el('circle', { cx: 960, cy: 540, r: 12, class: 'fill' }, root);
+
+    // work completed, as an arc — one number-free progress bar bent round the disc
+    progress = el('path', { class: 'wire good fat', fill: 'none', opacity: 0 }, root);
+
+    DEAD.forEach((i) => {
+      const p = agents[i].p;
+      deadX.push(el('path', {
+        d: `M ${p.x - 15} ${p.y - 15} l 30 30 M ${p.x + 15} ${p.y - 15} l -30 30`,
+        class: 'wire bad', opacity: 0,
+      }, root));
+    });
+  },
+
+  frame(t) {
+    // 1 · the round: the hub wakes each agent in turn, always through the centre
+    const beat = 0.62;
+    agents.forEach((a, i) => {
+      const at = 0.5 + i * beat * 0.55;
+      const fire = win(t, at, 0.5);
+      const dead = DEAD.includes(i) && t > 7.6;
+      const lit = dead ? 0 : (fire > 0 && fire < 1 ? Math.sin(fire * Math.PI) : (fire >= 1 ? 0.42 : 0.25));
+      a.node.style.opacity = String(Math.max(dead ? 0.08 : 0.25, lit));
+      a.node.setAttribute('r', lerp(9, 15, clamp01(lit)).toFixed(2));
+      a.c.setAttribute('opacity', dead ? 0.18 : 0.85);
+      a.c.style.stroke = (dead ? 'var(--faint)' : 'var(--phosphor)');
+      spokes[i].setAttribute('opacity', dead ? 0.06 : (0.14 + 0.7 * clamp01(lit)));
+    });
+
+    // hub pulses on every hand-off — the bus, doing the waking
+    const hb = (t * 1.8) % 1;
+    hub.setAttribute('r', lerp(46, 54, Math.sin(hb * Math.PI) * 0.8));
+    hub.setAttribute('opacity', 0.55 + 0.4 * Math.sin(hb * Math.PI));
+
+    // 2 · half of them die, at 7.6s
+    deadX.forEach((x, i) => x.setAttribute('opacity', ease.out(win(t, 7.6 + i * 0.06, 0.35)) * 0.95));
+
+    // 3 · and the work finishes anyway. The arc never stalls at the kill — that
+    // flat spot would be the whole point of the beat, inverted.
+    const done = ease.linear(win(t, 1.2, 12.6));
+    progress.setAttribute('opacity', done > 0 ? 0.95 : 0);
+    if (done > 0.002) progress.setAttribute('d', arc(452, 0, 359.9 * done));
+  },
+});
+</script>

@@ -154,3 +154,9 @@ terraform.tfvars
 
 # Built on demand for sharing; the served page is index.html + wireframe.json
 docs/wireframe/standalone.html
+
+# Overlay render chatter. `align.json` beside these is deliberately NOT ignored:
+# it is the word-level timing of the take, derived from content/BaseLayer.mov,
+# which is itself too large for the repo — so a clone can no longer reproduce it
+# and losing it means re-transcribing from a source nobody else has.
+content/overlays/out/**/*.log

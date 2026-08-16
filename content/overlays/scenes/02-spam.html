@@ -1,0 +1,80 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>02 · precision, or spam</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<svg id="svg" viewBox="0 0 1920 1080"><g id="stage"></g></svg>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* 02 · YOU'RE SPAM                                                     8.0s
+ * Over: "Get it wrong and you're not marketing, you're spam. So the whole thing
+ *        turns on picking the right few hundred."
+ *
+ * One gesture, done twice: write to everyone, then write to the right ones. The
+ * first version fires a line at every dot on the disc and turns the whole field
+ * red; the second retracts all of it down to six.
+ *
+ * The red is the only place in the video that colour appears at this scale, which
+ * is what makes the retraction land. Restraint elsewhere is what buys it here.
+ */
+const { win, ease, polar, el, lerp, clamp01 } = SP;
+
+let field, marks = [], rays = [], keep = [];
+
+SP.Scene.define({
+  dur: 8,
+
+  setup(root) {
+    field = SP.grooveField(root, { seed: 3, r0: 168, r1: 452 });
+    marks = field.dots;
+
+    // A ray to every single one. Drawn once, animated by length — cheaper and
+    // steadier than creating and destroying several hundred nodes per frame.
+    marks.forEach((d) => {
+      const p = polar(d.r, d.deg);
+      rays.push({ d, p, node: el('line', {
+        x1: 960, y1: 540, x2: 960, y2: 540, class: 'wire bad thin', opacity: 0,
+      }, root) });
+    });
+
+    const rand = SP.rng(5);
+    const pool = marks.filter((m) => m.r > 240);
+    while (keep.length < 6) {
+      const m = pool[Math.floor(rand() * pool.length)];
+      if (!keep.includes(m)) keep.push(m);
+    }
+
+    el('circle', { cx: 960, cy: 540, r: 13, class: 'fill' }, root);
+  },
+
+  frame(t) {
+    GROOVES.setAttribute('opacity', 0.55);
+
+    // 1 · fire at everything — 0.3s to 2.6s, staggered by angle so it sweeps
+    // round the disc rather than appearing all at once
+    const blast = win(t, 0.3, 2.3);
+    // 2 · retract to the few — from 3.8s
+    const pull = ease.inOut(win(t, 3.8, 2.4));
+
+    rays.forEach((r, i) => {
+      const kept = keep.includes(r.d);
+      const lead = (r.d.deg / 360) * 0.5 + r.d.rand * 0.12;
+      const out = ease.out(clamp01((blast - lead) / 0.45));
+      // kept rays survive the retraction and turn from red to phosphor
+      const life = kept ? 1 : 1 - pull;
+      const len = out * life;
+
+      r.node.setAttribute('x2', lerp(960, r.p.x, len).toFixed(1));
+      r.node.setAttribute('y2', lerp(540, r.p.y, len).toFixed(1));
+      r.node.setAttribute('opacity', (len * (kept ? 0.9 : 0.5)).toFixed(3));
+      if (kept && pull > 0.35) r.node.setAttribute('class', 'wire thin');
+
+      const hit = out > 0.85 ? 1 : 0;
+      r.d.node.style.opacity = (0.3 + 0.6 * hit * life).toFixed(3);
+      r.d.node.style.fill = kept && pull > 0.35 ? 'var(--phosphor-bright)'
+                          : hit && !kept && pull < 0.9 ? 'var(--cut)' : 'var(--faint)';
+      r.d.node.setAttribute('r', kept ? lerp(3.4, 7, pull).toFixed(2) : 3.4);
+    });
+  },
+});
+</script>

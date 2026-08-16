@@ -7,7 +7,7 @@
 #
 # ## Why there is no database here, and no secret
 #
-# The obvious next step is a repository secret holding a connection string so the 215
+# The obvious next step is a repository secret holding a connection string so the 316
 # cluster-gated tests run too. That step is not taken, for two reasons that are worth
 # writing down so nobody has to re-derive them.
 #
@@ -18,7 +18,7 @@
 # cluster, it needs an *environment*-scoped secret with a required reviewer, pointed at
 # the test cluster from docs/runbooks/environments.md and never at production.
 #
-# **The tests that need no cluster are the ones CI is good at.** 232 of them: the tenant
+# **The tests that need no cluster are the ones CI is good at.** 746 of them: the tenant
 # scoping lint that parses every SQL statement in spindle/ and fails if one omits
 # its tenant_id predicate, the spend gate's refusals, the agent registry, and this
 # repository's structural guards. Those catch the class of mistake a second pair of eyes

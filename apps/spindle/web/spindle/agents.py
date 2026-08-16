@@ -34,7 +34,7 @@ import psycopg
 from psycopg.types.json import Json
 
 from spindle import (
-    contacts, creators, embed, fcc, fleet, harvested, lessons, podcastindex,
+    audience, contacts, creators, embed, fcc, fleet, harvested, lessons, podcastindex,
     radiobrowser, repo, settings as settings_mod, sources, spend, streams, wikipedia,
 )
 
@@ -993,6 +993,43 @@ def rank_of(rows: list[dict[str, Any]], party_id: str) -> tuple[int, float] | No
     return None
 
 
+def audience_segments_for(conn: psycopg.Connection, tenant_id: str,
+                          party_id: str) -> dict[str, list[tuple[str, float]]]:
+    """The artist's newest audience breakdown, or `{}` when there is not one.
+
+    `{}` covers three different situations on purpose — never fetched, below Instagram's
+    100-follower threshold, grant revoked — because the *rerank* does not care which:
+    all three mean there is no geography to rank on, and `audience.geo_rerank` returns
+    the candidates unmoved. What must not happen is a neutral geography being invented to
+    fill the gap, which would make a ranking that used no audience data indistinguishable
+    from one that did.
+
+    The console does care which, and reads `audience_profile.demographics_state` directly
+    rather than this function — see `038_audience_profile.sql` on why the three are kept
+    apart in the table even though they collapse here.
+
+    Newest snapshot only. History is what the other rows are for; a rerank ranks on what
+    is true now.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT g.dimension, g.value, g.share
+                 FROM audience_segment g
+                 JOIN audience_profile a
+                   ON a.id = g.profile_id AND a.tenant_id = g.tenant_id
+                WHERE g.tenant_id = %s AND a.party_id = %s
+                  AND a.captured_at = (SELECT max(captured_at) FROM audience_profile
+                                        WHERE tenant_id = %s AND party_id = %s)
+                ORDER BY g.dimension, g.share DESC""",
+            (tenant_id, party_id, tenant_id, party_id))
+        rows = cur.fetchall()
+
+    out: dict[str, list[tuple[str, float]]] = {}
+    for row in rows:
+        out.setdefault(row["dimension"], []).append((row["value"], float(row["share"])))
+    return out
+
+
 def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
               gate: spend.Gate, limit: int = 20) -> list[dict[str, Any]]:
     """R1 — given one of our artists, who should we take them to?
@@ -1090,11 +1127,25 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
                            (SELECT pr.url FROM presence pr
                              WHERE pr.tenant_id = %s AND pr.subject_kind = 'party'
                                AND pr.subject_id = s.id
-                             ORDER BY pr.url LIMIT 1) AS url
+                             ORDER BY pr.url LIMIT 1) AS url,
+                           -- Where this counterparty is, for `audience.geo_rerank`.
+                           -- A scalar subquery for exactly the reason `url` above is one:
+                           -- a party may hold several routes and a `LEFT JOIN` would
+                           -- multiply the row, so the same party would enter the rerank
+                           -- twice and `LIMIT` would return fewer distinct parties than
+                           -- asked for. It also stays outside the CTE, so it cannot steer
+                           -- the planner off `party@party_shortlist` — the failure mode
+                           -- the long comment above exists to prevent.
+                           -- `ORDER BY` makes it deterministic rather than whichever row
+                           -- the planner reached first; a shortlist that reorders itself
+                           -- between two identical loads cannot be replayed.
+                           (SELECT cr.contact_country FROM contact_route cr
+                             WHERE cr.tenant_id = %s AND cr.party_id = s.id
+                             ORDER BY cr.contact_country LIMIT 1) AS country
                       FROM shortlisted s
                      ORDER BY s.distance""",
                 (artist["vec"], tenant_id, artist["embedding_model"], artist["vec"],
-                 SHORTLIST_CANDIDATES, tenant_id),
+                 SHORTLIST_CANDIDATES, tenant_id, tenant_id),
             )
             candidates = [dict(row) for row in cur.fetchall()]
 
@@ -1107,7 +1158,21 @@ def shortlist(conn: psycopg.Connection, tenant_id: str, party_id: str, *,
             model=artist["embedding_model"],
             candidate_ids=[str(row["id"]) for row in candidates],
         )
-        ranked = lessons.rerank(candidates, applicable)[:limit]
+        # R2b. Where her audience already is, from `038_audience_profile.sql`. Applied
+        # after the lesson rerank and before the truncation, so that a station lifted by
+        # geography can still enter the returned `limit` — reranking after the slice would
+        # only reorder rows that were going to be returned anyway, which is the one thing
+        # a rerank must not do.
+        #
+        # Returns the candidates untouched when there is no audience data, and that
+        # absence is the honest state rather than a neutral default: below 100 followers,
+        # or under a revoked grant, `audience_segments_for` yields `{}` and the ranking is
+        # the vector distance alone. `038`'s header argues at length why that must be
+        # visible rather than silent.
+        ranked = audience.geo_rerank(
+            lessons.rerank(candidates, applicable),
+            audience_segments_for(conn, tenant_id, party_id),
+        )[:limit]
 
         # `hit_count` is what tells an operator which lessons earn their place.
         # Incremented here rather than in the rerank, because the rerank is pure and
@@ -2558,4 +2623,12 @@ REGISTRY: dict[str, fleet.Agent | fleet.NetworkAgent] = {
     # for UGC creators exists, so the rows this profiles are typed in by a person. The
     # asymmetry is a finding, not a gap.
     "profile_creator": creators.profile_creator,
+    # `audience.py`, and note that this pair is the mirror image of the line above.
+    # `profile_creator` exists because we may *not* read a stranger's audience and a
+    # person must type what they saw; these exist because we may read our own artist's,
+    # and she granted it. `038_audience_profile.sql` sets out why that is one rule rather
+    # than two, and the two registry entries are deliberately adjacent so the contrast is
+    # visible from here rather than only from the migrations.
+    "refresh_audience": audience.refresh_audience,
+    "profile_audience": audience.profile_audience,
 }

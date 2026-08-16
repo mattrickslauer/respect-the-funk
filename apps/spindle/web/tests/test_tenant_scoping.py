@@ -153,6 +153,15 @@ TENANT_SCOPED_TABLES: tuple[str, ...] = (
     # gather by hand, be read from another's console. Added in the same commit as the
     # migration, per the note on `035` above.
     "sound_usage",
+    # `038`'s pair. `audience_profile` holds the roster artist's own audience under her
+    # own OAuth grant, and `audience_segment` the breakdown beneath it — where her
+    # listeners are, which is the signal the geographic rerank ranks counterparties on.
+    # These are the most sensitive rows this schema has ever held: they are not a public
+    # index of stations but one named person's audience data, given to us on the
+    # understanding that we are her label. A statement that lost its tenant predicate
+    # would hand that to whoever else is on the cluster. Added in the same commit as the
+    # migration, per the note on `035` above.
+    "audience_profile", "audience_segment",
 )
 
 #: A reference to a table, tagged with which keyword introduced it — the keyword is

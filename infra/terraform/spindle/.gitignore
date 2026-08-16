@@ -5,3 +5,10 @@ build/
 *.tfstate.*
 .terraform.lock.hcl
 terraform.tfvars
+
+# A saved plan (`terraform plan -out=…`) is not a diff — it is the resolved
+# configuration, and it carries variable values in the clear. `database_url` is one
+# of them, and it is a credential with a password in it. Ignored by name and by the
+# conventional extension so that neither spelling can be added by a hurried `git add -A`.
+tfplan
+*.tfplan

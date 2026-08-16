@@ -95,6 +95,56 @@ from watching them once:
 
 ---
 
+## Sound, level and colour
+
+```bash
+python3 sfx/synth.py     # -> out/sfx/*.wav   the palette, synthesised
+python3 sfx/cues.py      # -> out/sfx/bed.wav one stereo bed, placed against the cut
+python3 compose.py       # grade + level + bed, in the same pass as the graphics
+```
+
+**The audio arrived 12 dB too hot.** The source measures **−2.76 LUFS with a
++11.25 dBTP true peak** — guaranteed to clip the moment a player converts it to
+16-bit. But `Flat factor: 0.0` says the waveform was never actually flat-topped,
+so nothing had been destroyed and no declipper was needed. The fix is one number:
+**−12.8 dB of pure gain**, which lands it at −15.61 LUFS / −1.71 dBTP. A gain is
+arithmetic — it cannot degrade anything, which is why it was chosen over
+`loudnorm`'s dynamic mode.
+
+What could *not* be fixed, and is worth knowing before the next shoot: **LRA is
+2.5**. The dynamics were squashed flat before this file existed. Nothing here
+restores them. Record with peaks around −6 dBFS and leave the limiter off.
+
+**The grade** corrects about two thirds of a warm orange cast (measured U 118.7 /
+V 135.7, both off neutral the same way) and opens up a flat, dim image. It lands
+at Y 107 · U 122.6 · V 132 · SAT 16.4. Deliberately not neutral: it is a warm
+interior with a wood door in shot, and driving U/V to 128 makes a real room look
+like a rendering. Graded in 10-bit so the contrast curve does not band the wall.
+
+**The sound effects are synthesised, not sampled** — partly because there is no
+library here, mostly because they have to be *matched*: the aperture in scene 03
+closes over a duration the cue sheet knows, so its sweep is synthesised to
+exactly that length. The palette is written to three rules — under 400ms, energy
+below 6kHz (bright reads as "app" and collides with sibilance), and normalised
+quiet per-sound so the cue sheet needs no mixing pass.
+
+Cues are written in **scene time, never timeline time** (`"0.9s into scene 03"`).
+The scenes are stretched to fit what was said, so a cue pinned to the timeline
+drifts off its own visual the moment anyone re-reads a line. Pinned to scene time
+it survives a re-shoot: re-run `align.py`, re-run `cues.py`, everything is still
+on its frame. 88 cues, bed peaking −17 dBFS, about 15 dB under the dialogue.
+
+Nothing is scored to *speech* — no cue on a word or a sentence end. Every sound
+attaches to something that visibly happens, so it reads as the picture having
+physical presence rather than as decoration under narration. `TRIM` at the top of
+`cues.py` is the one knob if the bed sits wrong.
+
+Everything above is applied **in the same pass that lays on the graphics,
+straight from `BaseLayer.mov`**. Nothing in this pipeline ever reads its own
+output — grading a finished h264 and re-encoding would put two generations of the
+same lossy codec on the picture for nothing. `--master` swaps the h264/AAC
+deliverable for ProRes 422 HQ and 24-bit PCM.
+
 ## Compositing notes
 
 **Scenes.** Drop the `.mov` on a track above the talking head; it is straight

@@ -151,23 +151,93 @@ def build_frames(align: list, total_frames: int) -> Path:
     return frames
 
 
-def encode(frames: Path, out: Path, clip: tuple[float, float] | None) -> None:
+# ---------------------------------------------------------------------------
+# grade and audio
+#
+# Both are applied HERE, in the same pass that lays on the graphics, straight
+# from BaseLayer.mov. Nothing in this file ever reads its own output. Grading a
+# finished h264 and re-encoding it would put two generations of the same lossy
+# codec on the picture for no reason.
+# ---------------------------------------------------------------------------
+
+# Measured on the source with signalstats, averaged over every 60th frame:
+#   Y 102.6 (dim) · U 118.7 · V 135.7 (both off neutral the same way — a warm
+#   orange cast) · SAT 14.5 (flat) · YLOW 37.3 / YHIGH 172.4 (low contrast)
+#
+# This lands it at Y 106 · U 123 · V 132 · SAT 16.2. Deliberately NOT neutral:
+# it is a warm interior with a wood door in shot, and driving U/V to 128 makes a
+# real room look like a rendering. The cast is corrected about two thirds.
+GRADE = (
+    "colorbalance=rm=-0.075:bm=0.095:rh=-0.045:bh=0.060:rs=-0.035:bs=0.055,"
+    "eq=contrast=1.09:brightness=0.022:saturation=1.10:gamma=1.03,"
+    "vibrance=intensity=0.18"
+)
+
+# The source arrives at -2.76 LUFS with a +11.25 dBTP true peak — around 12 dB
+# hotter than anything should be, and guaranteed to clip the moment a player
+# converts it to 16-bit integer.
+#
+# The fix is one number. `Flat factor: 0.0` says the waveform is not actually
+# flat-topped, so nothing was destroyed on the way in and no declipper is needed
+# — it is simply too loud. -12.8 dB of pure gain puts it at -15.56 LUFS and
+# -1.55 dBTP, both in spec, and a gain is arithmetic: it cannot degrade anything.
+#
+# What CANNOT be undone, and is worth knowing: LRA is 2.5, so the dynamics were
+# already squashed before this file existed. Nothing here restores them.
+GAIN_DB = -12.8
+SFX_BED = HERE / "out" / "sfx" / "bed.wav"
+
+
+def audio_chain(with_sfx: bool) -> tuple[str, list[str]]:
+    """The audio half of the filtergraph, plus any extra inputs it needs."""
+    # highpass first so the limiter is not reacting to rumble it should not hear.
+    # 65Hz 2nd-order sits below a male fundamental and takes out desk and traffic.
+    voice = (f"[0:a]volume={GAIN_DB}dB,highpass=f=65:p=2,"
+             # A safety net, not a sound. After the gain above the true peak is
+             # already -1.55, so this should never engage; it exists so a louder
+             # re-shoot cannot ship clipped.
+             "alimiter=limit=0.84:level=disabled[voice]")
+    if not with_sfx or not SFX_BED.exists():
+        return voice + ";[voice]anull[a]", []
+    # normalize=0 matters: amix otherwise divides every input by the input count,
+    # which would quietly drop the dialogue 6 dB to make room for the effects.
+    return (voice + ";[2:a]anull[sfx];"
+            "[voice][sfx]amix=inputs=2:duration=first:dropout_transition=0:"
+            "normalize=0[a]"), ["-i", str(SFX_BED)]
+
+
+def encode(frames: Path, out: Path, clip: tuple[float, float] | None,
+           grade: bool = True, sfx: bool = True, master: bool = False) -> None:
     pre = ["-ss", str(clip[0]), "-to", str(clip[1])] if clip else []
+    achain, extra = audio_chain(sfx)
+
+    # 10-bit through the grade so the contrast curve has somewhere to put the
+    # values it moves; an 8-bit path bands visibly in the wall behind him.
+    vhead = f"[0:v]format=yuv444p10le,{GRADE}[g];" if grade else "[0:v]null[g];"
+
+    vcodec = (["-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le",
+               "-c:a", "pcm_s24le"]
+              if master else
+              ["-c:v", "libx264", "-preset", "slow", "-crf", "16",
+               "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "256k",
+               "-movflags", "+faststart"])
+
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error", "-stats",
         *pre, "-i", str(BASE),
         "-framerate", str(FPS), "-start_number", "0", "-i", str(frames / "%05d.png"),
+        *extra,
         "-filter_complex",
+        vhead +
         # The overlay sequence starts at frame 0 of the take, so when a clip is
         # requested the sequence has to be shifted by the same amount rather than
         # restarted — otherwise the graphics play from the top over the middle.
         (f"[1:v]trim=start={clip[0]}:end={clip[1]},setpts=PTS-STARTPTS[ov];"
          if clip else "[1:v]null[ov];") +
-        "[0:v][ov]overlay=0:0:format=auto:shortest=1,format=yuv420p[v]",
-        "-map", "[v]", "-map", "0:a?",
-        "-c:v", "libx264", "-preset", "slow", "-crf", "17",
-        "-c:a", "aac", "-b:a", "192k",
-        "-movflags", "+faststart",
+        "[g][ov]overlay=0:0:format=auto:shortest=1,format=yuv420p[v];" +
+        achain,
+        "-map", "[v]", "-map", "[a]",
+        *vcodec,
         str(out),
     ]
     subprocess.run(cmd, check=True)
@@ -177,6 +247,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--preview", nargs=2, type=float, metavar=("FROM", "TO"))
     ap.add_argument("--skip-frames", action="store_true")
+    ap.add_argument("--no-grade", action="store_true", help="skip the colour work")
+    ap.add_argument("--no-sfx", action="store_true", help="voice only")
+    ap.add_argument("--master", action="store_true",
+                    help="ProRes 422 HQ + 24-bit PCM instead of h264/aac")
     args = ap.parse_args()
 
     if not BASE.exists():
@@ -200,8 +274,11 @@ def main() -> int:
         return 1
 
     clip = tuple(args.preview) if args.preview else None
-    out = EDIT / ("preview.mp4" if clip else "spindle-cut.mp4")
-    encode(frames, out, clip)
+    ext = "mov" if args.master else "mp4"
+    name = "preview" if clip else ("spindle-master" if args.master else "spindle-cut")
+    out = EDIT / f"{name}.{ext}"
+    encode(frames, out, clip,
+           grade=not args.no_grade, sfx=not args.no_sfx, master=args.master)
     print(f"\n{out.relative_to(HERE)}  {out.stat().st_size / 1e6:.0f} MB")
     return 0
 

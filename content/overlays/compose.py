@@ -229,7 +229,9 @@ SFX_BED = HERE / "out" / "sfx" / "bed.wav"
 
 MUSIC = Path.home() / "Music" / "Daniel Avery - Drone Logic [PHLP02].mp3"
 MUSIC_IN = 221.0        # 3:41 — the section asked for
-MUSIC_DB = -21.0        # before ducking; puts it ~20 dB under dialogue
+MUSIC_DB = -17.0        # before ducking. -21 read as too far back; the sidechain
+                        # ducker is what protects the words, so the resting level
+                        # can sit higher than a static mix would allow.
 
 SUBS = EDIT / "subs.ass"
 
@@ -363,7 +365,11 @@ def main() -> int:
                     help="ProRes 422 HQ + 24-bit PCM instead of h264/aac")
     ap.add_argument("--no-music", action="store_true")
     ap.add_argument("--no-subs", action="store_true")
-    ap.add_argument("--no-app", action="store_true", help="skip the app inset layer")
+    # Opt-in, not opt-out: the inset screenshots of the live site were cut from
+    # the edit. The layer and its capture script stay in the tree because the
+    # footage is real and cheap to re-enable, but a plain render does not use it.
+    ap.add_argument("--app", action="store_true",
+                    help="inset live-site screenshots over the take (off by default)")
     ap.add_argument("--skip-app-frames", action="store_true")
     args = ap.parse_args()
 
@@ -388,7 +394,7 @@ def main() -> int:
         return 1
 
     app = None
-    if not args.no_app:
+    if args.app:
         appdir = EDIT / "appframes"
         if args.skip_app_frames and appdir.exists():
             app = appdir

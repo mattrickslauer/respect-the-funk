@@ -152,23 +152,37 @@ def _plan(tenant_id: str, subs: dict[str, object]) -> list[dict[str, object]]:
             "summary": "Approved and sent — one message, fenced on its idempotency key",
             "inputs": {"approved_by": "human", "channel": "email"},
         })
-    if len(parties) > 0:
-        rows.append({
-            "kind": "opt_out", "subject_kind": "party", "subject_id": parties[0]["id"],
-            "actor": "inbox",
-            "summary": (f"{parties[0]['name']} asked us to stop. Terminal — no discovery "
-                        f"stage can move this back"),
-            "inputs": {"requested_via": "reply", "honoured": "immediately"},
-        })
-    if len(parties) > 1:
-        rows.append({
-            "kind": "suppress", "subject_kind": "party", "subject_id": parties[1]["id"],
-            "actor": "scout",
-            "summary": (f"Ranked inside the shortlist but not contacted — "
-                        f"{parties[1]['name']} has no verified address"),
-            "inputs": {"reason": "no measured contact route",
-                       "note": "a guessed address is refused outright"},
-        })
+    # These two name no counterparty, and that is not squeamishness.
+    #
+    # The first draft pointed them at real rows and rendered the name into the summary,
+    # which would have written "<a real company> asked us to stop" into a production
+    # audit ledger for a company that had not, and published it on the landing page. A
+    # seeded row is a claim nobody made. In a table whose whole purpose is that its
+    # claims can be trusted and replayed, a false one about an identifiable third party
+    # is not a demo — it is the exact failure `025` and `035` exist to prevent, wearing
+    # the costume of test data.
+    #
+    # The demo value here is the *kind* and the *stage*, not the name: a reader learns
+    # that an opt-out is recorded and terminal, and that a decision not to act leaves a
+    # row where nothing else would. Both survive without a subject. When these rows are
+    # written by the system for real they will carry a real `subject_id`, and then the
+    # name is a fact rather than a fixture.
+    rows.append({
+        "kind": "opt_out", "subject_kind": "tenant", "subject_id": None,
+        "actor": "inbox",
+        "summary": ("A counterparty asked us to stop. Terminal — no discovery stage "
+                    "can move this back"),
+        "inputs": {"requested_via": "reply", "honoured": "immediately",
+                   "note": "seeded shape; a real opt-out carries the party as subject"},
+    })
+    rows.append({
+        "kind": "suppress", "subject_kind": "tenant", "subject_id": None,
+        "actor": "scout",
+        "summary": ("Ranked inside the shortlist but not contacted — no verified "
+                    "address, and a guessed one is refused outright"),
+        "inputs": {"reason": "no measured contact route",
+                   "note": "seeded shape; a real suppression carries the party as subject"},
+    })
     # The attended path, as two rows. A reader who sees only single-row decisions never
     # learns that the row count is what distinguishes unattended from attended, so the
     # seed carries one proposal-and-resolution pair deliberately.

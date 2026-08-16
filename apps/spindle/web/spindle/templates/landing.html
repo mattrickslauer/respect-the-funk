@@ -17,7 +17,7 @@
 {# Rendered from the live count rather than typed. The number here read "14,000" until
    2026-08-15, by which point the index held 43,191 — a meta description is the one
    piece of copy nobody re-reads, so it is the one that has to come from the query. #}
-<meta name="description" content="A music distribution agentic OS. {{ "{:,}".format(stats.get('counterparties', 0)) }} radio stations and curators in a distributed vector index, and an outbox that cannot send twice.">
+<meta name="description" content="A music distribution agentic OS. Creators, curators and stations — {{ "{:,}".format(stats.get('counterparties', 0)) }} of them in one distributed vector index — and an outbox that cannot send twice.">
 {% include "_design.html" %}
 <style>
 /* Page-specific only. The cutting-room ground, the two brand hues and the
@@ -44,7 +44,8 @@ body{
 .eyebrow{font-size:11px;letter-spacing:.18em;margin-bottom:18px}
 
 /* ---------- masthead ---------- */
-.masthead{padding:34px 0 12px;border-bottom:1px solid var(--rule)}
+.masthead{padding:34px 0 12px;border-bottom:1px solid var(--rule);
+  display:flex;align-items:center;gap:14px 18px;flex-wrap:wrap}
 .built{
   display:inline-flex;align-items:center;gap:12px;padding:8px 14px;
   border:1px solid rgba(125,77,255,.42);border-radius:999px;
@@ -67,6 +68,31 @@ body{
      content width — but it is no longer what is holding this up. */
   flex:none;
 }
+
+/* ---------- the one control on a read-only page ----------
+   Everything below this line is proof you can read without an account, which is
+   deliberate — but a page that never asks for anything gets read and closed. This
+   is the ask, and it sits top right because that is the corner a reader who has
+   already decided goes looking in.
+
+   Warm pole (`--phosphor`), matching the tier buttons in `#pricing` rather than
+   inventing a second primary colour: `_public.html` states the rule — the warm pole
+   is the thing being put in front of a person. The teal `--carrier` belongs to the
+   index, and a CTA painted in it would be claiming to be a readout.
+
+   It goes to `/signin`, which is signup and sign-in at once: auth here is an emailed
+   code and nothing else, so there is no separate registration form to send anyone to.
+   The sign-in page says as much in its own words ("signing in creates your label"). */
+.signup{
+  margin-left:auto;display:inline-flex;align-items:center;justify-content:center;
+  min-height:50px;padding:0 26px;border-radius:9px;
+  font:600 16px/1 var(--face-body);letter-spacing:-.01em;text-decoration:none;
+  background:var(--phosphor);color:var(--ground);border:1px solid var(--phosphor);
+  white-space:nowrap;transition:filter .12s;
+}
+.signup:hover{filter:brightness(1.08)}
+.signup:focus-visible{outline:2px solid var(--carrier);outline-offset:3px}
+
 /* The mark sits beside the headline on a wide screen and above it on a narrow one.
    `minmax(0,1fr)` on the copy column, or the long <h1> refuses to wrap and pushes
    the top off the grid. */
@@ -97,52 +123,6 @@ body{
 section{padding:64px 0;border-top:1px solid var(--rule)}
 section h2{font-size:clamp(21px,2.7vw,29px);max-width:24ch}
 section .lede{color:var(--dim);max-width:66ch;margin:16px 0 0}
-
-/* ---------- THE SIGNATURE: the tuner ---------- */
-.tuner{margin-top:34px;border:1px solid var(--rule);border-radius:12px;
-  background:var(--panel);overflow:hidden}
-.tuner-head{display:flex;flex-wrap:wrap;gap:14px;align-items:center;
-  padding:16px 18px;border-bottom:1px solid var(--rule);background:var(--panel-2)}
-.tuner-head .who{font:600 13px/1 var(--face-display);color:var(--ink)}
-.dial{display:flex;gap:0;border:1px solid var(--rule);border-radius:7px;overflow:hidden}
-.dial button{
-  appearance:none;border:0;background:transparent;color:var(--dim);cursor:pointer;
-  font:600 12px/1 var(--face-display);padding:9px 13px;letter-spacing:.04em;
-  border-right:1px solid var(--rule);transition:background .15s,color .15s;
-}
-.dial button:last-child{border-right:0}
-.dial button[aria-pressed="true"]{background:var(--phosphor);color:#1a1206}
-.dial button:hover:not([aria-pressed="true"]){background:var(--panel);color:var(--ink)}
-.dial button:focus-visible{outline:2px solid var(--carrier);outline-offset:-2px}
-
-.rows{padding:8px 0;min-height:220px}
-.row{display:grid;grid-template-columns:34px 1fr 74px;gap:14px;align-items:center;
-  padding:9px 18px}
-.row .rank{font:600 11px/1 var(--face-display);color:var(--faint);text-align:right}
-.row .name{font:13px/1.35 var(--face-display);color:var(--ink);overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap}
-/* The meter — cosine distance as signal strength, nearer = longer bar — is where
-   this product's one visual idea started, and it now lives in `_design.html` so the
-   console and the manual draw the same shape. All this page still owns is the gap
-   above it. The JS below sets `width` inline rather than the shared `--fill`, which
-   is deliberate: an inline width beats the token and this page animates from 0. */
-.meter{margin-top:6px}
-.row .d{font:11px/1 var(--face-display);color:var(--faint);text-align:right}
-.row.moved .name{color:var(--phosphor)}
-/* The delta against *now*, not against the previously viewed window. "This station
-   was fourth today and second an hour ago" is the sentence the beat is trying to
-   make; "it moved since the last thing you clicked" is a fact about the UI. */
-.row .delta{
-  display:inline-block;margin-left:8px;font:600 10px/1 var(--face-display);
-  letter-spacing:.06em;padding:3px 5px;border-radius:4px;vertical-align:1px;
-  border:1px solid transparent;white-space:nowrap;
-}
-.row .delta.up{color:var(--phosphor);border-color:color-mix(in srgb,var(--phosphor) 34%,transparent)}
-.row .delta.down{color:var(--dim);border-color:var(--rule)}
-.row .delta.new{color:var(--carrier);border-color:color-mix(in srgb,var(--carrier) 34%,transparent)}
-.tuner-foot{padding:12px 18px;border-top:1px solid var(--rule);background:var(--panel-2);
-  font:11px/1.5 var(--face-display);color:var(--faint)}
-.tuner-foot b{color:var(--carrier);font-weight:600}
 
 /* ---------- two-column claims ---------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:34px}
@@ -189,63 +169,6 @@ section .lede{color:var(--dim);max-width:66ch;margin:16px 0 0}
 .seg.hit{background:var(--phosphor-wash);border-right:0;border-radius:8px;margin-left:10px;
      padding:12px 15px}
 .seg.hit .op{color:var(--phosphor)}
-
-.rows .row.tied .d{color:var(--phosphor)}
-.rp-tied{margin-left:9px;font:600 9.5px/1 var(--face-display);
-     letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--phosphor);
-     opacity:.85}
-
-/* ---------- the decision ledger ----------
-   Kind is a chip and is the only coloured thing in a row, because the kinds are not
-   equivalent: `opt_out` and `suppress` are the ones an audit actually turns on, and
-   a ledger that painted all seven the same would bury them. */
-.ledger{margin-top:26px;border:1px solid var(--rule);border-radius:12px;
-     background:var(--panel);overflow:hidden}
-.ledger-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
-     padding:13px 17px;background:var(--panel-2);border-bottom:1px solid var(--rule);
-     font:11px/1.5 var(--face-display);color:var(--faint);letter-spacing:.04em}
-.ledger-head b{color:var(--ink);font-weight:600}
-.ledger-src{color:var(--faint)}
-.ledger-rows{font:12px/1.5 var(--face-display)}
-.ledger-note{margin:0;padding:16px 17px;color:var(--faint)}
-.led{display:grid;grid-template-columns:130px minmax(0,1fr) auto;gap:14px;
-     align-items:baseline;padding:11px 17px;border-bottom:1px solid var(--rule-soft)}
-.led:last-child{border-bottom:0}
-.led-kind{font:600 9.5px/1.6 var(--face-display);letter-spacing:var(--track-caps);
-     text-transform:uppercase;color:var(--dim);white-space:nowrap}
-.led.k-opt_out .led-kind,.led.k-suppress .led-kind{color:var(--cut)}
-.led.k-send .led-kind,.led.k-budget_increase .led-kind{color:var(--phosphor)}
-.led.k-shortlist .led-kind,.led.k-lesson .led-kind{color:var(--carrier)}
-.led-sum{color:var(--ink-2);overflow-wrap:anywhere}
-.led-who{display:block;color:var(--faint);font-size:11px;margin-top:3px}
-.led-at{text-align:right;color:var(--dim);white-space:nowrap}
-.led-hlc{display:block;color:var(--carrier);font-size:10.5px;margin-top:3px}
-@media (max-width:700px){
-  .led{grid-template-columns:1fr;gap:4px}
-  .led-at{text-align:left}
-}
-
-.led-stage{display:block;margin-top:3px;font:600 9px/1.4 var(--face-display);
-     letter-spacing:var(--track-caps);color:var(--phosphor);opacity:.9}
-.led.k-budget_increase .led-stage{color:var(--phosphor)}
-
-/* ---------- the decision replay ----------
-   `.rp-check` is the only place on this page where a green/red pair means pass and
-   fail rather than cold/warm — it is a self-test, and a self-test that reported its
-   own result in the ambient palette would be indistinguishable from decoration. */
-.rp-stamp{display:flex;gap:12px;flex-wrap:wrap;align-items:center;
-     padding:11px 16px;border-bottom:1px solid var(--rule);background:var(--panel-2);
-     font:11.5px/1.5 var(--face-display)}
-.rp-aost{color:var(--carrier)}
-.rp-check{margin-left:auto;padding:4px 9px;border-radius:5px;font-weight:600}
-.rp-check.ok{color:var(--carrier);background:var(--carrier-wash);
-     border:1px solid var(--carrier)}
-.rp-check.bad{color:var(--cut);background:var(--cut-wash);border:1px solid var(--cut)}
-.rows .row.hit{background:var(--phosphor-wash);border-radius:6px}
-.rows .row.hit .name{color:var(--phosphor);font-weight:600}
-.rp-you{margin-left:9px;font:600 9.5px/1 var(--face-display);
-     letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--phosphor)}
-.dial button[disabled]{opacity:.4;cursor:not-allowed}
 
 /* ---------- the prefix, unbindable ----------
    `button.seg` inherits the layout above and adds only the affordance. Text stays
@@ -594,6 +517,173 @@ button.seg.stranded{background:var(--phosphor-wash)}
   .reach-rows{max-height:340px}
 }
 
+/* ---------- THE TICK RATE ----------
+   Two lanes over one run. The top lane is arithmetic and says so — 60 iterations a
+   second, multiplied out, not measured off anybody's telemetry — and it is drawn
+   deliberately illegible, because an illegible smear is the honest rendering of a
+   number nobody can read. The bottom lane is this system's real schedule, and its
+   argument is the empty space between the pips rather than the pips.
+
+   **The axis breaks at the one-hour mark and the break is drawn.** Everything we
+   *do* happens inside that first hour; everything that *matters* happens across the
+   nine days after it. A linear axis puts the first four ticks inside half a pixel; a
+   log axis (tried first) fixes the head by crushing the tail, which hides the exact
+   gap this section exists to show. An unlabelled broken axis is a lie, so the break
+   carries a mark on the rail and a caption under it.
+
+   Two colours, two meanings, and the legend states them: `--carrier` is a tick this
+   system chose, `--phosphor` is one it waited on. Reading the rail, the pace is set
+   almost entirely by the orange ones — which is the whole point of the section. */
+.tick{margin-top:34px;border:1px solid var(--rule);border-radius:12px;
+  background:var(--panel);overflow:hidden}
+/* the music box — the same argument, made in sound.
+   Two cylinders, one comb each, the same eight bars of minuet handed to both. The
+   fast deck is deliberately out of visual sync: 48 pins passing a comb 80 times a
+   second cannot be read as discrete events, and drawing a tidy spark on each one
+   would be this section telling a lie about legibility in the middle of an argument
+   about legibility. So the fast deck gets a continuous glow and the slow deck gets
+   pins you can count. That asymmetry is the content. */
+.tick-box{padding:20px 18px;border-bottom:1px solid var(--rule)}
+.tick-box-head{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;
+  justify-content:space-between;margin-bottom:17px}
+.tick-box-head p{margin:0;max-width:58ch;font:12px/1.65 var(--face-display);
+  color:var(--faint)}
+.tick-box-head p b{color:var(--dim);font-weight:600}
+.tick-sound{appearance:none;border:1px solid var(--phosphor);border-radius:7px;
+  background:transparent;color:var(--phosphor);cursor:pointer;white-space:nowrap;
+  font:600 12px/1 var(--face-display);padding:11px 16px;letter-spacing:.04em;
+  transition:background .15s,color .15s}
+.tick-sound:hover{background:var(--phosphor-wash)}
+.tick-sound[aria-pressed="true"]{background:var(--phosphor);color:var(--ground)}
+.tick-sound:focus-visible{outline:2px solid var(--carrier);outline-offset:2px}
+
+.tick-decks{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.tick-deck{border:1px solid var(--rule-soft);border-radius:10px;padding:16px 14px;
+  background:var(--panel-2);text-align:center;
+  transition:border-color .25s,background .25s,box-shadow .25s}
+.tick-deck.live{border-color:var(--rule-strong);background:var(--panel)}
+.tick-deck.fast.live{box-shadow:0 0 0 3px var(--phosphor-wash)}
+.tick-deck.slow.live{box-shadow:0 0 0 3px var(--carrier-wash)}
+.tick-disc{display:block;width:100%;max-width:186px;height:auto;margin:0 auto}
+.tick-deck-name{margin-top:13px;font:600 11px/1.4 var(--face-display);
+  letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.tick-deck.live .tick-deck-name{color:var(--ink)}
+.tick-deck-sub{margin-top:6px;font:11.5px/1.55 var(--face-display);color:var(--faint);
+  font-variant-numeric:tabular-nums}
+
+/* The disc itself. No gradients and no <defs>: `_mark.html` is already on this page
+   and a second copy of `sm-glow`/`sm-disc` would be a duplicate id in the document.
+   Flat token fills get close enough and cannot collide. */
+.tick-glow{fill:var(--phosphor);opacity:.07}
+.tick-platter{fill:var(--panel);stroke:var(--rule-strong);stroke-width:1}
+.tick-groove{fill:none;stroke:var(--phosphor);stroke-opacity:.15}
+.tick-label{fill:var(--phosphor);fill-opacity:.9}
+.tick-hole{fill:var(--ground);stroke:var(--ink);stroke-opacity:.6;stroke-width:2}
+/* `transform-box:view-box` for the reason `_mark.html` documents at length: without
+   it the origin resolves against the group's own bounding box and the ring wobbles
+   instead of turning. */
+.tick-pegs{transform-box:view-box;transform-origin:100px 100px}
+.tick-peg{fill:var(--dim)}
+.tick-deck.fast .tick-peg{fill:var(--phosphor);opacity:.5}
+.tick-deck.slow .tick-peg{fill:var(--carrier);opacity:.28;
+  transition:opacity .25s,r .25s}
+.tick-deck.slow .tick-peg.pin{opacity:1}
+.tick-tine{fill:var(--rule-strong);transition:fill .12s,transform .12s}
+.tick-comb.hit .tick-tine.strike{fill:var(--carrier);transform:translateY(2px)}
+.tick-deck.fast .tick-comb.hit .tick-tine.strike{fill:var(--phosphor)}
+.tick-spark{opacity:0;fill:var(--carrier);transition:opacity .18s}
+.tick-deck.fast .tick-spark{fill:var(--phosphor)}
+.tick-spark.on{opacity:.85;transition:opacity 0s}
+@media (max-width:620px){.tick-decks{grid-template-columns:1fr}}
+
+.tick-head{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;
+  justify-content:space-between;padding:14px 18px;
+  border-bottom:1px solid var(--rule);background:var(--panel-2)}
+.tick-clock{font:600 13px/1 var(--face-display);color:var(--faint);
+  letter-spacing:.02em;font-variant-numeric:tabular-nums}
+.tick-clock b{color:var(--ink);font-weight:600}
+.tick-replay{appearance:none;border:1px solid var(--rule);border-radius:7px;
+  background:transparent;color:var(--dim);cursor:pointer;
+  font:600 12px/1 var(--face-display);padding:8px 13px;letter-spacing:.04em;
+  transition:background .15s,color .15s}
+.tick-replay:hover{background:var(--panel);color:var(--ink)}
+.tick-replay:focus-visible{outline:2px solid var(--carrier);outline-offset:2px}
+
+.tick-lane{padding:18px}
+.tick-lane+.tick-lane{border-top:1px solid var(--rule)}
+.tick-name{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;
+  font:600 11px/1.3 var(--face-display);letter-spacing:.12em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:13px}
+.tick-name b{color:var(--ink);font-weight:600}
+.tick-name span{text-transform:none;letter-spacing:0;font-weight:400;
+  font-size:11.5px;color:var(--faint)}
+
+/* the fast lane: a band of noise and a counter that cannot be read */
+#tick-noise{display:block;width:100%;height:56px;border-radius:6px;
+  background:var(--panel-2);border:1px solid var(--rule-soft)}
+.tick-score{display:flex;flex-wrap:wrap;gap:6px 24px;margin-top:12px;
+  font:11.5px/1.5 var(--face-display);color:var(--faint)}
+.tick-score b{color:var(--ink);font-weight:600;font-size:13px;
+  font-variant-numeric:tabular-nums}
+.tick-score .nil b{color:var(--phosphor)}
+.tick-score .win b{color:var(--carrier)}
+
+/* the slow lane: the rail */
+.tick-rail{position:relative;height:70px;margin:2px 0 0}
+.tick-line{position:absolute;left:0;right:0;top:24px;height:2px;
+  background:var(--rule-strong);border-radius:2px}
+.tick-fill{position:absolute;left:0;top:24px;height:2px;width:0;
+  background:var(--carrier);border-radius:2px}
+.tick-pip{position:absolute;top:17px;width:16px;height:16px;margin-left:-8px;
+  border-radius:50%;background:var(--panel);border:2px solid var(--rule-strong);
+  transition:border-color .3s,background .3s,box-shadow .3s}
+.tick-pip.on{border-color:var(--carrier);background:var(--carrier);
+  box-shadow:0 0 0 5px var(--carrier-wash)}
+.tick-pip.human.on{border-color:var(--phosphor);background:var(--phosphor);
+  box-shadow:0 0 0 5px var(--phosphor-wash)}
+/* The break, drawn on the rail: two slashes and a gap the fill has to jump. */
+.tick-cut{position:absolute;top:14px;height:22px;width:2px;background:var(--panel);
+  border-left:2px dashed var(--rule-strong);margin-left:-1px}
+.tick-mark{position:absolute;top:44px;font:10.5px/1.3 var(--face-display);
+  color:var(--faint);white-space:nowrap;transform:translateX(-50%)}
+.tick-mark.first{transform:none}
+.tick-mark.last{transform:translateX(-100%)}
+.tick-mark.cut{color:var(--dim)}
+
+/* the slow lane: the receipt. Every row is in the DOM as text from the start —
+   the animation only moves opacity — so a screen reader and a reader with
+   JavaScript off both get the whole schedule instead of an empty box. */
+.tick-log{list-style:none;margin:18px 0 0;padding:0;display:grid;gap:1px;
+  background:var(--rule);border:1px solid var(--rule);border-radius:9px;
+  overflow:hidden}
+.tick-log li{display:grid;grid-template-columns:112px minmax(0,1fr) auto;gap:8px 16px;
+  align-items:baseline;padding:11px 15px;background:var(--panel);
+  opacity:.32;transition:opacity .4s}
+.tick-log li.on{opacity:1}
+.tick-log .when{font:600 12px/1.5 var(--face-display);color:var(--carrier);
+  font-variant-numeric:tabular-nums}
+.tick-log li.human .when{color:var(--phosphor)}
+.tick-log .what{font:13.5px/1.55 var(--face-body);color:var(--ink-2)}
+.tick-log .what b{color:var(--ink);font-weight:600}
+.tick-log .what em{font-style:normal;color:var(--phosphor)}
+.tick-log .what code{font:12.5px/1 var(--face-display);color:var(--carrier)}
+.tick-log .src{font:11px/1.5 var(--face-display);color:var(--faint);white-space:nowrap}
+.tick-legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:14px;
+  font:11.5px/1.5 var(--face-display);color:var(--faint)}
+.tick-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;
+  margin-right:7px;vertical-align:baseline}
+.tick-legend .ours i{background:var(--carrier)}
+.tick-legend .theirs i{background:var(--phosphor)}
+.tick-foot{padding:15px 18px;border-top:1px solid var(--rule);background:var(--panel-2);
+  font:12px/1.7 var(--face-display);color:var(--faint)}
+.tick-foot b{color:var(--dim);font-weight:600}
+@media (max-width:700px){
+  .tick-log li{grid-template-columns:1fr;gap:3px}
+  .tick-log .src{white-space:normal}
+  .tick-mark{font-size:10px}
+  .tick-mark.mid{display:none}
+}
+
 footer{border-top:1px solid var(--rule);padding:40px 0 64px;color:var(--faint);font-size:13px}
 footer a{color:var(--carrier)}
 
@@ -613,9 +703,12 @@ footer a{color:var(--carrier)}
   .verdict th,.verdict td{padding:10px 8px}
   .seg{min-width:132px}
   .built{font-size:12px;padding:7px 11px}
+  /* Once it has wrapped onto its own row there is no "right" left to sit at, and a
+     50px control marooned at one end of an empty line reads as an afterthought
+     rather than as the thing the page wants you to press. So it takes the width. */
+  .signup{margin-left:0;width:100%;font-size:15px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto}}
-@media (max-width:620px){.row{grid-template-columns:26px 1fr 62px;gap:10px}}
 </style>
 </head>
 <body>
@@ -627,6 +720,7 @@ footer a{color:var(--carrier)}
       <span class="crdb-wordmark">CockroachDB</span>
       <span>Built for the CockroachDB&nbsp;×&nbsp;AWS Hackathon — Agentic Memory</span>
     </div>
+    <a class="signup" href="/signin">Sign up</a>
   </header>
 
   <div class="hero">
@@ -638,11 +732,11 @@ footer a{color:var(--carrier)}
          and the asset second, and the asset is the true one: what accumulates
          between releases is not audio, it is who replied. #}
       <h1>Most labels start every release from zero. <em>Spindle remembers who said yes.</em></h1>
-      <p>Spindle is a music distribution agentic OS. It maps the industry into a
-         vector index — {{ "{:,}".format(stats.get('counterparties', 0)) }} radio stations
-         and curators, from public registers — then works out who should hear a record and
-         writes to them individually. Not a blast. Every page below is live against the
-         cluster.</p>
+      <p>Spindle is a music distribution agentic OS. It maps everyone who can carry a
+         record — creators, curators, stations — into one vector index, works out who
+         should hear it, and writes to them individually. Not a blast. Radio is the
+         {{ "{:,}".format(stats.get('counterparties', 0)) }} rows we could earn first,
+         because its registers are public. The creators are the point.</p>
       <p class="sub">read-only · no sign-in · every number queried on page load</p>
     </div>
     {# The mark, at the only size it is worth turning. `aria-hidden`: the <h1>
@@ -706,10 +800,12 @@ footer a{color:var(--carrier)}
   <section id="reach">
     <div class="eyebrow">Counterparty index</div>
     <h2>Every country we can already take a record to.</h2>
-    <p class="lede">One query over the whole index, on page load. The countries light
-      in the order we first reached them. Click one to search what is in it — the
-      radio is indexed now; the creator platforms are the next job, and they are
-      listed dark rather than left off.</p>
+    <p class="lede">One query over the whole index, on page load. Countries light in the
+      order we first reached them; click one to search inside it. Radio is lit because its
+      registers are public and it was the cheapest reach to earn. The creator platforms
+      are listed dark because that is where this is going and we have not got there — a
+      creator enters through a scout who pastes what they actually posted, never a
+      scraper, and lands in the same index as every station on this map.</p>
 
     <div class="reach-readout">
       <div><b data-count="total">—</b><span>counterparties indexed</span></div>
@@ -753,63 +849,205 @@ footer a{color:var(--carrier)}
     <p class="reach-note" id="reach-note"></p>
   </section>
 
-  <!-- ===================== 1. THE TUNER ===================== -->
-  {# This section was a scrubber over arbitrary clock offsets until 2026-08-15, and it
-     argued against itself. A dial spanning −15m to −6h can only show a difference if
-     the index happened to change inside that window, and a counterparty index changes
-     when an ingest runs — so its most likely output was five identical lists under a
-     heading claiming that time travel matters. It also ran `shortlist_as_of`, which
-     drops the lesson rerank, removing the one input that moves on a human timescale.
+  <!-- ===================== 0b. THE TICK RATE =====================
+       The one section on this page that is a *drawing* rather than a live read, and it
+       has to be, because what it draws is nine days long. Everything in it is still
+       checkable: each interval on the rail is a constant in this repository, named on
+       its own row, and the two intervals that are not ours are marked as somebody
+       else's clock rather than quietly averaged into the schedule.
 
-     What replaced it is the same machinery pointed at the question it was actually
-     built for. `thread.decided_at_hlc` records the instant a shortlist opened a
-     conversation; `decided_rank` records where the counterparty sat in it. Replaying
-     at that HLC either puts them back at that rank or it does not, so the demo checks
-     itself in front of the reader instead of asking to be believed. #}
-  <section id="tune">
-    <div class="eyebrow">Decision provenance</div>
-    <h2>Every decision is rooted to an instant you can read the database at.</h2>
-    <p class="lede">An autonomous system that acts on the world has to be answerable for
-      each act, and the answers all have the same shape: <em>what was true when we
-      decided</em>. So every consequential decision — a shortlist, a send, a raised cap,
-      an opt-out, even a decision <em>not</em> to act — carries the hybrid logical clock
-      it happened at. That coordinate is not a copy of the answer; it is a place to
-      stand in the database and read the answer back, with
-      <code style="color:var(--carrier)">AS&nbsp;OF&nbsp;SYSTEM&nbsp;TIME</code>. No
-      audit table, no snapshot, nothing that can drift from what actually happened.</p>
+       It sits directly under the map on purpose. The map has just shown the reader a
+       very large number — tens of thousands of counterparties — and the reflex that
+       number provokes is "so you blast them". This answers that reflex before the
+       reader has to ask, and it answers it with a schedule instead of a promise. -->
+  <section id="tick">
+    <div class="eyebrow">Tick rate</div>
+    <h2>A million iterations a second is the wrong unit. Nobody reads their email a
+      million times a second.</h2>
+    <p class="lede">Throughput is the right unit for a trading bot racing other machines.
+      Spindle's work is a correspondence with a person who opens their inbox on Tuesday,
+      so its tick is a curator's reply, a programming meeting, a register that
+      republishes weekly. The schedule below is not throttled — it is <em>paced</em>, and
+      every interval in it is a constant you can read in the source.</p>
 
-    {# The ledger first, then one of its rows all the way down. Order is deliberate: the
-       list establishes that the claim is general, and the replay below proves a single
-       decision down to a reconstructed ranking that checks itself. Leading with the
-       replay would make this read as one clever trick about vector search. #}
-    <div class="ledger" id="ledger">
-      <div class="ledger-head">
-        <span>the decision ledger — <b>every row is a question somebody can ask</b></span>
-        <span class="ledger-src">apps/spindle/schema/035_decision_ledger.sql</span>
+    {# No `id` on this wrapper: the <section> above already carries `tick`, and a
+       second element answering to the same name is the collision `.crdb-wordmark`
+       further up this file exists to document. Nothing needs to select it. #}
+    <div class="tick">
+
+      {# The music box. Two cylinders, one comb each, and the same eight bars of
+         minuet handed to both — so the only variable in the demonstration is rate.
+         The tune is Christian Petzold's Minuet in G (BWV Anh. 114, long misfiled
+         under Bach), which is public domain and is *the* wind-up-toy melody; it is
+         synthesised from oscillators rather than shipped as an audio file, because
+         this app has no static mount and a landing page should not carry a media
+         asset to make a rhetorical point.
+
+         Sound is off until somebody asks for it. That is not only good manners — a
+         browser will refuse to start an AudioContext without a gesture anyway, so
+         the button is the only honest place to build one. #}
+      <div class="tick-box" id="tick-box">
+        <div class="tick-box-head">
+          <p>The same eight bars, <b>a bar each in turn</b>. Only the rate differs — and
+            one of the two stops being music.</p>
+          <button type="button" class="tick-sound" id="tick-sound" aria-pressed="false">
+            sound: off</button>
+        </div>
+
+        <div class="tick-decks">
+          <div class="tick-deck fast" id="deck-fast">
+            <svg class="tick-disc" viewBox="0 0 200 200" aria-hidden="true">
+              <circle class="tick-glow" cx="100" cy="100" r="96"/>
+              <circle class="tick-platter" cx="100" cy="100" r="74"/>
+              <circle class="tick-groove" cx="100" cy="100" r="74"/>
+              <circle class="tick-groove" cx="100" cy="100" r="60"/>
+              <circle class="tick-groove" cx="100" cy="100" r="47"/>
+              <g class="tick-pegs" data-pegs="48" data-r="66"></g>
+              <circle class="tick-label" cx="100" cy="100" r="23"/>
+              <circle class="tick-hole" cx="100" cy="100" r="7"/>
+              <circle class="tick-spark" cx="100" cy="34" r="6"/>
+              <g class="tick-comb">
+                <rect class="tick-tine" x="84.4"  y="10" width="3.2" height="14" rx="1.6"/>
+                <rect class="tick-tine" x="91.4"  y="10" width="3.2" height="18" rx="1.6"/>
+                <rect class="tick-tine strike" x="98.4" y="10" width="3.2" height="24" rx="1.6"/>
+                <rect class="tick-tine" x="105.4" y="10" width="3.2" height="18" rx="1.6"/>
+                <rect class="tick-tine" x="112.4" y="10" width="3.2" height="14" rx="1.6"/>
+              </g>
+            </svg>
+            <div class="tick-deck-name">a realtime agent loop</div>
+            <div class="tick-deck-sub">48 pins · 100 rpm · 20 notes a second</div>
+          </div>
+
+          <div class="tick-deck slow" id="deck-slow">
+            <svg class="tick-disc" viewBox="0 0 200 200" aria-hidden="true">
+              <circle class="tick-glow" cx="100" cy="100" r="96"/>
+              <circle class="tick-platter" cx="100" cy="100" r="74"/>
+              <circle class="tick-groove" cx="100" cy="100" r="74"/>
+              <circle class="tick-groove" cx="100" cy="100" r="60"/>
+              <circle class="tick-groove" cx="100" cy="100" r="47"/>
+              <g class="tick-pegs" data-pegs="6" data-r="66"></g>
+              <circle class="tick-label" cx="100" cy="100" r="23"/>
+              <circle class="tick-hole" cx="100" cy="100" r="7"/>
+              <circle class="tick-spark" cx="100" cy="34" r="6"/>
+              <g class="tick-comb">
+                <rect class="tick-tine" x="84.4"  y="10" width="3.2" height="14" rx="1.6"/>
+                <rect class="tick-tine" x="91.4"  y="10" width="3.2" height="18" rx="1.6"/>
+                <rect class="tick-tine strike" x="98.4" y="10" width="3.2" height="24" rx="1.6"/>
+                <rect class="tick-tine" x="105.4" y="10" width="3.2" height="18" rx="1.6"/>
+                <rect class="tick-tine" x="112.4" y="10" width="3.2" height="14" rx="1.6"/>
+              </g>
+            </svg>
+            <div class="tick-deck-name">spindle</div>
+            <div class="tick-deck-sub">6 pins · 25 rpm · one bar, played</div>
+          </div>
+        </div>
+
       </div>
-      <div class="ledger-rows" id="ledger-rows" aria-live="polite">
-        <p class="ledger-note">reading the ledger…</p>
+
+      <div class="tick-head">
+        <span class="tick-clock">elapsed <b id="tick-when">day 0 · 00:00</b> of nine days</span>
+        <button type="button" class="tick-replay" id="tick-replay">replay</button>
       </div>
-    </div>
 
-    <p class="lede" style="margin-top:28px">Now one of them all the way down. Replaying
-      this shortlist re-runs it against
-      {{ "{:,}".format(stats.get('embedded', 0)) }} embedded counterparties at the exact
-      instant it was stamped — and checks itself against the rank written down at the
-      time.</p>
-
-    <div class="tuner" id="replay">
-      <div class="tuner-head">
-        <span class="who" id="rp-who">loading a recorded decision…</span>
-        <div class="dial" role="group" aria-label="Which index to rank against">
-          <button data-mode="then" aria-pressed="true">as it was</button>
-          <button data-mode="now"  aria-pressed="false">as it is now</button>
+      {# The fast lane. `aria-hidden` on the canvas because it is a smear by design and
+         there is nothing in it to describe; the score line underneath carries the only
+         two facts it is making, as text. #}
+      <div class="tick-lane">
+        <div class="tick-name"><b>a realtime agent loop</b>
+          <span>60 iterations a second, never sleeping, never waiting for anybody</span></div>
+        <canvas id="tick-noise" width="1600" height="112" aria-hidden="true"></canvas>
+        <div class="tick-score">
+          <span><b id="tick-iters">0</b> iterations</span>
+          <span class="nil"><b id="tick-convo">0</b> conversations opened</span>
+          <span class="nil"><b id="tick-reply">0</b> curators who wrote back</span>
         </div>
       </div>
 
-      <div class="rp-stamp" id="rp-stamp"></div>
-      <div class="rows" id="rows" aria-live="polite"></div>
-      <div class="tuner-foot" id="foot">querying…</div>
+      <div class="tick-lane">
+        <div class="tick-name"><b>spindle</b>
+          <span>seven ticks in nine days — and four of them inside the first hour</span></div>
+
+        <div class="tick-rail" id="tick-rail" aria-hidden="true">
+          <div class="tick-line"></div>
+          <div class="tick-fill" id="tick-fill"></div>
+        </div>
+
+        {# Every row is present as text from the moment the page renders. The run only
+           moves opacity, so a screen reader, a reader with JavaScript off and a reader
+           who never scrolls this into view all get the same schedule — the animation is
+           emphasis on top of the content, never the delivery mechanism for it. #}
+        <ol class="tick-log" id="tick-log">
+          <li data-t="0">
+            <span class="when">day 0 · 00:00</span>
+            <span class="what"><b>A shortlist opens a thread.</b> Ranked against
+              {{ "{:,}".format(stats.get('embedded', 0)) }} embedded counterparties, and
+              the instant is stamped as a hybrid logical clock so the decision can be
+              read back later.</span>
+            <span class="src">035_decision_ledger.sql</span>
+          </li>
+          <li data-t="900">
+            <span class="when">day 0 · 00:15</span>
+            <span class="what"><b>The spend gate holds.</b> The cap refused it, so nothing
+              was delivered and the attempt budget was not spent. The row comes back in
+              fifteen minutes.</span>
+            <span class="src">sender.py · _record_refused</span>
+          </li>
+          <li data-t="3600" class="human">
+            <span class="when">day 0 · 01:00</span>
+            <span class="what"><b>A human approves the pitch.</b> <em>Our clock does not
+              run here at all.</em> There is nothing this system can do to make this step
+              arrive sooner, and it is not supposed to.</span>
+            <span class="src">somebody else's clock</span>
+          </li>
+          <li data-t="3660">
+            <span class="when">day 0 · 01:01</span>
+            <span class="what"><b>Sent.</b> One message, out of a batch of five, fenced
+              so it cannot go twice. The thread moves to <code>awaiting_reply</code>
+              rather than <code>sent</code>, because the next real event belongs to the
+              curator.</span>
+            <span class="src">sender.py · BATCH = 5</span>
+          </li>
+          <li data-t="435660">
+            <span class="when">day 5 · 01:01</span>
+            <span class="what"><b><code>next_action_at</code> comes due.</b> Five days is
+              not a retry and not a timeout. It is how long you leave a curator alone
+              before you follow up, and it is written onto the row at the instant of
+              sending.</span>
+            <span class="src">sender.py:188 · INTERVAL '5 days'</span>
+          </li>
+          <li data-t="522000" class="human">
+            <span class="when">day 6 · 01:00</span>
+            <span class="what"><b>The curator writes back.</b> <em>On their clock, not
+              ours.</em> Six days after the pitch — which, for a station that puts its
+              programming together once a week, is quick.</span>
+            <span class="src">somebody else's clock</span>
+          </li>
+          <li data-t="777600">
+            <span class="when">day 9 · 00:00</span>
+            <span class="what"><b>The thread reaches a terminal state and a lesson is
+              distilled from it.</b> That lesson reranks the next shortlist. It is the
+              only thing on this rail that compounds.</span>
+            <span class="src">lessons.py</span>
+          </li>
+        </ol>
+
+        <div class="tick-legend">
+          <span class="ours"><i></i>a tick this system chose</span>
+          <span class="theirs"><i></i>a tick it waited on</span>
+        </div>
+
+        <div class="tick-score" id="tick-final">
+          <span class="win"><b>7</b> ticks</span>
+          <span class="win"><b>1</b> curator who wrote back</span>
+          <span class="win"><b>1</b> lesson that outlives the release</span>
+        </div>
+      </div>
+
+      <p class="tick-foot">Nine days on a broken axis — the first hour would otherwise be
+        half a pixel wide. Every interval is a constant in this repository: five days is
+        <b>sender.py:188</b>, fifteen minutes is <b>_record_refused</b>, the batch of five
+        is <b>BATCH</b>. The two ticks that set the pace are the orange ones, and we own
+        neither. <b>Throughput is not the constraint here; somebody's attention is.</b></p>
     </div>
   </section>
 
@@ -818,10 +1056,9 @@ footer a{color:var(--carrier)}
     <div class="eyebrow">The filters are inside the index</div>
     <h2>It is a vector search, not a scan with a filter bolted on.</h2>
     <p class="lede">Four predicates — tenant, embedding model, party class, contact state —
-      sit in the index prefix, so the search happens inside the filtered subspace rather
-      than over everything followed by a discard. A test asserts this plan on every run,
-      because a query that quietly degrades to a full scan still returns rows that look
-      correct.</p>
+      sit in the index prefix, so the search happens inside the filtered subspace instead
+      of over everything followed by a discard. A test asserts this plan on every run: a
+      query that degrades to a full scan still returns rows that look correct.</p>
 
     {# The index declaration, drawn — and unbindable. These are the five columns of
        `party_shortlist` from migration 009, in their real order, with the values a
@@ -922,8 +1159,7 @@ footer a{color:var(--carrier)}
       <div class="race-env">
         <button type="button" data-act="expire">lease expires</button>
         <button type="button" data-act="reset">reset</button>
-        <span class="race-envnote">“lease expires” is worker A stalling past the TTL — the
-          stall is what makes the race reachable at all.</span>
+        <span class="race-envnote">“lease expires” stalls worker A past its TTL.</span>
       </div>
 
       <ol class="race-log" id="race-log" aria-live="polite"></ol>
@@ -960,8 +1196,7 @@ footer a{color:var(--carrier)}
       <div class="txn-foot">
         Three statements, <b>one transaction</b> — so a worker that dies halfway leaves
         nothing behind rather than a fact with no run, or a run with no completion. The
-        network call that produced the write happens outside the boundary, on purpose:
-        a transaction held open across an HTTP request is a different bug.
+        network call that produced the write happens outside the boundary, on purpose.
       </div>
     </div>
 
@@ -1041,24 +1276,21 @@ footer a{color:var(--carrier)}
         <tr class="vr keep" tabindex="0" role="button" aria-expanded="false">
           <td>AS OF SYSTEM TIME over a vector index</td><td class="no">nothing</td><td class="yes">irreplaceable</td></tr>
         <tr class="vd"><td colspan="3">
-          This is the row the section exists for. Our agents write to real people, so
-          the question <em>why did you contact me</em> has to be answerable — and
-          answering it means re-running the ranking against the index <b>as it stood at
-          that second</b>, not as it stands now. Four extra words of SQL, no snapshot
-          table, no audit copy of the embeddings.
-          <span class="vd-run">The tuner above is that query:
-            <a href="#tune">run it against a past window</a> and watch the shortlist
-            differ from today's.</span>
+          Our agents write to real people, so <em>why did you contact me</em> has to be
+          answerable — which means re-running the ranking against the index <b>as it
+          stood at that second</b>, not as it stands now. Four extra words of SQL, no
+          snapshot table, no audit copy of the embeddings.
+          <span class="vd-run">Every decision carries the hybrid logical clock it
+            happened at — <code>decision.at_hlc</code>, written by
+            <b>035_decision_ledger.sql</b> — which is the coordinate that query is
+            issued against.</span>
         </td></tr>
       </tbody>
     </table>
 
-    <p class="lede" style="margin-top:26px">Our agents contact real people. When someone
-      asks <em>why did you write to me</em>, we re-run the ranking that caused it against
-      the memory as it stood at that second — the same index, the same embeddings, the
-      same lessons. Four extra words of SQL. That is the reason an autonomous system that
-      acts on the world can be held to account, and it is the reason this is built on
-      CockroachDB.</p>
+    <p class="lede" style="margin-top:26px">One row survived. It is the row that lets an
+      autonomous system be held to account for what it did, and it is why this is built
+      on CockroachDB.</p>
   </section>
 
   <!-- ===================== 5. WHAT IT COSTS ===================== -->
@@ -1070,12 +1302,11 @@ footer a{color:var(--carrier)}
   <section id="pricing">
     <div class="eyebrow">What it costs</div>
     <h2>A tier is a budget cap, and the cap is a constraint.</h2>
-    <p class="lede">Most pricing pages are a promise. This one is a predicate. Every
-      plan below is a row in <code>budget</code>, and the spend gate that reads it
-      refuses the work rather than invoicing for it afterwards. The unit is an
-      <em>open conversation</em>, because one open thread per counterparty — label-wide
-      — is already a partial unique index. We are not inventing a meter to bill you
-      with; we are charging for the one thing the schema was already counting.</p>
+    <p class="lede">Most pricing pages are a promise. This one is a predicate. Every plan
+      below is a row in <code>budget</code>, and the spend gate that reads it refuses the
+      work rather than invoicing for it afterwards. The unit is an <em>open
+      conversation</em> — the one thing the schema was already counting, not a meter
+      invented to bill you with.</p>
 
     {# The cap, made draggable. Every number the slider reasons about is the same
        `open_conversations` the cards below render and `outreach.open_thread`
@@ -1162,7 +1393,7 @@ footer a{color:var(--carrier)}
               <a class="quiet" href="/signin">Sign in to choose {{ t.name }}</a>
             {% endif %}
           {% else %}
-            <a class="quiet" href="#tune">Book a demo</a>
+            <a class="quiet" href="/signin">Sign in and talk to us</a>
           {% endif %}
         </div>
       </div>
@@ -1170,6 +1401,20 @@ footer a{color:var(--carrier)}
     </div>
     {% if stripe_test_mode %}<span class="testmode">Stripe test mode</span>
     {% elif stripe_mode == 'live' %}<span class="livemode">Stripe live mode — real charges</span>{% endif %}
+
+    {# The cap's second job, and the reason the meter is a constraint rather than a
+       promise. Marked as unbuilt in the same breath as it is described: there is no
+       payout code in this tree, and a page whose whole register is "go and check" cannot
+       introduce a capability in the future tense without saying which tense it is in. #}
+    <p class="lede" style="margin-top:30px"><b>What the cap is for next.</b> Today it
+      bounds what an agent may spend thinking. The same predicate bounds what it may
+      <em>offer</em>. A creator whose last twenty posts sit on the right tempo is worth
+      paying for one more, and the number is small — at that scale a dollar is a serious
+      offer, and a thousand of them is a budget a label can actually hold. That is the
+      difference between an agent that drafts an email and an agent with money it can
+      commit on the label's behalf: the ceiling has to be a constraint the database
+      enforces, because it is now somebody's rent. <b>No payout path exists in this
+      deployment</b>, and this page will say so until one does.</p>
 
     <p class="priced">
       <b>What this page does not claim.</b>
@@ -1182,11 +1427,10 @@ footer a{color:var(--carrier)}
          Deliberately not quoted in this comment: a test asserts the claim appears only
          behind the guard, and it finds the sentence by index. #}
       {% if stripe_mode != 'live' %}No customer is paying for this today and
-      none is implied.{% endif %} <b>Sending is off in this deployment</b> on every tier — the
-      console reports <code>sender_wired: false</code> and will keep reporting it until
-      a human wires a sender. A free account is genuinely bounded rather than
-      trust-based: the cap is enforced by the same gate that protects our own spend,
-      and that gate fails closed.
+      none is implied.{% endif %} <b>Sending is off in this deployment</b> on every tier —
+      the console reports <code>sender_wired: false</code> until a human wires a sender.
+      A free account is bounded rather than trusted: the cap is enforced by the same gate
+      that protects our own spend, and that gate fails closed.
     </p>
   </section>
 
@@ -1203,259 +1447,6 @@ footer a{color:var(--carrier)}
     </p>
   </footer>
 </div>
-
-<script>
-/* ============================ the decision replay =========================
-   Two rankings of the same artist, and the whole argument is the difference:
-
-     `then` — the shortlist replayed AS OF SYSTEM TIME the hybrid logical clock
-              stamped on the thread when it was opened. This is the ranking that
-              actually caused the conversation.
-     `now`  — the same query against the index as it stands today.
-
-   `then` is fetched first and is the one that matters. `now` is a comparison and
-   is loaded lazily, because a reader who never presses it should not pay for it.
-
-   The self-check is the point and is rendered before the rows: `decided_rank` was
-   written down at decision time, so a replay either puts the counterparty back at
-   that rank or it does not. A demo that can fail in front of you is worth more
-   than one that cannot.
-
-   The meter is scaled across the *visible* range rather than to an absolute
-   distance, and says so on the page. Cosine distances over this index cluster
-   inside a couple of hundredths, so an absolute scale draws twelve identical bars
-   and tells the reader nothing; a relative scale shows the ordering honestly as
-   long as it does not pretend the gaps are large. Both are stated in the footer.
-   ========================================================================= */
-/* The ledger. Establishes that the coordinate is on every kind of decision and not
-   only the one the replay below reconstructs in full. It renders `at_wall` for the
-   human and quotes `at_hlc` beside it as the value a replay is actually issued
-   against — kept visibly distinct for the same reason `035_decision_ledger.sql` keeps
-   them distinct in the schema. A reader who notices the difference has understood the
-   section. */
-(function () {
-  var host = document.getElementById('ledger-rows');
-  if (!host) return;
-
-  function esc(s) {
-    return String(s).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
-  function when(iso) {
-    if (!iso) return '—';
-    var d = new Date(iso);
-    return isNaN(d.getTime()) ? esc(iso)
-      : d.toISOString().replace('T', ' ').slice(0, 16) + 'Z';
-  }
-  function note(msg) { host.innerHTML = '<p class="ledger-note">' + esc(msg) + '</p>'; }
-
-  fetch('/demo/decisions')
-    .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
-    .then(function (res) {
-      if (res.s !== 200) { note(res.d.error || 'the ledger did not answer'); return; }
-      var rows = res.d.decisions || [];
-      if (!rows.length) {
-        /* An empty ledger is a true statement about a deployment that has not decided
-           anything yet, and it says so rather than rendering an example. A seeded-
-           looking row invented here would undermine the one section about provenance. */
-        note('this deployment has not recorded a decision yet — an empty ledger is the ' +
-             'honest state and not a loading failure');
-        return;
-      }
-      host.innerHTML = rows.map(function (r) {
-        return '<div class="led k-' + esc(r.kind) + '">' +
-          '<span class="led-kind">' + esc(String(r.kind).replace(/_/g, ' ')) +
-            /* `applied` is the ordinary case and saying so on every row would be
-               noise. `proposed` and `refused` are the ones that mean a person was
-               in the loop, so only those are marked — which is also what makes the
-               one-row/two-row distinction visible to a reader. */
-            (r.stage && r.stage !== 'applied'
-              ? '<span class="led-stage">' + esc(r.stage) + '</span>' : '') +
-          '</span>' +
-          '<span class="led-sum">' + esc(r.summary) +
-            '<span class="led-who">' + esc(r.actor) + ' · about a ' +
-            esc(r.subject_kind) + '</span></span>' +
-          '<span class="led-at">' + when(r.at_wall) +
-            '<span class="led-hlc">' + esc(r.at_hlc) + '</span></span>' +
-        '</div>';
-      }).join('');
-    })
-    .catch(function () {
-      note('the cluster did not answer — it scales to zero, so the first query after ' +
-           'an idle period can take a moment. Reload to try again.');
-    });
-})();
-
-(function () {
-  var root = document.getElementById('replay');
-  if (!root) return;
-  var rowsEl = document.getElementById('rows');
-  var footEl = document.getElementById('foot');
-  var whoEl = document.getElementById('rp-who');
-  var stampEl = document.getElementById('rp-stamp');
-  var dial = root.querySelectorAll('.dial button');
-
-  var replay = null;   // the `then` payload, kept for the comparison
-  var nowRows = null;  // lazily fetched
-  var mode = 'then';
-  var lastTies = 0;
-
-  function esc(s) {
-    return String(s).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
-
-  /* No bars. An audit against the live cluster on 2026-08-15 measured the corpus:
-     these twelve are the top ~0.1% of 14,139 by cosine distance and sit about 0.15
-     below the median of a corpus spanning 0.29 — so the *set* is strongly separated
-     and real. Within the set the spread is 0.016, and two pairs are exact ties on
-     identical documents. A bar scaled to that internal spread stretches 0.016 across
-     the full width, which amplifies noise about eighteenfold and draws tied rows at
-     different lengths — asserting an ordering that does not exist in the data.
-
-     So the ordering is shown as a number and the ties are named. Saying "these two
-     are tied and we cannot separate them" is a stronger claim than a chart that
-     pretends otherwise. */
-
-  /* Competition ranking: tied rows share a position and the next rank skips. This is
-     computed on the exact float the server sent, not on the 4dp display value — two
-     distances that differ in the 6th place are not a tie and must not be drawn as one. */
-  function ranked(rows) {
-    var out = [], rank = 0;
-    rows.forEach(function (r, i) {
-      var tiedPrev = i > 0 && r.distance === rows[i - 1].distance;
-      var tiedNext = i < rows.length - 1 && r.distance === rows[i + 1].distance;
-      if (!tiedPrev) rank = i + 1;
-      out.push({ row: r, rank: rank, tied: tiedPrev || tiedNext });
-    });
-    return out;
-  }
-
-  function draw(rows, highlight) {
-    var ties = 0;
-    rowsEl.innerHTML = ranked(rows).map(function (e) {
-      var r = e.row;
-      var hit = highlight && r.name === highlight;
-      if (e.tied) ties++;
-      return '<div class="row' + (hit ? ' hit' : '') + (e.tied ? ' tied' : '') + '">' +
-        '<span class="rank">' + String(e.rank).padStart(2, '0') + '</span>' +
-        '<span><span class="name">' + esc(r.name) + '</span>' +
-        (hit ? '<span class="rp-you">the one we wrote to</span>' : '') +
-        (e.tied ? '<span class="rp-tied">tied — identical vectors</span>' : '') +
-        '</span>' +
-        '<span class="d">' + r.distance.toFixed(4) + '</span></div>';
-    }).join('');
-    return ties;
-  }
-
-  function stamp() {
-    if (!replay) { stampEl.innerHTML = ''; return; }
-    var ok = replay.matched;
-    stampEl.innerHTML =
-      '<span class="rp-aost">AS OF SYSTEM TIME \'' + esc(replay.as_of) + '\'</span>' +
-      '<span class="rp-check ' + (ok ? 'ok' : 'bad') + '">' +
-        'recorded rank ' + replay.recorded_rank +
-        ' · replayed rank ' + (replay.replayed_rank === null ? '—' : replay.replayed_rank) +
-        ' · ' + (ok ? 'match' : 'does not match') +
-      '</span>';
-  }
-
-  function renderThen() {
-    if (!replay) return;
-    lastTies = draw(replay.rows, replay.counterparty);
-    stamp();
-    var msg = 'the shortlist that opened this conversation, read from the index as it ' +
-      'stood at that instant · these <b>' + replay.rows.length + '</b> were selected out ' +
-      'of every embedded counterparty in the index; within them the spread is only ' +
-      spread(replay.rows) + ' of cosine distance, so treat this as a set that was ' +
-      'selected rather than a leaderboard';
-    if (lastTies) msg += ' · <b>' + lastTies + '</b> of them are exact ties and cannot ' +
-      'be ordered at all';
-    footEl.innerHTML = msg;
-  }
-
-  function spread(rows) {
-    var ds = rows.map(function (r) { return r.distance; });
-    return (Math.max.apply(null, ds) - Math.min.apply(null, ds)).toFixed(4);
-  }
-
-  function renderNow() {
-    if (!nowRows) return;
-    lastTies = draw(nowRows, replay ? replay.counterparty : null);
-    stampEl.innerHTML = '<span class="rp-aost">no AS OF clause — the index as it is now</span>';
-
-    /* The comparison, said in full rather than as a bare count. If nothing moved,
-       say that too: "the index has not changed since" is a real answer and hiding
-       it would be the same dishonesty the scrubber committed. */
-    var was = {}, moved = 0, gone = 0;
-    (replay ? replay.rows : []).forEach(function (r, i) { was[r.name] = i; });
-    nowRows.forEach(function (r, i) {
-      if (was[r.name] === undefined) gone++;
-      else if (was[r.name] !== i) moved++;
-    });
-    var parts = ['the same query, no time travel'];
-    if (moved) parts.push('<b>' + moved + '</b> in a different position than at decision time');
-    if (gone) parts.push('<b>' + gone + '</b> not in that ranking at all');
-    if (!moved && !gone) parts.push('identical to the decision — the index has not changed since');
-    footEl.innerHTML = parts.join(' · ');
-  }
-
-  function loadNow() {
-    if (nowRows) { renderNow(); return; }
-    footEl.textContent = 'querying the cluster…';
-    fetch('/demo/tune?artist=hallow-youth&window=now')
-      .then(function (r) { return r.json(); })
-      .then(function (d) { nowRows = d.rows || []; renderNow(); })
-      .catch(function () {
-        footEl.textContent = 'the cluster did not answer — it scales to zero, so the ' +
-          'first query after an idle period can take a moment. Try again.';
-      });
-  }
-
-  /* Every failure here is a real state with its own sentence. None of them fall back
-     to a plausible-looking ranking, because a fabricated shortlist on the one section
-     about provenance would be the worst possible bug in this file. */
-  function fail(msg) {
-    whoEl.textContent = 'no decision to replay';
-    stampEl.innerHTML = '';
-    rowsEl.innerHTML = '';
-    footEl.innerHTML = esc(msg);
-    dial.forEach(function (b) { b.disabled = true; });
-  }
-
-  fetch('/demo/replay')
-    .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
-    .then(function (res) {
-      var d = res.d;
-      if (res.s === 410) {
-        fail('that decision is older than gc.ttlseconds, so the instant it was made has ' +
-             'been garbage-collected. Time travel reaches back exactly that far and no ' +
-             'further — which is the cost of the feature, stated rather than hidden.');
-        return;
-      }
-      if (res.s !== 200) { fail(d.note || d.error || 'no recorded decision on this deployment'); return; }
-      replay = d;
-      whoEl.innerHTML = 'we opened a conversation with <b>' + esc(d.counterparty) + '</b> ' +
-                        'about <b>' + esc(d.artist) + '</b>';
-      renderThen();
-    })
-    .catch(function () {
-      fail('the cluster did not answer — it scales to zero, so the first query after an ' +
-           'idle period can take a moment. Reload to try again.');
-    });
-
-  dial.forEach(function (b) {
-    b.addEventListener('click', function () {
-      if (b.disabled) return;
-      dial.forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
-      mode = b.getAttribute('data-mode');
-      if (mode === 'now') loadNow(); else renderThen();
-    });
-  });
-})();
-</script>
 
 <script>
 /* ============================ the reach map ============================
@@ -1680,13 +1671,11 @@ footer a{color:var(--carrier)}
     var sum = missing.reduce(function (a, c) { return a + c.n; }, 0);
     var el = document.getElementById('reach-note');
     var parts = [];
-    parts.push('<b>' + fmt(index.total - index.located) + '</b> counterparties carry no '
-             + 'country yet and are counted but not drawn.');
+    parts.push('<b>' + fmt(index.total - index.located) + '</b> counted but not drawn — '
+             + 'no country on the row yet.');
     if (missing.length) {
-      parts.push('<b>' + fmt(sum) + '</b> more sit in ' + missing.length + ' places too '
-               + 'small to outline at this scale (' +
-               missing.slice(0, 6).map(function (c) { return c.cc; }).join(', ') +
-               (missing.length > 6 ? '…' : '') + ').');
+      parts.push('<b>' + fmt(sum) + '</b> more in ' + missing.length +
+                 ' places too small to outline at this scale.');
     }
     el.innerHTML = parts.join(' ');
   }
@@ -1869,6 +1858,378 @@ footer a{color:var(--carrier)}
 </script>
 
 <script>
+/* ---------- #tick: nine days on a broken axis ------------------------------
+   The rail's schedule is not in here. It is in the markup, as text, and this reads
+   it back out — so the list a reader sees with JavaScript off and the pips the
+   animation draws cannot disagree with each other. `data-t` on each row is the only
+   number this file trusts.
+
+   The mapping is piecewise on purpose and the break is drawn on the rail. See the
+   CSS block for why a linear axis and a log axis are both worse. */
+(function () {
+  var root = document.getElementById('tick');
+  if (!root) return;
+
+  var REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var rail  = document.getElementById('tick-rail');
+  var fill  = document.getElementById('tick-fill');
+  var when  = document.getElementById('tick-when');
+  var iters = document.getElementById('tick-iters');
+  var cv    = document.getElementById('tick-noise');
+  var items = [].slice.call(document.querySelectorAll('#tick-log li'));
+
+  var stops = items.map(function (li) {
+    return { t: +li.getAttribute('data-t'), li: li,
+             human: li.className.indexOf('human') >= 0 };
+  });
+  var SPAN  = stops[stops.length - 1].t;   // nine days, in seconds
+  var BREAK = 3660;                        // the last tick of the first hour
+  var CUT_A = 0.34, CUT_B = 0.36;          // where the axis stops, and restarts
+
+  function pos(t) {
+    if (t <= BREAK) return (t / BREAK) * CUT_A;
+    return CUT_B + ((t - BREAK) / (SPAN - BREAK)) * (1 - CUT_B);
+  }
+  function timeAt(p) {
+    if (p <= CUT_A) return (p / CUT_A) * BREAK;
+    if (p <  CUT_B) return BREAK;          // the gap, where no time passes
+    return BREAK + ((p - CUT_B) / (1 - CUT_B)) * (SPAN - BREAK);
+  }
+
+  stops.forEach(function (s) {
+    var pip = document.createElement('div');
+    pip.className = 'tick-pip' + (s.human ? ' human' : '');
+    pip.style.left = (pos(s.t) * 100).toFixed(3) + '%';
+    rail.appendChild(pip);
+    s.pip = pip;
+  });
+
+  var cut = document.createElement('div');
+  cut.className = 'tick-cut';
+  cut.style.left = ((CUT_A + CUT_B) / 2 * 100).toFixed(3) + '%';
+  rail.appendChild(cut);
+
+  [{ p: 0,               label: 'thread opens',          cls: 'first' },
+   { p: (CUT_A + CUT_B) / 2, label: 'one hour · axis breaks', cls: 'cut' },
+   { p: pos(435660),     label: 'day 5',                 cls: 'mid' },
+   { p: 1,               label: 'day 9',                 cls: 'last' }].forEach(function (m) {
+    var el = document.createElement('div');
+    el.className = 'tick-mark ' + m.cls;
+    el.style.left = (m.p * 100).toFixed(3) + '%';
+    el.textContent = m.label;
+    rail.appendChild(el);
+  });
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function clockOf(t) {
+    var d = Math.floor(t / 86400), r = t - d * 86400;
+    return 'day ' + d + ' · ' + pad(Math.floor(r / 3600)) +
+           ':' + pad(Math.floor((r % 3600) / 60));
+  }
+
+  /* Read from the design tokens rather than hardcoded, so the smear follows the
+     ground. Deliberately no `||` fallback: if `--dim` ever stops resolving, black
+     bars on the panel is a loud, obvious break, and a hardcoded hex here would hide
+     a broken token file behind something that looks fine. */
+  var g = cv.getContext('2d');
+  var SMEAR = getComputedStyle(document.documentElement)
+                .getPropertyValue('--dim').trim();
+
+  function sizeCanvas() {
+    var dpr = window.devicePixelRatio || 1;
+    cv.width  = Math.round(cv.clientWidth  * dpr);
+    cv.height = Math.round(cv.clientHeight * dpr);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function smear() {
+    var w = cv.clientWidth, h = cv.clientHeight;
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = SMEAR;
+    for (var x = 1; x < w; x += 5) {
+      var bar = 6 + Math.random() * (h - 12);
+      g.globalAlpha = 0.16 + Math.random() * 0.5;
+      g.fillRect(x, (h - bar) / 2, 2.5, bar);
+    }
+    g.globalAlpha = 1;
+  }
+
+  function render(p) {
+    fill.style.width = (p * 100).toFixed(3) + '%';
+    var t = timeAt(p);
+    when.textContent = clockOf(t);
+    iters.textContent = Math.floor(t * 60).toLocaleString('en-US');
+    stops.forEach(function (s) {
+      var on = p >= pos(s.t) - 1e-9;
+      s.pip.classList.toggle('on', on);
+      s.li.classList.toggle('on', on);
+    });
+    smear();
+  }
+
+  var DURATION = 13000, raf = 0, started = false;
+
+  function run() {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (REDUCED) { render(1); return; }
+    var t0 = 0;
+    raf = requestAnimationFrame(function step(now) {
+      if (!t0) t0 = now;
+      var p = Math.min(1, (now - t0) / DURATION);
+      render(p);
+      raf = p < 1 ? requestAnimationFrame(step) : 0;
+    });
+  }
+
+  sizeCanvas();
+  render(0);
+  window.addEventListener('resize', function () { sizeCanvas(); smear(); });
+  document.getElementById('tick-replay').addEventListener('click', run);
+
+  new IntersectionObserver(function (entries) {
+    if (entries[0].isIntersecting && !started) { started = true; run(); }
+  }, { threshold: 0.3 }).observe(root);
+})();
+
+
+/* ---------- #tick: the music box -------------------------------------------
+   Both cylinders are cut from the same eight bars, and the transport hands them a
+   bar each in turn: even bars to the fast deck, which crams eight repeats of that
+   bar into the slot, odd bars to Spindle, which plays it once. So the reader hears
+   every bar of the minuet twice — smeared, then as music — and the only difference
+   between the two is the value of one variable.
+
+   Two clocks are in play and they are not interchangeable. Before anyone asks for
+   sound there is no AudioContext to have a clock at all, so the transport runs on
+   `performance.now()`; once a context exists the schedule moves onto `currentTime`,
+   which is the only clock a browser will place notes on accurately. Crossing
+   between them restarts the transport rather than carrying a bar index over, which
+   would drop or double whatever bar was in flight. */
+(function () {
+  var box = document.getElementById('tick-box');
+  if (!box) return;
+
+  var REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var btn = document.getElementById('tick-sound');
+  var decks = {
+    fast: document.getElementById('deck-fast'),
+    slow: document.getElementById('deck-slow')
+  };
+
+  var SVGNS = 'http://www.w3.org/2000/svg';
+  function build(deck) {
+    var g = deck.querySelector('.tick-pegs');
+    var n = +g.getAttribute('data-pegs'), r = +g.getAttribute('data-r');
+    var pins = [];
+    for (var k = 0; k < n; k++) {
+      /* Pin k sits k steps *anticlockwise* from the comb, so that turning the
+         cylinder forward by k/n of a revolution brings it under the comb exactly
+         when the k-th slot of the bar comes due. */
+      var a = -k * (2 * Math.PI / n);
+      var c = document.createElementNS(SVGNS, 'circle');
+      c.setAttribute('cx', (100 + r * Math.sin(a)).toFixed(2));
+      c.setAttribute('cy', (100 - r * Math.cos(a)).toFixed(2));
+      c.setAttribute('r', n > 12 ? 1.7 : 3.4);
+      c.setAttribute('class', 'tick-peg');
+      g.appendChild(c);
+      pins.push(c);
+    }
+    return { el: deck, pegs: g, pins: pins,
+             comb: deck.querySelector('.tick-comb'),
+             spark: deck.querySelector('.tick-spark') };
+  }
+  var D = { fast: build(decks.fast), slow: build(decks.slow) };
+
+  /* Minuet in G, BWV Anh. 114 (Petzold). Eight bars of 3/4, written as
+     [midi note, length in eighths]; every bar sums to six. */
+  var MINUET = [
+    [[74,2],[67,1],[69,1],[71,1],[72,1]],
+    [[74,2],[67,2],[67,2]],
+    [[76,2],[72,1],[74,1],[76,1],[78,1]],
+    [[79,2],[67,2],[67,2]],
+    [[72,2],[74,1],[72,1],[71,1],[69,1]],
+    [[71,2],[72,1],[71,1],[69,1],[67,1]],
+    [[66,2],[67,1],[69,1],[71,1],[67,1]],
+    [[69,6]]
+  ];
+
+  var SLOT = 2.4;      // one slot, one turn of the Spindle cylinder
+  var E_SLOW = 0.40;   // an eighth note, played
+  var E_FAST = 0.05;   // an eighth note, at the rate the other lane advertises
+  var REPS = 8;        // 8 × 6 × E_FAST is exactly one slot
+  var FAST_REV = 0.6;  // seconds per revolution of the fast cylinder
+
+  var ctx = null, master = null, audioOn = false;
+  var origin = performance.now() / 1000, nextAt = origin, nextBar = 0, plan = [];
+  var raf = 0, timer = 0, inView = false, shownBar = null;
+
+  function clock() { return ctx ? ctx.currentTime : performance.now() / 1000; }
+  function freq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+  function startAudio() {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    ctx = new AC();
+    master = ctx.createGain();
+    master.gain.value = 0;
+    /* A compressor, not for tone: the fast deck fires twenty notes a second and
+       their tails overlap, and unlimited that stacks into something genuinely
+       unpleasant on headphones. */
+    var comp = ctx.createDynamicsCompressor();
+    master.connect(comp);
+    comp.connect(ctx.destination);
+  }
+  function gain(v) {
+    if (!ctx) return;
+    master.gain.cancelScheduledValues(ctx.currentTime);
+    master.gain.setTargetAtTime(v, ctx.currentTime, 0.02);
+  }
+
+  /* A music-box voice: a struck tine is a fast transient into a long, clean decay,
+     which is a sine plus two quiet inharmonic partials. The fast deck gets a square
+     wave, a decay short enough not to blur into a drone, and roughly a third of the
+     level — eight times the notes at the same level is eight times the energy. */
+  function voice(t, m, gentle) {
+    var env = ctx.createGain();
+    env.connect(master);
+    var peak = gentle ? 0.30 : 0.10, decay = gentle ? 1.9 : 0.11;
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(peak, t + 0.004);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    var parts = gentle ? [[1, 1], [2, 0.22], [3.01, 0.08]] : [[1, 1], [2, 0.45]];
+    parts.forEach(function (p) {
+      var o = ctx.createOscillator();
+      o.type = gentle ? 'sine' : 'square';
+      o.frequency.value = freq(m) * p[0];
+      var og = ctx.createGain();
+      og.gain.value = p[1];
+      o.connect(og); og.connect(env);
+      o.start(t);
+      o.stop(t + decay + 0.02);
+    });
+  }
+
+  function pump() {
+    var t = clock();
+    while (nextAt < t + 0.4) {
+      var mb = MINUET[Math.floor(nextBar / 2) % MINUET.length];
+      var fast = (nextBar % 2) === 0;
+      var e = fast ? E_FAST : E_SLOW, reps = fast ? REPS : 1, notes = [];
+      for (var r = 0; r < reps; r++) {
+        var at = 0;
+        for (var i = 0; i < mb.length; i++) {
+          notes.push({ t: nextAt + (r * 6 + at) * e, m: mb[i][0], slot: at });
+          at += mb[i][1];
+        }
+      }
+      if (audioOn && ctx) {
+        for (var j = 0; j < notes.length; j++) voice(notes[j].t, notes[j].m, !fast);
+      }
+      plan.push({ start: nextAt, end: nextAt + SLOT, fast: fast, notes: notes, mb: mb });
+      nextBar++;
+      nextAt += SLOT;
+    }
+    while (plan.length && plan[0].end < t - 1) plan.shift();
+  }
+
+  function frame() {
+    var t = clock(), cur = null;
+    for (var i = 0; i < plan.length; i++) {
+      if (t >= plan[i].start && t < plan[i].end) { cur = plan[i]; break; }
+    }
+    D.fast.el.classList.toggle('live', !!cur && cur.fast);
+    D.slow.el.classList.toggle('live', !!cur && !cur.fast);
+
+    if (!REDUCED) {
+      D.fast.pegs.style.transform =
+        'rotate(' + ((t - origin) / FAST_REV) * 360 + 'deg)';
+      D.slow.pegs.style.transform =
+        'rotate(' + ((t - origin) / SLOT) * 360 + 'deg)';
+    }
+
+    /* Which of the six pin positions this bar actually has a pin in. A music box
+       cylinder is only ever pinned where a note starts; the empty slots turning
+       past the comb in silence are half of what makes it read as a mechanism. */
+    if (cur && cur.mb !== shownBar) {
+      shownBar = cur.mb;
+      var onset = {}, at = 0;
+      for (var k = 0; k < cur.mb.length; k++) { onset[at] = true; at += cur.mb[k][1]; }
+      for (var p = 0; p < D.slow.pins.length; p++) {
+        D.slow.pins[p].classList.toggle('pin', !!onset[p]);
+      }
+    }
+
+    /* The fast deck gets one continuous glow for its whole bar rather than a spark
+       per note. Eighty pins a second past the comb is not a sequence of events any
+       eye resolves, and drawing it as one would be this section contradicting
+       itself. The slow deck gets a strike you can count. */
+    var hotFast = !!cur && cur.fast, hotSlow = false;
+    if (cur && !cur.fast) {
+      for (var n = 0; n < cur.notes.length; n++) {
+        var d = t - cur.notes[n].t;
+        if (d >= 0 && d < 0.16) { hotSlow = true; break; }
+      }
+    }
+    D.fast.comb.classList.toggle('hit', hotFast);
+    D.fast.spark.classList.toggle('on', hotFast);
+    D.slow.comb.classList.toggle('hit', hotSlow);
+    D.slow.spark.classList.toggle('on', hotSlow);
+
+    raf = requestAnimationFrame(frame);
+  }
+
+  function sync() {
+    var want = inView || audioOn;
+    if (want) {
+      if (!timer) timer = setInterval(pump, 100);
+      if (!raf) raf = requestAnimationFrame(frame);
+    } else {
+      if (timer) { clearInterval(timer); timer = 0; }
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      ['fast', 'slow'].forEach(function (k) {
+        D[k].el.classList.remove('live');
+        D[k].comb.classList.remove('hit');
+        D[k].spark.classList.remove('on');
+      });
+    }
+  }
+
+  function setSound(on) {
+    audioOn = on;
+    gain(on ? 0.5 : 0);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.textContent = on ? 'sound: on' : 'sound: off';
+    sync();
+  }
+
+  if (!(window.AudioContext || window.webkitAudioContext)) {
+    /* Said out loud rather than left as a button that does nothing. */
+    btn.disabled = true;
+    btn.textContent = 'sound: no Web Audio in this browser';
+  } else {
+    btn.addEventListener('click', function () {
+      if (audioOn) { setSound(false); return; }
+      if (!ctx) startAudio();
+      ctx.resume();
+      // Onto the audio clock, from the top of the minuet.
+      plan = []; nextBar = 0; shownBar = null;
+      nextAt = ctx.currentTime + 0.12;
+      origin = nextAt;
+      setSound(true);
+    });
+  }
+
+  /* A hidden tab that is still playing a music box is a tab somebody closes. */
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden && audioOn) setSound(false);
+  });
+
+  new IntersectionObserver(function (entries) {
+    inView = entries[0].isIntersecting;
+    sync();
+  }, { threshold: 0.2 }).observe(box);
+})();
+</script>
+
+<script>
 /* ---------- #plan: the prefix, unbindable ----------------------------------
    The rule this implements is CockroachDB's, not ours: a span over a composite
    index can only constrain a *leading contiguous* run of columns. The moment one
@@ -1942,34 +2303,32 @@ footer a{color:var(--carrier)}
     var cls, verdict, note;
     if (spanLen === 4) {
       cls = 'ok'; verdict = 'searching inside the subspace';
-      note = 'All four predicates are in the span, so the vector search happens ' +
-             '<b>inside</b> the filtered subspace. Target count 20 means twenty usable rows.';
+      note = 'All four predicates are in the span, so the search happens <b>inside</b> ' +
+             'the filtered subspace. Target count 20 means twenty usable rows.';
     } else if (!bound[0]) {
       cls = 'bad'; verdict = 'tenant boundary crossed';
-      note = 'With <b>tenant_id</b> unbound this is no longer a slow query, it is ' +
+      note = 'With <b>tenant_id</b> unbound this is not a slow query, it is ' +
              '<span class="cut">the wrong query</span> — the search ranges across every ' +
-             'label in the cluster. This is why the tenant predicate is not left to ' +
-             'reviewer discipline: CI parses every statement in <b>spindle/</b> and fails ' +
-             'the build if one omits it.';
+             'label in the cluster. CI parses every statement in <b>spindle/</b> and ' +
+             'fails the build if one omits this predicate.';
     } else if (strandedCols.length === 0) {
       /* Only trailing columns are unbound, so nothing is stranded behind a gap.
          The query is still correct and still uses the index — it just searches a
          wider subspace. Saying "stranded" here would be a lie about a legal plan. */
       cls = 'warn'; verdict = spanLen + ' of 4 columns in the span';
       note = 'Nothing is stranded: the unbound columns are at the <b>end</b> of the ' +
-             'index, so the span still covers every predicate that is bound. This plan ' +
-             'is correct and still uses the index — it just searches a wider subspace, ' +
-             'and some of the twenty rows it returns will be parties we cannot contact.';
+             'index, so the span still covers every bound predicate. Correct, still ' +
+             'indexed — just a wider subspace, so some of the twenty rows will be ' +
+             'parties we cannot contact.';
     } else {
       cls = 'warn'; verdict = spanLen + ' of 4 columns in the span';
       note = '<b>' + strandedCols.join('</b> and <b>') + '</b> ' +
-             (strandedCols.length > 1 ? 'are' : 'is') + ' still in the WHERE clause, but no ' +
-             'longer in the span — a composite index can only constrain a leading ' +
-             'contiguous run, so a gap strands everything behind it. ' +
-             (strandedCols.length > 1 ? 'They become filters' : 'It becomes a filter') +
-             ' applied <b>after</b> the search returns, which means target count 20 stops ' +
-             'meaning twenty usable rows and starts meaning twenty candidates, some of ' +
-             'which are then thrown away.';
+             (strandedCols.length > 1 ? 'are' : 'is') + ' still in the WHERE clause but ' +
+             'out of the span — a composite index constrains only a leading contiguous ' +
+             'run, so a gap strands everything behind it. ' +
+             (strandedCols.length > 1 ? 'They are applied' : 'It is applied') +
+             ' <b>after</b> the search, so target count 20 now means twenty candidates, ' +
+             'some of which are thrown away.';
     }
     verdictEl.className = 'prefix-verdict ' + cls;
     verdictEl.textContent = verdict;
@@ -2152,15 +2511,14 @@ footer a{color:var(--carrier)}
            range the cheapest tier IS the first tier and nothing is refusing. */
         (refusing
           ? ' The ' + (refusing > 1 ? refusing + ' tiers' : 'tier') + ' below it ' +
-            (refusing > 1 ? 'do' : 'does') + ' not get more expensive at this volume — ' +
+            (refusing > 1 ? 'do' : 'does') + ' not cost more at this volume — ' +
             (refusing > 1 ? 'they ' : 'it ') +
             '<span class="refuse">refuse' + (refusing > 1 ? '' : 's') + ' the work</span>.'
-          : ' This is the smallest tier there is, so nothing below it is being refused ' +
-            'yet — drag right and watch one start.');
+          : ' The smallest tier there is — drag right and watch one start refusing.');
     } else {
-      line.innerHTML = '<b>' + want + '</b> is past every published cap, so there is no tier ' +
-        'to put you on and the honest answer is a conversation rather than a number. What ' +
-        'does not happen is the gate quietly allowing it and invoicing afterwards.';
+      line.innerHTML = '<b>' + want + '</b> is past every published cap, so the honest ' +
+        'answer is a conversation rather than a number. The gate does not quietly allow ' +
+        'it and invoice afterwards.';
     }
   }
 

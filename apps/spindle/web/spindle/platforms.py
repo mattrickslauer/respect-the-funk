@@ -90,8 +90,8 @@ PLATFORMS: tuple[Platform, ...] = (
         indexed=True),
     Platform(
         key="spotify", label="Spotify", mark="spotify",
-        blurb="Editorial playlist curators.",
-        indexed=True),
+        blurb="Editorial playlist curators. Not indexed yet.",
+        indexed=False),
     Platform(
         key="podcast", label="Podcasts", mark="podcast",
         blurb="Music shows and their hosts. Feeds read, no counterparties written yet.",

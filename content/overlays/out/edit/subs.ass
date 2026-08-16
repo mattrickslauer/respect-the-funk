@@ -1,0 +1,77 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Spindle,IBM Plex Mono,52,&H00ECF3F7,&H00040506,&HA0000000,-1,0,1,4,2,2,120,120,74,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+
+Dialogue: 0,0:00:00.00,0:00:02.44,Spindle,,0,0,0,,An independent label puts out a record.
+Dialogue: 0,0:00:02.48,0:00:03.83,Spindle,,0,0,0,,For anyone to hear it,
+Dialogue: 0,0:00:03.87,0:00:08.41,Spindle,,0,0,0,,somebody has to find the few hundred\Npeople who might actually play it —
+Dialogue: 0,0:00:08.45,0:00:10.63,Spindle,,0,0,0,,programmers, curators, show hosts —
+Dialogue: 0,0:00:10.67,0:00:12.98,Spindle,,0,0,0,,and write to each of them personally,
+Dialogue: 0,0:00:13.02,0:00:14.16,Spindle,,0,0,0,,with a real pitch.
+Dialogue: 0,0:00:14.72,0:00:16.93,Spindle,,0,0,0,,That's weeks of work per release.
+Dialogue: 0,0:00:16.97,0:00:18.57,Spindle,,0,0,0,,Most labels never do it.
+Dialogue: 0,0:00:18.61,0:00:20.72,Spindle,,0,0,0,,So most records just disappear.
+Dialogue: 0,0:00:21.22,0:00:22.55,Spindle,,0,0,0,,Spindle does it. Every night,
+Dialogue: 0,0:00:22.59,0:00:24.06,Spindle,,0,0,0,,for every artist on the roster.
+Dialogue: 0,0:00:24.78,0:00:27.45,Spindle,,0,0,0,,Get it wrong and you're\Nnot marketing, you're spam.
+Dialogue: 0,0:00:27.49,0:00:30.58,Spindle,,0,0,0,,So the whole thing turns on\Npicking the right few hundred.
+Dialogue: 0,0:00:30.92,0:00:34.11,Spindle,,0,0,0,,That shortlist is a vector\Nsearch in CockroachDB,
+Dialogue: 0,0:00:34.15,0:00:37.20,Spindle,,0,0,0,,with the filters — tenant,\Nmodel, contactable —
+Dialogue: 0,0:00:37.24,0:00:39.24,Spindle,,0,0,0,,living inside the index itself,
+Dialogue: 0,0:00:39.28,0:00:40.60,Spindle,,0,0,0,,not bolted on after.
+Dialogue: 0,0:00:41.08,0:00:43.35,Spindle,,0,0,0,,And that index starts with tenant_id.
+Dialogue: 0,0:00:43.39,0:00:47.70,Spindle,,0,0,0,,One column doing our security boundary\Nand our partition key at once.
+Dialogue: 0,0:00:48.70,0:00:50.44,Spindle,,0,0,0,,pgvector can do the similarity.
+Dialogue: 0,0:00:50.48,0:00:52.74,Spindle,,0,0,0,,It can't make one decision do both jobs.
+Dialogue: 0,0:00:52.78,0:00:54.96,Spindle,,0,0,0,,The index is never finished, either.
+Dialogue: 0,0:00:55.00,0:00:57.68,Spindle,,0,0,0,,Agents are adding to\Nthese records all day —
+Dialogue: 0,0:00:57.72,0:00:59.78,Spindle,,0,0,0,,what a station plays, who runs it,
+Dialogue: 0,0:00:59.82,0:01:01.36,Spindle,,0,0,0,,what they said last time.
+Dialogue: 0,0:01:01.72,0:01:02.99,Spindle,,0,0,0,,And there's no orchestrator.
+Dialogue: 0,0:01:03.03,0:01:04.40,Spindle,,0,0,0,,Agents don't call each other —
+Dialogue: 0,0:01:04.44,0:01:06.92,Spindle,,0,0,0,,a changefeed on the memory\Ntables wakes the next one.
+Dialogue: 0,0:01:07.28,0:01:09.04,Spindle,,0,0,0,,So kill half the fleet mid-run.
+Dialogue: 0,0:01:09.08,0:01:10.43,Spindle,,0,0,0,,The work still finishes.
+Dialogue: 0,0:01:10.47,0:01:12.84,Spindle,,0,0,0,,The lease expires and the row comes back.
+Dialogue: 0,0:01:13.40,0:01:17.50,Spindle,,0,0,0,,The send claims its lease before the\Nnetwork call. Two workers, same name.
+Dialogue: 0,0:01:17.54,0:01:20.12,Spindle,,0,0,0,,The name can't tell them\Napart. The token can.
+Dialogue: 0,0:01:20.60,0:01:22.02,Spindle,,0,0,0,,When people write back,
+Dialogue: 0,0:01:22.06,0:01:24.04,Spindle,,0,0,0,,the reply finds its own thread —
+Dialogue: 0,0:01:24.08,0:01:27.82,Spindle,,0,0,0,,every pitch carries a token we\Nminted for one conversation.
+Dialogue: 0,0:01:28.38,0:01:31.08,Spindle,,0,0,0,,We're holding contact\Ndetails for real people,
+Dialogue: 0,0:01:31.12,0:01:34.59,Spindle,,0,0,0,,and European law says where\Nthat data can live. Same table,
+Dialogue: 0,0:01:34.63,0:01:36.74,Spindle,,0,0,0,,same query: this row is in Virginia,
+Dialogue: 0,0:01:36.78,0:01:38.80,Spindle,,0,0,0,,this one is physically in Ireland.
+Dialogue: 0,0:01:39.62,0:01:43.63,Spindle,,0,0,0,,Residency per row, enforced by the\Ndatabase instead of by us remembering to.
+Dialogue: 0,0:01:43.67,0:01:45.70,Spindle,,0,0,0,,Now lose a region. It keeps answering.
+Dialogue: 0,0:01:46.06,0:01:49.33,Spindle,,0,0,0,,It spends the label's money too,\Non its own, up to a ceiling.
+Dialogue: 0,0:01:49.37,0:01:52.04,Spindle,,0,0,0,,Last night it asked to put\Nmore behind one record,
+Dialogue: 0,0:01:52.08,0:01:53.06,Spindle,,0,0,0,,and I approved it.
+Dialogue: 0,0:01:53.26,0:01:56.15,Spindle,,0,0,0,,So this morning — what was\Nit looking at when it asked?
+Dialogue: 0,0:01:56.19,0:01:57.33,Spindle,,0,0,0,,I can't just query it.
+Dialogue: 0,0:01:57.37,0:01:58.66,Spindle,,0,0,0,,We never stop collecting,
+Dialogue: 0,0:01:58.70,0:02:02.70,Spindle,,0,0,0,,so those metrics have been overwritten\Nand the thread states have moved on.
+Dialogue: 0,0:02:03.04,0:02:06.87,Spindle,,0,0,0,,But the ledger row stored the exact\Nlogical timestamp it decided at.
+Dialogue: 0,0:02:06.91,0:02:08.24,Spindle,,0,0,0,,Four extra words of SQL,
+Dialogue: 0,0:02:08.28,0:02:09.72,Spindle,,0,0,0,,pointed at that timestamp,
+Dialogue: 0,0:02:09.76,0:02:11.98,Spindle,,0,0,0,,and they come back. Not a copy of them.
+Dialogue: 0,0:02:12.58,0:02:16.53,Spindle,,0,0,0,,Then it re-runs the valuation against those old numbers and checks it still gets the
+Dialogue: 0,0:02:16.57,0:02:17.47,Spindle,,0,0,0,,same answer.
+Dialogue: 0,0:02:17.72,0:02:19.60,Spindle,,0,0,0,,No audit table. No event log.
+Dialogue: 0,0:02:19.64,0:02:21.62,Spindle,,0,0,0,,No versioned copy of anything.
+Dialogue: 0,0:02:22.52,0:02:24.38,Spindle,,0,0,0,,Postgres cannot do that at any price.
+Dialogue: 0,0:02:25.34,0:02:29.63,Spindle,,0,0,0,,One database doing the index,\Nthe scheduler, the outbox,
+Dialogue: 0,0:02:29.67,0:02:31.87,Spindle,,0,0,0,,the event bus and the ledger.
+Dialogue: 0,0:02:31.91,0:02:34.62,Spindle,,0,0,0,,It scales to zero between releases.
+Dialogue: 0,0:02:35.16,0:02:39.08,Spindle,,0,0,0,,It's live today at\Nspindle.mattrickslauer.com.
+Dialogue: 0,0:02:39.12,0:02:40.76,Spindle,,0,0,0,,Go and make it big.

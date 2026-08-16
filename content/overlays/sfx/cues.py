@@ -43,9 +43,20 @@ SR = 48_000
 SFX = HERE.parent / "out" / "sfx"
 ALIGN = HERE.parent / "out" / "edit" / "align.json"
 
-# Global trim on everything here, in dB. The palette is already normalised low;
-# this is the one knob to turn if the bed feels loud against the voice.
-TRIM = -3.0
+# Global trim on everything here, in dB. The one knob to turn if the bed sits
+# wrong against the voice.
+#
+# This is deliberately high. The effects live in air and sub, either side of the
+# speech band (see synth.py), so "as loud as the voice" here does not mean
+# "fighting the voice" the way it would if they shared frequencies — they get to
+# be genuinely present without ever masking a word.
+TRIM = +13.0
+
+# Peak the finished bed is allowed to reach. Cues stack — a tick landing inside a
+# rewind sums — and this catches it. At -3 dBFS the bed sits level with dialogue
+# peaking at -1.7, which is what "like my voice" asks for; the limiter after the
+# mix in compose.py is what stops the two coinciding badly.
+CEILING = 0.71                    # -3.0 dBFS
 
 # (scene stem, seconds into the scene, sound, gain dB)
 CUES: list[tuple[str, float, str, float]] = [
@@ -115,7 +126,7 @@ CUES: list[tuple[str, float, str, float]] = [
     *[("12-replay", 5.4 + i * 1.4, "shimmer", -6) for i in range(4)],
     ("12-replay",    11.25, "tick-soft", -2),
     ("12-replay",    12.25, "tick",      -1),
-    ("12-replay",    16.40, "rewind",    +1),
+    ("12-replay",    16.40, "rewind",    -7),
     ("12-replay",    22.20, "tick-soft", -4),
     ("12-replay",    27.45, "accept",    +1),
 
@@ -196,9 +207,9 @@ def main() -> int:
     # Overlapping cues can stack; catch it here rather than discovering it in the
     # mix. Scale the whole bed rather than limiting — these are transients and a
     # limiter would flatten exactly the attacks that make them read.
-    if peak > 0.5:
-        bed *= 0.5 / peak
-        print(f"  scaled down to -6 dBFS (cues were stacking)")
+    if peak > CEILING:
+        bed *= CEILING / peak
+        print(f"  scaled to {20 * np.log10(CEILING):.1f} dBFS (cues were stacking)")
 
     out = SFX / "bed.wav"
     with wave.open(str(out), "wb") as w:

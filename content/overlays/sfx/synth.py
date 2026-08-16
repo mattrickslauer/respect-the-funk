@@ -7,19 +7,39 @@
 
 The picture is an instrument reading: copper lines on a polar grid, drawn like an
 oscilloscope. The sound has to belong to that. So nothing here is a UI sound —
-no glassy notification pings, no whooshes with a rising shepard tone, none of the
+no glassy notification pings, no rising shepard whooshes, none of the
 motion-graphics library clichés. The references are physical: a relay closing, a
 detent clicking into place, a soft mallet on wood, tape spooling back.
 
-Three rules, and every sound below obeys them:
+### The rule that matters, learned the hard way
 
-1. **Short, and gone.** Almost everything is under 400ms. A sound that rings on
-   competes with the voice, and the voice is the product.
-2. **Dark.** Energy sits under about 6kHz. Bright sounds read as "app" and also
-   collide with sibilance in the speech, which is the one band already crowded.
-3. **Quiet by construction.** Everything is normalised to a peak well under full
-   scale, per-sound, so the cue sheet can place things without a mixing pass.
-   The loudest thing here peaks at -14 dBFS.
+**Everything lives above 8kHz or below 90Hz, and the middle is carved out.**
+
+The first version of this file said the opposite — "dark, energy under 6kHz,
+because bright reads as app". That was exactly wrong and it made the whole bed
+inaudible. 300Hz to 4kHz *is* the speech band; a cue placed there is competing
+with the one signal it must never compete with, and simultaneous masking means
+anything more than a few dB down in-band is not quiet, it is *gone*. Measured on
+the real mix, cues were sitting 9-13 dB under the dialogue inside its own
+frequency range. Mathematically present, inaudible in practice, and turning them
+up would only have made them fight the voice instead.
+
+So the palette occupies the two places speech is not:
+
+  * **Air, 8-15kHz.** The primary band, because it survives a laptop speaker and
+    a phone. Speech has almost no energy up here — only sibilance, which is
+    transient and narrow.
+  * **Sub, 40-90Hz.** Reinforcement, for weight on a system that can reproduce
+    it. Deliberately never the *only* content in a sound, because half the people
+    watching will hear none of it.
+
+`carve()` below notches 300Hz-3.5kHz out of everything as a final stage, so even
+the sounds that need a little midrange body cannot creep into the voice.
+
+Two rules survive from the first pass:
+
+1. **Short, and gone.** Almost everything is under 400ms.
+2. **Normalised per-sound**, so the cue sheet places things without a mixing pass.
 
 ## Why synthesis rather than samples
 
@@ -86,6 +106,29 @@ def noise(dur: float, seed: int) -> np.ndarray:
     return np.random.default_rng(seed).standard_normal(int(SR * dur))
 
 
+def carve(x: np.ndarray, depth_db: float = -13.0) -> np.ndarray:
+    """Notch the speech band out of a finished sound.
+
+    The last stage on everything. Whatever midrange a sound needs for character,
+    it does not get to keep the part that overlaps the dialogue — 300Hz to 3.5kHz
+    comes down by `depth_db`, with cosine skirts so the notch is not audible as a
+    filter.
+
+    This is what makes the bed sit *beside* the voice instead of underneath it.
+    """
+    n = len(x)
+    X = np.fft.rfft(x)
+    f = np.fft.rfftfreq(n, 1 / SR)
+    g = 10 ** (depth_db / 20)
+    lo, hi = 300.0, 3500.0
+    m = np.ones_like(f)
+    rise = np.clip((f - lo * 0.45) / (lo * 0.55), 0, 1)
+    fall = np.clip((hi * 2.1 - f) / (hi * 1.1), 0, 1)
+    notch = (0.5 - 0.5 * np.cos(np.pi * rise)) * (0.5 - 0.5 * np.cos(np.pi * fall))
+    m = 1.0 - (1.0 - g) * notch
+    return np.fft.irfft(X * m, n)
+
+
 def sweep(dur: float, f0: float, f1: float, curve: float = 1.0) -> np.ndarray:
     """Sine whose frequency glides f0 -> f1. Phase is integrated, not stepped —
     stepping it produces a click at every sample boundary."""
@@ -133,23 +176,30 @@ def save(name: str, x: np.ndarray) -> None:
 # --------------------------------------------------------------------------
 
 def make() -> None:
-    # TICK — a detent dropping into place. Two damped resonances plus a scrap of
-    # noise for the contact itself. Used per filter closing, per dot lighting.
-    n = int(SR * 0.06)
-    x = (np.sin(2 * np.pi * 1850 * t(0.06)) * 0.6
-         + np.sin(2 * np.pi * 2790 * t(0.06)) * 0.25
-         + band(noise(0.06, 1), 1200, 5200) * 0.3)
-    save("tick", peak_to(x * env(n, 0.0004, 0.055, 3.4), -19))
+    """The palette. Every sound ends with carve() and lands in air and/or sub.
 
-    # TICK-SOFT — the same gesture an octave down and blunter, for anything
-    # ambient. This is the one that repeats most, so it is the quietest.
-    n = int(SR * 0.09)
-    x = (np.sin(2 * np.pi * 820 * t(0.09)) * 0.7
-         + band(noise(0.09, 2), 500, 2400) * 0.25)
-    save("tick-soft", peak_to(x * env(n, 0.001, 0.08, 3.0), -26))
+    Levels are much hotter than the first pass: the loudest cue now peaks at
+    -9 dBFS against dialogue peaking at -1.7. In-band that would be far too much,
+    but these barely touch the voice's frequencies, so they read clearly without
+    ever fighting it.
+    """
 
-    # APERTURE — the dial closing in scene 03. Band-passed noise whose centre
-    # falls as the sector narrows, so the sound literally tracks the picture.
+    # TICK — a detent dropping in. Now a contact click up in the air band rather
+    # than a 1.8kHz resonance sitting on top of a vowel.
+    n = int(SR * 0.05)
+    x = (band(noise(0.05, 1), 7000, 13500) * 1.0
+         + np.sin(2 * np.pi * 9400 * t(0.05)) * 0.35
+         + np.sin(2 * np.pi * 62 * t(0.05)) * 0.5)          # a little floor under it
+    save("tick", peak_to(carve(x * env(n, 0.0003, 0.045, 3.6)), -13))
+
+    # TICK-SOFT — the ambient repeat. Blunter and lower in the air band.
+    n = int(SR * 0.075)
+    x = (band(noise(0.075, 2), 5200, 9500) * 0.9
+         + np.sin(2 * np.pi * 58 * t(0.075)) * 0.4)
+    save("tick-soft", peak_to(carve(x * env(n, 0.0008, 0.07, 3.2)), -18))
+
+    # APERTURE — the dial closing. The sweep now runs DOWN through the air band
+    # (11k -> 3.4k) so it tracks the picture without crossing into the voice.
     dur = 0.75
     nz = noise(dur, 3)
     seg = 24
@@ -157,83 +207,119 @@ def make() -> None:
     edges = np.linspace(0, len(out), seg + 1).astype(int)
     for i in range(seg):
         u = i / (seg - 1)
-        c = 3800 * (700 / 3800) ** u
-        piece = band(nz[edges[i]:edges[i + 1]], c * 0.6, c * 1.55)
-        out[edges[i]:edges[i + 1]] = piece
-    shape = np.sin(np.pi * np.linspace(0, 1, len(out))) ** 1.4
-    save("aperture", peak_to(out * shape, -21))
+        c = 11000 * (3400 / 11000) ** u
+        out[edges[i]:edges[i + 1]] = band(nz[edges[i]:edges[i + 1]], c * 0.72, c * 1.5)
+    shape = np.sin(np.pi * np.linspace(0, 1, len(out))) ** 1.3
+    sub = np.sin(2 * np.pi * 52 * t(dur)) * shape * 0.35
+    save("aperture", peak_to(carve(out * shape + sub), -14))
 
-    # THUNK — a soft mallet on something wooden. For kill -9, and for the refusal.
-    n = int(SR * 0.3)
-    body = sweep(0.3, 190, 62, curve=0.35)
-    click = band(noise(0.012, 4), 900, 4200)
-    x = body * env(n, 0.001, 0.26, 2.2)
-    x[:len(click)] += click * 0.55
-    save("thunk", peak_to(band(x, 30, 3000), -15))
-
-    # REFUSE — a minor second falling. Deliberately slightly sour; this is the
-    # lease being lost and it should not feel neutral.
-    dur = 0.26
+    # THUNK — the mallet. Sub body with an air transient; the wooden midrange
+    # that used to carry it is exactly what the voice was eating.
+    dur = 0.34
     n = int(SR * dur)
-    x = (np.sin(2 * np.pi * 466 * t(dur)) * 0.6
-         + np.sin(2 * np.pi * 440 * t(dur)) * 0.5
-         + np.sin(2 * np.pi * 932 * t(dur)) * 0.12)
-    save("refuse", peak_to(band(x * env(n, 0.004, 0.22, 3.0), 120, 3500), -20))
+    body = sweep(dur, 96, 44, curve=0.4) * env(n, 0.0015, 0.3, 2.1)
+    x = body * 1.0
+    # A longer, louder air transient than the sub body strictly needs. The sub
+    # carries this sound on a system that can reproduce 45Hz; on a laptop the
+    # only thing anyone hears IS this click, so it has to survive alone.
+    click = band(noise(0.055, 4), 5000, 14000)
+    x[:len(click)] += click * env(len(click), 0.0004, 0.05, 2.6) * 1.5
+    save("thunk", peak_to(carve(x), -10))
 
-    # ACCEPT — a fifth rising, soft attack, longer tail. Ticks and approvals.
-    dur = 0.55
+    # REFUSE — still sour, but the dissonance now sits in the sub as a beat
+    # between two close low tones, with a hard air tick on top.
+    dur = 0.3
     n = int(SR * dur)
-    e = env(n, 0.012, 0.5, 1.8)
-    x = (np.sin(2 * np.pi * 587.33 * t(dur)) * 0.55
-         + np.sin(2 * np.pi * 880.00 * t(dur)) * 0.4
-         + np.sin(2 * np.pi * 1174.66 * t(dur)) * 0.15)
-    save("accept", peak_to(band(x * e, 200, 5000), -20))
+    e = env(n, 0.002, 0.26, 2.6)
+    x = (np.sin(2 * np.pi * 73 * t(dur)) * 0.9
+         + np.sin(2 * np.pi * 78 * t(dur)) * 0.85) * e
+    tick_ = band(noise(0.025, 11), 6000, 12000)
+    x[:len(tick_)] += tick_ * env(len(tick_), 0.0004, 0.022, 3.0) * 0.7
+    save("refuse", peak_to(carve(x), -12))
 
-    # REWIND — the centrepiece. Tape spooling back: a falling glide under a
-    # reversed noise swell, so it pulls backwards rather than pushing forward.
-    dur = 1.35
-    n = int(SR * dur)
-    glide = sweep(dur, 620, 155, curve=0.8)
-    swell = band(noise(dur, 5), 300, 2600)[::-1] * np.linspace(0.15, 1.0, n) ** 2
-    e = np.concatenate([np.linspace(0, 1, int(n * 0.12)) ** 0.5,
-                        np.linspace(1, 0.25, n - int(n * 0.12))])
-    x = (glide * 0.75 + swell * 0.5) * e
-    save("rewind", peak_to(band(x, 60, 4000), -17))
-
-    # DROP — the record arriving, and the disc blooming. Sub with a soft knock.
+    # ACCEPT — a rising bell, moved up an octave and a half into the air band,
+    # over a soft sub. Reads as "yes" without occupying a single vowel.
     dur = 0.6
     n = int(SR * dur)
-    x = sweep(dur, 120, 46, curve=0.5) * env(n, 0.004, 0.55, 1.9)
-    knock = band(noise(0.04, 7), 150, 1200)
-    x[:len(knock)] += knock * env(len(knock), 0.001, 0.035, 3.0) * 0.4
-    save("drop", peak_to(band(x, 25, 2200), -14))
+    e = env(n, 0.006, 0.55, 1.7)
+    x = (np.sin(2 * np.pi * 8800 * t(dur)) * 0.55
+         + np.sin(2 * np.pi * 11700 * t(dur)) * 0.4
+         + np.sin(2 * np.pi * 13200 * t(dur)) * 0.2) * e
+    x += np.sin(2 * np.pi * 66 * t(dur)) * env(n, 0.004, 0.5, 2.0) * 0.7
+    save("accept", peak_to(carve(x), -12))
 
-    # SHIMMER — facts landing on the index. Detuned high partials, fast decay,
-    # stereo-spread so a run of them widens the field.
-    dur = 0.34
+    # REWIND — the centrepiece, and the one sound whose LENGTH is load-bearing.
+    #
+    # It was 1.35s against a playhead that travels for 5.2s, so it stopped dead a
+    # quarter of the way through the move and left the rest of the animation in
+    # silence. A sound that ends before its picture does reads as a mistake, not
+    # as restraint. This now runs the full length of the rewind.
+    #
+    # Held that long, a plain glide gets boring, so it spools: tape-transport
+    # ticks that slow down as the playhead approaches the decision, which is also
+    # what tells the ear the movement is decelerating rather than just long.
+    dur = 5.2
+    n = int(SR * dur)
+    tt = t(dur)
+    glide = sweep(dur, 110, 34, curve=0.7)
+    swell = band(noise(dur, 5), 6500, 15000)[::-1] * np.linspace(0.08, 1.0, n) ** 1.6
+
+    spool = np.zeros(n)
+    click = band(noise(0.012, 21), 7000, 14000)
+    click = click * env(len(click), 0.0003, 0.010, 3.4)
+    at, gap = 0.10, 0.085
+    while at < dur - 0.05:
+        i = int(at * SR)
+        j = min(n, i + len(click))
+        # each tick a touch quieter as the transport slows
+        spool[i:j] += click[: j - i] * (1.0 - 0.55 * (at / dur))
+        gap *= 1.075                      # decelerating
+        at += gap
+
+    e = np.concatenate([np.linspace(0, 1, int(n * 0.05)) ** 0.5,
+                        np.ones(int(n * 0.75)),
+                        np.linspace(1, 0, n - int(n * 0.05) - int(n * 0.75)) ** 1.4])
+    x = (glide * 0.9 + swell * 0.55 + spool * 0.8) * e[:n]
+    save("rewind", peak_to(carve(x), -11))
+
+    # DROP — the record arriving. Pure sub with an air knock so it is still
+    # audible on a laptop that reproduces nothing below 150Hz.
+    dur = 0.62
+    n = int(SR * dur)
+    x = sweep(dur, 104, 40, curve=0.45) * env(n, 0.003, 0.56, 1.8)
+    # Same reasoning as thunk: the sub is the weight, the knock is what a phone
+    # speaker actually plays back.
+    knock = band(noise(0.06, 7), 4800, 13000)
+    x[:len(knock)] += knock * env(len(knock), 0.0006, 0.055, 2.5) * 1.35
+    save("drop", peak_to(carve(x), -10))
+
+    # SHIMMER — facts landing. Already lived up here; pushed higher and widened.
+    dur = 0.32
     n = int(SR * dur)
     rng = np.random.default_rng(8)
     x = np.zeros(n)
-    for f in (2960, 3730, 4430, 5270):
+    for f in (9200, 10900, 12600, 14100):
         x += np.sin(2 * np.pi * f * (1 + rng.uniform(-0.004, 0.004)) * t(dur)) * rng.uniform(0.5, 1)
-    save("shimmer", stereo(peak_to(x * env(n, 0.002, 0.3, 3.6), -25), spread=7))
+    save("shimmer", stereo(peak_to(carve(x * env(n, 0.0015, 0.28, 3.6)), -17), spread=7))
 
-    # PULSE — the fleet's heartbeat, one hand-off. Barely there on purpose: it
-    # repeats a dozen times in scene 07 and anything with character would grate.
-    dur = 0.14
+    # PULSE — the fleet heartbeat. A sub blip with a whisper of air. It repeats a
+    # dozen times, so it stays the quietest thing in the palette.
+    dur = 0.13
     n = int(SR * dur)
-    x = np.sin(2 * np.pi * 320 * t(dur)) * env(n, 0.006, 0.12, 2.6)
-    save("pulse", peak_to(band(x, 120, 1400), -28))
+    x = np.sin(2 * np.pi * 68 * t(dur)) * env(n, 0.003, 0.11, 2.6)
+    hi = band(noise(0.015, 12), 7000, 13000)
+    x[:len(hi)] += hi * env(len(hi), 0.0004, 0.013, 3.0) * 0.4
+    save("pulse", peak_to(carve(x), -20))
 
-    # SETTLE — a long low note under the close, for the collapse to one node.
+    # SETTLE — the long note under the close. A sub drone with an air tail.
     dur = 2.2
     n = int(SR * dur)
-    x = (np.sin(2 * np.pi * 110 * t(dur)) * 0.6
-         + np.sin(2 * np.pi * 164.81 * t(dur)) * 0.3
-         + np.sin(2 * np.pi * 220 * t(dur)) * 0.18)
     e = np.concatenate([np.linspace(0, 1, int(n * 0.18)) ** 0.7,
                         np.linspace(1, 0, n - int(n * 0.18)) ** 1.6])
-    save("settle", peak_to(band(x * e, 50, 1200), -22))
+    x = (np.sin(2 * np.pi * 55 * t(dur)) * 0.9
+         + np.sin(2 * np.pi * 82.4 * t(dur)) * 0.45) * e
+    air = band(noise(dur, 13), 8000, 14000) * e * 0.18
+    save("settle", peak_to(carve(x + air), -14))
 
 
 if __name__ == "__main__":

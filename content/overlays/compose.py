@@ -151,6 +151,45 @@ def build_frames(align: list, total_frames: int) -> Path:
     return frames
 
 
+def build_app_layer(total_frames: int) -> Path | None:
+    """The real product, inset over the take, as its own frame sequence.
+
+    Unlike every other scene this one is NOT fitted to a paragraph — it owns the
+    whole timeline and its cue times are absolute, because a screenshot wants to
+    appear at the moment the words and the picture agree, which is not always a
+    paragraph edge.
+
+    Kept as a separate sequence rather than drawn into the graphics frames so the
+    two can be re-rendered independently; re-capturing the app is cheap and
+    re-rendering thirteen scenes is not.
+    """
+    scene = SCENES / "app-layer.html"
+    if not scene.exists() or not (HERE / "out" / "app").exists():
+        return None
+    frames = EDIT / "appframes"
+    if frames.exists():
+        shutil.rmtree(frames)
+    frames.mkdir(parents=True)
+
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        b = pw.chromium.launch(args=["--force-color-profile=srgb", "--disable-lcd-text"])
+        pg = b.new_page(viewport={"width": W, "height": H}, device_scale_factor=1)
+        errs: list[str] = []
+        pg.on("pageerror", lambda e: errs.append(str(e)))
+        pg.goto(scene.as_uri())
+        pg.wait_for_function("window.SCENE_READY === true", timeout=20000)
+        for i in range(total_frames):
+            pg.evaluate("(t) => window.seek(t)", i / FPS)
+            pg.screenshot(path=str(frames / f"{i:05d}.png"), omit_background=True)
+        b.close()
+        if errs:
+            print("APP LAYER ERRORS:", *errs, sep="\n  ", file=sys.stderr)
+            raise SystemExit(1)
+    print(f"  app layer: {total_frames} frames")
+    return frames
+
+
 # ---------------------------------------------------------------------------
 # grade and audio
 #
@@ -188,32 +227,110 @@ GAIN_DB = -12.8
 SFX_BED = HERE / "out" / "sfx" / "bed.wav"
 
 
-def audio_chain(with_sfx: bool) -> tuple[str, list[str]]:
+MUSIC = Path.home() / "Music" / "Daniel Avery - Drone Logic [PHLP02].mp3"
+MUSIC_IN = 221.0        # 3:41 — the section asked for
+MUSIC_DB = -21.0        # before ducking; puts it ~20 dB under dialogue
+
+SUBS = EDIT / "subs.ass"
+
+
+def audio_chain(with_sfx: bool, with_music: bool,
+                first_input: int) -> tuple[str, list[str]]:
     """The audio half of the filtergraph, plus any extra inputs it needs."""
-    # highpass first so the limiter is not reacting to rumble it should not hear.
-    # 65Hz 2nd-order sits below a male fundamental and takes out desk and traffic.
-    voice = (f"[0:a]volume={GAIN_DB}dB,highpass=f=65:p=2,"
-             # A safety net, not a sound. After the gain above the true peak is
-             # already -1.55, so this should never engage; it exists so a louder
-             # re-shoot cannot ship clipped.
-             "alimiter=limit=0.84:level=disabled[voice]")
-    if not with_sfx or not SFX_BED.exists():
-        return voice + ";[voice]anull[a]", []
+    # 40Hz rather than 65: the effects carry real sub-bass now and a 65Hz corner
+    # was eating the bottom of every thunk and drop along with the room rumble.
+    voice = f"[0:a]volume={GAIN_DB}dB,highpass=f=40:p=2[voice]"
+
+    # The limiter goes AFTER the mix, not on the voice. Dialogue peaks at -1.7
+    # and the bed at -6; summed, those can cross zero, and a limiter upstream of
+    # the sum cannot see it. This is the only thing standing between a loud cue
+    # landing on a loud consonant and a clipped master.
+    guard = "alimiter=limit=0.841:level=disabled"     # -1.5 dBFS, so true peak lands near -1.2
+
+    use_sfx = with_sfx and SFX_BED.exists()
+    use_music = with_music and MUSIC.exists()
+    if not use_sfx and not use_music:
+        return f"{voice};[voice]{guard}[a]", []
+
+    parts, mix, extra = [], [], []
+    # 0 = take, 1 = graphics frames, 2 = app layer when present
+    idx = first_input
+
+    if use_music:
+        # The voice is split so one copy can key the ducker. Music is broadband —
+        # unlike the effects it DOES overlap speech — so spectral separation is
+        # not available and the level has to be managed dynamically instead.
+        parts.append("[voice]asplit=2[voicemix][key]")
+        # A dip in the presence band as well as the gain: taking 1.9kHz down by
+        # 4 dB clears the consonants that decide whether a word is legible, and
+        # costs the music almost nothing anyone notices.
+        parts.append(
+            f"[{idx}:a]volume={MUSIC_DB}dB,equalizer=f=1900:t=q:w=1.7:g=-4,"
+            f"afade=t=in:st=0:d=4,afade=t=out:st=153:d=6[musicraw]")
+        # Ducking is what buys "prioritise legibility of words". 6:1 above a low
+        # threshold with a slow release so it breathes back between sentences
+        # rather than pumping on every syllable.
+        parts.append("[musicraw][key]sidechaincompress=threshold=0.018:ratio=6:"
+                     "attack=18:release=420:makeup=1[music]")
+        mix.append("[voicemix]")
+        mix.append("[music]")
+        extra += ["-ss", str(MUSIC_IN), "-i", str(MUSIC)]
+        idx += 1
+    else:
+        mix.append("[voice]")
+
+    if use_sfx:
+        parts.append(f"[{idx}:a]anull[sfx]")
+        mix.append("[sfx]")
+        extra += ["-i", str(SFX_BED)]
+
     # normalize=0 matters: amix otherwise divides every input by the input count,
-    # which would quietly drop the dialogue 6 dB to make room for the effects.
-    return (voice + ";[2:a]anull[sfx];"
-            "[voice][sfx]amix=inputs=2:duration=first:dropout_transition=0:"
-            "normalize=0[a]"), ["-i", str(SFX_BED)]
+    # which would quietly drop the dialogue to make room for everything else.
+    parts.append(f"{''.join(mix)}amix=inputs={len(mix)}:duration=first:"
+                 f"dropout_transition=0:normalize=0,{guard}[a]")
+    return voice + ";" + ";".join(parts), extra
 
 
 def encode(frames: Path, out: Path, clip: tuple[float, float] | None,
-           grade: bool = True, sfx: bool = True, master: bool = False) -> None:
+           grade: bool = True, sfx: bool = True, master: bool = False,
+           app: Path | None = None, music: bool = True, subs: bool = True) -> None:
     pre = ["-ss", str(clip[0]), "-to", str(clip[1])] if clip else []
-    achain, extra = audio_chain(sfx)
+    achain, extra = audio_chain(sfx, music, 3 if app else 2)
 
     # 10-bit through the grade so the contrast curve has somewhere to put the
     # values it moves; an 8-bit path bands visibly in the wall behind him.
     vhead = f"[0:v]format=yuv444p10le,{GRADE}[g];" if grade else "[0:v]null[g];"
+
+    # The app layer sits ABOVE the graphics: a screenshot of the product is the
+    # literal thing, and an abstract diagram drawn on top of it would be arguing
+    # with its own evidence.
+    if clip:
+        shift = (f"[1:v]trim=start={clip[0]}:end={clip[1]},setpts=PTS-STARTPTS[ov];")
+        appshift = (f"[2:v]trim=start={clip[0]}:end={clip[1]},setpts=PTS-STARTPTS[ap];"
+                    if app else "")
+    else:
+        shift = "[1:v]null[ov];"
+        appshift = "[2:v]null[ap];" if app else ""
+
+    chain = vhead + shift + appshift
+    chain += "[g][ov]overlay=0:0:format=auto:shortest=1"
+    chain += "[gfx];[gfx][ap]overlay=0:0:format=auto:shortest=1" if app else ""
+    chain += ",format=yuv420p"
+    if subs and SUBS.exists():
+        # Burned in rather than a soft track: the file gets uploaded to places
+        # that will not carry a sidecar, and the stated priority is that the
+        # words are legible without anyone switching anything on.
+        esc = str(SUBS).replace("\\", "/").replace(":", "\\:")
+        if clip:
+            # `-ss` before `-i` resets PTS to zero, so the subtitle filter would
+            # render the top of the file over the middle of the video — a preview
+            # that lies about what the full render will do. Push the clock back to
+            # where the clip really sits, burn, then pull it forward again.
+            chain += (f",setpts=PTS+{clip[0]}/TB,subtitles='{esc}'"
+                      f",setpts=PTS-{clip[0]}/TB")
+        else:
+            chain += f",subtitles='{esc}'"
+    chain += "[v];"
 
     vcodec = (["-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le",
                "-c:a", "pcm_s24le"]
@@ -226,20 +343,13 @@ def encode(frames: Path, out: Path, clip: tuple[float, float] | None,
         "ffmpeg", "-y", "-loglevel", "error", "-stats",
         *pre, "-i", str(BASE),
         "-framerate", str(FPS), "-start_number", "0", "-i", str(frames / "%05d.png"),
-        *extra,
-        "-filter_complex",
-        vhead +
-        # The overlay sequence starts at frame 0 of the take, so when a clip is
-        # requested the sequence has to be shifted by the same amount rather than
-        # restarted — otherwise the graphics play from the top over the middle.
-        (f"[1:v]trim=start={clip[0]}:end={clip[1]},setpts=PTS-STARTPTS[ov];"
-         if clip else "[1:v]null[ov];") +
-        "[g][ov]overlay=0:0:format=auto:shortest=1,format=yuv420p[v];" +
-        achain,
-        "-map", "[v]", "-map", "[a]",
-        *vcodec,
-        str(out),
     ]
+    if app:
+        cmd += ["-framerate", str(FPS), "-start_number", "0",
+                "-i", str(app / "%05d.png")]
+    cmd += [*extra, "-filter_complex", chain + achain,
+            "-map", "[v]", "-map", "[a]", *vcodec, str(out)]
+
     subprocess.run(cmd, check=True)
 
 
@@ -251,6 +361,10 @@ def main() -> int:
     ap.add_argument("--no-sfx", action="store_true", help="voice only")
     ap.add_argument("--master", action="store_true",
                     help="ProRes 422 HQ + 24-bit PCM instead of h264/aac")
+    ap.add_argument("--no-music", action="store_true")
+    ap.add_argument("--no-subs", action="store_true")
+    ap.add_argument("--no-app", action="store_true", help="skip the app inset layer")
+    ap.add_argument("--skip-app-frames", action="store_true")
     args = ap.parse_args()
 
     if not BASE.exists():
@@ -273,12 +387,21 @@ def main() -> int:
         print("--skip-frames given but out/edit/frames is missing", file=sys.stderr)
         return 1
 
+    app = None
+    if not args.no_app:
+        appdir = EDIT / "appframes"
+        if args.skip_app_frames and appdir.exists():
+            app = appdir
+        else:
+            app = build_app_layer(total)
+
     clip = tuple(args.preview) if args.preview else None
     ext = "mov" if args.master else "mp4"
     name = "preview" if clip else ("spindle-master" if args.master else "spindle-cut")
     out = EDIT / f"{name}.{ext}"
     encode(frames, out, clip,
-           grade=not args.no_grade, sfx=not args.no_sfx, master=args.master)
+           grade=not args.no_grade, sfx=not args.no_sfx, master=args.master,
+           app=app, music=not args.no_music, subs=not args.no_subs)
     print(f"\n{out.relative_to(HERE)}  {out.stat().st_size / 1e6:.0f} MB")
     return 0
 

@@ -1,0 +1,129 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>app layer · the real product, inset</title>
+<link rel="stylesheet" href="../lib/scene.css">
+<style>
+  /* The inset reads as a window on the desk rather than a floating rectangle:
+     a hairline border in the phosphor, a soft dark bed behind it so it separates
+     from a patterned wall, and a rounded corner. No fake browser chrome — the
+     page already has its own header and a second one would look like a mockup. */
+  #wrap { position: absolute; inset: 0; }
+  .shot {
+    position: absolute;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 3px solid rgba(217,127,74,.85);
+    box-shadow: 0 24px 70px rgba(4,3,2,.72), 0 0 0 1px rgba(4,3,2,.5);
+    opacity: 0;
+    background: #0b0a09;
+  }
+  .shot img { display: block; width: 100%; height: auto; }
+  .cap {
+    position: absolute;
+    font-family: var(--face);
+    font-size: 25px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--phosphor-bright);
+    paint-order: stroke fill;
+    -webkit-text-stroke: 5px rgba(6,5,4,.6);
+    opacity: 0;
+  }
+</style>
+<svg id="svg" viewBox="0 0 1920 1080" style="position:absolute"><g id="stage"></g></svg>
+<div id="wrap"></div>
+<script src="../lib/defs.js"></script>
+<script src="../lib/scene.js"></script>
+<script>
+/* APP LAYER — the real product, cut in over the talking head.
+ *
+ * The abstract scenes explain what the system is. This shows it existing. For a
+ * hackathon demo that second job is the one that actually gets marked, and a
+ * diagram cannot do it: a judge has to see the thing running.
+ *
+ * Everything here is a real screenshot of the deployed app at
+ * spindle.mattrickslauer.com, captured by capture_app.py. Nothing is a mockup and
+ * nothing is redrawn — if the page changes, re-run the capture and these change
+ * with it.
+ *
+ * TIMES ARE ABSOLUTE, unlike every other scene. The others are pinned to a
+ * paragraph and stretched to fit it; these are pinned to the moment in the take
+ * where the words and the picture agree, which does not always start on a
+ * paragraph edge. compose.py gives this layer the whole timeline rather than a
+ * window, so `seek(t)` here is the video's own clock.
+ *
+ * Placement keeps the lower-left third clear, which is where the subtitles live.
+ */
+const { win, ease, clamp01, lerp } = SP;
+
+const DUR = 161.2;
+
+// [ start, end, image, x, y, w, caption, capx, capy ]
+const SHOTS = [
+  // "Spindle does it. Every night, for every artist on the roster."
+  [20.6, 25.4, "hero.png",    1030,  92, 800, "spindle.mattrickslauer.com", 1030, 62],
+  // "the filters live inside the index itself, not bolted on after"
+  [31.4, 40.9, "plan.png",     980, 108, 860, "live EXPLAIN", 980, 78],
+  // "The index is never finished — agents are adding to these records all day"
+  [53.2, 61.6, "reach.png",    980,  96, 870, "the index, on page load", 980, 66],
+  // "no orchestrator … a changefeed on the memory tables wakes the next one"
+  [62.4, 72.6, "tick/%03d",   1000, 110, 840, "cadence", 1000, 80],
+  // "The send claims its lease before the network call."
+  [73.8, 80.3, "send.png",     990, 104, 850, "the send gate", 990, 74],
+  // "European law says where that data can live … Virginia … Ireland"
+  [89.0, 98.6, "reach.png",    980,  96, 870, "residency", 980, 66],
+  // "Postgres cannot do that at any price."
+  [141.0, 145.0, "verdict.png", 960, 100, 880, "what is replaceable", 960, 70],
+  // the close
+  [146.5, 158.0, "hero.png",   1000,  96, 850, "live today", 1000, 66],
+];
+
+const FADE = 0.45;
+let items = [];
+
+SP.Scene.define({
+  dur: DUR,
+
+  setup() {
+    GROOVES.setAttribute("opacity", 0);
+    const wrap = document.getElementById("wrap");
+    SHOTS.forEach(([s, e, img, x, y, w, cap, cx, cy]) => {
+      const d = document.createElement("div");
+      d.className = "shot";
+      d.style.left = x + "px"; d.style.top = y + "px"; d.style.width = w + "px";
+      const im = document.createElement("img");
+      // A frame sequence is written as "dir/%03d"; the first frame stands in
+      // until frame() swaps it, so the element has a size from the start.
+      im.src = "../out/app/" + (img.includes("%03d") ? img.replace("%03d", "000") : img);
+      d.appendChild(im);
+      wrap.appendChild(d);
+
+      const c = document.createElement("div");
+      c.className = "cap"; c.textContent = cap;
+      c.style.left = cx + "px"; c.style.top = cy + "px";
+      wrap.appendChild(c);
+
+      items.push({ s, e, img, node: d, cap: c, im });
+    });
+  },
+
+  frame(t) {
+    items.forEach((it) => {
+      const inA = ease.out(win(t, it.s, FADE));
+      const outA = 1 - ease.in(win(t, it.e - FADE, FADE));
+      const a = clamp01(Math.min(inA, outA));
+      it.node.style.opacity = a;
+      it.cap.style.opacity = a;
+      // a small settle on the way in, so it lands rather than appears
+      const k = lerp(0.972, 1, ease.out(win(t, it.s, 0.7)));
+      it.node.style.transform = `scale(${k.toFixed(4)})`;
+      if (a > 0 && it.img.includes("%03d")) {
+        const n = 72;
+        const i = Math.min(n - 1, Math.floor((t - it.s) * 24) % n);
+        const want = "../out/app/" + it.img.replace("%03d", String(i).padStart(3, "0"));
+        if (it.im.getAttribute("src") !== want) it.im.setAttribute("src", want);
+      }
+    });
+  },
+});
+</script>

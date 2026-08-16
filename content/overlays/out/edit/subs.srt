@@ -1,0 +1,272 @@
+1
+00:00:00,000 --> 00:00:02,436
+An independent label puts out a record.
+
+2
+00:00:02,476 --> 00:00:03,833
+For anyone to hear it,
+
+3
+00:00:03,873 --> 00:00:08,405
+somebody has to find the few hundred
+people who might actually play it —
+
+4
+00:00:08,445 --> 00:00:10,627
+programmers, curators, show hosts —
+
+5
+00:00:10,667 --> 00:00:12,977
+and write to each of them personally,
+
+6
+00:00:13,017 --> 00:00:14,160
+with a real pitch.
+
+7
+00:00:14,720 --> 00:00:16,929
+That's weeks of work per release.
+
+8
+00:00:16,969 --> 00:00:18,566
+Most labels never do it.
+
+9
+00:00:18,606 --> 00:00:20,719
+So most records just disappear.
+
+10
+00:00:21,219 --> 00:00:22,552
+Spindle does it. Every night,
+
+11
+00:00:22,592 --> 00:00:24,059
+for every artist on the roster.
+
+12
+00:00:24,780 --> 00:00:27,453
+Get it wrong and you're
+not marketing, you're spam.
+
+13
+00:00:27,493 --> 00:00:30,579
+So the whole thing turns on
+picking the right few hundred.
+
+14
+00:00:30,920 --> 00:00:34,106
+That shortlist is a vector
+search in CockroachDB,
+
+15
+00:00:34,146 --> 00:00:37,201
+with the filters — tenant,
+model, contactable —
+
+16
+00:00:37,241 --> 00:00:39,242
+living inside the index itself,
+
+17
+00:00:39,282 --> 00:00:40,600
+not bolted on after.
+
+18
+00:00:41,079 --> 00:00:43,350
+And that index starts with tenant_id.
+
+19
+00:00:43,390 --> 00:00:47,700
+One column doing our security boundary
+and our partition key at once.
+
+20
+00:00:48,700 --> 00:00:50,441
+pgvector can do the similarity.
+
+21
+00:00:50,481 --> 00:00:52,740
+It can't make one decision do both jobs.
+
+22
+00:00:52,780 --> 00:00:54,962
+The index is never finished, either.
+
+23
+00:00:55,002 --> 00:00:57,678
+Agents are adding to
+these records all day —
+
+24
+00:00:57,718 --> 00:00:59,776
+what a station plays, who runs it,
+
+25
+00:00:59,816 --> 00:01:01,359
+what they said last time.
+
+26
+00:01:01,719 --> 00:01:02,991
+And there's no orchestrator.
+
+27
+00:01:03,031 --> 00:01:04,397
+Agents don't call each other —
+
+28
+00:01:04,437 --> 00:01:06,920
+a changefeed on the memory
+tables wakes the next one.
+
+29
+00:01:07,280 --> 00:01:09,035
+So kill half the fleet mid-run.
+
+30
+00:01:09,075 --> 00:01:10,425
+The work still finishes.
+
+31
+00:01:10,465 --> 00:01:12,840
+The lease expires and the row comes back.
+
+32
+00:01:13,400 --> 00:01:17,504
+The send claims its lease before the
+network call. Two workers, same name.
+
+33
+00:01:17,544 --> 00:01:20,120
+The name can't tell them
+apart. The token can.
+
+34
+00:01:20,599 --> 00:01:22,016
+When people write back,
+
+35
+00:01:22,056 --> 00:01:24,043
+the reply finds its own thread —
+
+36
+00:01:24,083 --> 00:01:27,819
+every pitch carries a token we
+minted for one conversation.
+
+37
+00:01:28,379 --> 00:01:31,078
+We're holding contact
+details for real people,
+
+38
+00:01:31,118 --> 00:01:34,591
+and European law says where
+that data can live. Same table,
+
+39
+00:01:34,632 --> 00:01:36,735
+same query: this row is in Virginia,
+
+40
+00:01:36,775 --> 00:01:38,800
+this one is physically in Ireland.
+
+41
+00:01:39,620 --> 00:01:43,633
+Residency per row, enforced by the
+database instead of by us remembering to.
+
+42
+00:01:43,673 --> 00:01:45,700
+Now lose a region. It keeps answering.
+
+43
+00:01:46,060 --> 00:01:49,330
+It spends the label's money too,
+on its own, up to a ceiling.
+
+44
+00:01:49,370 --> 00:01:52,043
+Last night it asked to put
+more behind one record,
+
+45
+00:01:52,083 --> 00:01:53,060
+and I approved it.
+
+46
+00:01:53,260 --> 00:01:56,153
+So this morning — what was
+it looking at when it asked?
+
+47
+00:01:56,193 --> 00:01:57,326
+I can't just query it.
+
+48
+00:01:57,366 --> 00:01:58,659
+We never stop collecting,
+
+49
+00:01:58,700 --> 00:02:02,700
+so those metrics have been overwritten
+and the thread states have moved on.
+
+50
+00:02:03,040 --> 00:02:06,872
+But the ledger row stored the exact
+logical timestamp it decided at.
+
+51
+00:02:06,912 --> 00:02:08,238
+Four extra words of SQL,
+
+52
+00:02:08,278 --> 00:02:09,719
+pointed at that timestamp,
+
+53
+00:02:09,759 --> 00:02:11,979
+and they come back. Not a copy of them.
+
+54
+00:02:12,580 --> 00:02:16,530
+Then it re-runs the valuation against those old numbers and checks it still gets the
+
+55
+00:02:16,569 --> 00:02:17,469
+same answer.
+
+56
+00:02:17,719 --> 00:02:19,596
+No audit table. No event log.
+
+57
+00:02:19,636 --> 00:02:21,620
+No versioned copy of anything.
+
+58
+00:02:22,520 --> 00:02:24,379
+Postgres cannot do that at any price.
+
+59
+00:02:25,340 --> 00:02:29,630
+One database doing the index,
+the scheduler, the outbox,
+
+60
+00:02:29,670 --> 00:02:31,873
+the event bus and the ledger.
+
+61
+00:02:31,913 --> 00:02:34,620
+It scales to zero between releases.
+
+62
+00:02:35,159 --> 00:02:39,083
+It's live today at
+spindle.mattrickslauer.com.
+
+63
+00:02:39,123 --> 00:02:40,759
+Go and make it big.

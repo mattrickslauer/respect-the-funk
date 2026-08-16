@@ -1,8 +1,8 @@
 ---
 title: "Spindle — CockroachDB × AWS Hackathon submission"
-subtitle: "Who, what, where, when, why CockroachDB, and the one thing it does that nothing else can. Every figure in this document was executed against the running cluster on 2026-08-14 and is labelled with its N."
+subtitle: "Who, what, where, when, why CockroachDB, and the one thing it does that nothing else can. Every figure in this document was executed against the running cluster on 2026-08-15 and is labelled with its N."
 status: "SUBMISSION NARRATIVE. The argument of record for judges and for a model reading the repository. Where this disagrees with `docs/2026-08-11-sponsor-audit.md`, the audit wins — it is the adversarial version and this is the readable one."
-date: "2026-08-14"
+date: "2026-08-15"
 ---
 
 ## The one sentence
@@ -38,20 +38,20 @@ again.
 
 That accumulation is the memory, and it is why release *n+1* is cheaper than release *n*.
 
-**Measured on the cluster, 2026-08-14:**
+**Measured on the cluster, 2026-08-15:**
 
 | | |
 |---|---|
-| counterparties indexed | **14,170** |
-| live facts about them | **66,103** |
-| of those, roles classified | **14,169 of 14,170** |
+| counterparties indexed | **43,191** |
+| of those, carrying an embedding | **14,139** |
+| live facts about them | **111,212** |
 | contact routes held | **2,351** (email 1,622 · phone 501 · form 228) |
 | counterparties actually reachable | **439** |
-| agent runs, all time | **55,569** |
-| total spend, all time | **$0.12** |
+| agent runs, all time | **56,529** |
+| total spend, all time | **$0.123449** |
 | lessons learned | **1** |
-| threads opened | **1** |
-| messages sent | **1** |
+| threads opened | **1** (state `closed_no_reply`) |
+| messages sent | **1** (of 2 rows; the other was never released to the sender) |
 
 **Read those last three honestly, because they are the point.** This system has held
 exactly one conversation. The argument below is not that we ran thousands — it is that

@@ -1,8 +1,8 @@
 ---
 title: "Which CockroachDB and AWS tools this uses, and how"
 subtitle: "The submission checklist asks for one page naming the tools. This is that page. Every claim on it was executed against the running cluster and the deployed account on the date below, not read from a spec."
-status: "SUBMISSION — verified 2026-08-11 against cluster `respect-the-funk` and AWS account 821135790223; revised 2026-08-13, and every revision is a downgrade. The MCP server stops being called core, Bedrock's unavailability is measured rather than asserted, and three things that exist as code are listed as not running."
-date: "2026-08-13"
+status: "SUBMISSION — verified 2026-08-11 against cluster `respect-the-funk` and AWS account 821135790223; revised 2026-08-13 and again 2026-08-15, and every revision is a downgrade. The MCP server stops being called core, Bedrock's unavailability is measured rather than asserted, three things that exist as code are listed as not running, and the 2026-08-15 pass re-queried every figure — the lifetime spend was twenty times the number this page had been carrying, and the one real thread turned out to hold no replay coordinate at all."
+date: "2026-08-15"
 ---
 
 ## The system in one paragraph
@@ -132,7 +132,7 @@ cluster at `node_count: 0`, the entire system costs **cents** while nobody is us
 and the cents are worth naming rather than rounding away, because they are the whole of the
 idle bill: ECR charges per GB-month for the classifier image whether or not the function is
 ever invoked. Everything else genuinely is zero at rest. Total measured agent spend across
-every run this system has ever made is $0.005296.
+every run this system has ever made is $0.123449.
 
 The classifier is a container Lambda because the model needs 3 GB and native dependencies
 that do not fit a zip bundle. Terraform: `aws_ecr_repository.classifier`,
@@ -222,11 +222,22 @@ known — which is what makes it safe for an agent to act on.
 
 Stated here because a page like this is worth nothing if a judge finds the gap themselves:
 
-- **The lesson-accumulation loop has not run in production.** `lesson`, `party_chunk` and
-  `thread` hold zero rows. The write path exists (`agents.distil_lesson`), the retrieval and
-  arithmetic re-ranking exist and are unit-tested (`apps/spindle/web/tests/test_lessons.py`), and
-  `lesson_semantic` is indexed and ready — but no closed thread has yet taught a shortlist,
-  because nothing has been sent.
+- **The lesson-accumulation loop has run exactly once, and not against a station.**
+  `thread` holds **1** row, `lesson` holds **1**, `party_chunk` holds zero. The one thread is
+  a **delivery self-test addressed to ourselves**, now `closed_no_reply`, and the lesson it
+  distilled says so in its own text: *"Delivery self-test (not a station) never replied to a
+  radio approach."* Its `hit_count` is **0** — no shortlist has yet been reranked by it.
+  The write path exists (`agents.distil_lesson`), the retrieval and arithmetic re-ranking
+  exist and are unit-tested (`apps/spindle/web/tests/test_lessons.py`), and `lesson_semantic`
+  is indexed and ready. What has not happened is a lesson learned from a real counterparty
+  changing a real ranking. **That is the loop, and one self-addressed email is not it.**
+- **The one real decision carries no replay coordinate.** `thread.decided_at_hlc` is the
+  column the whole *"why did you email this person"* argument rests on, and on the single
+  thread in this database it is **NULL** — the thread predates `025_decision_provenance.sql`.
+  `outreach.open_thread` writes it correctly for every thread opened since, and
+  `outreach.justification` returns nothing rather than guessing when it is absent, which is
+  the right refusal. But the honest statement today is that the replay is demonstrated
+  against threads opened for the demo, not against the one message this system has sent.
 - **The changefeed is built and not created.** `SHOW CHANGEFEED JOBS` returns **zero rows**,
   and that is the deliberate state rather than an unfinished one.
   `spindle/changefeed.py` composes the exact `CREATE CHANGEFEED` (three tables,
@@ -252,12 +263,12 @@ Stated here because a page like this is worth nothing if a judge finds the gap t
   channel that is real.
 - **Small N, and the one number that is not small has never been worked.** One tenant,
   three roster artists, two recordings. The counterparty index is the exception —
-  fourteen thousand rows from public registers — and it is also the part with nothing
-  downstream of it: `thread` and `lesson` hold zero rows, so not one of those fourteen
-  thousand has been contacted, and nothing has been learned from contacting them. A large
-  index is not evidence of a working loop, and this page is not going to present it as
-  one. Every number here is labelled with its N where it appears, and no improvement curve
-  is drawn through any of them.
+  **43,191 rows** from public registers, of which **14,139** carry an embedding — and it is
+  also the part with nothing downstream of it: **not one of those 43,191 has been
+  contacted**, and nothing has been learned from contacting them. A large index is not
+  evidence of a working loop, and this page is not going to present it as one. Every number
+  here is labelled with its N where it appears, and no improvement curve is drawn through
+  any of them.
 
 ## How to verify any of this yourself
 
@@ -283,5 +294,5 @@ python -m spindle.changefeed --verify
 python -m spindle.ingest --shortlist hallow-youth
 
 # What every agent run has ever cost, in total
-psql "$DATABASE_URL" -c "SELECT sum(cost_micro_usd)/1e6 FROM agent_run;"   -- $0.005296
+psql "$DATABASE_URL" -c "SELECT sum(cost_micro_usd)/1e6 FROM agent_run;"   -- $0.123449
 ```

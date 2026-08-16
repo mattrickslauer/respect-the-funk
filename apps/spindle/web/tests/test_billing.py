@@ -17,6 +17,7 @@ that leaves unproven is named in the report: the shape of the `create` call itse
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import hmac
 import json
@@ -42,17 +43,39 @@ def _settings(**overrides) -> settings_mod.Settings:
         mcp_url="", openai_api_key="",
         stripe_secret_key="", stripe_webhook_secret="",
         stripe_price_label="", stripe_price_roster="",
+        stripe_price_label_live="", stripe_price_roster_live="",
     )
     base.update(overrides)
     return settings_mod.Settings(**base)
 
 
 def _configured(**overrides) -> settings_mod.Settings:
-    """Fully configured, in test mode. `overrides` wins, so a test can blank one value."""
+    """Fully configured, in test mode. `overrides` wins, so a test can blank one value.
+
+    The `_live` price ids are deliberately left empty here rather than filled with
+    plausible strings. A test-mode deployment has no use for them, and a helper that
+    populated both pairs would make `stripe_missing`'s mode-awareness untestable — every
+    assertion would pass whether or not the property looked at the mode at all.
+    """
     configured = {"stripe_secret_key": "sk_test_abc123",
                   "stripe_webhook_secret": SECRET,
                   "stripe_price_label": "price_test_label",
                   "stripe_price_roster": "price_test_roster"}
+    configured.update(overrides)
+    return _settings(**configured)
+
+
+def _configured_live(**overrides) -> settings_mod.Settings:
+    """Fully configured against the live ledger, with the test price ids left empty.
+
+    The mirror image of `_configured`, and the pair of them is what pins the rule: which
+    price ids a deployment needs is decided by its key, not by which variables somebody
+    happened to set.
+    """
+    configured = {"stripe_secret_key": "sk_live_abc123",
+                  "stripe_webhook_secret": SECRET,
+                  "stripe_price_label_live": "price_live_label",
+                  "stripe_price_roster_live": "price_live_roster"}
     configured.update(overrides)
     return _settings(**configured)
 
@@ -103,7 +126,9 @@ class TheConfigurationIsNamedNotGuessed(unittest.TestCase):
         from unittest import mock
 
         cleared = {k: "" for k in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
-                                   "STRIPE_PRICE_LABEL", "STRIPE_PRICE_ROSTER")}
+                                   "STRIPE_PRICE_LABEL", "STRIPE_PRICE_ROSTER",
+                                   "STRIPE_PRICE_LABEL_LIVE",
+                                   "STRIPE_PRICE_ROSTER_LIVE")}
         with mock.patch.dict(os.environ, cleared, clear=False):
             for name in cleared:
                 os.environ.pop(name, None)
@@ -112,6 +137,75 @@ class TheConfigurationIsNamedNotGuessed(unittest.TestCase):
         self.assertEqual("", loaded.stripe_webhook_secret)
         self.assertEqual("", loaded.stripe_price_label)
         self.assertEqual("", loaded.stripe_price_roster)
+        self.assertEqual("", loaded.stripe_price_label_live)
+        self.assertEqual("", loaded.stripe_price_roster_live)
+
+
+class TheModeDecidesWhichPriceIdsAreRequired(unittest.TestCase):
+    """Added 2026-08-15, when `billing.py` stopped refusing live keys.
+
+    A Stripe price id belongs to exactly one ledger, so "which four variables does this
+    deployment need" stopped being a constant and became a function of the key. These
+    pin that, because the failure they prevent is expensive and quiet: a live deployment
+    reading a test-mode price id charges nothing and 404s at Stripe, and the same pair
+    swapped the other way charges a real card while the UI says test mode.
+    """
+
+    def test_a_test_deployment_does_not_need_the_live_price_ids(self):
+        settings = _configured()
+        self.assertTrue(settings.stripe_configured)
+        self.assertEqual([], settings.stripe_missing)
+
+    def test_a_live_deployment_does_not_need_the_test_price_ids(self):
+        settings = _configured_live()
+        self.assertTrue(settings.stripe_configured)
+        self.assertEqual([], settings.stripe_missing)
+
+    def test_a_live_key_with_only_test_prices_names_the_live_variables(self):
+        """The promotion somebody half-finished: key swapped, price ids not."""
+        settings = _configured(stripe_secret_key="sk_live_abc123")
+        self.assertFalse(settings.stripe_configured)
+        self.assertEqual(["STRIPE_PRICE_LABEL_LIVE", "STRIPE_PRICE_ROSTER_LIVE"],
+                         settings.stripe_missing)
+
+    def test_a_test_key_with_only_live_prices_names_the_test_variables(self):
+        settings = _configured_live(stripe_secret_key="sk_test_abc123")
+        self.assertFalse(settings.stripe_configured)
+        self.assertEqual(["STRIPE_PRICE_LABEL", "STRIPE_PRICE_ROSTER"],
+                         settings.stripe_missing)
+
+    def test_an_unrecognised_key_is_never_configured_however_much_else_is_set(self):
+        """With no mode there is no price pair to require, so `stripe_missing` comes back
+        naming nothing. Without the explicit mode check `stripe_configured` would then
+        answer True for a deployment that cannot transact at all."""
+        settings = _settings(stripe_secret_key="pk_live_publishable_by_mistake",
+                             stripe_webhook_secret=SECRET,
+                             stripe_price_label="price_test_label",
+                             stripe_price_roster="price_test_roster",
+                             stripe_price_label_live="price_live_label",
+                             stripe_price_roster_live="price_live_roster")
+        self.assertEqual("unconfigured", settings.stripe_mode)
+        self.assertEqual([], settings.stripe_missing)
+        self.assertFalse(settings.stripe_configured)
+
+    def test_the_suffix_convention_is_the_one_plans_spells(self):
+        """`settings._STRIPE_PRICE_VARS` and `plans.Tier.price_setting` both encode the
+        `_LIVE` suffix. Two spellings of one convention; this is what keeps them equal."""
+        for mode in ("test", "live"):
+            declared = {attr for _, attr in
+                        settings_mod.Settings._STRIPE_PRICE_VARS[mode]}
+            from_tiers = {t.price_setting(mode)
+                          for t in plans.TIERS if t.purchasable}
+            self.assertEqual(declared, from_tiers, f"mode={mode}")
+
+    def test_an_unknown_mode_raises_rather_than_defaulting_to_test(self):
+        with self.assertRaises(ValueError):
+            plans.tier("label").price_setting("unconfigured")
+
+    def test_a_tier_with_nothing_to_sell_has_no_setting_in_either_mode(self):
+        for mode in ("test", "live"):
+            self.assertEqual("", plans.tier("free").price_setting(mode))
+            self.assertEqual("", plans.tier("catalogue").price_setting(mode))
 
 
 class CheckoutRefusesRatherThanPretending(unittest.TestCase):
@@ -125,14 +219,44 @@ class CheckoutRefusesRatherThanPretending(unittest.TestCase):
                      "STRIPE_PRICE_LABEL", "STRIPE_PRICE_ROSTER"):
             self.assertIn(name, str(caught.exception))
 
-    def test_a_live_key_is_refused(self):
-        """This build has never taken a real payment. A live key here would make the
-        first one an accident, and the cheapest place to catch that is before the call."""
+    def test_a_live_key_is_no_longer_refused_for_being_live(self):
+        """Until 2026-08-15 this raised `stripe_not_test_mode`. It does not any more, and
+        the change is deliberate — see billing.py's "Both modes" section.
+
+        A fully configured live deployment gets past `require_configured` and resolves a
+        live price id. It is not driven further here for the same reason no test drives
+        `checkout_session` to completion: doing so would call Stripe and assert Stripe's
+        behaviour rather than ours.
+        """
+        settings = _configured_live()
+        billing.require_configured(settings)          # must not raise
+        self.assertEqual("live", settings.stripe_mode)
+        self.assertFalse(settings.stripe_test_mode)
+        self.assertEqual("price_live_label",
+                         billing.price_id_for(plans.tier("label"), settings))
+
+    def test_a_live_key_missing_its_live_prices_is_refused_by_name(self):
+        """The guard that replaced the blanket refusal. Swapping the key without
+        swapping the price ids is the realistic way a promotion goes wrong."""
         with self.assertRaises(billing.BillingRefused) as caught:
             billing.checkout_session(_configured(stripe_secret_key="sk_live_real"),
                                      tenant_id="t", email="a@b.com", plan_key="label",
                                      success_url="/", cancel_url="/")
-        self.assertEqual("stripe_not_test_mode", caught.exception.reason)
+        self.assertEqual("stripe_not_configured", caught.exception.reason)
+        self.assertIn("STRIPE_PRICE_LABEL_LIVE", str(caught.exception))
+
+    def test_a_key_that_is_neither_prefix_is_refused_before_anything_else(self):
+        """Checked first, and reported as its own reason. `stripe_missing` cannot help
+        here — with no mode it names nothing — so an operator who pasted a truncated key
+        would otherwise be told billing was unconfigured without being told what to fix.
+        """
+        settings = _configured(stripe_secret_key="sk_tset_typo")
+        with self.assertRaises(billing.BillingRefused) as caught:
+            billing.checkout_session(settings, tenant_id="t", email="a@b.com",
+                                     plan_key="label", success_url="/", cancel_url="/")
+        self.assertEqual("stripe_key_unrecognised", caught.exception.reason)
+        self.assertIn("sk_test_", str(caught.exception))
+        self.assertIn("sk_live_", str(caught.exception))
 
     def test_the_free_tier_cannot_be_bought(self):
         with self.assertRaises(billing.BillingRefused) as caught:
@@ -159,14 +283,33 @@ class CheckoutRefusesRatherThanPretending(unittest.TestCase):
         self.assertIn("STRIPE_PRICE_ROSTER", str(caught.exception))
 
     def test_price_lookup_reads_the_setting_the_tier_names(self):
-        """`plans.Tier.stripe_price_setting` holds the *name* of a settings attribute, so
-        a price id is never compiled into the source and can differ between test and
-        live."""
+        """`plans.Tier.price_setting` holds the *name* of a settings attribute, so a price
+        id is never compiled into the source and differs between test and live."""
         settings = _configured()
         self.assertEqual("price_test_label",
                          billing.price_id_for(plans.tier("label"), settings))
         self.assertEqual("price_test_roster",
                          billing.price_id_for(plans.tier("roster"), settings))
+
+    def test_price_lookup_follows_the_key_and_not_whatever_is_set(self):
+        """The one that matters. Both pairs are populated, so the only thing choosing
+        between them is the key's prefix — which is the property that makes a `.env`
+        holding test and live ids at once safe to keep."""
+        both = _settings(stripe_webhook_secret=SECRET,
+                         stripe_price_label="price_test_label",
+                         stripe_price_roster="price_test_roster",
+                         stripe_price_label_live="price_live_label",
+                         stripe_price_roster_live="price_live_roster")
+        as_test = dataclasses.replace(both, stripe_secret_key="sk_test_abc123")
+        as_live = dataclasses.replace(both, stripe_secret_key="sk_live_abc123")
+        self.assertEqual("price_test_label",
+                         billing.price_id_for(plans.tier("label"), as_test))
+        self.assertEqual("price_live_label",
+                         billing.price_id_for(plans.tier("label"), as_live))
+        self.assertEqual("price_test_roster",
+                         billing.price_id_for(plans.tier("roster"), as_test))
+        self.assertEqual("price_live_roster",
+                         billing.price_id_for(plans.tier("roster"), as_live))
 
 
 def _sign(payload: bytes, secret: str = SECRET, *, timestamp: int | None = None) -> str:
@@ -517,6 +660,88 @@ class TheEndpointsThemselves(unittest.TestCase):
             self.assertIn(name, message)
         self.assertNotIn("url", json.loads(response.body))
 
+    def test_a_successful_checkout_redirects_the_browser_to_stripe(self):
+        """The bug this pins, found 2026-08-15: the handler returned the session as JSON
+        and both callers are plain HTML forms with no JavaScript. The session was real
+        and the browser rendered `{"id": ..., "url": ...}` as text instead of going to
+        it. Nothing in the suite caught it because no test drove this to a success.
+
+        `billing.checkout_session` is stubbed rather than called — reaching Stripe needs
+        a key and a network, and what is under test is what this handler does with a
+        session, not how Stripe builds one.
+        """
+        from spindle import accounts, auth, billing as billing_mod, routes
+
+        tenant = auth.Principal(tenant_id="tenant-1", subject="a@b.com",
+                                authenticated=True, plan="free")
+        stripe_url = "https://checkout.stripe.com/c/pay/cs_test_deadbeef"
+
+        original_conn, original_get = routes._conn, accounts.get_account
+        original_settings, original_session = routes.SETTINGS, billing_mod.checkout_session
+        routes._conn = lambda: None
+        accounts.get_account = lambda conn, tenant_id: {"email": "a@b.com"}
+        routes.SETTINGS = _configured()
+        billing_mod.checkout_session = lambda *a, **k: {
+            "id": "cs_test_deadbeef", "url": stripe_url,
+            "plan": "label", "mode": "test", "test_mode": True}
+        try:
+            response = routes.billing_checkout(
+                self._request(b"", {"host": "testserver"}), tenant, plan="label")
+        finally:
+            routes._conn, accounts.get_account = original_conn, original_get
+            routes.SETTINGS, billing_mod.checkout_session = original_settings, original_session
+
+        self.assertEqual(303, response.status_code)
+        self.assertEqual(stripe_url, response.headers["location"])
+        # And emphatically not the session as a body for a browser to display.
+        self.assertNotIn(b"cs_test_deadbeef", bytes(getattr(response, "body", b"")))
+
+
+class TheLandingPageOffersNoControlItCannotHonour(unittest.TestCase):
+    """`GET /` renders the landing page only for an anonymous principal — a signed-in
+    visitor gets the queue instead (`routes.home`). So every visitor who sees the pricing
+    table is anonymous, and `POST /billing/checkout` is `SignedIn`.
+
+    Until 2026-08-15 the paid tiers rendered a checkout form there anyway. It could not
+    work for anyone who could see it: the post 303'd to `/`, which re-rendered the same
+    page, so the button read as broken rather than as refused. It could not have worked
+    even in principle — a Checkout Session needs a tenant and an email to bill, and an
+    anonymous visitor supplies neither.
+    """
+
+    def _landing(self) -> str:
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent.parent
+        return (root / "spindle/templates/landing.html").read_text(encoding="utf-8")
+
+    def test_the_anonymous_branch_offers_sign_in_rather_than_checkout(self):
+        source = self._landing()
+        self.assertIn("Sign in to choose", source)
+
+    def test_any_checkout_form_is_behind_an_authenticated_guard(self):
+        """The form may still exist for a signed-in render; it must not be what an
+        anonymous visitor gets."""
+        source = self._landing()
+        if 'action="/billing/checkout"' not in source:
+            return                     # no form at all is also a correct answer here
+        before = source[:source.index('action="/billing/checkout"')]
+        self.assertIn("principal.authenticated", before[-500:],
+                      "the landing page's checkout form is not guarded on being signed "
+                      "in, and every visitor to that page is anonymous by construction")
+
+    def test_home_serves_the_landing_page_only_when_signed_out(self):
+        """The premise the two assertions above rest on. If `/` ever starts serving this
+        template to a signed-in principal, the guard becomes load-bearing rather than
+        defensive and this test should be the thing that says so."""
+        from pathlib import Path
+
+        from spindle import routes
+
+        source = Path(routes.__file__).read_text(encoding="utf-8")
+        home = source[source.index('@router.get("/", response_class=HTMLResponse)'):]
+        self.assertIn("if not principal.authenticated:", home[:1200])
+
 
 class NothingClaimsRevenue(unittest.TestCase):
     """`docs/submission/SUBMISSION.md`'s "what this submission does not claim" section is
@@ -557,3 +782,88 @@ class NothingClaimsRevenue(unittest.TestCase):
         self.assertIn("no customer has been billed", billing_source)
         self.assertIn("no revenue exists", billing_source)
         self.assertIn("no claim that any of this has been paid", plans_source)
+
+
+class TheTemplatesDoNotAssertWhatALiveDeploymentFalsifies(unittest.TestCase):
+    """Added 2026-08-15 with live-key support.
+
+    Two user-facing sentences — "No customer is paying for this today" on the landing
+    page and "Nothing on this page has ever been billed" in the console — were rendered
+    unconditionally. They were safe while a live key was refused outright and became
+    claims the deployment itself could falsify the moment it was not.
+
+    The failure this guards is quiet in a specific way worth naming. The guard is
+    `{% if stripe_mode != 'live' %}`, and if `stripe_mode` ever stopped being injected
+    into the template context, Jinja would compare `Undefined != 'live'`, get `True`, and
+    render both sentences again — on a live deployment, under a button that charges a
+    card, with no error anywhere. So this checks the guard *and* the variable feeding it.
+    """
+
+    LANDING = "spindle/templates/landing.html"
+    ACCOUNT = "spindle/templates/console/account.html"
+
+    #: (template, sentence). Each must sit behind a live-mode guard.
+    GUARDED = (
+        (LANDING, "No customer is paying for this today"),
+        (ACCOUNT, "Nothing on this page has ever been billed"),
+    )
+
+    GUARD = "stripe_mode != 'live'"
+
+    def _read(self, relative: str) -> str:
+        from pathlib import Path
+
+        # tests/ sits beside spindle/, so the package root is one level up.
+        root = Path(__file__).resolve().parent.parent
+        return (root / relative).read_text(encoding="utf-8")
+
+    def test_each_claim_sits_behind_a_live_mode_guard(self):
+        for relative, sentence in self.GUARDED:
+            with self.subTest(template=relative):
+                source = self._read(relative)
+                self.assertIn(sentence, source,
+                              "the sentence moved; re-point this test rather than "
+                              "deleting it")
+                before = source[:source.index(sentence)]
+                self.assertIn(
+                    self.GUARD, before[-600:],
+                    f"{sentence!r} in {relative} is not inside a {self.GUARD!r} block. "
+                    f"A live deployment would render a claim it falsifies.")
+
+    def test_live_mode_renders_a_badge_of_its_own(self):
+        """`stripe_test_mode` is false for live *and* for unconfigured, so a template
+        branching only on it leaves the loudest state as the silent one."""
+        for relative in (self.LANDING, self.ACCOUNT):
+            with self.subTest(template=relative):
+                source = self._read(relative)
+                self.assertIn("stripe_mode == 'live'", source)
+
+    def test_the_context_actually_carries_stripe_mode(self):
+        """Without this the guards above degrade to always-true and say so to nobody."""
+        from spindle import routes
+
+        source = self._read("spindle/routes.py")
+        self.assertIn('"stripe_mode": SETTINGS.stripe_mode', source)
+        # And the attribute the context reads must exist on Settings, so a rename of one
+        # cannot leave the other pointing at nothing.
+        self.assertTrue(hasattr(routes.SETTINGS, "stripe_mode"))
+
+    def test_the_guard_renders_the_way_it_is_meant_to(self):
+        """The logic itself, exercised rather than assumed. Jinja is templated by hand
+        here because the surrounding pages need a route's worth of unrelated context."""
+        from jinja2 import Environment, StrictUndefined
+
+        env = Environment(undefined=StrictUndefined, autoescape=True)
+        template = env.from_string(
+            "{% if stripe_test_mode %}TEST"
+            "{% elif stripe_mode == 'live' %}LIVE{% endif %}"
+            "{% if stripe_mode != 'live' %}CLAIM{% endif %}")
+        self.assertEqual(
+            "TESTCLAIM",
+            template.render(stripe_mode="test", stripe_test_mode=True))
+        self.assertEqual(
+            "LIVE",
+            template.render(stripe_mode="live", stripe_test_mode=False))
+        self.assertEqual(
+            "CLAIM",
+            template.render(stripe_mode="unconfigured", stripe_test_mode=False))

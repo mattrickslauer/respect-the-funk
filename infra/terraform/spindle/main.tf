@@ -448,6 +448,22 @@ resource "aws_lambda_function" "console" {
         ? aws_lambda_function.classifier[0].function_name
         : ""
       )
+
+      # Stripe. Absent from this block entirely until 2026-08-15, which meant billing
+      # was unconfigured on every deploy no matter what the operator's .env said — the
+      # console read four variables Terraform never passed. See variables.tf.
+      #
+      # Both price pairs are passed unconditionally and only one is ever read;
+      # `settings.stripe_mode` picks between them off the key's prefix. Passing both
+      # costs nothing — an unused price id is an inert string — and it means promoting
+      # this function to live is a change to `stripe_secret_key` in tfvars rather than
+      # an edit to this file.
+      STRIPE_SECRET_KEY        = var.stripe_secret_key
+      STRIPE_WEBHOOK_SECRET    = var.stripe_webhook_secret
+      STRIPE_PRICE_LABEL       = var.stripe_price_label
+      STRIPE_PRICE_ROSTER      = var.stripe_price_roster
+      STRIPE_PRICE_LABEL_LIVE  = var.stripe_price_label_live
+      STRIPE_PRICE_ROSTER_LIVE = var.stripe_price_roster_live
     }
   }
 

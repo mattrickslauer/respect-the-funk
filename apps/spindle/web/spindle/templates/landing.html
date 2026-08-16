@@ -436,6 +436,15 @@ button.seg.stranded{background:var(--phosphor-wash)}
 .testmode{display:inline-block;margin-top:14px;font:600 9.5px/1 var(--face-display);
       letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--carrier);
       border:1px solid var(--carrier);border-radius:5px;padding:5px 8px}
+/* The inverse badge, in `--cut`. _design.html reserves that colour absolutely for an
+   act that cannot be undone — a message leaving, a counterparty going opted_out — and
+   a real card being charged is exactly one of those, so this is the rule being applied
+   rather than an exception to it. `--carrier` above means "a thing that is on", which
+   is the right register for test mode and the wrong one for live. */
+.livemode{display:inline-block;margin-top:14px;font:600 9.5px/1 var(--face-display);
+      letter-spacing:var(--track-caps);text-transform:uppercase;color:var(--cut);
+      border:1px solid var(--cut);border-radius:5px;padding:5px 8px;
+      background:var(--cut-wash)}
 .claim{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
 .claim input{flex:1 1 150px;min-width:0;font:14px/1.2 var(--face-body);padding:11px 12px;
       background:var(--ground);color:var(--ink);border:1px solid var(--rule-strong);
@@ -1125,13 +1134,32 @@ footer a{color:var(--carrier)}
                refuses with a 503 naming the missing variables either way; surfacing it
                on the control is the difference between a considered state and a dead
                button. #}
-            {% if stripe_configured %}
+            {% if not stripe_configured %}
+              <p class="unavail">Checkout is not configured on this deployment.</p>
+            {% elif principal is defined and principal and principal.authenticated %}
+              {# Reachable only if this template is ever rendered to a signed-in
+                 principal. `GET /` does not do that — it serves the queue instead — so
+                 this branch is here for correctness rather than because a visitor takes
+                 it today. If it ever renders, the form works: the endpoint is SignedIn
+                 and now 303s to Stripe. #}
               <form method="post" action="/billing/checkout">
                 <input type="hidden" name="plan" value="{{ t.key }}">
                 <button type="submit" class="quiet">Choose {{ t.name }}</button>
               </form>
             {% else %}
-              <p class="unavail">Checkout is not configured on this deployment.</p>
+              {# The branch every real visitor takes, and it used to be the form above.
+                 That was a dead control: `POST /billing/checkout` is `SignedIn`, this
+                 page renders only for anonymous visitors, so the button 303'd back to
+                 this same page and looked like nothing had happened. There is also
+                 nothing checkout could have done with the click — a Checkout Session
+                 needs a tenant to attach the subscription to and an email to bill, and
+                 an anonymous visitor has neither.
+
+                 So it says what actually has to happen, on the control, before the
+                 click — the same rule the "not configured" line above follows. The free
+                 tier's email field is the way in for every tier; the plan is chosen from
+                 the account page once there is an account to choose it for. #}
+              <a class="quiet" href="/signin">Sign in to choose {{ t.name }}</a>
             {% endif %}
           {% else %}
             <a class="quiet" href="#tune">Book a demo</a>
@@ -1140,11 +1168,21 @@ footer a{color:var(--carrier)}
       </div>
       {% endfor %}
     </div>
-    {% if stripe_test_mode %}<span class="testmode">Stripe test mode</span>{% endif %}
+    {% if stripe_test_mode %}<span class="testmode">Stripe test mode</span>
+    {% elif stripe_mode == 'live' %}<span class="livemode">Stripe live mode — real charges</span>{% endif %}
 
     <p class="priced">
-      <b>What this page does not claim.</b> No customer is paying for this today and
-      none is implied. <b>Sending is off in this deployment</b> on every tier — the
+      <b>What this page does not claim.</b>
+      {# The sentence below was unconditional until 2026-08-15, when billing.py stopped
+         refusing live keys. It is a claim about the world that this deployment can now
+         make false, so it is asserted only in the modes where it still holds. Everything
+         after it is about the sender and the spend gate, which are true on every tier in
+         every mode.
+
+         Deliberately not quoted in this comment: a test asserts the claim appears only
+         behind the guard, and it finds the sentence by index. #}
+      {% if stripe_mode != 'live' %}No customer is paying for this today and
+      none is implied.{% endif %} <b>Sending is off in this deployment</b> on every tier — the
       console reports <code>sender_wired: false</code> and will keep reporting it until
       a human wires a sender. A free account is genuinely bounded rather than
       trust-based: the cap is enforced by the same gate that protects our own spend,

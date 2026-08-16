@@ -118,6 +118,15 @@
       {% if stripe_test_mode %}
         <p class="hint"><b>Test mode.</b> The key on this deployment is a Stripe test key,
           so no card is charged.</p>
+      {% elif stripe_mode == 'live' %}
+        {# The inverse badge, and the one that matters. Until 2026-08-15 a live key was
+           refused outright, so "no badge" could only mean test-or-nothing and saying
+           nothing was safe. It is not safe now: without this branch the loudest state a
+           deployment can be in would be the only one that rendered silently, directly
+           above a button that charges a card. #}
+        <p class="hint"><span class="wire">Stripe live mode</span>
+          <b>These buttons take a real payment.</b> The key on this deployment is a live
+          key, so completing a checkout charges the card that is entered.</p>
       {% endif %}
     {% else %}
       {# Says so here rather than after a click, which is the same choice the pricing
@@ -128,8 +137,14 @@
       </p>
     {% endif %}
     <p class="hint">
-      Nothing on this page has ever been billed. Changing a plan writes a tier and a
-      ceiling; it is the webhook that grants, and the spend gate that enforces.
+      {# The first sentence was unconditional until 2026-08-15 and is now the one thing on
+         this page a live deployment could falsify — it sits under buttons that can start
+         a real charge. It is asserted only where it remains true: test mode, and a
+         deployment with no key at all. The second sentence is about the architecture and
+         holds in every mode. #}
+      {% if stripe_mode != 'live' %}Nothing on this page has ever been billed.{% endif %}
+      Changing a plan writes a tier and a ceiling; it is the webhook that grants, and the
+      spend gate that enforces.
     </p>
   </section>
 

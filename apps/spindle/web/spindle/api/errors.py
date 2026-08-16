@@ -107,8 +107,9 @@ THREAD_OCCUPIED = "thread_occupied"
 #: composes it so the console and this API cannot describe one limit two ways.
 PLAN_LIMIT_REACHED = "plan_limit_reached"
 
-#: `billing.BillingRefused` where the cause is configuration: Stripe variables unset, a
-#: live key where only a test key is accepted, or a tier with no price id. The deployment
+#: `billing.BillingRefused` where the cause is configuration: Stripe variables unset for
+#: the mode the key selects, a key that is neither `sk_test_` nor `sk_live_` and so
+#: selects no mode at all, or a tier with no price id. The deployment
 #: is not finished; nothing the caller does will help, and the message names the exact
 #: environment variables — the same contract `settings.stripe_missing` and the Ask
 #: screen's `mcp_missing` already keep. Never returned as a success with a fake session.

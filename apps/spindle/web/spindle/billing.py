@@ -42,17 +42,36 @@ The risk of hand-rolling is that Stripe changes the scheme. It is mitigated by t
 scheme being versioned in the header itself — `v1=` — and by this code refusing a header
 with no `v1` element rather than accepting one it does not recognise.
 
-## Test mode, throughout
+## Both modes, and what was given up to allow the second one
 
-`settings.stripe_mode` reads `test` or `live` off the key's own prefix, and
-`checkout_session` **refuses a live key**. This code has never taken a payment and is not
-built to; a live key present in this deployment would be a configuration mistake, and the
-kind of configuration mistake whose first symptom is a real charge on a real card. The
-refusal is the cheapest possible place to catch it. Remove that guard deliberately, in a
-commit that says so, when somebody has decided to actually sell this.
+`settings.stripe_mode` reads `test` or `live` off the key's own prefix, and both are now
+permitted. Until 2026-08-15 `checkout_session` **refused a live key** outright, on the
+grounds that this code had never taken a payment and a live key here would make the first
+one an accident. That guard is gone, deliberately, in the commit this paragraph arrived
+in — which is the condition the old comment set for removing it.
 
-No customer has been billed through this module. No revenue exists. The tiers in
-`plans.py` are prices that have been written down, not prices anybody has paid.
+Say plainly what that costs, because the guard was load-bearing and its replacement is
+thinner. Before, no configuration of this deployment could charge a real card. Now one
+can, and the only thing preventing it is which key is in the environment. A live key
+pasted into a laptop's `.env` by mistake will take real money from whoever completes the
+checkout it builds.
+
+What is left standing in its place:
+
+  * **The mode cannot lie.** It is derived from the credential rather than declared in a
+    second variable, so the "test mode" badge and the ledger being charged are the same
+    fact. A deployment cannot be configured to look like test and behave like live.
+  * **The price ids are per-mode and required per-mode.** `plans.Tier.price_setting`
+    resolves `STRIPE_PRICE_LABEL` or `STRIPE_PRICE_LABEL_LIVE`, and a live key with no
+    live price id refuses by name rather than reaching for the test one. Promoting a
+    deployment is one variable, not two opaque strings one of which somebody forgets.
+  * **An unrecognised key is refused rather than assumed.** `require_configured` checks
+    that first, because a key with no mode has no price pair and would otherwise pass a
+    "nothing is missing" check with nothing configured.
+
+No customer has been billed through this module as of 2026-08-15 and no revenue exists.
+The tiers in `plans.py` are prices that have been written down; whether anybody has paid
+one is a question about the Stripe account, not about this file.
 """
 
 from __future__ import annotations
@@ -97,35 +116,57 @@ class BillingRefused(RuntimeError):
 # --------------------------------------------------------------- configuration
 
 def require_configured(settings: Settings) -> None:
-    """Raise unless every Stripe variable is set and the key is a test key.
+    """Raise unless this deployment can actually transact.
 
-    Two checks and they refuse for different reasons, so they are reported differently.
-    A missing variable is a deployment nobody finished; a live key is a deployment
-    somebody finished *too well*, and the message says so rather than reading as praise.
+    Two states, refusing for different reasons and therefore reported differently, and
+    the ordering between them is the whole subtlety here.
+
+    **A key that is present but is neither `sk_test_` nor `sk_live_` is its own refusal.**
+    `stripe_missing` cannot describe it: with no mode there is no price pair to require,
+    and the variable is *set*, so nothing in that list is empty and the operator would be
+    told billing was unconfigured while every name they were given looked fine. The real
+    fault is almost always a truncated paste or a publishable `pk_` key in the secret
+    slot, and saying so is the difference between a one-minute fix and an afternoon.
+
+    **An unset key is not that.** It is checked first, precisely so an empty `.env` gets
+    the useful message — the names of all four variables it needs — rather than being
+    told its key is malformed, which is a confusing thing to read about a key you have
+    not written yet.
+
+    A missing variable is a deployment nobody finished, and the message names exactly
+    which — for the mode the key selects, or the test pair when there is no key at all.
     """
+    if settings.stripe_secret_key and settings.stripe_mode == "unconfigured":
+        raise BillingRefused(
+            "STRIPE_SECRET_KEY is set to something that is neither a test key "
+            "(sk_test_…) nor a live key (sk_live_…), so this deployment has no Stripe "
+            "mode and no price ids can be selected. Nothing was charged. It is not "
+            "assumed to be a test key — see settings.stripe_mode for why guessing that "
+            "is the expensive mistake.",
+            reason="stripe_key_unrecognised")
     if not settings.stripe_configured:
         missing = ", ".join(settings.stripe_missing)
         plural = "is" if len(settings.stripe_missing) == 1 else "are"
         raise BillingRefused(
             f"Billing is not configured on this deployment: {missing} {plural} unset. "
             f"Nothing was charged and no checkout was created. The free tier does not "
-            f"need any of these; POST /claim works without Stripe entirely.",
+            f"need any of these; signing in and using the console works without Stripe "
+            f"entirely.",
             reason="stripe_not_configured")
-    if settings.stripe_mode != "test":
-        raise BillingRefused(
-            f"STRIPE_SECRET_KEY is a {settings.stripe_mode} key. This build refuses "
-            f"anything but a test key, because it has never taken a real payment and a "
-            f"live key here would make the first one an accident. See billing.py.",
-            reason="stripe_not_test_mode")
 
 
 def price_id_for(tier: plans.Tier, settings: Settings) -> str:
-    """The configured Stripe price id for a tier, or a refusal naming what is absent.
+    """The configured Stripe price id for a tier *in this deployment's mode*.
 
-    `plans.Tier.stripe_price_setting` holds the *name* of the settings attribute rather
-    than the id, so this is a `getattr`. That indirection is what lets `plans.py` stay
-    free of environment-specific values while still being the single place that knows
-    which tiers are purchasable.
+    `plans.Tier.price_setting` holds the *name* of the settings attribute rather than the
+    id, so this is a `getattr`. That indirection is what lets `plans.py` stay free of
+    environment-specific values while still being the single place that knows which tiers
+    are purchasable and what their two settings are called.
+
+    The mode is passed through rather than defaulted. A test price id sent with a live key
+    is a checkout that fails at Stripe with "No such price"; the same pair swapped the
+    other way is a checkout that succeeds against a real card while every badge in the UI
+    says test mode. Selecting by the key's own prefix is what makes both unreachable.
     """
     if not tier.purchasable:
         raise BillingRefused(
@@ -134,11 +175,12 @@ def price_id_for(tier: plans.Tier, settings: Settings) -> str:
                if tier.price_usd_month == 0 else
                "It is priced against the work, so it starts with a conversation."),
             reason="tier_not_purchasable")
-    price = getattr(settings, tier.stripe_price_setting, "")
+    setting = tier.price_setting(settings.stripe_mode)
+    price = getattr(settings, setting, "")
     if not price:
         raise BillingRefused(
-            f"No Stripe price is configured for the {tier.name} plan "
-            f"({tier.stripe_price_setting.upper()} is unset), so there is nothing to "
+            f"No {settings.stripe_mode}-mode Stripe price is configured for the "
+            f"{tier.name} plan ({setting.upper()} is unset), so there is nothing to "
             f"charge against.",
             reason="price_not_configured")
     return str(price)

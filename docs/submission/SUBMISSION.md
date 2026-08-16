@@ -247,12 +247,25 @@ Stated here so a judge does not have to find it:
   `SHOW CHANGEFEED JOBS` returns nothing, because creating one draws RUs continuously and
   nobody authorised that spend. Built is not running.
 - **Not Bedrock.** See WHERE.
-- **Not a paid product.** `apps/spindle/schema/033_account_billing.sql` makes the tenant column
-  real, `POST /claim` creates a bounded free tenant with no Stripe configuration present,
-  and `apps/spindle/web/spindle/billing.py` speaks Stripe in **test mode only** — it
-  refuses a live key on purpose. No checkout session has been created against Stripe by
-  this code, no customer exists, and no payment has been taken. The prices in `plans.py`
-  are prices that have been written down.
+- **Not a paid product.** `apps/spindle/schema/033_account_billing.sql` makes the tenant
+  column real, and signing in creates a bounded free tenant with no Stripe configuration
+  present — the free tier reads none of the six Stripe variables and works end to end
+  with all of them empty. **No customer exists and no payment has been taken.**
+
+  Three things in this bullet changed on 2026-08-15 and the old wording is worth
+  correcting rather than quietly editing. It used to say Stripe was wired in *test mode
+  only* and that `billing.py` refused a live key on purpose. It no longer refuses one:
+  the module accepts either, `plans.Tier.price_setting` holds a price id per mode, and
+  the key's own prefix selects between them. It also used to say no checkout session had
+  ever been created by this code. One has — in **test mode**, against test-mode products,
+  as a wiring check when billing was configured, and it was expired immediately
+  afterwards. No card was involved and no live key exists on any deployment.
+
+  So the honest statement is narrower than it was: nothing here has been paid for, and
+  what now stands between this code and a real charge is which key is in the
+  environment rather than a refusal in the source. `billing.py` says the same thing at
+  more length, including what was given up to allow it. The prices in `plans.py` are
+  still prices that have been written down.
 
 Every one of these was true and unstated at some point in this project's life, and each is
 written down here because a submission that claims everything is one a judge stops

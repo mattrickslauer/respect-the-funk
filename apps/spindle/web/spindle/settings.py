@@ -30,6 +30,8 @@ class Settings:
     stripe_webhook_secret: str
     stripe_price_label: str
     stripe_price_roster: str
+    stripe_price_label_live: str
+    stripe_price_roster_live: str
 
     @property
     def configured(self) -> bool:
@@ -112,20 +114,38 @@ class Settings:
         return bool(self.cockroach_api_key and self.cockroach_cluster_id
                     and self.openai_api_key and self.database_url)
 
-    #: The four variables billing needs, paired with the attribute each lands in. One
-    #: tuple so `stripe_configured` and `stripe_missing` cannot come to check different
-    #: sets — the bug where a page says "configured" and the endpoint then names a
-    #: variable the page did not know about.
+    #: The two variables billing needs in *either* mode, paired with the attribute each
+    #: lands in. One tuple so `stripe_configured` and `stripe_missing` cannot come to
+    #: check different sets — the bug where a page says "configured" and the endpoint
+    #: then names a variable the page did not know about.
     #:
     #: `ClassVar` and not a field: this is a description of the settings, not one of
-    #: them, and without the annotation `dataclass` would add it to `__init__` as a
-    #: fifteenth constructor argument that every caller would then be able to override.
-    _STRIPE_VARS: ClassVar[tuple[tuple[str, str], ...]] = (
+    #: them, and without the annotation `dataclass` would add it to `__init__` as another
+    #: constructor argument that every caller would then be able to override.
+    _STRIPE_CORE_VARS: ClassVar[tuple[tuple[str, str], ...]] = (
         ("STRIPE_SECRET_KEY", "stripe_secret_key"),
         ("STRIPE_WEBHOOK_SECRET", "stripe_webhook_secret"),
-        ("STRIPE_PRICE_LABEL", "stripe_price_label"),
-        ("STRIPE_PRICE_ROSTER", "stripe_price_roster"),
     )
+
+    #: The price ids, per mode. A Stripe price id belongs to one ledger — the test-mode
+    #: and live-mode objects for the same $49 product are unrelated strings — so which
+    #: pair is *required* depends on which key is configured. Keyed by the value
+    #: `stripe_mode` returns, and deliberately holding no entry for `"unconfigured"`:
+    #: there is no correct price id for a key that is neither, and inventing one here is
+    #: how a deployment ends up reporting "configured" with nothing to charge against.
+    #:
+    #: The `_LIVE` suffix matches `plans.Tier.price_setting`, which is where the
+    #: convention is documented. Two places spell it; a test keeps them equal.
+    _STRIPE_PRICE_VARS: ClassVar[dict[str, tuple[tuple[str, str], ...]]] = {
+        "test": (
+            ("STRIPE_PRICE_LABEL", "stripe_price_label"),
+            ("STRIPE_PRICE_ROSTER", "stripe_price_roster"),
+        ),
+        "live": (
+            ("STRIPE_PRICE_LABEL_LIVE", "stripe_price_label_live"),
+            ("STRIPE_PRICE_ROSTER_LIVE", "stripe_price_roster_live"),
+        ),
+    }
 
     @property
     def stripe_missing(self) -> list[str]:
@@ -139,27 +159,55 @@ class Settings:
         A list rather than a formatted sentence, because two surfaces render it — the
         checkout refusal as JSON, and the pricing page as prose — and a pre-formatted
         string would force one of them to parse English.
+
+        **Which four it needs depends on the mode**, and the mode comes off the key. A
+        deployment holding a test key is not missing `STRIPE_PRICE_LABEL_LIVE`; it has no
+        use for it. Naming both pairs unconditionally would send an operator to create
+        live products in order to fix a test-mode deployment, which is the opposite of
+        the thing this property exists to prevent.
+
+        **With no usable key there is no mode, and this names the test pair.** That is a
+        deliberate choice and the one place in this property where a mode is assumed, so
+        it is worth defending: the state it describes is a deployment being set up, set-up
+        starts in test mode, and the alternative is telling somebody with an empty `.env`
+        that they need two variables when they in fact need four. Naming both pairs would
+        be worse still — it would send them to create live products before they had a test
+        checkout working.
+
+        The assumption is safe because it only affects *reporting*. `stripe_configured`
+        answers False on an unrecognised mode regardless of this list, and
+        `billing.require_configured` distinguishes an unset key from a malformed one
+        before it ever renders these names.
         """
-        return [name for name, attr in self._STRIPE_VARS if not getattr(self, attr)]
+        missing = [name for name, attr in self._STRIPE_CORE_VARS if not getattr(self, attr)]
+        prices = self._STRIPE_PRICE_VARS.get(self.stripe_mode) or self._STRIPE_PRICE_VARS["test"]
+        for name, attr in prices:
+            if not getattr(self, attr):
+                missing.append(name)
+        return missing
 
     @property
     def stripe_configured(self) -> bool:
         """Whether a checkout can be created at all.
 
-        All four are required and none has a default, because each absence produces a
-        different kind of wrong and none of them is recoverable at runtime. Without the
-        secret key there is no API call. Without the webhook secret a completed payment
-        cannot be *verified*, and an unverified webhook is worse than none — it is an
-        unauthenticated endpoint that grants plans to whoever posts to it. Without the
-        two price ids there is nothing to sell; Stripe prices are objects created in the
-        dashboard and their ids differ between test and live mode, which is precisely why
-        they are configuration and not constants in `plans.py`.
+        Four variables are required — two always, two chosen by mode — and none has a
+        default, because each absence produces a different kind of wrong and none of them
+        is recoverable at runtime. Without the secret key there is no API call. Without
+        the webhook secret a completed payment cannot be *verified*, and an unverified
+        webhook is worse than none — it is an unauthenticated endpoint that grants plans
+        to whoever posts to it. Without the two price ids there is nothing to sell.
+
+        **A key that is neither `sk_test_` nor `sk_live_` is never configured**, even with
+        every other variable set. Without a mode there is no price pair to require, so
+        `stripe_missing` would come back empty and this would otherwise answer `True` for
+        a deployment that cannot transact at all — the exact false reassurance the rest of
+        this class is built to avoid.
 
         There is no partial mode. A deployment with a key and no webhook secret could
         technically send somebody to a checkout page, and it would take their money and
         never hear that it happened. `billing.py` refuses instead.
         """
-        return not self.stripe_missing
+        return self.stripe_mode != "unconfigured" and not self.stripe_missing
 
     @property
     def stripe_mode(self) -> str:
@@ -176,6 +224,12 @@ class Settings:
         This is the no-fallbacks rule at its most literal: the safe-looking guess is
         "test", and guessing "test" about a credential that turned out to be live is how
         a UI ends up reassuring somebody while taking their money.
+
+        **Both modes are permitted downstream as of 2026-08-15.** `billing.py` refused
+        anything but `"test"` until then, and the refusal is gone deliberately rather
+        than by neglect — see that module's "Both modes" section. This property is now
+        load-bearing in a way it was not before: it selects the price pair as well as the
+        badge, so a wrong answer here is a wrong charge rather than a wrong label.
         """
         if self.stripe_secret_key.startswith("sk_test_"):
             return "test"
@@ -252,7 +306,7 @@ def load() -> Settings:
         # `spend.py`'s rate card records both Claude and Titan on-demand quotas at 0 RPM,
         # measured. Empty means the Ask screen says so rather than guessing a question.
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
-        # Stripe. All four empty by default, and there is deliberately no test-mode
+        # Stripe. All six empty by default, and there is deliberately no test-mode
         # placeholder among them — not `sk_test_...`, not a dummy price id, nothing.
         #
         # A fake key is the tempting default because it makes the code path "work" in
@@ -262,8 +316,8 @@ def load() -> Settings:
         # reading "STRIPE_SECRET_KEY is unset". `stripe_missing` names what is absent;
         # `billing.py` refuses before it constructs anything.
         #
-        # The free tier does not read any of these. `POST /claim` works end to end with
-        # all four empty, which is not an accident of the implementation but the
+        # The free tier does not read any of these. Claiming an account works end to end
+        # with all six empty, which is not an accident of the implementation but the
         # requirement it was built to: the tier a judge uses cannot depend on a payment
         # provider being configured.
         stripe_secret_key=os.environ.get("STRIPE_SECRET_KEY", ""),
@@ -271,13 +325,22 @@ def load() -> Settings:
         # Absent, the webhook refuses every request rather than trusting the body — an
         # unverified webhook endpoint is an unauthenticated way to grant paid plans.
         stripe_webhook_secret=os.environ.get("STRIPE_WEBHOOK_SECRET", ""),
-        # Price object ids from the Stripe dashboard, one per purchasable tier. They are
-        # configuration rather than constants in `plans.py` because a price id is
-        # mode-specific: the test-mode id and the live-mode id for the same $49 product
-        # are different strings, and a value compiled into the source could not be both.
-        # `plans.Tier.stripe_price_setting` names which of these a tier uses.
+        # Price object ids, one per purchasable tier *per mode*. They are configuration
+        # rather than constants in `plans.py` because a price id is mode-specific: the
+        # test-mode id and the live-mode id for the same $49 product are different
+        # strings, created in different ledgers, and a value compiled into the source
+        # could not be both. `plans.Tier.price_setting(mode)` names which of these a tier
+        # uses, and `_STRIPE_PRICE_VARS` names which pair is required.
+        #
+        # Both pairs live in one .env on purpose. The alternative — one pair, whose
+        # meaning depends on which deployment you are looking at — makes promoting test
+        # to live a hand-edit of two opaque strings, and a half-finished one of those is
+        # a live key charging against a price id that does not exist in the live ledger.
+        # Here the key's own prefix selects the pair, so the promotion is one variable.
         stripe_price_label=os.environ.get("STRIPE_PRICE_LABEL", ""),
         stripe_price_roster=os.environ.get("STRIPE_PRICE_ROSTER", ""),
+        stripe_price_label_live=os.environ.get("STRIPE_PRICE_LABEL_LIVE", ""),
+        stripe_price_roster_live=os.environ.get("STRIPE_PRICE_ROSTER_LIVE", ""),
         # Used to construct the S3 and SES clients. `AWS_REGION` is set by the Lambda
         # runtime itself, so in the deployed function this needs no configuration;
         # the explicit variable is for a worker or a laptop, and the default matches

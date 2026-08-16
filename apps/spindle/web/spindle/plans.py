@@ -51,7 +51,11 @@ charged. The two are checked against each other by nothing, which is a real gap 
 recorded in `billing.py` rather than papered over.
 
 **No claim that any of this has been paid.** No customer has been billed through this
-code. It is wired against Stripe test mode and `billing.py` refuses a live key.
+code as of 2026-08-15. It can now run in either Stripe mode — `Tier.price_setting` holds
+one price id per mode and the key's prefix picks between them — so the sentence that used
+to sit here, that `billing.py` refuses a live key, is no longer true. What replaced it is
+weaker on purpose and worth knowing: a live key is accepted, and the only thing standing
+between this file's numbers and a real charge is that somebody has to configure one.
 """
 
 from __future__ import annotations
@@ -115,11 +119,15 @@ class Tier:
     #: cluster cannot keep.
     daily_spend_cap_usd: Decimal
 
-    #: The attribute on `settings.Settings` holding this tier's Stripe price id, or `""`
-    #: when there is nothing to buy. A *name* rather than the id itself, because the id
-    #: is configuration and this file is code — a price id compiled into the source is a
-    #: price id that cannot differ between test and live, which is exactly the mistake
-    #: `settings.py`'s opening paragraph exists to prevent.
+    #: The attribute on `settings.Settings` holding this tier's **test-mode** Stripe price
+    #: id, or `""` when there is nothing to buy. A *name* rather than the id itself,
+    #: because the id is configuration and this file is code — a price id compiled into
+    #: the source is a price id that cannot differ between test and live, which is exactly
+    #: the mistake `settings.py`'s opening paragraph exists to prevent.
+    #:
+    #: The live-mode attribute is this name with `_live` appended; `price_setting` below
+    #: is the only place that convention is written down, so the suffix cannot drift
+    #: between `settings.py`, `billing.py` and `bin/stripe_setup.py`.
     stripe_price_setting: str
 
     #: One line for the pricing page. Prose lives here rather than in the template for
@@ -129,6 +137,38 @@ class Tier:
     @property
     def unlimited_artists(self) -> bool:
         return self.artists is None
+
+    def price_setting(self, mode: str) -> str:
+        """The `settings.Settings` attribute holding this tier's price id in `mode`.
+
+        `""` for a tier with nothing to sell, in either mode.
+
+        Two ids exist per tier because a Stripe price id is mode-specific: the test-mode
+        and live-mode objects for the same $49 product are different strings, created in
+        different ledgers, and neither is derivable from the other. Holding both at once
+        is what lets one `.env` describe a deployment completely — the key's prefix picks
+        which pair is read, so promoting test to live is a change of key rather than a
+        hand-edit of two price ids that nobody would notice was half-done.
+
+        **An unrecognised mode raises rather than falling back to the test id.** That is
+        the whole point of the method: the tempting default is "test", and quietly
+        charging against a test price when the key turned out to be live means a checkout
+        that fails at Stripe — or, with the ids the other way round, one that succeeds
+        against a real card while the UI says test. `settings.stripe_mode` only ever
+        returns one of these three strings, so reaching the raise means a caller invented
+        a fourth.
+        """
+        if not self.stripe_price_setting:
+            return ""
+        if mode == "test":
+            return self.stripe_price_setting
+        if mode == "live":
+            return f"{self.stripe_price_setting}_live"
+        raise ValueError(
+            f"{mode!r} is not a Stripe mode. Expected 'test' or 'live' — and note that "
+            f"'unconfigured' has no price id by definition, so a caller reaching here "
+            f"with it has skipped the check that a key is present and well-formed."
+        )
 
     @property
     def purchasable(self) -> bool:

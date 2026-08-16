@@ -85,6 +85,67 @@ variable "mail_postal_address" {
   default     = ""
 }
 
+# ------------------------------------------------------------------------ Stripe
+#
+# Nothing Stripe-related reached the deployed function until 2026-08-15. The console
+# read four variables that Terraform never set, so `settings.stripe_configured` was
+# false on every deploy and the pricing page said billing was unconfigured — correctly,
+# and for a reason nobody had written down. These are that omission fixed.
+#
+# All default to "" so a fresh `terraform apply` still works with no Stripe account at
+# all. That is the same argument `mail_sender` makes: the free tier must not depend on a
+# payment provider, and `POST /claim` works end to end with every one of these empty.
+#
+# The mode is not declared here. It is read off `stripe_secret_key`'s own prefix by
+# `settings.stripe_mode`, so a live deployment is one whose tfvars holds an sk_live_ key
+# — there is no separate flag that could be set to "test" beside a live credential.
+
+variable "stripe_secret_key" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "Stripe secret key. sk_test_ or sk_live_; the prefix is what selects the mode and the price pair. Empty means the console reports billing as unconfigured and refuses checkout by name."
+}
+
+variable "stripe_webhook_secret" {
+  type      = string
+  sensitive = true
+  default   = ""
+
+  # Per-endpoint, not per-account: this must be the secret of the endpoint pointing at
+  # *this* function's /billing/webhook, and a secret borrowed from another endpoint on
+  # the same account fails verification on both. Stripe reveals it only at creation.
+  #
+  # Empty refuses every delivery rather than trusting an unsigned body, which is the
+  # only safe reading — an unverified billing webhook is an unauthenticated way to
+  # grant paid plans.
+  description = "Signing secret (whsec_) for this deployment's own webhook endpoint."
+}
+
+variable "stripe_price_label" {
+  type        = string
+  default     = ""
+  description = "Test-mode price id for the Label tier. Read only when the key is sk_test_."
+}
+
+variable "stripe_price_roster" {
+  type        = string
+  default     = ""
+  description = "Test-mode price id for the Roster tier. Read only when the key is sk_test_."
+}
+
+variable "stripe_price_label_live" {
+  type        = string
+  default     = ""
+  description = "Live-mode price id for the Label tier. Read only when the key is sk_live_."
+}
+
+variable "stripe_price_roster_live" {
+  type        = string
+  default     = ""
+  description = "Live-mode price id for the Roster tier. Read only when the key is sk_live_."
+}
+
 variable "memory_mb" {
   type    = number
   default = 512

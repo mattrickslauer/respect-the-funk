@@ -400,9 +400,16 @@ def _ctx(request: Request, principal: auth.Principal, *,
         # Billing state for anything that renders it. `stripe_test_mode` is read off the
         # key's own prefix (see `settings.stripe_mode`), so a "test mode" badge cannot be
         # shown next to a live key or hidden next to a test one.
+        #
+        # `stripe_mode` is passed as well as the boolean, and the reason is that the
+        # boolean has three states collapsed into two: `stripe_test_mode` is false for a
+        # live deployment *and* for one with no key at all. A template that only had the
+        # boolean could not tell "this button charges a real card" from "this button does
+        # nothing yet", and the honest badge for the first is the one it would omit.
         "stripe_configured": SETTINGS.stripe_configured,
         "stripe_missing": SETTINGS.stripe_missing,
         "stripe_test_mode": SETTINGS.stripe_test_mode,
+        "stripe_mode": SETTINGS.stripe_mode,
         "here": None,
         "insp_kicker": "",
         "insp_title": "",
@@ -2700,13 +2707,24 @@ def _refusal_json(status: int, code: str, message: str) -> JSONResponse:
 @router.post("/billing/checkout")
 def billing_checkout(request: Request, principal: SignedIn,
                      plan: Annotated[str, Form()] = "") -> Response:
-    """Start a Stripe Checkout for the signed-in tenant. JSON in, JSON out.
+    """Start a Stripe Checkout for the signed-in tenant. Form in, 303 to Stripe out.
 
-    Returns `{"url": ...}` for the client to redirect to, or a refusal that names exactly
-    which environment variables are missing. **It does not pretend to succeed.** There is
-    no stub session, no fake URL and no "billing is coming soon" page: an operator whose
-    `STRIPE_PRICE_ROSTER` is unset needs to read that string, and a checkout that appeared
-    to work and then 404'd at Stripe would cost them an afternoon.
+    Redirects the browser to the Checkout Session, or refuses with JSON that names
+    exactly which environment variables are missing. **It does not pretend to succeed.**
+    There is no stub session, no fake URL and no "billing is coming soon" page: an
+    operator whose `STRIPE_PRICE_ROSTER` is unset needs to read that string, and a
+    checkout that appeared to work and then 404'd at Stripe would cost them an afternoon.
+
+    The docstring said "JSON in, JSON out" until 2026-08-15 and was wrong in both halves
+    — the input has always been `Form()`, and the output is now a redirect. See the
+    comment on the return for why that changed and what it fixed.
+
+    **This route is unreachable from the landing page by construction**, and that is
+    worth knowing before wiring a button to it. `GET /` renders the landing page only
+    when the principal is *not* authenticated; a signed-in visitor gets the queue. So
+    every landing-page visitor is anonymous, `SignedIn` bounces them with a 303 to `/`,
+    and a checkout control there is a button that returns the reader to the page they
+    were already on. The pricing table offers sign-in for the paid tiers instead.
 
     The tenantless-principal branch that used to guard the top of this function is gone
     with the operator it guarded against: the shared admin token was scoped to no tenant
@@ -2742,7 +2760,26 @@ def billing_checkout(request: Request, principal: SignedIn,
         )
     except billing.BillingRefused as exc:
         return _refusal_json(503, api_errors.BILLING_NOT_CONFIGURED, str(exc))
-    return JSONResponse(session)
+
+    # A 303 to Stripe, not the session as JSON.
+    #
+    # This returned `JSONResponse(session)` until 2026-08-15 and the two callers are both
+    # plain HTML forms — `console/account.html` and the landing page — with no JavaScript
+    # anywhere to read a body and assign `location`. So submitting one navigated the
+    # browser to this endpoint and rendered `{"id": "cs_test_…", "url": "…"}` on screen as
+    # text. The checkout worked; the session was real; the user simply never arrived at
+    # it. That is the whole bug, and it was invisible to the test suite because no test
+    # drives this handler to a success (creating a session needs a key and a network).
+    #
+    # Redirecting unconditionally rather than sniffing `Accept` is deliberate.
+    # `docs/reference/api-v1.md` places both `POST /billing/*` outside the versioned JSON
+    # API, this handler takes `Form()` input rather than a JSON body, and no client is
+    # documented against its response shape — so there is no contract here to keep, only
+    # a docstring that claimed "JSON in, JSON out" while accepting a form. If a machine
+    # caller ever needs the raw session, `_refusal_json`'s docstring records that a
+    # `_wants_json` Accept-sniff used to exist and why it went; reviving it for one
+    # endpoint is a smaller change than the negotiation this does not yet need.
+    return RedirectResponse(session["url"], status_code=303)
 
 
 @router.post("/billing/webhook")

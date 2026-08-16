@@ -23,8 +23,34 @@ from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _repo_env() -> Path:
+    """The repository-root `.env`, found by walking up rather than by counting.
+
+    This was `env_file=".env"` — a *relative* path, resolved against the working
+    directory of whatever started the process. RemixKit therefore read
+    `apps/remixkit/.env` when launched from its own directory and the root one when
+    launched from the root, and nothing said which. The two files were merged into the
+    root on 2026-08-15 and this names that file explicitly.
+
+    Walking up to the directory holding `.git`, rather than taking `parents[3]`, because
+    a fixed depth is precisely what the restructure earlier that day broke in three
+    other places: `dev.sh` and `ccloud-mcp-setup.sh` computed the root as `../..` and
+    silently found no `.env`, and two tests climbed into a directory that no longer
+    existed. A search that fails loudly beats an offset that quietly points somewhere
+    plausible.
+    """
+    for parent in Path(__file__).resolve().parents:
+        if (parent / ".git").exists():
+            return parent / ".env"
+    # No repository above us — a wheel, a Lambda bundle, a stray copy. Fall back to the
+    # working directory, which is what this did before, and let the field defaults carry
+    # it if that is absent too.
+    return Path(".env")
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="RK_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="RK_", env_file=_repo_env(),
+                                      extra="ignore")
 
     app_name: str = "RemixKit"
     env: Literal["dev", "staging", "prod"] = "dev"
@@ -199,13 +225,13 @@ class Settings(BaseSettings):
 
     # ---- secrets ---------------------------------------------------------------
     # Where `bootstrap.load_secrets` fetches credentials from. Declared here rather than
-    # read only from the process environment so that `app/.env` can name it: an .env
+    # read only from the process environment so that the repo-root `.env` can name it: an .env
     # that turns on `storage_backend=b2` but cannot say where the B2 keys live sets up a
     # failure whose message is about missing credentials rather than about the missing
     # setting that would have found them.
     ssm_path: str = ""
     # Vertex project/region for the Google (Veo/Imagen) provider. Settings rather than
-    # bare environment variables so `app/.env` can supply them — see `export_for_libs`.
+    # bare environment variables so the repo-root `.env` can supply them — see `export_for_libs`.
     gcp_project: str = ""
     gcp_location: str = "us-central1"
     # Which AWS credential profile to use. Empty means boto3's own resolution (env vars,

@@ -47,7 +47,7 @@ def create_app() -> FastAPI:
     # Secrets have to land in the environment before the settings this process will live
     # by are built, because `get_settings()` is lru_cached — whatever the environment
     # looks like at the first call is what it believes forever. But the *location* of
-    # those secrets is itself a setting, and on a laptop it comes from `app/.env`, which
+    # those secrets is itself a setting, and on a laptop it comes from the repo-root `.env`, which
     # only `Settings` knows how to read.
     #
     # So: read once to find out where the secrets are, fetch them, then drop the cache so

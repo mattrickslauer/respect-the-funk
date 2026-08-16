@@ -21,7 +21,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/uvicorn remixkit.main:app --reload
 ```
 
-Everything the app needs is read from `app/.env` — including `RK_SSM_PATH`, which is how
+Everything the app needs is read from the repo-root `.env` — including `RK_SSM_PATH`, which is how
 real credentials arrive. Nothing needs exporting first: `source .env` would not work
 anyway, because a plain `KEY=value` line sets a shell variable rather than an exported
 one, so a child process never sees it.

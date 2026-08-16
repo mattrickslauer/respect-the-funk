@@ -4,7 +4,7 @@ Each test gets its own storage directory and its own container, so nothing leaks
 between tests through the module-level `lru_cache` on `get_container`.
 
 Nothing leaks in from the *developer* either — see `_hermetic_env`. A `Settings()` built
-with explicit keyword arguments still merges `app/.env` and `RK_*` from the environment
+with explicit keyword arguments still merges the repo-root `.env` and `RK_*` from the environment
 for every field the test did not name, so without that fixture the suite's behaviour
 depends on whether the person running it happens to have auth turned on locally.
 """
@@ -43,7 +43,7 @@ def _hermetic_env(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
     # Deleting is not enough for the fields that reach the *network*. `get_settings()`
-    # reads `app/.env`, and `create_app()` now uses `ssm_path` from it to fetch secrets —
+    # reads the repo-root `.env`, and `create_app()` now uses `ssm_path` from it to fetch secrets —
     # so a developer with a real `.env` would have the whole suite calling AWS, turning a
     # 3-second run into a 45-second one that fails on a plane. An environment variable
     # outranks the file, so setting these empty is what actually closes the file.

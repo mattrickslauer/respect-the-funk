@@ -162,7 +162,7 @@ def poll(max_messages: int = 10) -> int:
 
 def main() -> int:
     # Same two-step as create_app: the path to the secrets is itself a setting, and on
-    # a laptop it comes from app/.env. See remixkit/bootstrap.py.
+    # a laptop it comes from the repo-root .env. See remixkit/bootstrap.py.
     if load_secrets(get_settings().ssm_path, profile=get_settings().aws_profile):
         get_settings.cache_clear()
     export_for_libs(get_settings())

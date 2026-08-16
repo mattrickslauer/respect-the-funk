@@ -48,7 +48,7 @@ def load_secrets(
     A no-op when no path is given and `RK_SSM_PATH` is unset, which is the whole
     local-development story: nothing to configure, nothing to stub.
 
-    `path` is passed explicitly by `create_app`, from settings — so `app/.env` can name
+    `path` is passed explicitly by `create_app`, from settings — so the repo-root `.env` can name
     it. Falling back to the environment keeps the deployed path unchanged, where the
     variable is set by Terraform and there is no .env at all.
 
@@ -101,7 +101,7 @@ def export_for_libs(settings) -> list[str]:
 
     `genblaze-google` resolves Vertex credentials from `GCP_PROJECT`/`GCP_LOCATION`
     itself; `providers.live_providers` reads the same names. Neither consults our
-    `Settings`, so a value that arrived via `app/.env` would be invisible to them —
+    `Settings`, so a value that arrived via the repo-root `.env` would be invisible to them —
     the same gap `ssm_path` closes for SSM, one layer further out.
 
     `setdefault`, not assignment: a real environment variable is a deliberate override

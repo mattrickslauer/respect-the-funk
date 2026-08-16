@@ -1,6 +1,6 @@
-"""Where the secrets come from, and why `app/.env` has to be able to say so.
+"""Where the secrets come from, and why the repo-root `.env` has to be able to say so.
 
-The failure this guards against is specific and was easy to hit: `app/.env` sets
+The failure this guards against is specific and was easy to hit: the repo-root `.env` sets
 `RK_STORAGE_BACKEND=b2`, which makes B2 credentials mandatory — but the variable naming
 where those credentials live could only be read from the process environment. So the
 app read half its configuration from the file and refused to start over the half it
@@ -62,7 +62,7 @@ def fake_boto(monkeypatch):
 @pytest.fixture(autouse=True)
 def _no_ambient(monkeypatch):
     # Empty rather than deleted for the RK_ names: deleting hands the field back to
-    # `app/.env`, which is the very leak conftest closes. An empty environment variable
+    # the repo-root `.env`, which is the very leak conftest closes. An empty environment variable
     # still outranks the file.
     for name in ("RK_SSM_PATH", "RK_AWS_PROFILE"):
         monkeypatch.setenv(name, "")
@@ -74,7 +74,7 @@ def _no_ambient(monkeypatch):
 
 # ------------------------------------------------------------------ the setting
 def test_ssm_path_is_a_setting_so_the_env_file_can_name_it():
-    """The whole point: `app/.env` can say where the secrets live."""
+    """The whole point: the repo-root `.env` can say where the secrets live."""
     settings = Settings(_env_file=None, ssm_path="/remixkit/prod", aws_profile="respect-the-funk")
     assert settings.ssm_path == "/remixkit/prod"
     assert settings.aws_profile == "respect-the-funk"
@@ -146,7 +146,7 @@ def test_a_placeholder_is_skipped_rather_than_loaded(monkeypatch):
 
 # ------------------------------------------------------------------ hermeticity
 def test_the_suite_cannot_reach_ssm_through_a_developers_env_file():
-    """`get_settings()` reads `app/.env`, and `create_app()` uses `ssm_path` from it to
+    """`get_settings()` reads the repo-root `.env`, and `create_app()` uses `ssm_path` from it to
     fetch secrets. Without `_hermetic_env` neutralising that, every test on a machine
     with a real `.env` would call AWS — which is slow, needs credentials, and fails
     offline. This asserts the autouse fixture actually closes it."""

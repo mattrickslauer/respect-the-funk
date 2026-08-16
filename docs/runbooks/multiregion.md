@@ -380,6 +380,37 @@ Expected: a range whose `start_key` begins with `/"aws-eu-west-1"` and whose
 > empty result. **This is why 6c comes first.** 6c is the proof; 6d is the bonus. Do not
 > rehearse the demo around 6d.
 
+### 6e. Capture it, because §9 destroys the subject
+
+Run this **before teardown**. It executes every proof above against the live throwaway
+cluster and writes a timestamped transcript to `docs/evidence/`:
+
+```bash
+apps/spindle/bin/multiregion_evidence.sh
+```
+
+The gap it closes is structural rather than clerical. §9 deletes the cluster, and from
+that moment every claim in §6 stops being checkable — what remains is somebody's
+recollection of some `psql` output. This repository's standing rests on its numbers being
+executed rather than asserted, and the one demonstration whose subject is destroyed at
+the end is the one most in need of a written record made while the subject still exists.
+
+Three properties worth knowing before it runs:
+
+- **It refuses the production cluster by ID**, not by URL spelling — `respect-the-funk`
+  is matched on `ae38b92e-…` so a pasted connection string cannot get past it. §0's
+  blast-radius gate, enforced rather than remembered.
+- **It refuses a single-region cluster.** A transcript captured against one region would
+  faithfully record the absence of the thing it claims to demonstrate, which is worse
+  than no transcript because it is citable.
+- **§6b passes by failing.** The unplaceable-country insert *must* be rejected, so that
+  proof is run separately and a *successful* insert fails the run. Every other proof
+  fails the run if it errors, and the script exits non-zero rather than leaving a
+  transcript that reads like a result.
+
+§6d's absence is recorded and does not fail the run, for the reason stated directly
+above: it is the bonus, not the proof.
+
 ---
 
 ## 7. The path this runbook does not take

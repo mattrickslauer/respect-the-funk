@@ -1,27 +1,70 @@
 # Overlay visuals
 
-Everything that goes on top of the talking-head take. Two kinds of asset, and
-they follow opposite rules:
+Everything that goes on top of the talking-head take. Three kinds of asset, and
+they follow different rules:
 
-| | **Scenes** (`scenes/`) | **Slides** (`slides/`) |
-|---|---|---|
-| What | Animations composited over the shot | Plates corner-pinned onto the monitor in frame |
-| Background | Transparent | Opaque — a monitor showing transparency is a monitor that is off |
-| Output | `.mov` (ProRes 4444, alpha) + `.webm` (VP9, alpha) | `.png` at 2560×1440 |
-| Rendered by | `render.py` | `render_slides.py` |
+| | **Scenes** (`scenes/`) | **Screen** (`screen-layer.html`) | **Slides** (`slides/`) |
+|---|---|---|---|
+| What | Animations composited over the shot | Live SQL and product screenshots, in a framed panel | Plates corner-pinned onto the monitor in frame |
+| Background | Transparent | Transparent outside the panel; the panel itself is opaque | Opaque — a monitor showing transparency is a monitor that is off |
+| Says | what the system *is* | that it is *true* | whatever specific values are needed |
+| Rendered by | `render.py`, `compose.py` | `compose.py` | `render_slides.py` |
 
 The spoken script they are cut against is `docs/submission/SHOOT_VOICEOVER.txt`.
 The shot-by-shot notes are in `docs/submission/SHOOT_SCRIPT.txt`.
 
 ```bash
-python3 render.py              # all scenes → out/
-python3 render.py 12           # just scene 12
-python3 render.py --fps 60     # for a 60p timeline
-python3 render_slides.py       # all slides → out/slides/
-python3 preview.py 12 20 29    # single frames on a grey card, for looking at
+python3 capture_sql.py         # run the proofs on the live cluster → screen/proofs.json
+python3 capture_app.py         # screenshot the deployed site → out/app/
+python3 compose.py             # the whole cut → out/edit/spindle-cut.mp4
+python3 compose.py --preview 30 45     # just that slice, for looking at
+python3 render.py 12           # one scene, standalone, as a .mov with alpha
+python3 preview.py 12 20 29    # single frames on a grey card
 ```
 
 `out/` is gitignored. A full render is a few GB and takes several minutes.
+`screen/proofs.json` is **not** gitignored: it is a transcript of what production
+answered, and re-rendering on a machine that cannot reach the cluster must still
+draw the real numbers.
+
+---
+
+## The frame: him in the middle, the diagram left, the evidence right
+
+He sits **centred** in this take. The note further down this file about leaving the
+lower-left quiet for a presenter sitting camera-left describes a different shoot and
+does not apply — frames sampled at 8s, 22s, 45s, 90s and 140s put his head and
+shoulders inside x 620–1250 at the tightest framing. So the composition is three
+columns on the thirds:
+
+```
+   x 140-560          x 620-1250          x 1260-1888
+ ┌────────────┐                          ┌────────────┐
+ │  ANIMATION │        ( him )           │  EVIDENCE  │
+ │  on a bed  │                          │  SQL/shots │
+ └────────────┘                          └────────────┘
+              ____________subtitles____________
+```
+
+**Nothing is drawn over him unless it is earning its place.** Four of the thirteen
+scenes were cut and a fifth lost its beat to a SQL result; the windows at 24.8–30.6,
+48.7–52.8, 80.6–87.8 and 137.7–144.4 are now the presenter with a bare frame. The
+last of those is deliberate: "Postgres cannot do that at any price" is the hardest
+claim in the script and it is said to camera with nothing on top of it.
+
+A scene is **full frame by default** and slides into the left column exactly when a
+panel comes up — never on a schedule of its own. `screen_cues.py` is the single list
+both halves read, because the one arrangement that ruins the frame is a panel landing
+on top of a full-frame diagram, and that is invisible until a render finishes.
+
+Two things make the shrunk scene survive, and both are needed. It sits on a **bed** —
+the same dark plate the evidence panel uses, so the frame reads as two instruments
+flanking a person rather than one panel and some debris — and its **dots are grown
+back** by `DOT_BOOST`, because the groove field draws at r=3.4 for a 1920-wide canvas
+and lands near one pixel when scaled. Strokes are already immune
+(`vector-effect: non-scaling-stroke`); the dots are not. Labels are faded out rather
+than shrunk: at 0.42 a 26px label renders around 11px, and the panel and the burned
+subtitles are both already carrying text.
 
 ---
 
@@ -46,29 +89,58 @@ catch you on, and nobody remembers them anyway.
 
 ---
 
-## The scenes
+## The cut
 
-Durations are cut to the spoken paragraphs at ~155 wpm. Total ≈ 2:56.
+Nine scenes and nine panels. `PLAN` in `compose.py` holds the first, `CUES` in
+`screen_cues.py` the second. Where a row has both, the scene is in the left column.
 
-| # | Scene | Dur | Over the line | Rank |
-|---|---|---|---|---|
-| 01 | `disappear` | 26s | "An independent label puts out a record…" → "Spindle does it." | 4 |
-| 02 | `spam` | 8s | "you're not marketing, you're spam" | 5 |
-| 03 | `subspace` | 10s | "the filters live inside the index itself" | **1** |
-| 04 | `tenant` | 8s | "one column doing our security boundary and our partition key" | 3 |
-| 05 | `pgvector` | 6s | "pgvector can do the similarity" | 6 |
-| 06 | `filling` | 10s | "the index is never finished" | 5 |
-| 07 | `fleet` | 16s | "there's no orchestrator" → "kill half the fleet" | 4 |
-| 08 | `lease` | 9s | "the name can't tell them apart. The token can." | 4 |
-| 09 | `token` | 8s | "the reply finds its own thread" | 6 |
-| 10 | `residency` | 21s | "this row is in Virginia, this one physically in Ireland" | 3 |
-| 11 | `money` | 10s | "it spends the label's money too, up to a ceiling" | 4 |
-| 12 | `replay` | 32s | "four extra words of SQL… not a copy of them. Them." | **1** |
-| 13 | `close` | 12s | "one database…" → the URL | 2 |
+| t | Scene | Panel | Over the line |
+|---|---|---|---|
+| 0–20.7 | `01-disappear` full | — | "An independent label puts out a record…" |
+| 21.0–24.5 | — | **shot** hero | "Spindle does it. Every night, for every artist." |
+| 24.8–30.6 | `02-spam` full | — | "you're not marketing, you're spam" |
+| 30.9–40.9 | `03-subspace` left | **sql** `search` | "the filters live inside the index itself" |
+| 41.0–47.9 | — | **sql** `prefix` | "that index starts with tenant_id" |
+| 48.7–52.8 | `05-pgvector` full | — | "pgvector can do the similarity" |
+| 52.9–61.5 | `06-filling` left | **sql** `memory` | "the index is never finished" |
+| 61.6–72.9 | `07-fleet` left | **sql** `bus` | "a changefeed … wakes the next one" |
+| 73.3–80.3 | `08-lease` left | **shot** send | "the name can't tell them apart. The token can." |
+| 80.6–87.8 | `09-token` full | — | "the reply finds its own thread" |
+| 88.4–105.7 | `10-residency` full | — | "this row is in Virginia, this one in Ireland" |
+| 106.1–113.1 | `11-money` full | — | "it spends the label's money, up to a ceiling" |
+| 113.3–137.1 | `12-replay` full → left | **sql** `replay` | "four extra words of SQL… not a copy of them." |
+| 137.7–144.4 | — | — | "Postgres cannot do that at any price." |
+| 145.3–154.6 | `13-close` left | **stack** | "one database doing the index, the scheduler…" |
+| 155.0–161.0 | — | **shot** hero | the URL |
+| 161.3–166.2 | — | **card** endcard | *(past the take — see below)* |
 
-**If you only build three, build 03, 12 and 13.** 03 is the architecture claim,
-12 is the thing nothing else can do, 13 is the call to action. Everything else is
-texture and the film survives without it.
+**The end card runs past the take.** `BaseLayer.mov` is 161.2s; `compose.py` appends
+`TITLE_SECS` of black with `tpad` and the card plays on it, so it never covers the
+face on the line that asks for the click. Three consequences, all of which broke
+something the first time:
+
+* the overlay sequences must be rendered to `dur + TITLE_SECS`, or ffmpeg's image2
+  demuxer ends early and takes the card with it;
+* the voice needs `apad`, or `amix=duration=first` ends the mix when the take does
+  and the card plays in silence;
+* `screen-layer.html` derives `DUR` from the cue sheet. `Scene.define` clamps
+  `seek(t)` to `DUR`, so a hardcoded 161.2 silently froze the layer on the old last
+  frame — the card rendered as the closing screenshot, for five seconds.
+
+**Cut, and why.** `04-tenant` is the one scene dropped for an editorial reason: its
+whole content is that a column name comes first, and the `prefix` proof prints
+`1 | tenant_id` straight off the cluster. Where the database states the claim in its
+own words, an animation restating it is the weaker of the two and both at once is
+noise. `12-replay` lost its last two paragraphs so the "Postgres cannot do that"
+line plays bare, and `13-close` lost the final paragraph for a mechanical reason
+worth remembering: **a scene whose settled state is made only of type renders as an
+empty box in the left column**, because type is faded out there. Carrying 13 to the
+end put a bordered, empty plate on the last shot of the film. Check the tail of any
+scene before pairing it with a panel.
+
+**If you only keep three, keep 03, 12 and the `replay` panel.** 03 is the
+architecture claim, 12 is the thing nothing else can do, and `replay` is the only
+asset in the whole film that a competitor cannot also produce.
 
 A few scenes worth knowing the intent of, because the intent is not recoverable
 from watching them once:
@@ -92,6 +164,66 @@ from watching them once:
   Two charts invite "so you stored a copy", which is the one reading this beat
   cannot leave available. The ghost bars behind show today's values, so what
   comes back is visibly *different*, not merely redrawn.
+
+---
+
+## The evidence panel
+
+`capture_sql.py` runs each claim the voiceover makes as SQL against `$DATABASE_URL`
+and records **what actually came back**. `screen-layer.html` draws it and never
+touches the database. The seam is `screen/proofs.json`, so the panel can be
+re-typeset all night without re-querying production.
+
+| slug | shows | why it is the proof and not a picture of one |
+|---|---|---|
+| `memory` | 43,194 counterparties · 111,212 facts · 22,057 embedded chunks · 122,129 agent runs | the accumulation is the product |
+| `prefix` | `chunk_semantic` = (tenant_id, model, embedding) | the security boundary *is* the partition key |
+| `search` | `• vector search … prefix spans: [/tenant/model - …]` | the filters are served **inside** the index; if the planner ever degrades this to a filter over a scan the capture fails rather than filming a lie |
+| `bus` | a sinkless changefeed emitting a row written while it listened | the mechanism, working, in one shot |
+| `replay` | a value overwritten, then read back at the ledger's stored HLC | the one thing in the film nothing else can do |
+
+**The typing is not decoration.** A still of a result proves a result exists.
+Watching the statement land and the rows arrive after it is the difference between
+"we ran this" and "we wrote this down", which is exactly what the judging guidance is
+asking for when it says to show memory in action rather than narrate it. The clock is
+still a pure function of `t`, for the same reason everything else here is.
+
+### Three things this deliberately does not show
+
+**Residency.** `SHOW REGIONS` on production returns **one** region. The three-region
+demonstration ran on the throwaway cluster `docs/runbooks/multiregion.md` §9 deletes
+on purpose, and `docs/evidence/` does not exist, so there is no transcript either.
+That passage keeps its animation and gets no panel. A single-region `SHOW REGIONS`
+under a line about Ireland would disprove the narration rather than support it.
+
+**A resident changefeed job.** `SHOW CHANGEFEED JOBS` returns zero rows — feeds are
+opened per run. `bus` opens a real one and writes into it instead.
+
+**The console.** The screens behind the sign-in wall are the better footage and
+`capture_app.py --cookie` exists to film them. Sign-in is currently down:
+`POST /signin/code` returns 502 with `AccessDenied … SendEmail`, and an emailed code
+is the only credential this product has by design. The two `shot` cues point at the
+public landing page, which needs no account and is genuinely the running product.
+When sign-in is restored, re-capture and swap the two refs in `screen_cues.py`.
+
+### The GC window is load-bearing
+
+`replay` cannot be filmed against decisions already in the ledger. The cluster runs
+`gc.ttlseconds = 4500`, so any timestamp older than 75 minutes is past the GC
+threshold and `AS OF SYSTEM TIME` fails outright:
+
+```
+batch timestamp … must be after replica GC threshold
+```
+
+That is why `replay` writes, records an instant, overwrites and reads back **inside
+one run**. Splitting it across two invocations reintroduces exactly the failure it
+exists to demonstrate the absence of. Re-run the whole proof, never half of it.
+
+Everything it writes lands on production — a proof against a scratch database proves
+nothing about the system of record — confined to `party_fact` and `decision`, marked
+`written_by='capture_sql'`, and attached to **no party**, so no row can be read as a
+claim about a real company. `--clean` removes exactly what the marker matches.
 
 ---
 

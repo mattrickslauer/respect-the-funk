@@ -231,7 +231,9 @@ and they come back. Not a copy of them.
 
 54
 00:02:12,580 --> 00:02:16,530
-Then it re-runs the valuation against those old numbers and checks it still gets the
+Then it re-runs the valuation
+against those old numbers and
+checks it still gets the
 
 55
 00:02:16,569 --> 00:02:17,469

@@ -92,7 +92,48 @@ def wrap(s: str) -> str:
             continue
         if abs(len(a) - len(b)) < err:
             best, err = (a, b), abs(len(a) - len(b))
-    return "\\N".join(best) if best else s
+    if best:
+        return "\\N".join(best)
+
+    # No two-line split fits, so wrap greedily into as many lines as it takes.
+    #
+    # Returning `s` here was a silent overflow and it shipped: the style sets
+    # `WrapStyle: 2`, which means libass does NOT wrap for us and honours only an
+    # explicit `\N`. One 85-character card — "Then it re-runs the valuation against
+    # those old numbers and checks it still gets the same answer." — rendered as a
+    # single line running off BOTH edges of the frame, over the most important
+    # passage in the film. Three lines is worse typography than two and much better
+    # than a caption with its ends cut off.
+    # Balanced, not greedy. Greedy packing fills each line to 42 and leaves whatever
+    # is left over alone on the last one — the first version of this fallback put the
+    # single word "the" on a line of its own under two full ones, which looks like a
+    # rendering fault rather than a caption.
+    def pack(width: int) -> list[str]:
+        out, cur = [], ""
+        for w in words:
+            if cur and len(cur) + 1 + len(w) > width:
+                out.append(cur)
+                cur = w
+            else:
+                cur = f"{cur} {w}".strip()
+        if cur:
+            out.append(cur)
+        return out
+
+    # Take the fewest lines the caption can fit in, then squeeze the width down as
+    # far as it goes WITHOUT needing another line. That is what balances them.
+    #
+    # Driving the width from `len(s)/n` instead looks equivalent and is not: the
+    # width keeps shrinking, the line count keeps rising to meet it, and the loop
+    # happily settles on one word per line. It produced a fifteen-line caption here.
+    n = len(pack(MAX_CHARS))
+    best = pack(MAX_CHARS)
+    for w in range(MAX_CHARS - 1, 0, -1):
+        trial = pack(w)
+        if len(trial) != n:
+            break
+        best = trial
+    return "\\N".join(best)
 
 
 def ts_ass(t: float) -> str:

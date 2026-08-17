@@ -1,0 +1,81 @@
+{
+  "captured_at": "2026-08-17T03:14:58Z",
+  "cluster": "postgresql://respect-the-funk-31317.j77.aws-us-east-1.cockroachlabs.cloud:26257/defaultdb",
+  "proofs": [
+    {
+      "slug": "memory",
+      "caption": "the memory, right now",
+      "steps": [
+        {
+          "sql": "SELECT\n  (SELECT count(*) FROM party)          AS counterparties,\n  (SELECT count(*) FROM party_fact)     AS facts,\n  (SELECT count(*) FROM party_chunk\n     WHERE embedding IS NOT NULL)       AS embedded,\n  (SELECT count(*) FROM agent_run)      AS agent_runs;",
+          "out": " counterparties | facts  | embedded | agent_runs \n----------------+--------+----------+------------\n          43194 | 111212 |    22057 |     122129\n(1 row)",
+          "note": null
+        }
+      ]
+    },
+    {
+      "slug": "prefix",
+      "caption": "one column, two jobs",
+      "steps": [
+        {
+          "sql": "SELECT seq_in_index, column_name\n  FROM [SHOW INDEXES FROM party_chunk]\n WHERE index_name = 'chunk_semantic'\n ORDER BY seq_in_index;",
+          "out": " seq_in_index | column_name \n--------------+-------------\n            1 | tenant_id\n            2 | model\n            3 | embedding\n            4 | id\n(4 rows)",
+          "note": null
+        }
+      ]
+    },
+    {
+      "slug": "search",
+      "caption": "the filters are inside the index",
+      "steps": [
+        {
+          "sql": "EXPLAIN\nSELECT id, document_id, ordinal\n  FROM party_chunk\n WHERE tenant_id = :tenant\n   AND model     = :model\n ORDER BY embedding <=> :query_vector\n LIMIT 10;",
+          "out": "   \u2514\u2500\u2500 \u2022 vector search\n         table: party_chunk@chunk_semantic\n         target count: 10\n         prefix spans: [/'<tenant>'/'<model>' - /'<tenant>'/'<model>']\n(18 rows)",
+          "note": "prefix spans pinned to tenant + model"
+        }
+      ]
+    },
+    {
+      "slug": "bus",
+      "caption": "the write wakes the next agent",
+      "steps": [
+        {
+          "sql": "CREATE CHANGEFEED FOR TABLE party_fact\n  WITH format = 'json', envelope = 'wrapped';",
+          "out": "",
+          "note": "sinkless \u2014 the feed streams into this session"
+        },
+        {
+          "sql": "INSERT INTO party_fact\n  (id, tenant_id, dimension, value_text,\n   provenance, source, written_by, model, status)\nVALUES\n  ('9cd80152-7c74-4ae7-b3af-d86d75882e29',\n   :tenant, 'demo.capture',\n   'a fact an agent just learned',\n   'asserted', 'capture_sql.py', 'capture_sql',\n   'none', 'live');",
+          "out": "INSERT 0 1",
+          "note": "an agent stores what it learned"
+        },
+        {
+          "sql": "-- the feed emits it, with no orchestrator",
+          "out": "party_fact\n{\n \"after\": {\n  \"dimension\": \"demo.capture\",\n  \"value_text\": \"a fact an agent just learned\",\n  \"provenance\": \"asserted\",\n  \"written_by\": \"capture_sql\"\n }\n}",
+          "note": null
+        }
+      ]
+    },
+    {
+      "slug": "replay",
+      "caption": "pointed at the instant it decided",
+      "steps": [
+        {
+          "sql": "SELECT at_hlc, summary\n  FROM decision\n WHERE kind = 'budget_increase'\n ORDER BY at_wall DESC LIMIT 1;",
+          "out": "             at_hlc             |           summary           \n--------------------------------+-----------------------------\n 1786935669393556803.0000000000 | Put more behind this record\n(1 row)",
+          "note": "the ledger stored a coordinate"
+        },
+        {
+          "sql": "SELECT value_text\n  FROM party_fact\n WHERE id = 'ec1101ff\u2026';",
+          "out": "        value_text        \n--------------------------\n weekly rotation, 9 spins\n(1 row)",
+          "note": "the metric has moved since"
+        },
+        {
+          "sql": "SELECT value_text\n  FROM party_fact\n  AS OF SYSTEM TIME '1786935669393556803.0000000000'\n WHERE id = 'ec1101ff\u2026';",
+          "out": "        value_text        \n--------------------------\n weekly rotation, 2 spins\n(1 row)",
+          "note": "four extra words \u2014 not a copy of them"
+        }
+      ]
+    }
+  ]
+}

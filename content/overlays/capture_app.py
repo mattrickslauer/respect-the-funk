@@ -95,15 +95,25 @@ def main() -> int:
     ap.add_argument("--url", default="https://spindle.mattrickslauer.com/")
     ap.add_argument("--cookie", help="rtf_session token, for console screens")
     ap.add_argument("--steps", type=int, default=24)
+    # A 1920-wide page scaled into the 628px panel puts its body type at a third of
+    # size, which is a picture of a UI rather than a readable one — the judging
+    # guidance is explicit that a judge has to be able to READ the screen. Capturing
+    # at a narrow viewport makes the page lay itself out for a small screen, so the
+    # type is proportionally twice the size once it lands in the panel; the doubled
+    # device scale factor keeps it sharp on the way down.
+    ap.add_argument("--panel", action="store_true",
+                    help="capture at panel proportions (960x640 @2x), not 1920x1080")
     args = ap.parse_args()
+
+    w, h, dsf = (960, 640, 2) if args.panel else (W, H, 1)
 
     OUT.mkdir(parents=True, exist_ok=True)
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as pw:
         b = pw.chromium.launch(args=["--force-color-profile=srgb"])
-        ctx = b.new_context(viewport={"width": W, "height": H},
-                            device_scale_factor=1)
+        ctx = b.new_context(viewport={"width": w, "height": h},
+                            device_scale_factor=dsf)
         if args.cookie:
             from urllib.parse import urlparse
             host = urlparse(args.url).hostname or "127.0.0.1"

@@ -1,0 +1,8 @@
+account tenant re-point, for the submission video
+
+anthonybtedesco@gmail.com
+  before: b24916e8-696f-425b-b5e8-4d2cdf26e646  (tenant "anthonybtedesco", zero rows)
+  after:  1f9e6dd3-ef33-4962-bc63-f0f535c24996  (tenant "Respect the Funk")
+
+changed 2026-08-16 for console capture; revert with:
+  UPDATE account SET tenant_id='b24916e8-696f-425b-b5e8-4d2cdf26e646' WHERE email='anthonybtedesco@gmail.com';

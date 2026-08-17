@@ -44,6 +44,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import screen_cues                                          # noqa: E402
+
 HERE = Path(__file__).resolve().parent
 SCENES = HERE / "scenes"
 EDIT = HERE / "out" / "edit"
@@ -53,26 +56,194 @@ W, H = 1920, 1080
 
 # Which paragraphs each scene is cut against. The paragraph indices are the ones
 # align.py prints, which are the blank-line-separated blocks of the voiceover.
+#
+# ## What is cut, and what came back
+#
+# The brief was "don't always have overlay — only when necessary to showcase
+# something". A first pass took that to mean dropping the four scenes the pipeline
+# README ranks lowest, which left four windows of unobstructed presenter. Three of
+# those cuts were wrong and are reversed: **02-spam, 05-pgvector and 09-token are
+# back**. They are the scenes with the best sound cues on them — the pgvector check
+# lands on its own effect — and losing them cost more than the bare frames gained.
+#
+# What stays cut is the second half of 12-replay, which leaves **137.7-144.4** as the
+# one window with nothing drawn over him. That is the right one to keep: "No audit
+# table. No event log. No versioned copy of anything. Postgres cannot do that at any
+# price" is the hardest claim in the script, and it is said to camera with the frame
+# otherwise empty.
+#
+# None of the three restored scenes has a panel beside it, so all three play full
+# frame at their authored size, with their labels and their effects intact.
+#
+# **04-tenant was cut for a different reason.** Its whole content is that a column
+# name comes first, and `capture_sql.py`'s `prefix` proof prints
+#
+#     seq_in_index | column_name
+#     -------------+------------
+#                1 | tenant_id
+#
+# straight off the cluster. Where the database states the claim in its own words, an
+# animation restating it is the weaker of the two and both at once is noise.
 PLAN: list[tuple[str, list[int]]] = [
-    ("01-disappear", [0, 1, 2]),
+    ("01-disappear", [0, 1]),
     ("02-spam",      [3]),
-    ("03-subspace",  [4]),
-    ("04-tenant",    [5]),
     ("05-pgvector",  [6]),
+    ("03-subspace",  [4]),
     ("06-filling",   [7]),
     ("07-fleet",     [8, 9]),
     ("08-lease",     [10]),
     ("09-token",     [11]),
     ("10-residency", [12, 13]),
     ("11-money",     [14]),
-    ("12-replay",    [15, 16, 17, 18, 19]),
-    ("13-close",     [20, 21]),
+    ("12-replay",    [15, 16, 17]),
+    # Paragraph 21 — the URL, the last thing said — is deliberately NOT in this
+    # window. 13-close settles into a state made only of type, and type is faded out
+    # in the left column, so carrying it to the end of the film put an EMPTY bordered
+    # box in the left third under the closing line. Ending at paragraph 20 leaves the
+    # last six seconds to him and the live site, which is the better close anyway.
+    ("13-close",     [20]),
 ]
+
+# ---------------------------------------------------------------------------
+# Where a scene sits, which is not a property of the scene
+#
+# He is centred in this take. Frames sampled at 8s, 22s, 45s, 90s and 140s put his
+# head and shoulders inside x 620-1250 at the tightest framing, so the composition is
+# three columns: animation left of 660, him in the middle, evidence right of 1260.
+#
+# A scene is full-frame by default and moves into the left column exactly when a
+# screen panel is up — never on a schedule of its own. `screen_cues.py` is the single
+# list both halves read, because the one arrangement that ruins the frame is a panel
+# landing on top of a full-frame diagram, and that is invisible until a render ends.
+# ---------------------------------------------------------------------------
+# A scene shrunk into a corner and left to fend for itself disappears — the first
+# preview of this put 03-subspace over a patterned wall at a third of size and it
+# read as three stray purple marks. Two things fix it, and both are needed:
+#
+#   * a BED. The same dark rounded plate the evidence panel sits on, mirrored on the
+#     left, so the frame is two instruments flanking a person rather than one panel
+#     and some debris. It also gives the figure a ground with known contrast, which
+#     is the thing scene.css says it can never assume.
+#   * bigger DOTS. The groove field draws at r=3.4 for a 1920-wide canvas; scaled
+#     with the scene it lands near one pixel and vanishes under h.264. Strokes are
+#     already immune (`vector-effect: non-scaling-stroke`), the dots are not, so
+#     they are grown back by hand.
+LEFT_CX, LEFT_CY = 350, 465   # centre of the animation column
+LEFT_SCALE = 0.42
+BED = (420, 420)              # w, h of the plate behind it
+DOT_BOOST = 2.2               # what a dot's radius is multiplied by at full left
+RAMP = 0.55                   # seconds a scene takes to move aside, and to come back
 
 # A graphic that snaps on exactly as the first word lands reads as a mistake. It
 # comes up just under the breath before, and holds just past the last word.
 LEAD, TAIL = 0.35, 0.45
 FADE = 0.30                   # seconds of alpha ramp at each edge
+
+
+def left_amount(t: float) -> float:
+    """0 = full frame, 1 = parked in the left column, smoothed at both edges.
+
+    A hard switch reads as a glitch, and a scene that slides aside while the panel
+    is still fading in reads as the panel having pushed it — which is exactly the
+    causality the frame wants a viewer to infer.
+    """
+    best = 0.0
+    for s, e, *_ in screen_cues.CUES:
+        a, b = s - screen_cues.FADE, e + screen_cues.FADE
+        if t < a - RAMP or t > b + RAMP:
+            continue
+        if t < a:
+            v = (t - (a - RAMP)) / RAMP
+        elif t > b:
+            v = 1.0 - (t - b) / RAMP
+        else:
+            v = 1.0
+        best = max(best, min(1.0, max(0.0, v)))
+    # smoothstep, so it eases out of and into rest rather than arriving at speed
+    return best * best * (3 - 2 * best)
+
+
+def place(u: float) -> tuple[float, float, float]:
+    """The SVG transform for a scene that is `u` of the way into the left column."""
+    s = 1.0 + (LEFT_SCALE - 1.0) * u
+    cx = 960 + (LEFT_CX - 960) * u
+    cy = 540 + (LEFT_CY - 540) * u
+    return cx - 960 * s, cy - 540 * s, s
+
+
+# Injected into the scene page rather than added to nine scene files: placement is a
+# property of the edit, not of any scene, and a scene should stay renderable on its
+# own at full frame.
+PLACE_JS = """([a, tx, ty, sc, lu, cx, cy, bw, bh, boost]) => {
+    const svg = document.getElementById('svg');
+    const st  = document.getElementById('stage');
+    st.style.opacity = a;
+    st.setAttribute('transform', `translate(${tx} ${ty}) scale(${sc})`);
+
+    // the bed, behind everything, created once
+    let bed = document.getElementById('leftbed');
+    if (!bed) {
+        bed = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        bed.setAttribute('id', 'leftbed');
+        bed.setAttribute('rx', 14);
+        bed.setAttribute('fill', '#0b0a09');
+        bed.setAttribute('stroke', '#d97f4a');
+        bed.setAttribute('stroke-width', 3);
+        svg.insertBefore(bed, st);
+    }
+    bed.setAttribute('x', cx - bw / 2);
+    bed.setAttribute('y', cy - bh / 2);
+    bed.setAttribute('width', bw);
+    bed.setAttribute('height', bh);
+    // Never fully opaque: the wall behind stays faintly readable, which keeps the
+    // plate looking like it is in the room instead of pasted over it.
+    bed.setAttribute('opacity', (lu * 0.88).toFixed(4));
+
+    // At a third of full size a 26px label renders around 8px and is illegible, so
+    // the words go rather than shrink — the panel on the right and the burned
+    // subtitles are both carrying text here, and a third illegible layer of it is
+    // only noise. The figure still reads.
+    const o = (1 - lu).toFixed(4);
+    for (const n of document.querySelectorAll('.lbl')) n.style.opacity = o;
+
+    for (const n of document.querySelectorAll('.dot')) {
+        if (!n.dataset.r0) n.dataset.r0 = n.getAttribute('r') || '3.4';
+        n.style.r = (parseFloat(n.dataset.r0) * (1 + (boost - 1) * lu)).toFixed(2) + 'px';
+    }
+}"""
+
+
+def place_args(a: float, t: float) -> list:
+    lu = left_amount(t)
+    tx, ty, sc = place(lu)
+    return [round(a, 4), round(tx, 2), round(ty, 2), round(sc, 4), round(lu, 4),
+            LEFT_CX, LEFT_CY, BED[0], BED[1], DOT_BOOST]
+
+
+def write_screen_inputs() -> None:
+    """Hand the browser the cue sheet and the captured proofs.
+
+    Both are emitted as classic scripts rather than fetched: a page opened from
+    `file://` cannot XHR a sibling file, and finding that out costs a confusing
+    half hour every time.
+    """
+    d = HERE / "out" / "screen"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "cues.js").write_text(
+        "window.CUES = " + json.dumps(
+            {"fade": screen_cues.FADE, "cues": screen_cues.CUES,
+             "plates": screen_cues.PLATES}, indent=1) + ";\n")
+    src = HERE / "screen" / "proofs.json"
+    proofs = json.loads(src.read_text()) if src.exists() else {"proofs": []}
+    (d / "proofs.js").write_text(
+        "window.PROOFS = " + json.dumps(proofs, indent=1) + ";\n")
+
+    have = {p["slug"] for p in proofs["proofs"]}
+    want = set(screen_cues.slugs())
+    if want - have:
+        print(f"  NOTE: cue sheet wants proofs not yet captured: "
+              f"{', '.join(sorted(want - have))} — run capture_sql.py",
+              file=sys.stderr)
 
 
 def probe_duration(p: Path) -> float:
@@ -125,9 +296,13 @@ def build_frames(align: list, total_frames: int) -> Path:
                 # edge fade, applied to the whole stage so no scene needs to know
                 sec = k / FPS
                 a = min(1.0, sec / FADE, max(0.0, (span - sec)) / FADE)
-                pg.evaluate("(a) => { document.getElementById('stage').style.opacity = a; }",
-                            round(a, 4))
                 idx = f0 + k
+
+                # Placement is on the TAKE's clock, not the scene's — a scene is
+                # stretched onto its paragraphs, but it has to move aside at the
+                # instant the panel actually appears.
+                pg.evaluate(PLACE_JS, place_args(a, idx / FPS))
+
                 if idx >= total_frames:
                     break
                 pg.screenshot(path=str(frames / f"{idx:05d}.png"), omit_background=True)
@@ -152,19 +327,21 @@ def build_frames(align: list, total_frames: int) -> Path:
 
 
 def build_app_layer(total_frames: int) -> Path | None:
-    """The real product, inset over the take, as its own frame sequence.
+    """The evidence, in the right third, as its own frame sequence.
 
     Unlike every other scene this one is NOT fitted to a paragraph — it owns the
-    whole timeline and its cue times are absolute, because a screenshot wants to
-    appear at the moment the words and the picture agree, which is not always a
-    paragraph edge.
+    whole timeline and its cue times are absolute, because a result wants to appear
+    at the moment the words and the picture agree, which is not always a paragraph
+    edge.
 
     Kept as a separate sequence rather than drawn into the graphics frames so the
-    two can be re-rendered independently; re-capturing the app is cheap and
-    re-rendering thirteen scenes is not.
+    two can be re-rendered independently. Re-typesetting a terminal is cheap;
+    re-rendering nine scenes is not, and during an edit the panel is the half that
+    changes.
     """
-    scene = SCENES / "app-layer.html"
-    if not scene.exists() or not (HERE / "out" / "app").exists():
+    write_screen_inputs()
+    scene = SCENES / "screen-layer.html"
+    if not scene.exists():
         return None
     frames = EDIT / "appframes"
     if frames.exists():
@@ -179,14 +356,33 @@ def build_app_layer(total_frames: int) -> Path | None:
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.goto(scene.as_uri())
         pg.wait_for_function("window.SCENE_READY === true", timeout=20000)
+
+        # One transparent plate, reused for every frame with no panel up. The panels
+        # occupy about a third of the running time, so screenshotting the other two
+        # thirds would be several thousand identical empty PNGs and most of the
+        # build's wall clock.
+        blank = EDIT / "blank.png"
+        if not blank.exists():
+            pg2 = b.new_page(viewport={"width": W, "height": H}, device_scale_factor=1)
+            pg2.goto("about:blank")
+            pg2.screenshot(path=str(blank), omit_background=True)
+            pg2.close()
+
+        drawn = 0
         for i in range(total_frames):
-            pg.evaluate("(t) => window.seek(t)", i / FPS)
-            pg.screenshot(path=str(frames / f"{i:05d}.png"), omit_background=True)
+            t = i / FPS
+            p = frames / f"{i:05d}.png"
+            if not screen_cues.active(t):
+                shutil.copyfile(blank, p)
+                continue
+            pg.evaluate("(t) => window.seek(t)", t)
+            pg.screenshot(path=str(p), omit_background=True)
+            drawn += 1
         b.close()
         if errs:
-            print("APP LAYER ERRORS:", *errs, sep="\n  ", file=sys.stderr)
+            print("SCREEN LAYER ERRORS:", *errs, sep="\n  ", file=sys.stderr)
             raise SystemExit(1)
-    print(f"  app layer: {total_frames} frames")
+    print(f"  screen layer: {drawn} drawn, {total_frames - drawn} transparent")
     return frames
 
 
@@ -236,12 +432,20 @@ MUSIC_DB = -17.0        # before ducking. -21 read as too far back; the sidechai
 SUBS = EDIT / "subs.ass"
 
 
-def audio_chain(with_sfx: bool, with_music: bool,
-                first_input: int) -> tuple[str, list[str]]:
-    """The audio half of the filtergraph, plus any extra inputs it needs."""
+def audio_chain(with_sfx: bool, with_music: bool, first_input: int,
+                tail: float = 0.0, end: float = 0.0) -> tuple[str, list[str]]:
+    """The audio half of the filtergraph, plus any extra inputs it needs.
+
+    `tail` is the silence appended to the voice so the mix runs as long as the
+    picture does. Without it `amix=duration=first` ends the moment the take does and
+    the end card plays in silence with the music cut off mid-phrase.
+    """
     # 40Hz rather than 65: the effects carry real sub-bass now and a 65Hz corner
     # was eating the bottom of every thunk and drop along with the room rumble.
-    voice = f"[0:a]volume={GAIN_DB}dB,highpass=f=40:p=2[voice]"
+    voice = f"[0:a]volume={GAIN_DB}dB,highpass=f=40:p=2"
+    if tail:
+        voice += f",apad=pad_dur={tail}"
+    voice += "[voice]"
 
     # The limiter goes AFTER the mix, not on the voice. Dialogue peaks at -1.7
     # and the bed at -6; summed, those can cross zero, and a limiter upstream of
@@ -266,9 +470,13 @@ def audio_chain(with_sfx: bool, with_music: bool,
         # A dip in the presence band as well as the gain: taking 1.9kHz down by
         # 4 dB clears the consonants that decide whether a word is legible, and
         # costs the music almost nothing anyone notices.
+        # The fade-out is pinned to the END OF THE FILM, not to a number typed once.
+        # It used to be `st=153:d=6`, which was the end of the take; with the card
+        # appended that fade landed eight seconds early and the card ran dry.
+        fo = max(4.0, (end or 159.0) - 4.5)
         parts.append(
             f"[{idx}:a]volume={MUSIC_DB}dB,equalizer=f=1900:t=q:w=1.7:g=-4,"
-            f"afade=t=in:st=0:d=4,afade=t=out:st=153:d=6[musicraw]")
+            f"afade=t=in:st=0:d=4,afade=t=out:st={fo:.2f}:d=4.5[musicraw]")
         # Ducking is what buys "prioritise legibility of words". 6:1 above a low
         # threshold with a slow release so it breathes back between sentences
         # rather than pumping on every syllable.
@@ -295,13 +503,25 @@ def audio_chain(with_sfx: bool, with_music: bool,
 
 def encode(frames: Path, out: Path, clip: tuple[float, float] | None,
            grade: bool = True, sfx: bool = True, master: bool = False,
-           app: Path | None = None, music: bool = True, subs: bool = True) -> None:
+           app: Path | None = None, music: bool = True, subs: bool = True,
+           base_secs: float = 0.0) -> None:
     pre = ["-ss", str(clip[0]), "-to", str(clip[1])] if clip else []
-    achain, extra = audio_chain(sfx, music, 3 if app else 2)
+    # A --preview slice keeps the take's own length; only a full render grows a tail.
+    tail = 0.0 if clip else screen_cues.TITLE_SECS
+    achain, extra = audio_chain(sfx, music, 3 if app else 2,
+                                tail=tail, end=base_secs + tail)
 
     # 10-bit through the grade so the contrast curve has somewhere to put the
     # values it moves; an 8-bit path bands visibly in the wall behind him.
-    vhead = f"[0:v]format=yuv444p10le,{GRADE}[g];" if grade else "[0:v]null[g];"
+    #
+    # `tpad` then adds black past the last frame of the take, which is the ground the
+    # end card plays on. Appending it here rather than concatenating a second file
+    # afterwards keeps the promise the rest of this pipeline makes: nothing ever reads
+    # its own output, so the card costs no extra generation of h.264 on the picture.
+    vhead = f"[0:v]format=yuv444p10le,{GRADE}" if grade else "[0:v]null"
+    if not clip:
+        vhead += f",tpad=stop_mode=add:stop_duration={screen_cues.TITLE_SECS}:color=black"
+    vhead += "[g];"
 
     # The app layer sits ABOVE the graphics: a screenshot of the product is the
     # literal thing, and an abstract diagram drawn on top of it would be arguing
@@ -365,11 +585,11 @@ def main() -> int:
                     help="ProRes 422 HQ + 24-bit PCM instead of h264/aac")
     ap.add_argument("--no-music", action="store_true")
     ap.add_argument("--no-subs", action="store_true")
-    # Opt-in, not opt-out: the inset screenshots of the live site were cut from
-    # the edit. The layer and its capture script stay in the tree because the
-    # footage is real and cheap to re-enable, but a plain render does not use it.
-    ap.add_argument("--app", action="store_true",
-                    help="inset live-site screenshots over the take (off by default)")
+    # On by default now, and the reason is the whole point of this edit: the film
+    # asserts a series of things about CockroachDB, and the panel is where it shows
+    # them being true. A render without it is the old cut.
+    ap.add_argument("--no-screen", action="store_true",
+                    help="drop the evidence panel — animations and take only")
     ap.add_argument("--skip-app-frames", action="store_true")
     args = ap.parse_args()
 
@@ -383,8 +603,12 @@ def main() -> int:
 
     align = json.loads(apath.read_text())
     dur = probe_duration(BASE)
-    total = int(round(dur * FPS))
-    print(f"base {dur:.2f}s · {total} frames @ {FPS}fps")
+    # The film runs past the take: `encode` appends black for the end card, and both
+    # overlay sequences have to be long enough to cover it or ffmpeg's image2 demuxer
+    # stops early and takes the card with it.
+    total = int(round((dur + screen_cues.TITLE_SECS) * FPS))
+    print(f"base {dur:.2f}s + {screen_cues.TITLE_SECS:.1f}s card · "
+          f"{total} frames @ {FPS}fps")
 
     frames = EDIT / "frames"
     if not args.skip_frames:
@@ -394,7 +618,7 @@ def main() -> int:
         return 1
 
     app = None
-    if args.app:
+    if not args.no_screen:
         appdir = EDIT / "appframes"
         if args.skip_app_frames and appdir.exists():
             app = appdir
@@ -407,7 +631,8 @@ def main() -> int:
     out = EDIT / f"{name}.{ext}"
     encode(frames, out, clip,
            grade=not args.no_grade, sfx=not args.no_sfx, master=args.master,
-           app=app, music=not args.no_music, subs=not args.no_subs)
+           app=app, music=not args.no_music, subs=not args.no_subs,
+           base_secs=dur)
     print(f"\n{out.relative_to(HERE)}  {out.stat().st_size / 1e6:.0f} MB")
     return 0
 

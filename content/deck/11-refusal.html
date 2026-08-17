@@ -1,0 +1,76 @@
+<!doctype html><meta charset=utf-8><title>spindle — the refusal</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>what happens when it cannot answer</span>
+    <span class=sp></span>
+    <span class=no>11 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>the honest failure</div>
+    <h1>The past is not kept forever. <span class=lo>So it says so.</span></h1>
+  </div>
+
+  <div class=fig>
+    <svg viewBox="0 0 2176 780" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=pt>It can say &ldquo;I cannot justify this&rdquo; &mdash;</span>
+    <span class=hot>worth more than always having an answer.</span>
+    <span class=sp></span>
+    <span class=tag>no quiet fallback</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('s'), D = Deck;
+  var EDGE = 880, Y = 300;
+
+  // Time runs left to right, oldest to now. The band is what can still be
+  // recovered; everything left of the edge is genuinely gone, and drawing it as
+  // empty rather than as a greyed-out copy is the point of the slide.
+  D.el('rect', { x: EDGE, y: Y - 62, width: 1180, height: 124, rx: 8,
+                 fill: 'rgba(217,127,74,.10)', stroke: 'var(--phosphor)', 'stroke-width': 2 }, svg);
+  D.el('path', { d: 'M120 ' + Y + 'H2060', class: 'wire rule' }, svg);
+  D.el('path', { d: 'M' + EDGE + ' ' + (Y - 96) + 'V' + (Y + 96), class: 'wire fat' }, svg);
+
+  D.text(svg, 120, Y - 110, 'OLDER THAN WE KEEP', 't-lbl');
+  D.text(svg, 120, Y - 70, 'the versions are collected; nothing', 't-mono');
+  D.text(svg, 120, Y - 34, 'is standing in for them', 't-mono');
+
+  D.text(svg, EDGE + 34, Y - 110, 'STILL RECOVERABLE', 't-lbl on');
+  D.text(svg, 2060, Y - 110, 'NOW', 't-lbl on', 'end');
+  D.el('circle', { cx: 2060, cy: Y, r: 12, fill: 'var(--bright)' }, svg);
+
+  // Two questions, same shape, different answers.
+  [{ x: 470, ok: false }, { x: 1500, ok: true }].forEach(function (q) {
+    D.el('circle', { cx: q.x, cy: Y, r: 14, fill: 'var(--ground)',
+                     stroke: q.ok ? 'var(--carrier)' : 'var(--cut)', 'stroke-width': 4 }, svg);
+    D.arrow(svg, q.x, Y + 26, q.x, Y + 128, 'wire ' + (q.ok ? 'good' : 'bad'));
+  });
+
+  // The good case.
+  D.el('rect', { x: 1240, y: 452, width: 820, height: 168, rx: 14,
+                 fill: 'var(--panel)', stroke: 'var(--carrier)', 'stroke-width': 3 }, svg);
+  D.text(svg, 1276, 512, 'IT ANSWERS', 't-lbl gd');
+  D.text(svg, 1276, 562, 'the shortlist as it stood,', 't-val');
+  D.text(svg, 1276, 600, 'and the reasoning re-run against it', 't-mono');
+
+  // The refusal, in its own words.
+  D.el('rect', { x: 120, y: 452, width: 900, height: 168, rx: 14,
+                 fill: 'rgba(240,67,47,.07)', stroke: 'var(--cut)', 'stroke-width': 3 }, svg);
+  D.text(svg, 156, 512, 'IT REFUSES', 't-lbl bd');
+  D.text(svg, 156, 562, 'the history is gone —', 't-val');
+  D.text(svg, 156, 600, 'and it says that, rather than improvising', 't-mono');
+
+  // The thing it will not do, drawn as the road not taken.
+  D.el('rect', { x: 120, y: 668, width: 900, height: 96, rx: 14,
+                 fill: 'transparent', stroke: 'var(--rule)', 'stroke-width': 2,
+                 'stroke-dasharray': '14 14' }, svg);
+  D.text(svg, 156, 712, 'WHAT IT WILL NOT DO', 't-lbl');
+  D.text(svg, 156, 748, 'hand back today’s ranking as last night’s', 't-mono');
+})();
+</script>

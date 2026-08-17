@@ -1,0 +1,234 @@
+/* deck.css — the submission gallery plates.
+ *
+ * Fifteen stills that get looked at on a Devpost project page, at whatever size
+ * the browser gives them, with no voice explaining anything. That is a different
+ * job from both of the other two surfaces in this repo and the differences are
+ * the whole design:
+ *
+ *   - Unlike `overlays/lib/scene.css`, these are OPAQUE and standalone. Nothing is
+ *     composited over footage, so type does not need a scrim and lines do not need
+ *     a drop shadow to survive.
+ *   - Unlike `overlays/slides/slide.css`, these are not pretending to be an
+ *     application on a monitor. They are diagrams, and each one has to make one
+ *     point without a narrator.
+ *
+ * 2400x1600 because Devpost asks for 3:2 and downscales. Rendered at 1x — these
+ * are screenshots of vector art, not plates to be warped, so there is nothing to
+ * gain from oversampling.
+ *
+ * THE ONE INHERITED RULE, and it is inherited on purpose: purple is reserved.
+ * --crdb appears on the two slides where CockroachDB does something that nothing
+ * else can do — the filters living inside the index, and time travel — and
+ * nowhere else. Every other slide is copper, including the slides that are also
+ * *about* the database. If purple leaks, the two that matter stop reading as
+ * special, which is the entire argument of the deck.
+ *
+ * The residency slide is deliberately NOT purple and deliberately drawn in the
+ * dashed "not switched on" treatment, because it is not deployed. The visual
+ * language has to agree with the caveat or the caveat is decoration.
+ */
+
+@font-face { font-family: 'PlexFallback'; src: local('IBM Plex Mono'); }
+
+:root {
+  --ground:   #0b0a09;
+  --panel:    #141210;
+  --panel-2:  #1b1815;
+  --rule:     #2a2521;
+  --rule-hi:  #3b342d;
+
+  --ink:      #f7f3ec;
+  --dim:      #8c8175;
+  --dimmer:   #5b544c;
+
+  --phosphor: #d97f4a;
+  --bright:   #eb9a67;
+  --ember:    #8a4f2b;   /* copper, backed off — structure that is not the subject */
+
+  --crdb:        #7d4dff;   /* RESERVED. Two slides. */
+  --crdb-bright: #a583ff;
+
+  --carrier: #5cb89b;   /* it held / it kept answering */
+  --cut:     #f0432f;   /* refused / cannot happen */
+  --warn:    #c9a04a;
+
+  --face: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 2400px;
+  height: 1600px;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--face);
+  overflow: hidden;
+  /* Only Regular and Medium are installed; 600+ gets synthesised and smears at
+     these sizes. Hierarchy comes from scale and colour instead of weight. */
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+}
+
+.plate {
+  position: relative;
+  width: 2400px;
+  height: 1600px;
+  padding: 96px 112px 88px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A hairline grid, barely there, so the plates read as drawn on something. */
+.plate::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(217,127,74,.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(217,127,74,.045) 1px, transparent 1px);
+  background-size: 80px 80px;
+  pointer-events: none;
+}
+.plate > * { position: relative; }
+
+/* ── chrome ─────────────────────────────────────────────────────────────── */
+
+.chrome {
+  display: flex;
+  align-items: baseline;
+  gap: 28px;
+  padding-bottom: 26px;
+  border-bottom: 2px solid var(--rule);
+  font-size: 28px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+  font-weight: 500;
+}
+.chrome .mark { color: var(--phosphor); }
+.chrome .sp { flex: 1; }
+.chrome .no { color: var(--dimmer); font-variant-numeric: tabular-nums; }
+
+/* ── headline block ─────────────────────────────────────────────────────── */
+
+.head { margin-top: 64px; }
+
+.eyebrow {
+  font-size: 28px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--phosphor);
+  font-weight: 500;
+}
+.eyebrow.crdb { color: var(--crdb-bright); }
+.eyebrow.dim  { color: var(--dim); }
+
+h1 {
+  margin: 22px 0 0;
+  font-size: 82px;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  font-weight: 500;
+}
+h1 .lo { color: var(--dim); }
+h1 .hot { color: var(--bright); }
+h1 .crdb { color: var(--crdb-bright); }
+
+.sub {
+  margin-top: 26px;
+  font-size: 38px;
+  line-height: 1.45;
+  color: var(--dim);
+  max-width: 1500px;
+}
+.sub b { color: var(--ink); font-weight: 500; }
+.sub .crdb { color: var(--crdb-bright); }
+
+/* ── figure ─────────────────────────────────────────────────────────────── */
+
+.fig { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
+.fig svg { display: block; width: 100%; height: 100%; }
+
+/* ── the point, on the bottom rail ──────────────────────────────────────── */
+
+.rail {
+  margin-top: 40px;
+  padding-top: 30px;
+  border-top: 2px solid var(--rule);
+  display: flex;
+  align-items: baseline;
+  gap: 24px;
+  font-size: 34px;
+  color: var(--dim);
+}
+.rail .pt { color: var(--ink); }
+.rail .hot { color: var(--bright); }
+.rail .crdb { color: var(--crdb-bright); }
+.rail .good { color: var(--carrier); }
+.rail .bad { color: var(--cut); }
+.rail .sp { flex: 1; }
+.rail .tag {
+  font-size: 26px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--dimmer);
+}
+
+/* ── svg vocabulary ─────────────────────────────────────────────────────── */
+
+.wire       { fill: none; stroke: var(--phosphor); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.wire.thin  { stroke-width: 2; }
+.wire.fat   { stroke-width: 5; }
+.wire.faint { stroke: var(--ember); }
+.wire.rule  { stroke: var(--rule-hi); }
+.wire.crdb  { stroke: var(--crdb); }
+.wire.good  { stroke: var(--carrier); }
+.wire.bad   { stroke: var(--cut); }
+.wire.dash  { stroke-dasharray: 14 16; }
+
+.fillp { fill: var(--phosphor); }
+.fillb { fill: var(--bright); }
+.filld { fill: var(--dimmer); }
+.fillc { fill: var(--crdb); }
+.fillg { fill: var(--carrier); }
+.fillx { fill: var(--cut); }
+
+text {
+  font-family: var(--face);
+  fill: var(--ink);
+  font-weight: 500;
+}
+.t-lbl {
+  font-size: 27px; letter-spacing: 0.16em; text-transform: uppercase; fill: var(--dim);
+}
+.t-lbl.on  { fill: var(--bright); }
+.t-lbl.crd { fill: var(--crdb-bright); }
+.t-lbl.gd  { fill: var(--carrier); }
+.t-lbl.bd  { fill: var(--cut); }
+.t-val { font-size: 40px; letter-spacing: 0.01em; }
+.t-big { font-size: 64px; letter-spacing: -0.01em; }
+.t-say { font-size: 34px; letter-spacing: 0.01em; fill: var(--dim); text-transform: none; }
+.t-mono { font-size: 30px; letter-spacing: 0.02em; fill: var(--dim); text-transform: none; }
+
+/* ── cards ──────────────────────────────────────────────────────────────── */
+
+.cards { display: flex; gap: 36px; width: 100%; }
+.card {
+  flex: 1;
+  background: var(--panel);
+  border: 2px solid var(--rule);
+  border-radius: 20px;
+  padding: 44px 46px;
+}
+.card.on   { border-color: var(--ember); background: var(--panel-2); }
+.card.crdb { border-color: #4b3a7a; }
+.card.off  { border-style: dashed; border-color: var(--rule-hi); background: transparent; }
+.card .k {
+  font-size: 26px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--dim);
+}
+.card .v { font-size: 54px; margin-top: 16px; line-height: 1.15; }
+.card .v.sm { font-size: 40px; }
+.card .n { margin-top: 18px; font-size: 30px; line-height: 1.4; color: var(--dimmer); }
+.card .v.hot { color: var(--bright); }
+.card .v.crd { color: var(--crdb-bright); }
+.card .v.gd  { color: var(--carrier); }
+.card .v.bd  { color: var(--cut); }

@@ -1,0 +1,81 @@
+<!doctype html><meta charset=utf-8><title>spindle — the gate</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>the approval gate</span>
+    <span class=sp></span>
+    <span class=no>05 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>the pause is the product</div>
+    <h1>An email to a music director <span class=lo>is the one thing you cannot take back.</span></h1>
+    <div class=sub>So a person approves every send. What the machine removes is the weeks of work
+      in front of that decision &mdash; <b>not the decision</b>.</div>
+  </div>
+
+  <div class=fig>
+    <svg viewBox="0 0 2176 620" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=pt>Agents work for the label, not instead of it.</span>
+    <span class=sp></span>
+    <span class=tag>nothing leaves without a human</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('s'), D = Deck;
+
+  // Widths here are budgeted rather than eyeballed: IBM Plex Mono advances at
+  // 0.6em, so a 30px caption is 18px a character and a 700px card holds 36 of
+  // them. Every string below was cut to fit its own box. render.py checks the
+  // viewBox; nothing checks a card, so the arithmetic has to be done here.
+  var CARD_X = 60, CARD_W = 820;
+
+  D.text(svg, CARD_X, 58, 'PREPARED OVERNIGHT', 't-lbl');
+  var drafts = [
+    ['KEXP \u00b7 Seattle',        'plays two neighbours of this record'],
+    ['Worldwide FM \u00b7 London',  'asked for a shorter edit last time'],
+    ['Balamii \u00b7 London',       'new show, same corner of the genre'],
+    ['\u2014',                     'and the rest of the shortlist']
+  ];
+  drafts.forEach(function (d, i) {
+    var y = 104 + i * 96, ghost = i === 3;
+    D.el('rect', { x: CARD_X, y: y, width: CARD_W, height: 76, rx: 10,
+                   fill: ghost ? 'transparent' : 'var(--panel)',
+                   stroke: ghost ? 'var(--rule)' : 'var(--rule-hi)',
+                   'stroke-width': 2, 'stroke-dasharray': ghost ? '12 12' : null }, svg);
+    D.text(svg, CARD_X + 28, y + 34, d[0], ghost ? 't-mono' : 't-val');
+    D.text(svg, CARD_X + 28, y + 64, d[1], 't-mono');
+  });
+  D.text(svg, CARD_X, 512, 'THE WEEKS OF WORK', 't-lbl');
+  D.text(svg, CARD_X, 552, 'research \u00b7 ranking \u00b7 drafting', 't-mono');
+
+  // The gate. Square, copper, the same shape it has on the loop slide — one
+  // object meaning one thing across the deck.
+  var GX = 950, GW = 340;
+  D.el('path', { d: 'M' + (CARD_X + CARD_W) + ' 290H' + GX, class: 'wire' }, svg);
+  D.el('rect', { x: GX, y: 190, width: GW, height: 200, rx: 14,
+                 fill: 'var(--panel-2)', stroke: 'var(--bright)', 'stroke-width': 5 }, svg);
+  var gc = GX + GW / 2;
+  D.text(svg, gc, 254, 'A PERSON', 't-lbl on', 'middle');
+  D.text(svg, gc, 310, 'approves', 't-val', 'middle');
+  D.text(svg, gc, 352, 'or does not', 't-mono', 'middle');
+  D.text(svg, GX, 512, 'THE DECISION', 't-lbl on');
+  D.text(svg, GX, 552, 'stays with the label', 't-mono');
+
+  // One goes. The rest are not refused — nobody has decided about them yet, and
+  // saying so is the difference between a queue and a rejection pile.
+  D.arrow(svg, GX + GW, 290, GX + GW + 130, 290, 'wire fat');
+  var SX = 1430;
+  D.el('rect', { x: SX, y: 232, width: 690, height: 116, rx: 12,
+                 fill: 'var(--panel)', stroke: 'var(--carrier)', 'stroke-width': 3 }, svg);
+  D.text(svg, SX + 34, 280, 'SENT', 't-lbl gd');
+  D.text(svg, SX + 34, 322, 'to one named person', 't-val');
+  D.text(svg, SX, 412, 'the others are not rejected \u2014', 't-mono');
+  D.text(svg, SX, 450, 'nobody has decided about them yet', 't-mono');
+})();
+</script>

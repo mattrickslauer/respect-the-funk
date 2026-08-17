@@ -160,3 +160,8 @@ docs/wireframe/standalone.html
 # which is itself too large for the repo — so a clone can no longer reproduce it
 # and losing it means re-transcribing from a source nobody else has.
 content/overlays/out/**/*.log
+
+# Deck plates. Same rule as the top of this file: the HTML is the source and a
+# full render is twenty seconds, so the 4MB of PNGs a judge sees on Devpost are
+# rebuilt rather than carried. `content/deck/README.md` says how.
+content/deck/out/

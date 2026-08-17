@@ -1,0 +1,71 @@
+<!doctype html><meta charset=utf-8><title>spindle — on AWS</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>what is actually deployed</span>
+    <span class=sp></span>
+    <span class=no>13 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>on AWS</div>
+    <h1>Nothing in here bills while it sleeps.</h1>
+    <div class=sub>Everything here is provisioned and running. What is written but not
+      switched on is <b>on the last slide, marked as such</b>.</div>
+  </div>
+
+  <div class=fig>
+    <svg viewBox="0 0 2176 620" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=pt>No always-on server. No gateway sitting idle.</span>
+    <span class=sp></span>
+    <span class=tag>a label pays for releases, not for uptime</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('s'), D = Deck;
+
+  // Every caption below is inside its box by arithmetic, not by eye: the mono
+  // face advances at 0.6em, so a 30px caption is 18px a character and a box of
+  // width W holds (W - 56) / 18 of them. The first pass guessed and three boxes
+  // leaked.
+  function box(x, y, w, h, k, n, n2, hot) {
+    D.el('rect', { x: x, y: y, width: w, height: h, rx: 14,
+                   fill: hot ? 'rgba(217,127,74,.10)' : 'var(--panel)',
+                   stroke: hot ? 'var(--phosphor)' : 'var(--rule-hi)',
+                   'stroke-width': hot ? 4 : 2 }, svg);
+    D.text(svg, x + 28, y + 50, k, hot ? 't-lbl on' : 't-lbl');
+    if (n)  D.text(svg, x + 28, y + 92, n, 't-mono');
+    if (n2) D.text(svg, x + 28, y + 128, n2, 't-mono');
+  }
+
+  // The request path, left to right, in one row. Anything not on this row is a
+  // side path and is drawn as one.
+  var Y = 150, H = 168;
+  box(60,   Y, 380, H, 'THE LABEL',    'a browser,',            'signed in by email');
+  D.arrow(svg, 452, Y + 84, 488, Y + 84, 'wire');
+  box(500,  Y, 400, H, 'THE EDGE',     'the domain and cert,', 'the cache');
+  D.arrow(svg, 912, Y + 84, 948, Y + 84, 'wire');
+  box(960,  Y, 380, H, 'THE APP',      'one function,',         'scale to zero', true);
+  D.arrow(svg, 1352, Y + 84, 1388, Y + 84, 'wire');
+  box(1400, Y, 620, H, 'THE DATABASE', 'index · schedule · outbox', 'wake-ups · ledger', true);
+
+  // Masters never pass through the function. It is the one decision on this
+  // slide worth drawing rather than listing.
+  var Y2 = 400;
+  box(60, Y2, 700, H, 'THE MASTERS', 'browser straight to storage', 'the app never sees the file');
+  D.el('path', { d: 'M250 ' + Y2 + 'V' + (Y + H), class: 'wire thin' }, svg);
+  D.el('path', { d: 'M772 ' + (Y2 + 84) + 'H1050 V' + (Y + H), class: 'wire thin faint dash' }, svg);
+  D.text(svg, 770, Y2 + 52, 'signed, then direct', 't-mono');
+
+  box(1120, Y2, 440, H, 'THE MAIL', 'codes out,', 'replies back in');
+  D.el('path', { d: 'M1340 ' + Y2 + 'V' + (Y + H), class: 'wire thin' }, svg);
+
+  box(1580, Y2, 440, H, 'THE LISTENER', 'a container that', 'hears what a song is');
+  D.el('path', { d: 'M1800 ' + Y2 + 'V' + (Y + H), class: 'wire thin' }, svg);
+})();
+</script>

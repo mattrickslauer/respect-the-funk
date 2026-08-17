@@ -1,0 +1,78 @@
+<!doctype html><meta charset=utf-8><title>spindle — the map</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>one map of everyone who can carry a record</span>
+    <span class=sp></span>
+    <span class=no>03 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>the index</div>
+    <h1>Stations, shows, curators &mdash; <span class=lo>and what each of them actually plays.</span></h1>
+  </div>
+
+  <div class=fig>
+    <svg viewBox="0 0 2176 820" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=pt>Public registers first &mdash; the honest place to start.</span>
+    <span class=sp></span>
+    <span class=tag>a creator is entered by a person, never scraped</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('s'), D = Deck;
+  var cx = 560, cy = 400;
+
+  var rings = [ {r:90,n:10}, {r:144,n:16}, {r:198,n:22}, {r:252,n:28},
+                {r:306,n:34}, {r:360,n:40} ];
+
+  // Lit by sector, not at random: the arc from 200° round to 40° is what public
+  // registers gave us. The rest is drawn present-but-unlit, because pretending
+  // the map is finished would be the one claim a judge could falsify by looking.
+  D.disc(svg, {
+    cx: cx, cy: cy, rings: rings, grooveColor: 'rgba(42,37,33,.9)',
+    paint: function (i, ri, deg) {
+      var d = (deg % 360 + 360) % 360;
+      var lit = (d >= 200 || d <= 40);
+      if (lit) return { fill: (i % 5 === 0) ? 'var(--bright)' : 'var(--phosphor)', r: 6,
+                        opacity: (i % 5 === 0) ? 1 : 0.78 };
+      return { fill: 'var(--dimmer)', r: 5, opacity: 0.4 };
+    }
+  });
+
+  // The unlit sector, called out rather than hidden.
+  D.el('path', { d: D.wedge(cx, cy, 70, 392, 44, 196), fill: 'none',
+                 class: 'wire rule thin dash' }, svg);
+
+  D.hub(svg, cx, cy, { r: 28, w: 4, dot: true });
+
+  // Annotations stack top-right; the card sits under them. The first pass put
+  // the card beside the annotations and the two overlapped by 270px.
+  var X = 1020;
+
+  D.text(svg, X, 96, 'radio, shows, curators', 't-lbl on');
+  D.text(svg, X, 140, 'public registers, so it was the', 't-mono');
+  D.text(svg, X, 178, 'cheapest reach to earn first', 't-mono');
+  D.el('path', { d: 'M1004 84 L880 150', class: 'wire thin' }, svg);
+
+  D.text(svg, X, 262, 'creator platforms', 't-lbl');
+  D.text(svg, X, 306, 'where this is going, and we have', 't-mono');
+  D.text(svg, X, 344, 'not got there yet — said plainly', 't-mono');
+  D.el('path', { d: 'M1004 250 L900 300', class: 'wire rule thin dash' }, svg);
+
+  D.el('rect', { x: X, y: 410, width: 1100, height: 350, rx: 18,
+                 fill: 'var(--panel)', stroke: 'var(--rule)', 'stroke-width': 2 }, svg);
+  D.text(svg, X + 40, 472, 'WHAT WE HOLD ABOUT EACH ONE', 't-lbl');
+  [['what it plays', 'from its own listings'],
+   ['who runs it', 'a named person, not a role'],
+   ['what it said last time', 'the reply, kept']].forEach(function (r, i) {
+    D.text(svg, X + 40, 538 + i * 78, r[0], 't-val');
+    D.text(svg, X + 40, 574 + i * 78, r[1], 't-mono');
+  });
+})();
+</script>

@@ -1,0 +1,92 @@
+<!doctype html><meta charset=utf-8><title>spindle — no orchestrator</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>the fleet</span>
+    <span class=sp></span>
+    <span class=no>08 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>there is no boss agent</div>
+    <h1>Agents never call each other. <span class=lo>The memory wakes the next one.</span></h1>
+  </div>
+
+  <div class=fig>
+    <svg viewBox="0 0 2176 900" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=pt>Kill half the fleet mid-run and the work still finishes.</span>
+    <span class=sp></span>
+    <span class=tag>they run at 3am and nobody is watching</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('s'), D = Deck;
+  var cx = 640, cy = 430, R = 330;
+
+  var agents = [
+    'scout', 'enrich', 'classify', 'embed', 'rank',
+    'draft', 'send', 'read replies', 'learn', 'value'
+  ];
+  // Four of ten are down. Not a failure state worth drawing in red across the
+  // whole diagram — the point is that it is unremarkable, so they are simply
+  // unlit and their spoke is dashed.
+  var down = { 1: 1, 4: 1, 7: 1, 8: 1 };
+
+  // Every impulse visibly goes through the centre and back out. No line is ever
+  // drawn rim to rim, because the claim is that no agent can reach another one.
+  agents.forEach(function (a, i) {
+    var deg = i * 36;
+    var p = D.polar(cx, cy, R, deg);
+    var inner = D.polar(cx, cy, 124, deg);
+    D.el('path', {
+      d: 'M' + inner[0].toFixed(1) + ' ' + inner[1].toFixed(1) +
+         'L' + p[0].toFixed(1) + ' ' + p[1].toFixed(1),
+      class: 'wire thin' + (down[i] ? ' faint dash' : '')
+    }, svg);
+
+    D.el('circle', { cx: p[0], cy: p[1], r: 15,
+                     fill: down[i] ? 'var(--ground)' : 'var(--phosphor)',
+                     stroke: down[i] ? 'var(--dimmer)' : 'var(--bright)',
+                     'stroke-width': 3 }, svg);
+
+    var out = D.polar(cx, cy, R + 44, deg);
+    var anchor = (deg === 0 || deg === 180) ? 'middle' : (deg < 180 ? 'start' : 'end');
+    var dy = deg === 0 ? -12 : deg === 180 ? 30 : 8;
+    D.text(svg, out[0], out[1] + dy, a, down[i] ? 't-lbl' : 't-lbl on', anchor);
+  });
+
+  // The middle is the memory, not a scheduler. That distinction is the slide.
+  // The label goes inside the hub rather than under it. Outside, it landed on
+  // the spokes — which is what happens when you caption the centre of something
+  // that radiates in every direction.
+  D.el('circle', { cx: cx, cy: cy, r: 116, fill: 'var(--panel-2)',
+                   stroke: 'var(--phosphor)', 'stroke-width': 4 }, svg);
+  D.el('circle', { cx: cx, cy: cy, r: 30, fill: 'none',
+                   stroke: 'var(--ember)', 'stroke-width': 3 }, svg);
+  D.el('circle', { cx: cx, cy: cy, r: 7, fill: 'var(--phosphor)' }, svg);
+  D.text(svg, cx, cy + 76, 'THE MEMORY', 't-lbl on', 'middle');
+
+  var X = 1220;
+  D.text(svg, X, 92, 'WHAT THAT BUYS', 't-lbl');
+
+  var pts = [
+    ['nothing to restart', 'there is no conductor to lose'],
+    ['half the fleet can die', 'the claim expires and the row comes back'],
+    ['adding an agent', 'is one row watching for one kind of change'],
+    ['no queue to drain by hand', 'the work is the state, not a list beside it']
+  ];
+  pts.forEach(function (p, i) {
+    var y = 176 + i * 148;
+    D.el('path', { d: 'M' + X + ' ' + (y - 34) + 'h880', class: 'wire rule thin' }, svg);
+    D.text(svg, X, y + 22, p[0], 't-val');
+    D.text(svg, X, y + 62, p[1], 't-mono');
+  });
+
+  D.text(svg, X, 800, 'four of the ten above are down in this picture', 't-mono');
+})();
+</script>

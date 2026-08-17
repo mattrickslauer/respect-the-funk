@@ -1,0 +1,82 @@
+<!doctype html><meta charset=utf-8><title>spindle — what's next</title>
+<link rel=stylesheet href=deck.css>
+<style>
+  /* Built in HTML rather than SVG, unlike most of this deck. The first version
+     hand-wrapped four cards of prose into SVG text nodes and two of them ran
+     past their own edges — SVG has no text flow, so every line break was a
+     number I had to get right. Here the browser does it. */
+  .road { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; align-items: stretch; }
+  .road .card { display: flex; flex-direction: column; padding: 38px 36px; }
+  .road .k { font-size: 25px; letter-spacing: 0.18em; text-transform: uppercase;
+             color: var(--phosphor); }
+  .road .card.off .k { color: var(--dim); }
+  .road .v { font-size: 40px; line-height: 1.22; margin-top: 20px; }
+  .road .n { font-size: 28px; line-height: 1.45; color: var(--dim); margin-top: 20px; }
+  .road .chip {
+    align-self: flex-start; margin-top: 26px;
+    border: 2px solid var(--warn); border-radius: 8px; padding: 10px 18px;
+    font-size: 24px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--warn);
+  }
+
+  .close { display: flex; align-items: flex-end; gap: 60px; margin-top: 44px; }
+  .close .say { font-size: 42px; line-height: 1.34; max-width: 1180px; }
+  .close .say b { color: var(--bright); font-weight: 500; }
+  .close .url { margin-left: auto; text-align: right; }
+  .close .url .k { font-size: 25px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--dim); }
+  .close .url .v { font-size: 44px; margin-top: 12px; }
+</style>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>what's next</span>
+    <span class=sp></span>
+    <span class=no>15 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>the roadmap, with the status said out loud</div>
+    <h1>Where this goes,<br><span class=lo>and what is honestly not on yet.</span></h1>
+  </div>
+
+  <div class=fig style="display:block; margin-top:44px">
+    <div class=road>
+      <div class=card>
+        <div class=k>the creators</div>
+        <div class=v>In the same map</div>
+        <div class=n>The people whose videos break records now &mdash; entered by a person
+          who says what they actually posted, never scraped.</div>
+      </div>
+      <div class=card>
+        <div class=k>replies that teach</div>
+        <div class=v>Every no improves the next shortlist</div>
+        <div class=n>The answer comes back into the index rather than into somebody's inbox.</div>
+      </div>
+      <div class="card off">
+        <div class=k>contact details</div>
+        <div class=v>Held in the country whose law covers them</div>
+        <div class=n>Physically, not as a promise in a policy document.</div>
+        <div class=chip>proven, not deployed</div>
+      </div>
+      <div class=card>
+        <div class=k>the label at the budget</div>
+        <div class=v>Say what a record is worth</div>
+        <div class=n>And let it come back with what it would do with that, up to the ceiling
+          you set.</div>
+      </div>
+    </div>
+
+    <div class=close>
+      <div class=say>A label with three people on it should be able to give a record
+        <b>the same shot a label with thirty would.</b></div>
+      <div class=url>
+        <div class=k>live, no account needed</div>
+        <div class=v>spindle.mattrickslauer.com</div>
+      </div>
+    </div>
+  </div>
+
+  <div class=rail>
+    <span class=pt>Every claim here is checkable against the running system.</span>
+    <span class=sp></span>
+    <span class=tag>the ones that are not, say so</span>
+  </div>
+</div>

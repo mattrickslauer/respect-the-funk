@@ -1,0 +1,89 @@
+<!doctype html><meta charset=utf-8><title>spindle — the nightly loop</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>what it does, every night, for every artist</span>
+    <span class=sp></span>
+    <span class=no>04 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>the loop</div>
+    <h1>It runs unattended <span class=lo>&mdash; and stops at the one step it must not take alone.</span></h1>
+  </div>
+
+  <div class=fig>
+    <svg viewBox="0 0 2176 1000" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=pt>Replies land back in the middle.</span>
+    <span class=hot>Release n+1 starts from what n learned.</span>
+    <span class=sp></span>
+    <span class=tag>most labels start from zero</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('s'), D = Deck;
+  var cx = 1088, cy = 480, R = 300;
+
+  var steps = [
+    { deg:   0, k: 'find',     v: 'who exists',            n: 'registers, listings, pages' },
+    { deg:  60, k: 'learn',    v: 'what they play',        n: 'facts land all day' },
+    { deg: 120, k: 'shortlist',v: 'who fits this song',    n: 'by meaning, not keywords' },
+    { deg: 180, k: 'draft',    v: 'a real letter',         n: 'this person, this record' },
+    { deg: 240, k: 'approve',  v: 'a person says yes',     n: 'the one irreversible act', gate: true },
+    { deg: 300, k: 'send',     v: 'and then listen',       n: 'the reply finds its thread' }
+  ];
+
+  // The rim, drawn as arcs between stations so the gaps read as travel.
+  steps.forEach(function (s, i) {
+    var a0 = s.deg + 13, a1 = s.deg + 47;
+    var gate = steps[(i + 1) % steps.length].gate;
+    D.el('path', { d: D.arc(cx, cy, R, a0, a1), class: 'wire ' + (gate ? '' : 'faint') }, svg);
+    var h = D.polar(cx, cy, R, a1 + 2);
+    var t = D.polar(cx, cy, R, a1 - 6);
+    var ang = Math.atan2(h[1] - t[1], h[0] - t[0]);
+    D.el('path', {
+      d: 'M' + h + 'L' + [h[0] - Math.cos(ang - 0.5) * 20, h[1] - Math.sin(ang - 0.5) * 20] +
+         'L' + [h[0] - Math.cos(ang + 0.5) * 20, h[1] - Math.sin(ang + 0.5) * 20] + 'Z',
+      fill: gate ? 'var(--phosphor)' : 'var(--ember)'
+    }, svg);
+  });
+
+  steps.forEach(function (s) {
+    var p = D.polar(cx, cy, R, s.deg);
+    var out = D.polar(cx, cy, R + 62, s.deg);
+    var anchor = (s.deg === 0 || s.deg === 180) ? 'middle' : (s.deg < 180 ? 'start' : 'end');
+    var dy = s.deg === 0 ? -34 : s.deg === 180 ? 30 : 0;
+
+    if (s.gate) {
+      // The gate is the only square in the deck. A different shape, because it is
+      // the only step where the machine stops.
+      D.el('rect', { x: p[0] - 30, y: p[1] - 30, width: 60, height: 60, rx: 8,
+                     fill: 'var(--ground)', stroke: 'var(--bright)', 'stroke-width': 5 }, svg);
+      D.el('path', { d: 'M' + (p[0] - 13) + ' ' + p[1] + 'l11 13 22 -26', class: 'wire fat',
+                     stroke: 'var(--bright)' }, svg);
+    } else {
+      D.el('circle', { cx: p[0], cy: p[1], r: 17, fill: 'var(--ground)',
+                       stroke: 'var(--phosphor)', 'stroke-width': 4 }, svg);
+    }
+
+    D.text(svg, out[0], out[1] + dy, s.k.toUpperCase(), s.gate ? 't-lbl on' : 't-lbl', anchor);
+    D.text(svg, out[0], out[1] + dy + 46, s.v, 't-val', anchor);
+    D.text(svg, out[0], out[1] + dy + 82, s.n, 't-mono', anchor);
+  });
+
+  // The middle: memory. Everything returns here, which is the only reason the
+  // second release is cheaper than the first.
+  var rings = [ {r:66,n:8}, {r:104,n:14}, {r:142,n:20} ];
+  D.disc(svg, { cx: cx, cy: cy, rings: rings, grooveColor: 'rgba(42,37,33,.9)',
+    paint: function (i) { return { fill: i % 3 === 0 ? 'var(--bright)' : 'var(--ember)', r: 5,
+                                   opacity: i % 3 === 0 ? 0.95 : 0.55 }; } });
+  D.hub(svg, cx, cy, { r: 26, w: 3, dot: true });
+  D.text(svg, cx, cy + 200, 'MEMORY', 't-lbl on', 'middle');
+
+})();
+</script>

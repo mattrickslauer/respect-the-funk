@@ -1,0 +1,94 @@
+<!doctype html><meta charset=utf-8><title>spindle — inside the index</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>choosing who should hear it</span>
+    <span class=sp></span>
+    <span class=no>06 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class="eyebrow crdb">the first thing only CockroachDB does here</div>
+    <h1>The rules that must always hold <span class=crdb>live inside the search.</span></h1>
+  </div>
+
+  <div class=fig>
+    <svg viewBox="0 0 2176 880" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=pt>Not a check the code remembers to run.</span>
+    <span class=crdb>A wrong answer cannot be returned at all.</span>
+    <span class=sp></span>
+    <span class=tag>purple = only here</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('s'), D = Deck;
+  var cx = 780, cy = 430, A0 = 196, A1 = 254;   // the surviving wedge
+
+  // The disc sits right of centre so the left column is a clean gutter for the
+  // annotations. The first pass had the wedge and its own labels occupying the
+  // same corner, which is the diagram equivalent of talking over yourself.
+  D.el('path', { d: D.wedge(cx, cy, 66, 364, A0, A1),
+                 fill: 'rgba(125,77,255,.16)', stroke: 'var(--crdb)',
+                 'stroke-width': 3 }, svg);
+
+  var rings = [ {r:104,n:12}, {r:160,n:18}, {r:216,n:24}, {r:272,n:30}, {r:328,n:36} ];
+  D.disc(svg, {
+    cx: cx, cy: cy, rings: rings, grooveColor: 'rgba(42,37,33,.9)',
+    paint: function (i, ri, deg) {
+      var d = (deg % 360 + 360) % 360;
+      if (d >= A0 && d <= A1) return { fill: 'var(--crdb-bright)', r: 8 };
+      return { fill: 'var(--dimmer)', r: 5, opacity: 0.36 };
+    }
+  });
+  D.hub(svg, cx, cy, { r: 26, w: 3, dot: true });
+
+  D.text(svg, 60, 92, 'THE FILTERS, INSIDE THE INDEX', 't-lbl');
+  D.text(svg, 60, 132, 'three of them, applied in the order', 't-mono');
+  D.text(svg, 60, 168, 'the index is built in', 't-mono');
+
+  // Each detent labelled where it lands, with a short leader. The tick marks are
+  // the only thing tying the words to the picture, so they are drawn last and
+  // sit outside the rim where nothing else is competing for the space.
+  [[ 'contactable', 254, 372, 542 ],
+   [ 'model',       225, 452, 706 ],
+   [ 'tenant',      196, 610, 822 ]].forEach(function (d) {
+    var p = D.polar(cx, cy, 328, d[1]);
+    var q = D.polar(cx, cy, 372, d[1]);
+    D.el('path', { d: 'M' + p[0].toFixed(1) + ' ' + p[1].toFixed(1) +
+                      'L' + q[0].toFixed(1) + ' ' + q[1].toFixed(1), class: 'wire crdb fat' }, svg);
+    D.el('path', { d: 'M' + (d[2] + 14) + ' ' + (d[3] - 9) +
+                      'L' + q[0].toFixed(1) + ' ' + q[1].toFixed(1), class: 'wire crdb thin' }, svg);
+    D.text(svg, d[2], d[3], d[0], 't-lbl crd', 'end');
+  });
+
+  D.text(svg, 60, 204, 'what survives is what gets ranked', 't-mono');
+
+  // Right: the two shapes, stated plainly. The dim one is what everybody else
+  // has to do; the lit one is what the index does here.
+  var X = 1240, W = 880;
+
+  D.el('rect', { x: X, y: 40, width: W, height: 300, rx: 18,
+                 fill: 'transparent', stroke: 'var(--rule)', 'stroke-width': 2,
+                 'stroke-dasharray': '14 14' }, svg);
+  D.text(svg, X + 44, 108, 'THE USUAL SHAPE', 't-lbl');
+  D.text(svg, X + 44, 176, 'search everything,', 't-val');
+  D.text(svg, X + 44, 224, 'then throw most away', 't-val');
+  D.text(svg, X + 44, 282, 'and hope nothing that should have', 't-mono');
+  D.text(svg, X + 44, 314, 'been excluded slipped through', 't-mono');
+
+  D.el('rect', { x: X, y: 396, width: W, height: 320, rx: 18,
+                 fill: 'rgba(125,77,255,.08)', stroke: 'var(--crdb)', 'stroke-width': 3 }, svg);
+  D.text(svg, X + 44, 464, 'HERE', 't-lbl crd');
+  D.text(svg, X + 44, 532, 'the filters are part', 't-val');
+  D.text(svg, X + 44, 580, 'of the index itself', 't-val');
+  D.text(svg, X + 44, 638, 'this label only sees its own people;', 't-mono');
+  D.text(svg, X + 44, 670, 'nobody unreachable is a candidate', 't-mono');
+
+  D.text(svg, X, 800, 'the plan shows them there, not bolted on after', 't-mono');
+})();
+</script>

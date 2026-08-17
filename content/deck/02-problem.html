@@ -1,0 +1,73 @@
+<!doctype html><meta charset=utf-8><title>spindle — the problem</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>the problem</span>
+    <span class=sp></span>
+    <span class=no>02 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>distribution is solved. being heard is not.</div>
+    <h1>A song on every platform<br><span class=lo>is still a song nobody has heard of.</span></h1>
+  </div>
+
+  <div class=fig>
+    <svg viewBox="0 0 2176 1000" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=pt>Each one needs a letter of its own.</span>
+    <span class=hot>Weeks per release, so it never gets done.</span>
+    <span class=sp></span>
+    <span class=tag>and the record disappears</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('s'), D = Deck;
+  var cx = 1088, cy = 460;
+
+  // Everyone who could carry the record. Inert, because nobody has written to
+  // them — the point of the slide is the darkness, not the dots.
+  var rings = [ {r:110,n:10}, {r:160,n:16}, {r:210,n:22}, {r:260,n:28},
+                {r:310,n:34}, {r:360,n:40}, {r:410,n:46} ];
+
+  // The handful a person can actually work by hand in a week. Fixed indices, so
+  // the same five are lit every render.
+  var reached = {3:1, 47:1, 96:1, 148:1, 171:1};
+  var n = 0;
+  D.disc(svg, {
+    cx: cx, cy: cy, rings: rings, grooveColor: 'rgba(42,37,33,.85)',
+    paint: function (i) {
+      if (reached[i]) return { fill: 'var(--bright)', r: 8 };
+      return { fill: 'var(--dimmer)', r: 5, opacity: 0.5 };
+    }
+  });
+
+  // The five letters that did get written.
+  var idx = 0, seen = 0;
+  rings.forEach(function (ring, ri) {
+    for (var k = 0; k < ring.n; k++) {
+      var deg = (ri * 7) + (360 / ring.n) * k;
+      if (reached[seen]) {
+        var a = D.polar(cx, cy, 40, deg), b = D.polar(cx, cy, ring.r - 14, deg);
+        D.el('path', { d: 'M' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + 'L' + b[0].toFixed(1) + ' ' + b[1].toFixed(1),
+                       class: 'wire thin' }, svg);
+      }
+      seen++;
+    }
+  });
+  D.hub(svg, cx, cy, { r: 30, w: 4, dot: true });
+
+  D.text(svg, cx, cy + 496, 'EVERYONE WHO COULD PLAY THE RECORD', 't-lbl', 'middle');
+  D.text(svg, 1620, 300, 'written to by hand', 't-lbl on');
+  D.el('path', { d: 'M1615 288 L1512 258', class: 'wire thin' }, svg);
+
+  D.text(svg, 430, 300, 'never contacted', 't-lbl', 'end');
+  D.text(svg, 430, 346, 'not for a bad reason —', 't-mono', 'end');
+  D.text(svg, 430, 386, 'nobody had the week', 't-mono', 'end');
+  D.el('path', { d: 'M450 288 L604 316', class: 'wire thin faint' }, svg);
+})();
+</script>

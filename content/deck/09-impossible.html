@@ -1,0 +1,64 @@
+<!doctype html><meta charset=utf-8><title>spindle — what cannot happen</title>
+<link rel=stylesheet href=deck.css>
+<style>
+  /* The only slide in the deck without a diagram. Four statements, given equal
+     weight, because the argument is that they are all the same kind of thing —
+     a rule the data enforces rather than a habit the software has. */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; width: 100%; }
+  .grid .card { padding: 40px 44px; }
+  .grid .no {
+    font-size: 25px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--cut); display: flex; align-items: center; gap: 14px;
+  }
+  .grid .no i { width: 13px; height: 13px; border-radius: 50%; background: var(--cut); display: block; }
+  .grid .v { font-size: 50px; margin-top: 14px; }
+  .grid .n { margin-top: 14px; font-size: 29px; line-height: 1.45; color: var(--dim); }
+</style>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>safety, as a property of the data</span>
+    <span class=sp></span>
+    <span class=no>09 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>the promises are not promises</div>
+    <h1>Four things this system <span class=lo>is unable to do.</span></h1>
+  </div>
+
+  <div class=fig style="margin-top:56px">
+    <div class=grid>
+      <div class=card>
+        <div class=no><i></i>cannot happen</div>
+        <div class=v>Send the same letter twice</div>
+        <div class=n>A second approval is a failed write, not a second copy in flight.
+          The duplicate is refused by the shape of the data, before anything reaches a mail server.</div>
+      </div>
+      <div class=card>
+        <div class=no><i></i>cannot happen</div>
+        <div class=v>Write to someone who said stop</div>
+        <div class=n>Opting out is final and nothing can undo it &mdash; including a well-meaning
+          process that rediscovers the same public address next week.</div>
+      </div>
+      <div class=card>
+        <div class=no><i></i>cannot happen</div>
+        <div class=v>Mail an address we guessed</div>
+        <div class=n>A guessed contact is refused outright rather than ranked lower.
+          That was a real bug once: ordering is a preference, and this needed a rule.</div>
+      </div>
+      <div class=card>
+        <div class=no><i></i>cannot happen</div>
+        <div class=v>Two campaigns, one person</div>
+        <div class=n>One open conversation per person, per label. Closing it releases
+          them the same instant. A label with thirty campaigns cannot collide with itself.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class=rail>
+    <span class=pt>Not things we are careful about.</span>
+    <span class=hot>Things the system has no way to do.</span>
+    <span class=sp></span>
+    <span class=tag>the rule lives in the data</span>
+  </div>
+</div>

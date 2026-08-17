@@ -1,0 +1,89 @@
+<!doctype html><meta charset=utf-8><title>spindle — why did it decide that, then</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>holding an agent to account</span>
+    <span class=sp></span>
+    <span class=no>10 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class="eyebrow crdb">the second thing only CockroachDB does here</div>
+    <h1>Ask it why, <span class=crdb>and it can show you the world it decided in.</span></h1>
+  </div>
+
+  <div class=fig>
+    <svg viewBox="0 0 2176 900" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=pt>No audit table. No event log. No versioned copy of anything.</span>
+    <span class=sp></span>
+    <span class=tag>purple = only here</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('s'), D = Deck;
+
+  // The two states, drawn as the same object twice. Using the recurring disc
+  // here is the whole trick: the reader has seen it four times by now, so a
+  // second copy with different dots lit reads as "the same thing, earlier"
+  // without a caption saying so.
+  var cols = [
+    { x: 150, dim: true,  k: 'IF YOU ASK THIS MORNING',
+      v: 'today’s ranking', n: 'true, and not an answer to the question',
+      order: ['NTS', 'Balamii', 'KEXP', 'Rinse'], lit: [0, 1] },
+    { x: 1280, dim: false, k: 'ASKED AT THE INSTANT IT DECIDED',
+      v: 'the ranking it acted on', n: 'the same index, as it actually stood',
+      order: ['KEXP', 'Worldwide FM', 'Balamii', 'NTS'], lit: [0, 1] }
+  ];
+
+  cols.forEach(function (c) {
+    var cx = c.x + 190, cy = 300, hot = c.dim ? 'var(--dimmer)' : 'var(--crdb-bright)';
+
+    D.el('rect', { x: c.x - 60, y: 40, width: 880, height: 780, rx: 20,
+                   fill: c.dim ? 'transparent' : 'rgba(125,77,255,.07)',
+                   stroke: c.dim ? 'var(--rule)' : 'var(--crdb)',
+                   'stroke-width': c.dim ? 2 : 3,
+                   'stroke-dasharray': c.dim ? '14 14' : null }, svg);
+
+    D.text(svg, c.x - 16, 116, c.k, c.dim ? 't-lbl' : 't-lbl crd');
+
+    var rings = [ {r:56,n:8}, {r:96,n:12}, {r:136,n:18} ];
+    D.disc(svg, { cx: cx - 60, cy: cy + 60, rings: rings, grooveColor: 'rgba(42,37,33,.9)',
+      paint: function (i) {
+        var on = (i * 7) % 5 === (c.dim ? 0 : 2);
+        return { fill: on ? hot : 'var(--dimmer)', r: on ? 7 : 4, opacity: on ? 1 : 0.35 };
+      } });
+    D.hub(svg, cx - 60, cy + 60, { r: 18, w: 3, stroke: c.dim ? 'var(--dimmer)' : 'var(--crdb)' });
+
+    // The shortlist itself, ranked. The order is the payload of the slide.
+    c.order.forEach(function (name, i) {
+      var y = 236 + i * 78, on = c.lit.indexOf(i) > -1;
+      D.text(svg, c.x + 300, y, (i + 1) + '.', 't-val');
+      D.text(svg, c.x + 366, y, name,
+             on ? (c.dim ? 't-val' : 't-val') : 't-mono');
+      if (on && !c.dim) {
+        D.el('rect', { x: c.x + 348, y: y - 40, width: 480, height: 54, rx: 8,
+                       fill: 'rgba(125,77,255,.16)' }, svg);
+        D.text(svg, c.x + 366, y, name, 't-val');
+      }
+    });
+
+    D.text(svg, c.x - 16, 640, c.v, 't-val');
+    D.text(svg, c.x - 16, 684, c.n, 't-mono');
+  });
+
+  // Between them: what makes the right-hand column possible.
+  var mx = 1095;
+  D.arrow(svg, mx - 80, 420, mx + 80, 420, 'wire crdb fat');
+  D.text(svg, mx, 330, 'SAME QUERY', 't-lbl crd', 'middle');
+  D.text(svg, mx, 372, 'NEW INSTANT', 't-lbl crd', 'middle');
+
+  // The ledger row. It is the only reason the instant is recoverable at all.
+  D.el('rect', { x: 90, y: 830, width: 1900, height: 4, fill: 'var(--rule)' }, svg);
+  D.text(svg, 90, 892, 'the ledger row stored the exact instant it decided at — so “then” is a value, not a memory', 't-mono');
+})();
+</script>

@@ -1,0 +1,75 @@
+<!doctype html><meta charset=utf-8><title>spindle — title</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>an agentic os for a record label</span>
+    <span class=sp></span>
+    <span class=no>01 / 15</span>
+  </div>
+
+  <div class=fig style="margin-top:-20px">
+    <svg viewBox="0 0 2176 1120" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=tag>live</span>
+    <span class=pt>spindle.mattrickslauer.com</span>
+    <span class=sp></span>
+    <span class=tag>CockroachDB &times; AWS &middot; agentic memory</span>
+  </div>
+</div>
+
+<script>
+// The mark itself: a record read as a radial spectrum. It is the only slide where
+// the disc is decorative rather than carrying data, so it is also the only one
+// where the grooves are drawn at full strength.
+(function () {
+  var svg = document.getElementById('s');
+  var D = Deck, cx = 545, cy = 545;
+
+  // The spectrum: 96 spokes off the hub, lengths from a fixed waveform so the
+  // shape is the same every render.
+  var g = D.el('g', null, svg);
+  for (var i = 0; i < 96; i++) {
+    var deg = i * (360 / 96);
+    var t = i / 96 * Math.PI * 2;
+    var amp = 0.42 + 0.30 * Math.abs(Math.sin(t * 3)) + 0.16 * Math.abs(Math.sin(t * 7 + 1.1));
+    var r0 = 150, r1 = 150 + 300 * amp;
+    var a = D.polar(cx, cy, r0, deg), b = D.polar(cx, cy, r1, deg);
+    D.el('path', {
+      d: 'M' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + 'L' + b[0].toFixed(1) + ' ' + b[1].toFixed(1),
+      stroke: i % 8 === 0 ? 'var(--bright)' : 'var(--phosphor)',
+      'stroke-width': i % 8 === 0 ? 7 : 5,
+      'stroke-linecap': 'round',
+      opacity: i % 8 === 0 ? 1 : 0.62
+    }, g);
+  }
+  [118, 132, 478, 496].forEach(function (r, k) {
+    D.el('circle', { cx: cx, cy: cy, r: r, fill: 'none',
+                     stroke: k < 2 ? 'var(--ember)' : 'var(--rule-hi)', 'stroke-width': k % 2 ? 2 : 3 }, g);
+  });
+  D.hub(svg, cx, cy, { r: 46, w: 5, dot: true });
+
+  // Wordmark and the line, set on the right so the disc reads as the label on a
+  // record rather than as an illustration of one.
+  var x = 1120;
+  D.text(svg, x, 372, 'spindle', 'wordmark');
+  D.text(svg, x, 470, 'The tool that makes your music go round', 't-say');
+
+  D.el('path', { d: 'M' + x + ' 540H2120', class: 'wire faint thin' }, svg);
+
+  var lines = [
+    ['A record label', 'is three people and a release next month.'],
+    ['The job that eats them', 'is writing to everyone who might play it.'],
+    ['Spindle does that', 'every night, and can prove why it did.']
+  ];
+  lines.forEach(function (l, i) {
+    var y = 640 + i * 118;
+    D.text(svg, x, y, l[0], 't-lbl on');
+    D.text(svg, x, y + 50, l[1], 't-val');
+  });
+})();
+</script>
+<style>
+  .wordmark { font-size: 132px; letter-spacing: -0.03em; fill: var(--ink); }
+</style>

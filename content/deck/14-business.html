@@ -1,0 +1,93 @@
+<!doctype html><meta charset=utf-8><title>spindle — the business model</title>
+<link rel=stylesheet href=deck.css>
+<style>
+  .tiers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px; width: 100%; }
+  .tiers .card { padding: 36px 34px; display: flex; flex-direction: column; gap: 0; }
+  .tiers .name { font-size: 26px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--dim); }
+  .tiers .price { font-size: 62px; margin-top: 14px; line-height: 1; }
+  .tiers .per { font-size: 26px; color: var(--dimmer); margin-top: 10px; }
+  .tiers .rule { height: 2px; background: var(--rule); margin: 26px 0 22px; }
+  .tiers .allow { font-size: 34px; line-height: 1.3; }
+  .tiers .who { font-size: 27px; line-height: 1.4; color: var(--dim); margin-top: 16px; }
+  .tiers .card.pick { border-color: var(--phosphor); background: rgba(217,127,74,.08); }
+  .tiers .card.pick .price { color: var(--bright); }
+
+  .unit { display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 44px; margin-top: 44px; }
+  .unit h3 { margin: 0; font-size: 30px; letter-spacing: 0.16em; text-transform: uppercase;
+             color: var(--phosphor); font-weight: 500; }
+  .unit p { margin: 16px 0 0; font-size: 30px; line-height: 1.45; color: var(--dim); }
+  .unit p b { color: var(--ink); font-weight: 500; }
+</style>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>the business model</span>
+    <span class=sp></span>
+    <span class=no>14 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>metered by the thing the label already counts</div>
+    <h1>You pay per conversation opened. <span class=lo>Not per seat, not per email.</span></h1>
+  </div>
+
+  <div class=fig style="margin-top:52px; display:block">
+    <div class=tiers>
+      <div class=card>
+        <div class=name>Free</div>
+        <div class=price>$0</div>
+        <div class=per>a month</div>
+        <div class=rule></div>
+        <div class=allow>5 conversations<br>1 artist</div>
+        <div class=who>Send a real pitch and get a real reply before paying anything.</div>
+      </div>
+      <div class="card pick">
+        <div class=name>Label</div>
+        <div class=price>$49</div>
+        <div class=per>a month</div>
+        <div class=rule></div>
+        <div class=allow>50 conversations<br>3 artists</div>
+        <div class=who>An independent label running three acts, one campaign each per quarter, worked properly.</div>
+      </div>
+      <div class=card>
+        <div class=name>Roster</div>
+        <div class=price>$199</div>
+        <div class=per>a month</div>
+        <div class=rule></div>
+        <div class=allow>250 conversations<br>artists uncapped</div>
+        <div class=who>An artist you are not pitching costs nothing, so the roster is not the meter.</div>
+      </div>
+      <div class=card>
+        <div class=name>Catalogue</div>
+        <div class=price>Talk</div>
+        <div class=per>priced against the work</div>
+        <div class=rule></div>
+        <div class=allow>agreed allowance<br>agreed ceiling</div>
+        <div class=who>A catalogue with its own legal shape. It starts with a conversation, not a checkout.</div>
+      </div>
+    </div>
+
+    <div class=unit>
+      <div>
+        <h3>Why a conversation</h3>
+        <p>It is the unit the operator already thinks in, and the one whose cost to us actually
+          scales: research, drafting, and somebody's attention.</p>
+      </div>
+      <div>
+        <h3>Why not a seat</h3>
+        <p>One operator running four hundred conversations is getting four hundred conversations
+          of value. <b>A seat prices the human, not the work.</b></p>
+      </div>
+      <div>
+        <h3>Why not an email</h3>
+        <p>That pays us for mailing more strangers &mdash; <b>the exact incentive this product is
+          built to refuse.</b></p>
+      </div>
+    </div>
+  </div>
+
+  <div class=rail>
+    <span class=pt>The page and the limit read the same definition.</span>
+    <span class=sp></span>
+    <span class=tag>nobody has been billed through it yet</span>
+  </div>
+</div>

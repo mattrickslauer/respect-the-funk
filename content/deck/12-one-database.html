@@ -1,0 +1,83 @@
+<!doctype html><meta charset=utf-8><title>spindle — one database, five jobs</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>what it replaces</span>
+    <span class=sp></span>
+    <span class=no>12 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>the shape of the system</div>
+    <h1>One database doing five jobs <span class=lo>&mdash; and idling at nothing between releases.</span></h1>
+  </div>
+
+  <div class=fig>
+    <svg viewBox="0 0 2176 840" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=pt>A label with three people cannot operate five services.</span>
+    <span class=sp></span>
+    <span class=tag>and does not have to</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('s'), D = Deck;
+  var cx = 700, cy = 400, R = 230;
+
+  var jobs = [
+    { deg:   0, k: 'the index',     n: 'who to write to' },
+    { deg:  72, k: 'the schedule',  n: 'what runs next' },
+    { deg: 144, k: 'the outbox',    n: 'what may be sent' },
+    { deg: 216, k: 'the wake-ups',  n: 'what changed' },
+    { deg: 288, k: 'the ledger',    n: 'what it decided, when' }
+  ];
+
+  jobs.forEach(function (j) {
+    var p = D.polar(cx, cy, R, j.deg);
+    var inner = D.polar(cx, cy, 96, j.deg);
+    D.el('path', { d: 'M' + inner[0].toFixed(1) + ' ' + inner[1].toFixed(1) +
+                      'L' + p[0].toFixed(1) + ' ' + p[1].toFixed(1), class: 'wire' }, svg);
+    D.el('circle', { cx: p[0], cy: p[1], r: 15, fill: 'var(--phosphor)',
+                     stroke: 'var(--bright)', 'stroke-width': 3 }, svg);
+    var out = D.polar(cx, cy, R + 42, j.deg);
+    var anchor = (j.deg === 0) ? 'middle' : (j.deg < 180 ? 'start' : 'end');
+    var dy = j.deg === 0 ? -18 : 10;
+    D.text(svg, out[0], out[1] + dy, j.k, 't-lbl on', anchor);
+    D.text(svg, out[0], out[1] + dy + 38, j.n, 't-mono', anchor);
+  });
+
+  D.el('circle', { cx: cx, cy: cy, r: 96, fill: 'var(--panel-2)',
+                   stroke: 'var(--phosphor)', 'stroke-width': 4 }, svg);
+  D.text(svg, cx, cy - 8, 'ONE', 't-lbl on', 'middle');
+  D.text(svg, cx, cy + 34, 'DATABASE', 't-lbl on', 'middle');
+
+  // The alternative, drawn as what it is: more boxes, each needing to agree with
+  // the others. Dim and dashed, because nobody is claiming these are bad tools —
+  // only that a three-person label cannot run five of them.
+  var X = 1240;
+  D.text(svg, X, 92, 'OTHERWISE, FIVE THINGS TO KEEP IN STEP', 't-lbl');
+
+  var others = [
+    ['a search service',   'and a copy of the rows to search'],
+    ['a queue',            'and a worker pool watching it'],
+    ['a message broker',   'and the plumbing to feed it'],
+    ['a scheduler',        'and somewhere to record what ran'],
+    ['an audit store',     'written to on every single change']
+  ];
+  others.forEach(function (o, i) {
+    var y = 140 + i * 116;
+    D.el('rect', { x: X, y: y, width: 830, height: 92, rx: 12,
+                   fill: 'transparent', stroke: 'var(--rule)', 'stroke-width': 2,
+                   'stroke-dasharray': '14 14' }, svg);
+    D.text(svg, X + 30, y + 40, o[0], 't-val');
+    D.text(svg, X + 30, y + 74, o[1], 't-mono');
+  });
+
+  D.text(svg, X, 776, 'a bill whether or not there is a release', 't-mono');
+  D.text(svg, 96, 776, 'this idles at almost nothing between releases', 't-mono');
+})();
+</script>

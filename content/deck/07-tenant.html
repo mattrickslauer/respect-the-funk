@@ -1,0 +1,84 @@
+<!doctype html><meta charset=utf-8><title>spindle — one column, two jobs</title>
+<link rel=stylesheet href=deck.css><script src=deck.js></script>
+<div class=plate>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>how the index is ordered</span>
+    <span class=sp></span>
+    <span class=no>07 / 15</span>
+  </div>
+
+  <div class=head>
+    <div class=eyebrow>one decision, doing two jobs</div>
+    <h1>The label's own name <span class=lo>is both the wall and the filing order.</span></h1>
+    <div class=sub>Every index starts with the tenant. That single choice is the boundary between
+      one label and another <b>and</b> the way the rows are physically grouped.</div>
+  </div>
+
+  <div class=fig>
+    <svg viewBox="0 0 2176 560" id=s></svg>
+  </div>
+
+  <div class=rail>
+    <span class=pt>Two guarantees, one column, no second mechanism to keep in step.</span>
+    <span class=sp></span>
+    <span class=tag>replaceable elsewhere &mdash; we say so</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var svg = document.getElementById('s'), D = Deck;
+
+  // The key, drawn left to right the way it is actually ordered. Widths are
+  // proportional to nothing — they are sized to their labels, because this is a
+  // diagram of an ordering, not of a byte layout.
+  // Captions cut to (w - 48) / 18 characters. The first pass wrote the sentence
+  // it wanted and three of the five ran out of their own box.
+  var segs = [
+    { w: 470, k: 'the label',   n: 'whose rows these are', lead: true },
+    { w: 400, k: 'which model', n: 'no mixed models' },
+    { w: 380, k: 'what kind',   n: 'a station' },
+    { w: 430, k: 'reachable?',  n: 'reachable only' },
+    { w: 396, k: 'the record',  n: 'then similarity', vec: true }
+  ];
+
+  var x = 60, y = 96, H = 128;
+  segs.forEach(function (s) {
+    D.el('rect', { x: x, y: y, width: s.w - 12, height: H, rx: 12,
+                   fill: s.lead ? 'rgba(217,127,74,.13)' : 'var(--panel)',
+                   stroke: s.lead ? 'var(--phosphor)' : (s.vec ? 'var(--rule-hi)' : 'var(--rule)'),
+                   'stroke-width': s.lead ? 4 : 2 }, svg);
+    D.text(svg, x + 28, y + 56, s.k, s.lead ? 't-val' : 't-val');
+    D.text(svg, x + 28, y + 96, s.n, 't-mono');
+    x += s.w;
+  });
+
+  D.text(svg, 60, 62, 'HOW EVERY LOOKUP IS ORDERED', 't-lbl');
+  D.text(svg, 2116, 66, 'then rank', 't-mono', 'end');
+
+  // The two jobs, both pointing at the same first segment. The whole slide is
+  // this convergence; everything else is context for it.
+  var lx = 290;
+  D.el('path', { d: 'M' + lx + ' 224 V300', class: 'wire' }, svg);
+  D.el('path', { d: 'M140 300 H440', class: 'wire' }, svg);
+  D.el('path', { d: 'M140 300 V352', class: 'wire' }, svg);
+  D.el('path', { d: 'M440 300 V352', class: 'wire' }, svg);
+
+  D.el('rect', { x: 60, y: 352, width: 480, height: 150, rx: 14,
+                 fill: 'var(--panel)', stroke: 'var(--rule-hi)', 'stroke-width': 2 }, svg);
+  D.text(svg, 92, 404, 'THE WALL', 't-lbl on');
+  D.text(svg, 92, 448, 'one label cannot see', 't-mono');
+  D.text(svg, 92, 484, 'another label’s people', 't-mono');
+
+  D.el('path', { d: 'M700 224 V300 H1180 V352', class: 'wire' }, svg);
+  D.el('rect', { x: 940, y: 352, width: 480, height: 150, rx: 14,
+                 fill: 'var(--panel)', stroke: 'var(--rule-hi)', 'stroke-width': 2 }, svg);
+  D.text(svg, 972, 404, 'THE FILING ORDER', 't-lbl on');
+  D.text(svg, 972, 448, 'a label’s rows sit', 't-mono');
+  D.text(svg, 972, 484, 'together, not scattered', 't-mono');
+
+  D.text(svg, 1560, 404, 'Get this wrong and you need two', 't-mono');
+  D.text(svg, 1560, 440, 'mechanisms that must agree.', 't-mono');
+  D.text(svg, 1560, 494, 'Here there is only one.', 't-val');
+})();
+</script>

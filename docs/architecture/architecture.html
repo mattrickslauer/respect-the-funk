@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang=en>
+<meta charset=utf-8>
+<title>Spindle — architecture</title>
+<link rel=stylesheet href=arch.css>
+<script src=arch.js></script>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 1 -->
+<div class=page data-no=1>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>architecture · the system end to end</span>
+    <span class=sp></span>
+    <span>CockroachDB &times; AWS &middot; agentic memory</span>
+    <span class=no>1 / 5</span>
+  </div>
+
+  <h1>An agentic OS for a record label, <span class=lo>drawn as what is actually deployed.</span></h1>
+  <div class=deck>Two Lambdas, one bucket, one mail identity and one database. Every box below is
+    provisioned and running; anything written but not switched on is on <b>page 5</b>, with the command
+    that proves it. Sizes and names are read from the applied Terraform state, not from the plan.</div>
+
+  <div class=fig><svg viewBox="0 0 1472 700" id=p1></svg></div>
+
+  <div class=foot>
+    <span class=tag>legend</span>
+    <span class=pt>solid = deployed</span>
+    <span>dashed = written, not on</span>
+    <span class=crdb>purple = only CockroachDB can</span>
+    <span class=sp></span>
+    <span class=tag>read 2026-08-16</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 2 -->
+<div class=page data-no=2>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>architecture · the data plane</span>
+    <span class=sp></span>
+    <span>54 tables · 4 vector indexes</span>
+    <span class=no>2 / 5</span>
+  </div>
+
+  <h1>The memory, <span class=lo>and the four indexes the fleet decides with.</span></h1>
+  <div class=deck>Every filter that must always hold sits <span class=crdb>inside the index prefix</span>
+    rather than in a WHERE clause applied afterwards — so a search cannot return a row belonging to
+    another label, a stale embedding model, or somebody who cannot be contacted.</div>
+
+  <div class=fig><svg viewBox="0 0 1472 700" id=p2></svg></div>
+
+  <div class=foot>
+    <span class=pt>These are index structure,</span>
+    <span class=crdb>not predicates somebody has to remember.</span>
+    <span class=sp></span>
+    <span class=tag>schema/007 · 009 · 011</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 3 -->
+<div class=page data-no=3>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>architecture · the control plane</span>
+    <span class=sp></span>
+    <span>17 agents · no orchestrator</span>
+    <span class=no>3 / 5</span>
+  </div>
+
+  <h1>The database is the scheduler, <span class=lo>the queue and the message bus.</span></h1>
+  <div class=deck>No agent calls another. An agent finishes by writing a row with a
+    <b>next_action_at</b>, and that row is the message. Take the database away and the system does not
+    slow down — it loses its control flow entirely.</div>
+
+  <div class=fig><svg viewBox="0 0 1472 700" id=p3></svg></div>
+
+  <div class=foot>
+    <span class=pt>Kill half the fleet mid-run: the lease expires and the row comes back.</span>
+    <span class=sp></span>
+    <span class=tag>fleet.py · spend.py · agents.REGISTRY</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 4 -->
+<div class=page data-no=4>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>architecture · accountability</span>
+    <span class=sp></span>
+    <span>the decision ledger and the replay</span>
+    <span class=no>4 / 5</span>
+  </div>
+
+  <h1>Why did the agent decide that, <span class=crdb>then?</span></h1>
+  <div class=deck>The memory is alive: lessons accumulate, embeddings land, contact states move. By
+    morning the world a decision was made in is gone. The ledger stores the exact logical timestamp,
+    and <span class=crdb>the same query pointed at that timestamp</span> returns the index as it stood —
+    not a copy of it.</div>
+
+  <div class=fig><svg viewBox="0 0 1472 690" id=p4></svg></div>
+
+  <div class=foot>
+    <span class=pt>No audit table. No event log. No versioned copy of anything.</span>
+    <span class=sp></span>
+    <span class=tag>035_decision_ledger.sql · budgets.py</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 5 -->
+<div class=page data-no=5>
+  <div class=chrome>
+    <span class=mark>spindle</span><span>architecture · what is not running</span>
+    <span class=sp></span>
+    <span>and how to check every claim</span>
+    <span class=no>5 / 5</span>
+  </div>
+
+  <h1>The parts that are written <span class=lo>and deliberately not switched on.</span></h1>
+  <div class=deck>A claim a judge can falsify in one command is worse than no claim. Each item below is
+    code that exists, is tested, and has been left off for a reason — with the command that returns
+    nothing, printed beside it.</div>
+
+  <div class=fig><svg viewBox="0 0 1472 700" id=p5></svg></div>
+
+  <div class=foot>
+    <span class=pt>Everything else here is live against cluster</span>
+    <span class=hot>respect-the-funk</span>
+    <span class=sp></span>
+    <span class=tag>spindle.mattrickslauer.com · no account needed</span>
+  </div>
+</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────── page 1 ── */
+(function () {
+  var s = document.getElementById('p1');
+  // Every row height below is the height the content actually needs at its own
+  // character budget, rounded up to a common value so the rows line up. Boxes
+  // grow rather than clip, and build.py fails on any pair that then touches.
+  var R1 = 44, R2 = 252, RH = 158;
+
+  A.band(s, 0, 20, 900, 'REQUEST PATH');
+
+  A.box(s, { x: 0,   y: R1, w: 250, h: RH, k: 'THE LABEL', lead: 24, lines: [
+    { t: 'a browser, signed in by an emailed code', cls: 't-sm' },
+    { t: 'no password, no admin token', cls: 't-sm' }
+  ]});
+  A.box(s, { x: 290, y: R1, w: 250, h: RH, k: 'THE EDGE', lead: 24, lines: [
+    { t: 'Route 53 · ACM · CloudFront', cls: 't-sm' },
+    { t: 'the domain and its cert', cls: 't-sm' }
+  ]});
+  A.box(s, { x: 580, y: R1, w: 320, h: RH, k: 'THE CONSOLE + API', tone: 'hot', lead: 24, lines: [
+    { t: 'one Lambda · arm64 · 512 MB', cls: 't-sm' },
+    { t: 'a Function URL, no gateway', cls: 't-sm' },
+    { t: 'FastAPI · Jinja · Mangum', cls: 't-sm' }
+  ]});
+
+  A.arrow(s, 250, R1 + 74, 286, R1 + 74);
+  A.arrow(s, 540, R1 + 74, 576, R1 + 74);
+  A.arrow(s, 900, R1 + 74, 936, R1 + 74);
+
+  // The cluster spans both rows: everything else on this page either writes to
+  // it or is woken by something written in it.
+  A.box(s, { x: 940, y: R1, w: 532, h: 366, k: 'COCKROACHDB BASIC · aws-us-east-1', tone: 'hot',
+    lead: 24, lines: [
+      { t: 'one database, five jobs', cls: 't-val', lead: 40 },
+      { t: 'the index — four cosine vector indexes', cls: 't-sm' },
+      { t: 'the schedule — leases and next_action_at', cls: 't-sm' },
+      { t: 'the outbox — the send gate, in unique indexes', cls: 't-sm' },
+      { t: 'the wake-ups — a written row is the message', cls: 't-sm' },
+      { t: 'the ledger — every decision, stamped', cls: 't-sm', gap: 18 },
+      { t: 'serializable by default · scales to zero between releases', cls: 't-sm' }
+    ]});
+
+  A.band(s, 0, 228, 900, 'SIDE PATHS');
+
+  A.box(s, { x: 0,   y: R2, w: 380, h: RH, k: 'THE MASTERS — S3', lead: 24, lines: [
+    { t: 'rtf-platform-prod-masters', cls: 't-sm' },
+    { t: 'browser → bucket by presigned PUT', cls: 't-sm' },
+    { t: 'a 60 MB WAV never enters the function', cls: 't-sm' }
+  ]});
+  A.box(s, { x: 420, y: R2, w: 250, h: RH, k: 'THE MAIL — SES', lead: 24, lines: [
+    { t: 'codes out, replies in', cls: 't-sm' },
+    { t: 'a token per thread', cls: 't-sm' }
+  ]});
+  A.box(s, { x: 700, y: R2, w: 230, h: RH, k: 'THE LISTENER', lead: 24, lines: [
+    { t: 'container Lambda', cls: 't-sm' },
+    { t: 'x86_64 · 3008 MB', cls: 't-sm' },
+    { t: '300 s, out of ECR', cls: 't-sm' }
+  ]});
+
+  A.wire(s, 'M125 202 V252', 'thin');
+  A.wire(s, 'M545 252 V202', 'thin');
+  A.wire(s, 'M815 252 V202', 'thin');
+
+  A.band(s, 0, 428, 900, 'THE FLEET — NO ORCHESTRATOR');
+
+  A.box(s, { x: 0, y: 452, w: 900, h: 248,
+             k: '17 AGENTS, AND NOT ONE OF THEM CALLS ANOTHER', lines: []});
+  var names = ['embed_document', 'map_source', 'find_counterparties', 'profile_party', 'embed_party',
+               'distil_lesson', 'analyse_recording', 'index_stations', 'index_streams', 'enrich_genre',
+               'index_podcasts', 'refresh_stream', 'harvest_contacts', 'harvest_feed_contacts',
+               'profile_creator', 'refresh_audience', 'profile_audience'];
+  names.forEach(function (n, i) {
+    var col = Math.floor(i / 6), row = i % 6;
+    A.text(s, 24 + col * 292, 522 + row * 25, '· ' + n, 't-sm on');
+  });
+  A.text(s, 24, 684, 'each finishes by writing a row; that row is what wakes the next one', 't-sm');
+
+  // The gate, the person on the other end, and the way back in.
+  A.box(s, { x: 940,  y: 424, w: 250, h: RH, k: 'THE GATE', tone: 'good', lead: 24, lines: [
+    { t: 'a person approves every send', cls: 't-sm' },
+    { t: 'the one irreversible act', cls: 't-sm' }
+  ]});
+  A.box(s, { x: 1200, y: 424, w: 272, h: RH, k: 'A MUSIC DIRECTOR', lead: 24, lines: [
+    { t: 'a named human being, who can reply or ask us to stop', cls: 't-sm' }
+  ]});
+  A.wire(s, 'M1066 410 V424', 'thin');
+  A.wire(s, 'M1336 582 V612 H1100', 'thin good');
+  A.head(s, 1100, 612, 'l', 'good');
+  A.text(s, 940, 646, 'the reply lands back in the index', 't-sm');
+  A.text(s, 940, 668, 'and reranks the next shortlist', 't-sm');
+  A.text(s, 1472, 692, 'nothing here bills while idle', 't-sm', 'end');
+})();
+
+/* ─────────────────────────────────────────────────────────── page 2 ── */
+(function () {
+  var s = document.getElementById('p2');
+  var L = 920, RX = 980, RW = 492;
+
+  A.band(s, 0, 20, L, 'THE FOUR VECTOR INDEXES · COSINE · FILTERS IN THE PREFIX');
+
+  var idx = [
+    ['party_shortlist', 'party', ['tenant_id', 'embedding_model', 'party_class', 'contact_state'],
+     'who, out of everyone indexed, should hear this particular record'],
+    ['fact_semantic', 'party_fact', ['tenant_id', 'model', 'status'],
+     'what we have concluded about them — superseded facts cannot surface'],
+    ['chunk_semantic', 'party_chunk', ['tenant_id', 'model'],
+     'the source text a conclusion was drawn from'],
+    ['lesson_semantic', 'lesson', ['tenant_id', 'model', 'scope_kind'],
+     'what we learned that reranks the next shortlist']
+  ];
+
+  idx.forEach(function (ix, i) {
+    var y = 44 + i * 124;
+    A.box(s, { x: 0, y: y, w: L, h: 112, tone: i === 0 ? 'crdb' : 'bare', lines: []});
+    A.text(s, 20, y + 34, ix[0], i === 0 ? 't-val crd' : 't-val');
+    A.text(s, 340, y + 34, 'ON ' + ix[1], 't-lbl');
+    A.text(s, 20, y + 62, ix[3], 't-sm');
+
+    // The prefix drawn as cells, so "inside the index" is a picture rather than
+    // a sentence. The embedding is last because it is what the prefix has
+    // already narrowed down to.
+    var x = 20;
+    ix[2].forEach(function (col) {
+      var w = col.length * A.charW('t-sm') + 24;
+      A.el('rect', { x: x, y: y + 74, width: w, height: 30, rx: 6,
+                     fill: 'rgba(125,77,255,.14)', stroke: 'var(--crdb)', 'stroke-width': 1.6 }, s);
+      A.text(s, x + 12, y + 95, col, 't-sm').setAttribute('fill', 'var(--crdb-bright)');
+      x += w + 8;
+    });
+    A.el('rect', { x: x, y: y + 74, width: 190, height: 30, rx: 6,
+                   fill: 'var(--panel-2)', stroke: 'var(--rule-hi)', 'stroke-width': 1.6 }, s);
+    A.text(s, x + 12, y + 95, 'the embedding', 't-sm on');
+  });
+
+  A.wrap('Equality on the prefix is both the correctness rule and the fast path. A post-filter is ' +
+         'neither: it over-fetches to compensate, and any caller writing a query can forget it.',
+         A.budget(L, 't-mono', 0)).forEach(function (line, i) {
+    A.text(s, 0, 560 + i * 28, line, 't-mono');
+  });
+
+  A.box(s, { x: 0, y: 622, w: L, h: 78, tone: 'good', pad: 16, lead: 23,
+             k: 'AND THE CONSTRAINTS THAT MAKE SENDING SAFE', lines: [
+    { t: 'one_open_thread_per_counterparty · outbox UNIQUE (message_id) · message UNIQUE (tenant_id, idempotency_key)', cls: 't-sm' }
+  ]});
+
+  A.band(s, RX, 20, RW, '54 TABLES, BY WHAT THEY HOLD');
+
+  var groups = [
+    ['THE INDEX', 'party · party_fact · party_chunk · party_role · party_relation · party_identifier · party_alias · contact_route · source_manifest'],
+    ['THE ROSTER', 'artist · artist_profile · artist_fact · artist_document · recording · release · work · track · sound_usage · audience_profile'],
+    ['OUTREACH', 'campaign · thread · message · outbox · lead · inbound_unmatched · presence'],
+    ['MEMORY', 'lesson · decision · fact_basis · agent_run · agent_manifest · suggestion'],
+    ['MONEY', 'account · tenant_budget · artist_budget · recording_budget · budget_raise · autonomy'],
+    ['ACCESS', 'tenant · otp_challenge · mail_account · listen_token · listen_event']
+  ];
+  var gy = 48;
+  groups.forEach(function (g) {
+    A.text(s, RX, gy, g[0], 't-lbl on');
+    A.wire(s, 'M' + (RX + g[0].length * A.charW('t-lbl') + 16) + ' ' + (gy - 6) + 'H' + (RX + RW), 'rule thin');
+    gy += 25;
+    A.wrap(g[1], A.budget(RW, 't-sm', 0)).forEach(function (line) {
+      A.text(s, RX, gy, line, 't-sm on');
+      gy += 20;
+    });
+    gy += 18;
+  });
+})();
+
+/* ─────────────────────────────────────────────────────────── page 3 ── */
+(function () {
+  var s = document.getElementById('p3');
+  var L = 700, RX = 760, RW = 712;
+
+  A.band(s, 0, 20, L, 'HOW WORK IS CLAIMED, AND SURVIVES A CRASH');
+
+  // Each caption is cut to one line at this width — the chain reads as a
+  // sequence only if the steps are the same height.
+  var steps = [
+    ['A ROW COMES DUE', 'lead · thread · party — whatever carries next_action_at'],
+    ['A WORKER CLAIMS IT', 'SELECT … FOR UPDATE SKIP LOCKED; the row gets a lease_token'],
+    ['THE AGENT RUNS', 'reads what it needs, calls out if allowed, learns something'],
+    ['ONE TRANSACTION', 'memory write + agent_run + the next next_action_at, together'],
+    ['THE NEXT ROW IS DUE', 'and nothing was told to run it — the row being there is the message']
+  ];
+  var y = 46;
+  steps.forEach(function (st, i) {
+    var h = A.box(s, { x: 0, y: y, w: L, k: st[0], pad: 16, lead: 22,
+                       tone: i === 1 ? 'hot' : 'live',
+                       lines: [{ t: st[1], cls: 't-sm' }] });
+    if (i < steps.length - 1) A.arrow(s, 40, y + h, 40, y + h + 22);
+    y += h + 22;
+  });
+  A.wire(s, 'M' + (L - 40) + ' ' + (y - 22) + ' H' + (L + 26) + ' V58 H' + (L + 4), 'thin faint');
+  A.head(s, L + 4, 58, 'l', 'faint');
+
+  A.box(s, { x: 0, y: y + 2, w: L, tone: 'cut', pad: 14, lead: 21,
+             k: 'THE FAILURE THIS SHAPE SURVIVES', lines: [
+    { t: 'Kill the worker mid-run and nothing is stranded: the lease expires and the row comes back. Claiming by worker name would not survive that — two drains under one default name match each other’s leases. The name cannot tell them apart; the token can.', cls: 't-sm' }
+  ]});
+
+  A.band(s, RX, 20, RW, 'BEFORE ANY PAID CALL LEAVES THE BUILDING');
+
+  var gate = [
+    ['PRICE IT FIRST', 'The estimate is computed before the request is made. Past what is left of the ceiling the run is refused before a single call is submitted.'],
+    ['TWO CEILINGS, BOTH IN THE ENVIRONMENT', 'One stops a pathological request, one stops a thousand reasonable ones. Neither lives in code, and there is no force flag anywhere.'],
+    ['DEFAULT DENY', 'A missing variable means paid calls are off. A missing rate-card entry means refused, not billed at a price nobody knows. An unparseable ceiling is zero.'],
+    ['RECORD THE REFUSAL', 'A refused call is written down with what it would have cost. Skipping silently reads as “there was nothing to do”, which is the shape of success.']
+  ];
+  var gy = 46;
+  gate.forEach(function (g, i) {
+    gy += A.box(s, { x: RX, y: gy, w: RW, k: g[0], pad: 16, lead: 22, tone: i === 0 ? 'hot' : 'live',
+                     lines: [{ t: g[1], cls: 't-sm' }] }) + 18;
+  });
+
+  A.box(s, { x: RX, y: gy + 4, w: RW, tone: 'bare', pad: 16, lead: 22,
+             k: 'WHAT EVERY RUN LEAVES BEHIND', lines: [
+    { t: 'agent_run — which agent, which row, what it cost, what it refused · agent_manifest — what the fleet may be · decision — page 4', cls: 't-sm' }
+  ]});
+})();
+
+/* ─────────────────────────────────────────────────────────── page 4 ── */
+(function () {
+  var s = document.getElementById('p4');
+  var L = 620, RX = 676, RW = 796;
+
+  A.band(s, 0, 20, L, 'THE LEDGER ROW');
+
+  A.box(s, { x: 0, y: 46, w: L, k: 'decision', pad: 16, lead: 24, tone: 'crdb', lines: [
+    { t: 'tenant_id     the label it belongs to', cls: 't-sm' },
+    { t: 'kind          what sort of decision', cls: 't-sm' },
+    { t: 'stage         proposed, or applied', cls: 't-sm' },
+    { t: 'at_hlc        the hybrid logical clock, as a decimal', cls: 't-sm' },
+    { t: 'at_wall       the same instant, in human time', cls: 't-sm' },
+    { t: 'subject_kind  what it was about', cls: 't-sm' },
+    { t: 'actor         which agent, or which person', cls: 't-sm' },
+    { t: 'summary       one sentence, for a human', cls: 't-sm' },
+    { t: 'inputs        the numbers it was looking at', cls: 't-sm' }
+  ]});
+
+  A.text(s, 0, 372, 'at_hlc is the whole trick. It is not a note about', 't-mono');
+  A.text(s, 0, 398, 'when something happened — it is the value the', 't-mono');
+  A.text(s, 0, 424, 'database itself will accept as “then”.', 't-mono');
+
+  A.band(s, 0, 468, L, 'THE SEVEN KINDS');
+  var kinds = [
+    ['shortlist', 'somebody was selected out of the index'],
+    ['send', 'a message left the building'],
+    ['budget_increase', 'a spend cap was raised'],
+    ['plan_change', 'the tier moved'],
+    ['opt_out', 'somebody asked us to stop — terminal'],
+    ['suppress', 'we decided NOT to contact somebody'],
+    ['lesson', 'something learned that reranks later']
+  ];
+  kinds.forEach(function (k, i) {
+    A.text(s, 0, 496 + i * 26, k[0], 't-sm on');
+    A.text(s, 236, 496 + i * 26, k[1], 't-sm');
+  });
+
+  A.band(s, RX, 20, RW, 'ANSWERING “WHY DID YOU DO THAT?” THE NEXT MORNING');
+
+  var seq = [
+    ['live', 'LAST NIGHT — IT DECIDED',
+     'The fleet ranked the index, opened a thread, and asked to put more behind one record. A person approved it, and the ledger row stored the instant.'],
+    ['cut', 'BY MORNING, THE WORLD HAS MOVED',
+     'Metrics overwritten, contact states changed, lessons landed and reordered the ranking. Asking now returns today’s answer wearing last night’s clothes.'],
+    ['crdb', 'THE SAME QUERY, POINTED AT THAT INSTANT',
+     'SELECT … FROM party@party_shortlist AS OF SYSTEM TIME \'<at_hlc>\' WHERE tenant_id = $1 AND embedding_model = $2 AND party_class = $3 AND contact_state = $4 ORDER BY profile_embedding <=> $5 LIMIT 20'],
+    ['crdb', 'WHAT COMES BACK IS THE INDEX ITSELF',
+     'Same index, same embeddings, same lesson rows, as they stood. No schema was written for it and the write path pays nothing. Not a copy of them — them.'],
+    ['good', 'AND THEN IT CHECKS ITSELF',
+     'The valuation is re-run against those old numbers and compared with what was acted on. Agreeing is the point; disagreeing is the finding.'],
+    ['cut', 'PAST THE RETENTION WINDOW, IT REFUSES',
+     'Beyond gc.ttlseconds the versions are genuinely collected, and the function raises rather than quietly dropping the clause and answering anyway.']
+  ];
+  var y = 46;
+  seq.forEach(function (q) {
+    y += A.box(s, { x: RX, y: y, w: RW, tone: q[0], k: q[1], pad: 13, lead: 20,
+                    lines: [{ t: q[2], cls: q[2].indexOf('SELECT') === 0 ? 't-sm crd' : 't-sm' }] }) + 8;
+  });
+})();
+
+/* ─────────────────────────────────────────────────────────── page 5 ── */
+(function () {
+  var s = document.getElementById('p5');
+
+  A.band(s, 0, 20, 1472, 'WRITTEN, TESTED, AND NOT SWITCHED ON');
+
+  var off = [
+    ['THE CHANGEFEED', 'proven, not created',
+     'The statement, the consumer, the Lambda handler and a --verify path all exist. Nothing has been created on this cluster, so the fleet is woken by polling next_action_at rather than by a feed.',
+     'SHOW CHANGEFEED JOBS  →  zero rows'],
+    ['REGIONAL BY ROW DOMICILING', 'proven, not deployed',
+     'Migration 024 and the multi-region Terraform are written and validate. They are not applied: adding a region to a Basic cluster is irreversible, and converting the cluster holding the system of record would be a one-way door taken for a demo. It was shown on a throwaway cluster instead, by a script that refuses to run against a single-region one.',
+     'SHOW REGIONS  →  aws-us-east-1, and nothing else'],
+    ['BEDROCK', 'written, cannot run',
+     'Both the on-demand and the batch path are implemented, and neither can execute on this account: on-demand quota is zero and non-adjustable, batch inference is entitlement-gated. Embeddings run through OpenAI instead.',
+     'the quota console  →  0, non-adjustable']
+  ];
+
+  var y = 46;
+  off.forEach(function (o) {
+    var h = A.box(s, { x: 0, y: y, w: 940, tone: 'off', k: o[0], chip: o[1], pad: 16, lead: 22,
+                       lines: [{ t: o[2], cls: 't-sm' }] });
+    A.box(s, { x: 962, y: y, w: 510, h: h, tone: 'bare', pad: 16, lead: 22,
+               k: 'WHAT A JUDGE RUNS', lines: [{ t: o[3], cls: 't-sm wn' }] });
+    y += h + 20;
+  });
+
+  A.band(s, 0, y + 8, 1472, 'AND HOW TO CHECK EVERYTHING ELSE');
+  var checks = [
+    ['/', 'every counter across the top is a query run on page load'],
+    ['/#tune', 'move the dial and the shortlist reranks, live'],
+    ['/#plan', 'the EXPLAIN output: the filters are inside the index'],
+    ['/#send', 'the send gate, and why a double send cannot happen'],
+    ['/#verdict', 'where Postgres would have done fine, feature by feature'],
+    ['/manual', 'the operator manual, written for label staff']
+  ];
+  var cy = y + 34;
+  checks.forEach(function (c, i) {
+    A.text(s, 0, cy + i * 22, c[0], 't-sm on');
+    A.text(s, 150, cy + i * 22, c[1], 't-sm');
+  });
+  A.text(s, 940, cy, 'and in the repository:', 't-sm on');
+  A.text(s, 940, cy + 22, 'test_vector_plans.py asserts the plan, not a comment', 't-sm');
+  A.text(s, 940, cy + 44, 'test_sender.py names the double-send case it forbids', 't-sm');
+  A.text(s, 940, cy + 66, 'the sponsor audit argues this project against itself', 't-sm');
+})();
+</script>
+</html>

@@ -8,7 +8,8 @@
   <a href="https://3r6xfixrxgw3tzzvnpmmqkrbsy0egypm.lambda-url.us-east-1.on.aws/"><b>Live demo</b></a> ·
   <a href="./docs/submission/SUBMISSION.md">Submission narrative</a> ·
   <a href="./docs/2026-08-11-sponsor-audit.md">Adversarial sponsor audit</a> ·
-  <a href="./docs/PLATFORM-SPEC.md">Architecture</a>
+  <a href="./docs/architecture/spindle-architecture.pdf">Architecture, in five pages (PDF)</a> ·
+  <a href="./docs/PLATFORM-SPEC.md">Platform spec</a>
 </p>
 
 <p align="center"><sub>
